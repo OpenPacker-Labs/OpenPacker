@@ -2,8 +2,8 @@
  * Hold the lock to the project's files (ADR 0055 §15, §18), in the order a
  * frozen install reports it: the importers against the members on disk, each
  * importer's dependencies against its `package.json`, then `overrides`,
- * `catalogs` and the patches the project declares, then the names links are
- * made under. Everything is collected, so one error names all of it.
+ * `catalogs` and the patches the project declares. Everything is collected, so
+ * one error names all of it.
  */
 
 import type {
@@ -17,7 +17,6 @@ import { readPnpmProjectConfig, type PnpmProjectConfig } from './config.js';
 import {
   catalogProblems,
   importerProblems,
-  linkNameProblems,
   overrideProblems,
   type ManifestLists,
 } from './fresh.js';
@@ -27,28 +26,48 @@ import { quote } from './quote.js';
 
 const show = (dir: string): string => (dir === '' ? '(root)' : quote(dir));
 
-/** How the members the lock lists differ from the ones on disk, as sentences. */
+/**
+ * The importers of the lock the project still has. pnpm reads the projects on
+ * disk and not the lock's list, so an importer whose member is gone is left
+ * alone (and kept in the lock); the project itself is always there.
+ */
+export function presentImporters(
+  model: PnpmModel,
+  disk: readonly WorkspaceMember[],
+): ReadonlySet<string> {
+  const onDisk = new Set(disk.map((member) => member.dir));
+  return new Set(
+    [...model.tops.values()]
+      .filter((top) => top.dir === '' || onDisk.has(top.dir))
+      .map((top) => top.id),
+  );
+}
+
+/**
+ * The members on disk the lock does not list, as sentences. pnpm takes a member
+ * the lock does not list when it has no dependencies (`allProjectsAreUpToDate`
+ * asks no more of one), so only one with dependencies is named.
+ */
 export function memberProblems(
   model: PnpmModel,
   disk: readonly WorkspaceMember[],
 ): string[] {
   const inLock = new Set([...model.tops.values()].map((top) => top.dir));
-  // A project that declares no workspace is its root alone.
-  const onDisk = new Set(
-    disk.length === 0 ? [''] : disk.map((member) => member.dir),
-  );
-  const lines: string[] = [];
-  const unlisted = [...onDisk].filter((dir) => !inLock.has(dir)).sort();
-  const missing = [...inLock].filter((dir) => !onDisk.has(dir)).sort();
-  if (unlisted.length > 0)
-    lines.push(
-      `the project has ${unlisted.map(show).join(', ')}, which the lock does not list`,
-    );
-  if (missing.length > 0)
-    lines.push(
-      `the lock lists ${missing.map(show).join(', ')}, which the project does not have`,
-    );
-  return lines;
+  const unlisted = disk
+    .filter(
+      (member) =>
+        !inLock.has(member.dir) &&
+        (member.manifest.dependencies.size > 0 ||
+          member.manifest.devDependencies.size > 0 ||
+          member.manifest.optionalDependencies.size > 0),
+    )
+    .map((member) => member.dir)
+    .sort();
+  return unlisted.length === 0
+    ? []
+    : [
+        `the project has ${unlisted.map(show).join(', ')}, which the lock does not list and which ${unlisted.length === 1 ? 'has' : 'have'} dependencies`,
+      ];
 }
 
 /** What of the project's own files a frozen install reads before it looks at the lock. */
@@ -86,56 +105,77 @@ export async function readRootProject(
   return { lists, config };
 }
 
-/** How the lock differs from the project's files, as sentences; empty when it is the project's. */
+/** How the lock differs from the project's files. */
+export interface Freshness {
+  /** Differences pnpm finds too (specifiers, lists, overrides, catalogs, patches). */
+  readonly stale: readonly string[];
+  /** Overrides opm cannot apply as pnpm would, so cannot hold the lock to. */
+  readonly doubts: readonly string[];
+}
+
+/** How the lock differs from the files of the importers the project has. */
 export function freshnessProblems(input: {
   root: RootProject;
   model: PnpmModel;
-  tops: ReadonlySet<string>;
+  present: ReadonlySet<string>;
   disk: readonly WorkspaceMember[];
-}): string[] {
-  const { root, model, tops, disk } = input;
+}): Freshness {
+  const { root, model, present, disk } = input;
   const { lists: rootLists, config } = root;
   const byDir = new Map(disk.map((member) => [member.dir, member]));
+  const doubts: string[] = [];
   const overridden = (dir: string): ManifestLists => {
     const member = byDir.get(dir);
-    return applyOverrides(member?.manifest ?? rootLists, config.overrides, {
-      ...(member?.name !== undefined && { name: member.name }),
-      ...(member?.manifest.version !== undefined && {
-        version: member.manifest.version,
-      }),
-    });
+    // A project with no workspace has no members on disk: it is its own root.
+    const own = dir === '' ? config.project : {};
+    const name = member?.name ?? own.name;
+    const version = member?.manifest.version ?? own.version;
+    return applyOverrides(
+      member?.manifest ?? rootLists,
+      config.overrides,
+      {
+        ...(name !== undefined && { name }),
+        ...(version !== undefined && { version }),
+        dir,
+      },
+      doubts,
+    );
   };
   const { lock } = model;
   const auto = lock.settings.autoInstallPeers !== false;
-  return [
-    ...[...model.tops.values()].flatMap((top) =>
-      importerProblems(
-        top.id,
-        overridden(top.dir),
-        lock.importers.find((importer) => importer.id === top.id)!,
-        auto,
+  const stale = [
+    ...[...model.tops.values()]
+      .filter((top) => present.has(top.id))
+      .flatMap((top) =>
+        importerProblems(
+          top.id,
+          overridden(top.dir),
+          lock.importers.find((importer) => importer.id === top.id)!,
+          auto,
+        ),
       ),
-    ),
     ...overrideProblems(lock, config.overrides),
     ...catalogProblems(lock, config.catalogs),
     ...config.patches.map(
       (key) =>
         `the project declares a patch for ${quote(key)}, which opm does not apply`,
     ),
-    ...linkNameProblems(
-      model,
-      tops,
-      new Map(
-        [...model.tops.values()].map((top) => [
-          top.dir,
-          byDir.get(top.dir)?.name,
-        ]),
-      ),
-    ),
   ];
+  return { stale, doubts: [...new Set(doubts)] };
 }
 
-/** Throw the error a stale lock is, naming up to twenty differences. */
+/** Throw the error a lock opm cannot hold to the project's overrides is. */
+export function refuseDoubts(doubts: readonly string[]): never {
+  throw new ProviderError(
+    'INVALID_LOCKFILE',
+    `opm ci cannot tell whether pnpm-lock.yaml is up to date with the project's overrides: ${doubts.slice(0, 20).join('; ')}${doubts.length > 20 ? `; and ${doubts.length - 20} more` : ''}. opm compares ranges written with ^, ~, comparators, x-ranges, hyphen ranges and || over versions without a prerelease, which it reads as pnpm does; write the override in those terms`,
+  );
+}
+
+/**
+ * Throw the error a stale lock is, naming up to twenty differences. Every one
+ * is a check `pnpm install --frozen-lockfile` makes as well.
+ */
 export function refuseStale(problems: readonly string[]): never {
   const shown = problems.slice(0, 20).join('; ');
   const more = problems.length > 20 ? `; and ${problems.length - 20} more` : '';

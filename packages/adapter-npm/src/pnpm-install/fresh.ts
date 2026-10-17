@@ -12,7 +12,6 @@
  */
 
 import type { PnpmLock, PnpmImporter } from '../pnpm-lock/types.js';
-import type { PnpmModel } from './model.js';
 import { quote } from './quote.js';
 
 /** The four dependency lists of a manifest. */
@@ -138,28 +137,5 @@ export function catalogProblems(
           `the catalog ${quote(catalog)} has ${quote(name)} as ${quote(have)} in the project and ${quote(entry.specifier)} in pnpm-lock.yaml`,
         );
     }
-  return problems;
-}
-
-/**
- * A link is installed under the member's own name (ADR 0055 §11), so the name
- * a dependency links it by must be the name the member's `package.json` gives.
- */
-export function linkNameProblems(
-  model: PnpmModel,
-  tops: ReadonlySet<string>,
-  names: ReadonlyMap<string, string | undefined>,
-): string[] {
-  const problems: string[] = [];
-  for (const id of tops)
-    for (const edge of model.tops.get(id)?.edges ?? [])
-      if (edge.kind === 'link' && edge.memberId !== undefined) {
-        const dir = model.tops.get(edge.memberId)!.dir;
-        const name = names.get(dir);
-        if (name !== edge.as)
-          problems.push(
-            `${id === '.' ? 'the project' : quote(id)} links ${quote(dir)} as ${quote(edge.as)}, and the member there is ${name === undefined ? 'nameless' : `called ${quote(name)}`}: opm links a member under its own name only`,
-          );
-      }
   return problems;
 }

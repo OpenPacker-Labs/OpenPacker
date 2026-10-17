@@ -24,7 +24,9 @@ import { MAXIMUM_LOCK_BYTES, readBoundedBytes } from '../frozen-read.js';
 import {
   freshnessProblems,
   memberProblems,
+  presentImporters,
   readRootProject,
+  refuseDoubts,
   refuseStale,
 } from './check.js';
 import { linkTargetBetween, placePath } from '../layout-links.js';
@@ -94,8 +96,16 @@ export async function readFrozenPnpmLock(
       'INVALID_LOCKFILE',
       'opm ci --omit peer does not apply to a pnpm lock: it writes resolved peers as ordinary dependencies, so there is nothing to omit them by',
     );
-  const tops = selectTops(model, options.workspace?.scope);
+  // The project's own files: its settings, and the members its workspace has.
+  // pnpm installs the importers the project has and leaves alone any the lock
+  // still lists after their member went (ADR 0055 §15).
   const root = await readRootProject(project);
+  const disk = (await options.workspace?.disk()) ?? [];
+  const present =
+    options.workspace === undefined
+      ? new Set(model.tops.keys())
+      : presentImporters(model, disk);
+  const tops = selectTops(model, options.workspace?.scope, present);
   const targets = platformsOf(options, root.config);
   const selection = selectInstances({
     model,
@@ -108,22 +118,22 @@ export async function readFrozenPnpmLock(
     selection,
     options.registry ?? PUBLIC_REGISTRY,
   );
-  const lockOnly = [...importerRefusals(model, tops), ...sourceRefusals];
+  const lockOnly = [
+    ...importerRefusals(model, tops, present),
+    ...sourceRefusals,
+  ];
   if (lockOnly.length > 0) return refuse(lockOnly);
 
   // 2. What needs the project's own files.
-  const disk =
-    model.tops.size > 1 || options.workspace !== undefined
-      ? ((await options.workspace?.disk()) ?? [])
-      : [];
   const members =
     options.workspace === undefined ? [] : memberProblems(model, disk);
   if (members.length > 0)
     throw new ProviderError(
       'INVALID_LOCKFILE',
-      `pnpm-lock.yaml and the project's workspace are not in sync (pnpm install --frozen-lockfile would refuse too): ${members.join('; ')}`,
+      `pnpm-lock.yaml does not list every member of the project's workspace (opm ci installs what the lock lists, and a member with dependencies has to be in it; pnpm install writes it there): ${members.join('; ')}`,
     );
-  const stale = freshnessProblems({ root, model, tops, disk });
+  const { stale, doubts } = freshnessProblems({ root, model, present, disk });
+  if (doubts.length > 0) refuseDoubts(doubts);
   if (stale.length > 0) refuseStale(stale);
 
   // 3. What needs the machine.
@@ -166,7 +176,7 @@ export async function readFrozenPnpmLock(
       }),
     };
   });
-  const workspace = workspaceOf(model, tops, placement.links, disk);
+  const workspace = workspaceOf(model, tops, present, placement.links, disk);
   return {
     ...common,
     ...(targets.length > 1 && { targets }),
@@ -181,10 +191,14 @@ export async function readFrozenPnpmLock(
 function workspaceOf(
   model: PnpmModel,
   tops: ReadonlySet<string>,
+  present: ReadonlySet<string>,
   links: readonly { name: string; memberDir: string }[],
   disk: readonly WorkspaceMember[],
 ): FrozenLockWorkspace | undefined {
+  // Only the members the project has: a directory the lock remembers and the
+  // workspace no longer declares is not the install's to clear.
   const dirs = [...model.tops.values()]
+    .filter((top) => present.has(top.id))
     .map((top) => top.dir)
     .filter((dir) => dir !== '');
   if (dirs.length === 0) return undefined;

@@ -31,6 +31,8 @@ export interface PnpmProjectConfig {
   readonly supportedArchitectures: SupportedArchitectures | undefined;
   /** The patches the project declares, by `name@version` or name. */
   readonly patches: readonly string[];
+  /** The root `package.json`'s own name and version, for a `parent>name` override. */
+  readonly project: { readonly name?: string; readonly version?: string };
 }
 
 type Json = Record<string, unknown>;
@@ -151,7 +153,10 @@ export async function readPnpmProjectConfig(
       'pnpm-workspace.yaml patchedDependencies',
     ).keys(),
   ];
+  const own = (key: 'name' | 'version') =>
+    typeof manifest[key] === 'string' ? { [key]: manifest[key] } : {};
   return {
+    project: { ...own('name'), ...own('version') },
     overrides: resolveReferences(overrides, rootSpecifiers),
     catalogs,
     supportedArchitectures:

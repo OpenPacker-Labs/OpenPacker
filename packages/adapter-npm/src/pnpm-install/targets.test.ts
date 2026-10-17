@@ -16,6 +16,7 @@ const config = (
   catalogs: new Map(),
   supportedArchitectures,
   patches: [],
+  project: {},
 });
 
 describe('the machines an install is for', () => {
