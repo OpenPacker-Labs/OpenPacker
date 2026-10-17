@@ -18,8 +18,7 @@ import {
   resolveRegistryArtifactDeferred,
 } from './registry.js';
 import type { ToolPackage } from './ephemeral-layout.js';
-import { resolveGraph } from './resolve.js';
-import { solveGraph } from './solve.js';
+import { solveToolClosure } from './ephemeral-closure.js';
 import { requireAdapterRegistry } from './adapters.js';
 import {
   captureFactsFromCatalog,
@@ -134,37 +133,22 @@ export async function fetchTool(input: {
   const runtimePaths = [primary.storePath];
   const closure: ToolPackage[] = [toolPackage(primary)];
   try {
-    const graph = await resolveGraph({
-      roots: [{ purl: stripPurlVersion(primary.exactPurl) }],
+    const solved = await solveToolClosure({
+      tool: primary.exactPurl,
+      ecosystem,
     });
-    if (graph.packages.length > 0) {
-      const solved = await solveGraph({
-        graph,
-        rootRequirements: [{ purl: stripPurlVersion(primary.exactPurl) }],
-      });
-      for (const instance of solved.selected) {
-        const depExact = instance.identity.exactPurl;
-        if (!depExact || depExact === primary.exactPurl) continue;
-        const depEco = instance.identity.purlType;
-        if (!requireAdapterRegistry().has(depEco)) continue;
-        const dep = await materialiseExact(depEco, depExact, cacheRoot);
+    if (solved !== undefined) {
+      for (const { exactPurl, purlType } of solved.dependencies) {
+        if (!requireAdapterRegistry().has(purlType)) continue;
+        const dep = await materialiseExact(purlType, exactPurl, cacheRoot);
         if (!runtimePaths.includes(dep.storePath)) {
           runtimePaths.push(dep.storePath);
           closure.push(toolPackage(dep));
         }
       }
       // Which package each one requires, for the layout an npm tool runs from.
-      const exactOf = new Map(
-        solved.selected.map((item) => [item.nodeId, item.identity.exactPurl]),
-      );
-      for (const pkg of closure) pkg.requires = {};
-      for (const edge of solved.dependencyEdges) {
-        const from = exactOf.get(edge.fromNodeId);
-        const to = exactOf.get(edge.toNodeId);
-        const dependent = closure.find((pkg) => pkg.exactPurl === from);
-        if (dependent?.requires !== undefined && to !== undefined)
-          dependent.requires[edge.installName] = to;
-      }
+      for (const pkg of closure)
+        pkg.requires = solved.requires.get(pkg.exactPurl) ?? {};
     }
   } catch {
     // Direct tool only; the run path still works for packages without a graph.
