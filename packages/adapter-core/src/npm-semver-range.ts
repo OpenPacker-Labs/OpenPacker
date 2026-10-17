@@ -89,6 +89,7 @@ const LONE_CARET = String.raw`(?:\^)`;
 
 const re = (source: string, flags = '') => new RegExp(safe(source), flags);
 const FULL = re(`^${FULL_PLAIN}$`);
+const LOOSE = re(`^${LOOSE_PLAIN}$`);
 const XRANGE = re(String.raw`^${GTLT}\s*${XRANGE_PLAIN}$`);
 const TILDE_TRIM = re(String.raw`(\s*)${LONE_TILDE}\s+`, 'g');
 const TILDE = re(`^${LONE_TILDE}${XRANGE_PLAIN}$`);
@@ -211,6 +212,38 @@ export function npmVersion(text: string): string | undefined {
   )
     return undefined;
   return `${major}.${minor}.${patch}${prerelease === undefined ? '' : `-${prerelease}`}`;
+}
+
+/**
+ * A version as node-semver's loose `SemVer` compares it (each number and each
+ * numeric prerelease identifier as a number, no build), or undefined where
+ * `new SemVer(text, { loose: true })` throws.
+ */
+function looseVersion(text: string): string | undefined {
+  if (text.length > MAX_LENGTH) return undefined;
+  const match = LOOSE.exec(text.trim());
+  if (match === null) return undefined;
+  const [, major, minor, patch, prerelease] = match;
+  const main = [major, minor, patch].map(Number);
+  if (main.some((part) => part > Number.MAX_SAFE_INTEGER)) return undefined;
+  const ids = (prerelease ?? '')
+    .split('.')
+    .filter((id) => id !== '')
+    .map((id) => (/^[0-9]+$/u.test(id) ? String(Number(id)) : id));
+  return `${main.join('.')}${ids.length > 0 ? `-${ids.join('.')}` : ''}`;
+}
+
+/**
+ * Whether two versions are one as pnpm compares an archive's version with the
+ * lock's (`equalOrSemverEqual`): the same text, or node-semver's
+ * `eq(a, b, { loose: true })`. Loose reading takes `=1.0.0`, `vv1.0.0`,
+ * `01.0.0` and `1.0.0-01` as spellings of one version and ignores build
+ * metadata; it never makes two different versions one.
+ */
+export function npmVersionsEqual(left: string, right: string): boolean {
+  if (left === right) return true;
+  const read = looseVersion(left);
+  return read !== undefined && read === looseVersion(right);
 }
 
 /** node-semver's `Comparator`: the operator and version, `*`, or undefined when it refuses it. */

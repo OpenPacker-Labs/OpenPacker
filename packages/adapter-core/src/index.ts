@@ -44,7 +44,7 @@ export { ProviderError } from './provider-error.js';
 import { ProviderError } from './provider-error.js';
 import { createNpmRangeEngine, type RangeEngine } from './workspace/ranges.js';
 import { npmAst } from './npm-semver-range.js';
-export { npmVersion } from './npm-semver-range.js';
+export { npmVersion, npmVersionsEqual } from './npm-semver-range.js';
 import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
 import type { NativeLayoutWorkspace } from './layout-workspace.js';
 import type { WorkspaceTool } from './workspace/members.js';

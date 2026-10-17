@@ -37,22 +37,6 @@ describe('the archives of a pnpm install', () => {
       { version: '9.9.9' },
       /"b@1\.0\.0".* is "b@9\.9\.9", and the lock records version "1\.0\.0"/u,
     ],
-    // pnpm compares versions loosely and takes these; opm reads one strictly.
-    [
-      'a version written =1.0.0',
-      { version: '=1.0.0' },
-      /is "b@=1\.0\.0", and the lock records version "1\.0\.0"/u,
-    ],
-    [
-      'a version written vv1.0.0',
-      { version: 'vv1.0.0' },
-      /is "b@vv1\.0\.0", and the lock records version "1\.0\.0"/u,
-    ],
-    [
-      'a version written 01.0.0',
-      { version: '01.0.0' },
-      /is "b@01\.0\.0", and the lock records version "1\.0\.0"/u,
-    ],
     ['no name', { name: undefined }, /"b@1\.0\.0".* has no name/u],
   ])(
     'refuses an archive whose own package.json gives %s, before node_modules is touched',
@@ -74,14 +58,45 @@ describe('the archives of a pnpm install', () => {
     },
   );
 
-  it.each(['v1.0.0', '1.0.0+build.5', ' 1.0.0 '])(
-    'takes a version the archive writes %j as the same version',
-    async (version) => {
+  // pnpm's equalOrSemverEqual: the same text, or semver.eq(a, b, { loose: true }).
+  it.each([
+    ['1.0.0', 'v1.0.0'],
+    ['1.0.0', '1.0.0+build.5'],
+    ['1.0.0', ' 1.0.0 '],
+    ['1.0.0', '=1.0.0'],
+    ['1.0.0', 'vv1.0.0'],
+    ['1.0.0', '01.0.0'],
+    ['1.0.0-1', '1.0.0-01'],
+  ])(
+    'takes an archive that writes %j as %j, as pnpm does',
+    async (locked, written) => {
       const w = await pnpmWorld();
-      w.pkg({ name: 'c', version: '1.0.0', manifest: { version } });
-      w.importer('.', { dependencies: { c: ['^1.0.0', '1.0.0'] } });
+      w.pkg({ name: 'c', version: locked, manifest: { version: written } });
+      w.importer('.', { dependencies: { c: [locked, locked] } });
       await w.write();
       expect((await w.install()).installed).toBe(1);
+    },
+  );
+
+  it.each([
+    ['1.0.0', '1.0.1'],
+    ['1.0.0-1', '1.0.0'],
+    ['1.0.0', '1.0.0-1'],
+  ])(
+    'refuses an archive of %j that says it is %j, naming the version the lock records',
+    async (locked, written) => {
+      const w = await pnpmWorld();
+      w.pkg({ name: 'c', version: locked, manifest: { version: written } });
+      w.importer('.', { dependencies: { c: [locked, locked] } });
+      await w.write();
+      const error = await w.install().then(
+        () => undefined,
+        (thrown: Error & { code?: string }) => thrown,
+      );
+      expect(error?.code).toBe('DIGEST_MISMATCH');
+      expect(error?.message).toContain(
+        `the archive's package.json is "c@${written}", and the lock records version "${locked}"`,
+      );
     },
   );
 
