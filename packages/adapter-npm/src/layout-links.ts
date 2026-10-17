@@ -45,9 +45,13 @@ export class LayoutLinksError extends Error {
   }
 }
 
-/** `['b', 'c']` is `node_modules/b/node_modules/c`. */
-export function placePath(chain: readonly string[]): string {
-  return `node_modules/${chain.join('/node_modules/')}`;
+/**
+ * `['b', 'c']` is `node_modules/b/node_modules/c`; under a workspace member
+ * (`base`, its directory) the same chain starts in the member's own
+ * `node_modules`: `packages/x/node_modules/b/node_modules/c`.
+ */
+export function placePath(chain: readonly string[], base = ''): string {
+  return `${base === '' ? '' : `${base}/`}node_modules/${chain.join('/node_modules/')}`;
 }
 
 /**
@@ -86,11 +90,13 @@ function compareText(left: string, right: string): number {
  */
 export function checkLayoutLinks(
   links: readonly LayoutLink[],
-  placements: readonly Pick<Placement, 'chain'>[],
+  placements: readonly Pick<Placement, 'chain' | 'base'>[],
 ): readonly LayoutLink[] {
   if (links.length === 0) return [];
   const problems: string[] = [];
-  const placed = new Set(placements.map((place) => placePath(place.chain)));
+  const placed = new Set(
+    placements.map((place) => placePath(place.chain, place.base)),
+  );
   const seen = new Set<string>();
   const valid: LayoutLink[] = [];
   for (const link of links) {
@@ -122,8 +128,10 @@ export function checkLayoutLinks(
   }
   const linked = new Set(valid.map((link) => link.path));
   // Every place on the way down to a link or a package, nearest the root first.
-  const enclosing = (chain: readonly string[]): string[] =>
-    chain.slice(0, -1).map((_, index) => placePath(chain.slice(0, index + 1)));
+  const enclosing = (chain: readonly string[], base = ''): string[] =>
+    chain
+      .slice(0, -1)
+      .map((_, index) => placePath(chain.slice(0, index + 1), base));
   for (const link of valid) {
     const chain = chainOfPlace(link.path)!;
     for (const outer of enclosing(chain))
@@ -131,10 +139,10 @@ export function checkLayoutLinks(
         problems.push(`${link.path} is inside the link ${outer}`);
   }
   for (const place of placements)
-    for (const outer of enclosing(place.chain))
+    for (const outer of enclosing(place.chain, place.base))
       if (linked.has(outer))
         problems.push(
-          `the package at ${placePath(place.chain)} would be written through the link ${outer}`,
+          `the package at ${placePath(place.chain, place.base)} would be written through the link ${outer}`,
         );
   if (problems.length > 0) throw new LayoutLinksError(problems);
   return [...valid].sort((left, right) => compareText(left.path, right.path));

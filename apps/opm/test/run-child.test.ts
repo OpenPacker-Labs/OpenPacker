@@ -1,17 +1,16 @@
-import { spawnSync } from 'node:child_process';
-import { EventEmitter } from 'node:events';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { exitStatus, runChild, startChild } from '../src/commands/run-child.js';
 import {
-  exitStatus,
-  processHost,
-  runChild,
-  type ChildHost,
-  type ChildSpec,
-} from '../src/commands/run-child.js';
+  alive,
+  capture,
+  node,
+  testHost,
+  waitFor,
+} from './run-child-fixture.js';
 
 const temps: string[] = [];
 afterEach(async () => {
@@ -19,81 +18,6 @@ afterEach(async () => {
     temps.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
   );
 });
-
-function capture() {
-  let out = '';
-  let err = '';
-  return {
-    io: {
-      stdout: { write: (s: string) => ((out += s), true) },
-      stderr: { write: (s: string) => ((err += s), true) },
-    },
-    get out() {
-      return out;
-    },
-    get err() {
-      return err;
-    },
-  };
-}
-
-function node(args: string[]): ChildSpec {
-  return {
-    plan: {
-      file: process.execPath,
-      args,
-      windowsVerbatimArguments: false,
-    },
-    cwd: tmpdir(),
-    env: { PATH: process.env.PATH ?? '' },
-    label: 'test child',
-  };
-}
-
-async function waitFor(condition: () => boolean, ms = 5000): Promise<void> {
-  const deadline = Date.now() + ms;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error('timed out waiting');
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-}
-
-/** Running, and not a zombie waiting for a parent that will never reap it. */
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-  } catch {
-    return false;
-  }
-  try {
-    // "<pid> (<name>) <state> ..." and the name may hold spaces and brackets.
-    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
-    return (
-      stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3) !== 'Z'
-    );
-  } catch {
-    const state = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], {
-      encoding: 'utf8',
-    }).stdout.trim();
-    return state !== '' && !state.startsWith('Z');
-  }
-}
-
-/** A host whose signals the test sends, and whose terminal state it chooses. */
-function testHost(hasTerminal: boolean) {
-  const signals = new EventEmitter();
-  const host: ChildHost = {
-    ...processHost,
-    hasTerminal,
-    onSignal(signal, listener) {
-      signals.on(signal, listener);
-      return () => {
-        signals.off(signal, listener);
-      };
-    },
-  };
-  return { host, signals };
-}
 
 describe('exitStatus', () => {
   it('is the code, or 128 plus the signal number', () => {
@@ -258,5 +182,47 @@ describe.skipIf(process.platform === 'win32')('signal forwarding', () => {
     const { host, signals } = testHost(false);
     await runChild(node(['-e', '0']), capture().io, host);
     expect(signals.emit('SIGTERM')).toBe(false);
+  });
+});
+
+describe('startChild', () => {
+  it('gives a child with stdin ignored an empty input instead of the parent terminal', async () => {
+    const spec = node([
+      '-e',
+      "process.stdin.on('data', () => {}).on('end', () => console.log('eof'))",
+    ]);
+    spec.stdin = 'ignore';
+    const cap = capture();
+    const outcome = await startChild(spec, cap.io).outcome;
+    expect(outcome.code).toBe(0);
+    expect(cap.out).toBe('eof\n');
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'signals one child by the same rules a signal sent to opm follows, and does not subscribe the process',
+    async () => {
+      const before = process.listenerCount('SIGTERM');
+      const { host } = testHost(false);
+      const running = startChild(
+        node(['-e', 'setInterval(() => {}, 1000)']),
+        capture().io,
+        host,
+      );
+      expect(process.listenerCount('SIGTERM')).toBe(before);
+      running.signal('SIGTERM');
+      expect((await running.outcome).signal).toBe('SIGTERM');
+      // A child that has ended is left alone.
+      running.signal('SIGTERM');
+    },
+  );
+
+  it('rejects, rather than throws, when the program cannot start', async () => {
+    const spec = node([]);
+    spec.plan.file = join(tmpdir(), 'opm-no-such-program-xyz');
+    const running = startChild(spec, capture().io);
+    await expect(running.outcome).rejects.toMatchObject({
+      code: 'UNAVAILABLE',
+    });
+    running.signal('SIGTERM');
   });
 });

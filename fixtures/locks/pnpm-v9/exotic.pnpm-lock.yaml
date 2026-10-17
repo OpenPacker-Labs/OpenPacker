@@ -1,0 +1,293 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+  peersSuffixMaxLength: 500
+  injectWorkspacePackages: true
+
+catalogs:
+  default:
+    react:
+      specifier: ^18.2.0
+      version: 18.2.0
+  react17:
+    react:
+      specifier: ^17.0.2
+      version: 17.0.2
+
+overrides:
+  foo>bar: 1.0.0
+  '@scope/x': '-'
+  js-yaml@^3: 3.15.2
+
+packageExtensionsChecksum: sha256-76rUZnn0JnQPQ1cMZWBProdhDc+jnx1fFTjinuvfEnw=
+pnpmfileChecksum: sha256-xmkqz/m+Uml5Ir9lyFDHAQlU+ZcCTYCjv+QM5vJqc5s=
+
+ignoredOptionalDependencies:
+  - fsevents-legacy
+
+patchedDependencies:
+  braces@3.0.3:
+    hash: 4xvpjxl2cvoyavmjc5iy4cxody
+    path: patches/braces@3.0.3.patch
+  node-forge@1.4.0:
+    hash: t5mdhtmee62qrmslneddj2vaja
+    path: patches/node-forge@1.4.0.patch
+
+time:
+  react@18.2.0: '2022-06-14T20:31:21.346Z'
+
+importers:
+
+  .:
+    dependencies:
+      '@scope/lib':
+        specifier: workspace:*
+        version: link:packages/lib
+      braces:
+        specifier: 3.0.3
+        version: 3.0.3(patch_hash=4xvpjxl2cvoyavmjc5iy4cxody)
+      git-dep:
+        specifier: git+https://git.example.com/foo/git-dep.git#main
+        version: git+https://git.example.com/foo/git-dep.git#0123456789abcdef0123456789abcdef01234567
+      git-sub:
+        specifier: github:owner/mono#path:packages/sub
+        version: git+ssh://git@github.com/owner/mono.git#89abcdef0123456789abcdef0123456789abcdef&path:packages/sub
+      injected:
+        specifier: workspace:*
+        version: file:packages/injected
+      is-positive:
+        specifier: https://codeload.github.com/kevva/is-positive/tar.gz/97edff6f525f192a3f83cea1944765f769ae2678
+        version: https://codeload.github.com/kevva/is-positive/tar.gz/97edff6f525f192a3f83cea1944765f769ae2678
+      local-dir:
+        specifier: file:vendor/local-dir
+        version: file:vendor/local-dir
+      local-tgz:
+        specifier: file:vendor/local-tgz.tgz
+        version: file:vendor/local-tgz.tgz
+      node:
+        specifier: runtime:22.12.0
+        version: runtime:22.12.0
+      node-forge:
+        specifier: 1.4.0
+        version: 1.4.0(patch_hash=t5mdhtmee62qrmslneddj2vaja)
+      react:
+        specifier: 'catalog:'
+        version: 18.2.0
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.2.0(react@18.2.0)
+      string-width-cjs:
+        specifier: npm:string-width@^4.2.0
+        version: string-width@4.2.3
+      wide-peers:
+        specifier: ^1.0.0
+        version: 1.0.0(0295845ba569f38531bc9397ad5c2b62)
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+    optionalDependencies:
+      fsevents:
+        specifier: ^2.3.3
+        version: 2.3.3
+    dependenciesMeta:
+      injected:
+        injected: true
+    publishDirectory: dist
+
+  packages/injected: {}
+
+  packages/lib:
+    dependencies:
+      react:
+        specifier: catalog:react17
+        version: 17.0.2
+
+packages:
+
+  braces@3.0.3:
+    resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
+    engines: {node: '>=8'}
+
+  fill-range@7.1.1:
+    resolution: {integrity: sha512-YsGpe3WHLK8ZYi4tWDg2Jy3ebRz2rXowDxnld4bkQB00cc/1Zw9AWnC0i9ztDJitivtQvaI9KaLyKrc+hBW0yg==}
+    engines: {node: '>=8'}
+
+  fsevents@2.3.3:
+    resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
+    engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
+    os: [darwin]
+
+  git-dep@git+https://git.example.com/foo/git-dep.git#0123456789abcdef0123456789abcdef01234567:
+    resolution: {commit: 0123456789abcdef0123456789abcdef01234567, repo: https://git.example.com/foo/git-dep.git, type: git}
+    version: 1.0.0
+
+  git-sub@git+ssh://git@github.com/owner/mono.git#89abcdef0123456789abcdef0123456789abcdef&path:packages/sub:
+    resolution: {commit: 89abcdef0123456789abcdef0123456789abcdef, path: packages/sub, repo: ssh://git@github.com/owner/mono.git, type: git}
+    version: 2.1.0
+
+  injected@file:packages/injected:
+    resolution: {directory: packages/injected, type: directory}
+    version: 0.0.1
+
+  is-number@7.0.0:
+    resolution: {integrity: sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng==}
+    engines: {node: '>=0.12.0'}
+
+  is-positive@https://codeload.github.com/kevva/is-positive/tar.gz/97edff6f525f192a3f83cea1944765f769ae2678:
+    resolution: {tarball: https://codeload.github.com/kevva/is-positive/tar.gz/97edff6f525f192a3f83cea1944765f769ae2678}
+    version: 3.1.0
+    engines: {node: '>=0.10.0'}
+
+  js-tokens@4.0.0:
+    resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
+
+  local-dir@file:vendor/local-dir:
+    resolution: {directory: vendor/local-dir, type: directory}
+    version: 1.0.0
+
+  local-tgz@file:vendor/local-tgz.tgz:
+    resolution: {integrity: sha512-wejNH1JMspzQybtfsqjVY/fn7As67PZmTFOiWA0syqfn773qY81DO9El98b3Aq8wjeHbQf8cew7ZuimJd2vEIA==, tarball: file:vendor/local-tgz.tgz}
+    version: 1.2.3
+
+  loose-envify@1.4.0:
+    resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
+    hasBin: true
+
+  node-forge@1.4.0:
+    resolution: {integrity: sha512-LarFH0+6VfriEhqMMcLX2F7SwSXeWwnEAJEsYm5QKWchiVYVvJyV9v7UDvUv+w5HO23ZpQTXDv/GxdDdMyOuoQ==}
+    engines: {node: '>= 6.13.0'}
+
+  node@runtime:22.12.0:
+    resolution:
+      type: variations
+      variants:
+        - resolution: {type: binary, archive: tarball, bin: bin/node, integrity: sha256-rjMuSR9otueBz02fwbnMX3/L4a2CcbP3EKFURDVEdWU=, url: https://nodejs.org/download/release/v22.12.0/node-v22.12.0-linux-x64.tar.gz}
+          targets:
+            - {os: linux, cpu: x64, libc: glibc}
+            - {os: linux, cpu: x64, libc: musl}
+        - resolution: {type: binary, archive: zip, bin: node.exe, integrity: sha256-KSxaiDQmwR9zpwhBkqaYmqBLwgPrB8Jz51Uh+ONEah0=, prefix: node-v22.12.0-win-x64, url: https://nodejs.org/download/release/v22.12.0/node-v22.12.0-win-x64.zip}
+          targets:
+            - {os: win32, cpu: x64}
+    version: 22.12.0
+    hasBin: true
+
+  react-dom@18.2.0:
+    resolution: {integrity: sha512-2jXrws9Yhfbk0LYlskt5Yd1a2o4N1aElsDmvvDdBpNDY8qCsXlL7BISQo7n4Ovi0qXHc3LtkJYqjupHygzooCg==}
+    peerDependencies:
+      react: ^18.2.0
+
+  react@17.0.2:
+    resolution: {integrity: sha512-5kTGyzWApwvZJxc1LX3fNeM7/k5VvM/hIE+iZWpvlOF3XeRM5wvPbZifmk6B41cC1kwYhktGk5FuHN7cPoCuEQ==}
+    engines: {node: '>=0.10.0'}
+
+  react@18.2.0:
+    resolution: {integrity: sha512-tzfvttu5NPnIthiA0NMeRBAum+mqVSlFPQNISI1vWsVWyog2QMKDsMyWnaUJlOtFAsAitKNRTCVg4CeOTcZXCA==}
+    engines: {node: '>=0.10.0'}
+
+  scheduler@0.23.2:
+    resolution: {integrity: sha512-pztT7N9Pwr6Rq8czHYIgAvsbxdt5LtAoB96tpRpUuaHZ0wP3zHEMTfoW0Nyh4+kV2pO+LEmhwLPKc/gJxvMNFQ==}
+
+  string-width@4.2.3:
+    resolution: {integrity: sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==}
+    engines: {node: '>=8'}
+    bundledDependencies:
+      - emoji-regex
+      - strip-ansi
+
+  to-regex-range@5.0.1:
+    resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
+    engines: {node: '>=8.0'}
+
+  typescript@5.9.3:
+    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
+  wide-peers@1.0.0:
+    resolution: {integrity: sha512-AteymLRexPHdf7LMfWOC3k7cN8bsfwapepA9CM9G33+Y7BgYKB5rRNArlfL+8KhSEmDe1kxqv7m345BeURQfzw==}
+    peerDependencies:
+      react: '*'
+      react-dom: '*'
+    peerDependenciesMeta:
+      react-dom:
+        optional: true
+    bundledDependencies: true
+    deprecated: Use "narrow-peers" instead.
+    cpu: [x64, arm64]
+    libc: [glibc]
+
+snapshots:
+
+  braces@3.0.3(patch_hash=4xvpjxl2cvoyavmjc5iy4cxody):
+    dependencies:
+      fill-range: 7.1.1
+
+  fill-range@7.1.1:
+    dependencies:
+      to-regex-range: 5.0.1
+
+  fsevents@2.3.3:
+    optional: true
+
+  git-dep@git+https://git.example.com/foo/git-dep.git#0123456789abcdef0123456789abcdef01234567: {}
+
+  git-sub@git+ssh://git@github.com/owner/mono.git#89abcdef0123456789abcdef0123456789abcdef&path:packages/sub: {}
+
+  injected@file:packages/injected: {}
+
+  is-number@7.0.0: {}
+
+  is-positive@https://codeload.github.com/kevva/is-positive/tar.gz/97edff6f525f192a3f83cea1944765f769ae2678: {}
+
+  js-tokens@4.0.0: {}
+
+  local-dir@file:vendor/local-dir: {}
+
+  local-tgz@file:vendor/local-tgz.tgz:
+    dependencies:
+      is-number: 7.0.0
+
+  loose-envify@1.4.0:
+    dependencies:
+      js-tokens: 4.0.0
+
+  node-forge@1.4.0(patch_hash=t5mdhtmee62qrmslneddj2vaja): {}
+
+  node@runtime:22.12.0: {}
+
+  react-dom@18.2.0(react@18.2.0):
+    dependencies:
+      loose-envify: 1.4.0
+      react: 18.2.0
+      scheduler: 0.23.2
+
+  react@17.0.2:
+    dependencies:
+      loose-envify: 1.4.0
+
+  react@18.2.0:
+    dependencies:
+      loose-envify: 1.4.0
+
+  scheduler@0.23.2:
+    dependencies:
+      loose-envify: 1.4.0
+
+  string-width@4.2.3: {}
+
+  to-regex-range@5.0.1:
+    dependencies:
+      is-number: 7.0.0
+
+  typescript@5.9.3: {}
+
+  wide-peers@1.0.0(0295845ba569f38531bc9397ad5c2b62):
+    dependencies:
+      react: 18.2.0
+    optionalDependencies:
+      react-dom: 18.2.0(react@18.2.0)
+    transitivePeerDependencies:
+      - supports-color

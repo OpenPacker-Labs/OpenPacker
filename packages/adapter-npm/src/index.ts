@@ -3,6 +3,17 @@ import * as dependencyText from './dependency-spec.js';
 import { HeldPackuments, type PackumentRecord } from './held-packuments.js';
 import { PublishTimes } from './publish-time.js';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
+import { isNpmAlias, parseNpmAlias } from './alias.js';
+import { aliasRequirement } from './alias-requirement.js';
+import {
+  identityFromPurl,
+  npmName,
+  npmNamespace,
+  sriSha256,
+} from './npm-identity.js';
+import { npmRangeVers } from './range-vers.js';
+import { unsafeNameProblem } from './layout-plan.js';
+import { asBundled, bundledDependencyNames } from './bundled.js';
 import { npmTargetPredicate } from './platform.js';
 import {
   MAXIMUM_PACKUMENT_BYTES,
@@ -17,7 +28,6 @@ import {
 } from './npm-range.js';
 import type {
   ArtifactDescriptor,
-  Digest,
   PackageIdentity,
   PackageInstance,
   Requirement,
@@ -50,7 +60,6 @@ import {
   type NativeCoordinate,
   type ParsedRange,
   type ParsedVersion,
-  type RangeAst,
   type ProviderCapabilities,
   type ProviderInspection,
   type ProviderRecord,
@@ -66,6 +75,13 @@ export interface NpmVersionMetadata {
   peerDependencies?: Record<string, string>;
   peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   devDependencies?: Record<string, string>;
+  /**
+   * Names of dependencies that ship inside this package's own archive. The
+   * abbreviated packument carries them as an array; `true` (every dependency)
+   * and the `bundledDependencies` spelling are read from the full document.
+   */
+  bundleDependencies?: string[] | boolean;
+  bundledDependencies?: string[] | boolean;
   engines?: Record<string, string>;
   os?: string[];
   cpu?: string[];
@@ -122,132 +138,12 @@ export interface NpmPackageLockV3 {
   >;
 }
 
-const npmName = (namespace: string | undefined, name: string): string =>
-  namespace === undefined ? name : `@${namespace.replace(/^@/, '')}/${name}`;
-const npmNamespace = (namespace: string | undefined): string | undefined =>
-  namespace === undefined
-    ? undefined
-    : `@${namespace.replace(/^@/, '').toLowerCase()}`;
-
-function identityFromPurl(value: string): PackageIdentity {
-  const parsed = parsePurl(value);
-  const base = formatPurl({ ...parsed, version: undefined });
-  const identity: PackageIdentity = {
-    canonicalPurl: base,
-    purlType: 'npm',
-    name: parsed.name,
-    qualifiers: { ...parsed.qualifiers },
-    nativeCoordinates: [
-      {
-        ecosystem: 'npm',
-        coordinate: npmName(parsed.namespace, parsed.name),
-        ...(!(parsed.version === undefined) && { version: parsed.version }),
-      },
-    ],
-    aliases: [],
-    sourceRefs: [],
-    publisherRefs: [],
-    externalRefs: [],
-  };
-  if (parsed.namespace !== undefined) identity.namespace = parsed.namespace;
-  if (parsed.version !== undefined) {
-    identity.version = parsed.version;
-    identity.exactPurl = formatPurl(parsed);
-  }
-  if (parsed.subpath !== undefined) identity.subpath = parsed.subpath;
-  return identity;
-}
-
-function sriSha256(value: string | undefined): Digest | undefined {
-  const token = value
-    ?.split(/\s+/)
-    .find((entry) => entry.startsWith('sha256-'));
-  if (!token) return undefined;
-  try {
-    const bytes = Uint8Array.from(atob(token.slice(7)), (character) =>
-      character.charCodeAt(0),
-    );
-    if (bytes.byteLength !== 32) return undefined;
-    return {
-      algorithm: 'sha256',
-      value: [...bytes]
-        .map((byte) => byte.toString(16).padStart(2, '0'))
-        .join(''),
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-/** What the right-hand side of a dependency entry asks npm to do. */
-export type NpmDependencySpecKind =
-  | 'range'
-  | 'tag'
-  | 'alias'
-  | 'git'
-  | 'url'
-  | 'file'
-  | 'workspace';
-
-const GIT_SPEC =
-  /^(?:git(?:\+[a-z]+)?:|github:|gitlab:|bitbucket:|gist:|git@)/iu;
-const GITHUB_SHORTHAND = /^[\w.-]+\/[\w.-]+(?:#.+)?$/u;
-
-/**
- * Read a dependency specifier the way npm does: anything that is not a version
- * range and not a recognizable source is a dist-tag.
- */
-export function classifyDependencySpec(spec: string): NpmDependencySpecKind {
-  const value = spec.trim();
-  if (value.startsWith('npm:')) return 'alias';
-  if (value.startsWith('workspace:')) return 'workspace';
-  if (
-    /^(?:file|link|portal):/iu.test(value) ||
-    /^(?:\.{1,2}\/|\/|~\/)/u.test(value)
-  )
-    return 'file';
-  if (GIT_SPEC.test(value) || GITHUB_SHORTHAND.test(value)) return 'git';
-  if (/^https?:\/\//iu.test(value)) return 'url';
-  try {
-    new NpmCodec().parseNativeRange(value);
-    return 'range';
-  } catch {
-    return 'tag';
-  }
-}
-
-/**
- * The comparison form of an npm range, for the solver to enforce.
- *
- * `parseNativeRange` offers a VERS only for an exact version, so every `^`,
- * `~`, `>=` or `||` range reached the solver as "any version of this package".
- * With one edge per package that went unseen, because the walk only admits
- * versions that satisfy some edge's range; with two edges that need different
- * ranges the solver took the newest of the union for both, and a lock could pair
- * a package with a version it does not accept. Ranges are a union of
- * conjunctions of comparisons, which is what this dialect of VERS says with
- * `|` (and) and `||` (or). `*` constrains nothing.
- *
- * It is a superset, not an equal: a comparison form admits a prerelease of a
- * higher version that npm's `^2.9.0` excludes. The solve's answer is therefore
- * re-checked edge by edge against the native range (see `solveGraph`).
- */
-export function npmRangeVers(ast: RangeAst): string | undefined {
-  const alternatives = ast.type === 'or' ? ast.items : [ast];
-  const rendered: string[] = [];
-  for (const alternative of alternatives) {
-    if (alternative.type === 'any') return undefined;
-    const clauses =
-      alternative.type === 'and' ? alternative.items : [alternative];
-    const parts: string[] = [];
-    for (const clause of clauses) {
-      if (clause.type !== 'comparison') return undefined;
-      parts.push(`${clause.operator}${clause.version}`);
-    }
-    rendered.push(parts.join('|'));
-  }
-  return rendered.length === 0 ? undefined : `vers:npm/${rendered.join('||')}`;
-}
+export { npmRangeVers };
+export {
+  classifyDependencySpec,
+  type NpmDependencySpecKind,
+} from './dependency-spec.js';
+import { classifyDependencySpec } from './dependency-spec.js';
 
 function npmPackagePurl(name: string): string {
   const coordinate = new NpmCodec().parseNativeCoordinate(name);
@@ -269,20 +165,55 @@ function npmRequirement(
   path: string,
   owner: string,
   enforced: boolean,
+  followed: boolean = enforced,
 ): Requirement {
+  const alias = isNpmAlias(range) ? parseNpmAlias(range) : undefined;
+  // The key an alias is written under becomes a directory, and it is chosen by
+  // whoever published the package: it is held to the rule a package name is.
+  const aliasProblem =
+    alias === undefined
+      ? undefined
+      : 'problem' in alias
+        ? alias.problem
+        : unsafeNameProblem(name);
   const specKind = classifyDependencySpec(range);
   const dependencyField = path.slice(1).split('/')[0]!;
+  if (
+    alias !== undefined &&
+    'target' in alias &&
+    followed &&
+    aliasProblem === undefined
+  )
+    return aliasRequirement({
+      dependerNodeId,
+      installName: name,
+      aliasSpec: range,
+      alias,
+      kind,
+      optional,
+      endpoint,
+      path,
+      dependencyField,
+      purl: npmPackagePurl(alias.target),
+      parsed:
+        alias.kind === 'range'
+          ? new NpmCodec().parseNativeRange(alias.spec)
+          : undefined,
+    });
   if (specKind !== 'range') {
     // An install walks into `dependencies` and required peers. Reading
     // "github:user/repo" as "any version of the registry package with that
     // name" would be a dependency-confusion door, so those fail here, by name.
-    // The fields an install does not walk (development, optional, optional
-    // peers) are kept as what they say, with no version constraint attached,
-    // so inspecting a package never depends on its dev-time tooling.
+    // The fields an install does not walk (development, optional peers) are
+    // kept as what they say, with no version constraint attached, so inspecting
+    // a package never depends on its dev-time tooling.
     if (enforced)
       throw new ProviderError(
         'UNSUPPORTED_DEPENDENCY_SPEC',
-        dependencyText.unsupportedSpec(owner, name, range, specKind),
+        dependencyText.unsupportedSpec(owner, name, range, specKind) +
+          (aliasProblem === undefined
+            ? ''
+            : ` (${dependencyText.echoedReason(aliasProblem)})`),
       );
     return {
       id: `${dependerNodeId}:${kind}:${name}`,
@@ -444,6 +375,7 @@ export class NpmCodec
     ];
     const losses: SemanticLoss[] = [];
     const owner = `${metadata.name}@${metadata.version}`;
+    const bundled = bundledDependencyNames(metadata);
     for (const [dependencies, kind, optionalByKind, field] of fields) {
       for (const [name, range] of Object.entries(dependencies ?? {}).sort(
         ([left], [right]) => compareCodePoints(left, right),
@@ -453,22 +385,36 @@ export class NpmCodec
           (field === 'peerDependencies' &&
             metadata.peerDependenciesMeta?.[name]?.optional === true);
         // What an install walks into: runtime dependencies and required peers.
+        // A dependency this package ships inside its own archive is not walked
+        // into, whatever it says, because it is never resolved.
+        const bundledHere =
+          (field === 'dependencies' || field === 'optionalDependencies') &&
+          bundled.has(name);
         const enforced =
-          field === 'dependencies' ||
-          (field === 'peerDependencies' && !optional);
+          !bundledHere &&
+          (field === 'dependencies' ||
+            (field === 'peerDependencies' && !optional));
+        // Optional dependencies are walked where they run, so an alias in one
+        // (the per-platform builds of a native package) is read like any other.
+        const followed =
+          !bundledHere && (enforced || field === 'optionalDependencies');
         try {
+          const requirement = npmRequirement(
+            nodeId,
+            name,
+            range,
+            kind,
+            optional,
+            provenance.endpoint,
+            `/${field}/${name}`,
+            owner,
+            enforced,
+            followed,
+          );
           requirements.push(
-            npmRequirement(
-              nodeId,
-              name,
-              range,
-              kind,
-              optional,
-              provenance.endpoint,
-              `/${field}/${name}`,
-              owner,
-              enforced,
-            ),
+            bundledHere
+              ? asBundled(requirement, `/${field}/${name}`)
+              : requirement,
           );
         } catch (error) {
           if (enforced) throw error;
@@ -802,6 +748,31 @@ export class NpmRegistryProvider implements CatalogProvider {
           `${this.codec.canonicalizePurl(basePurl)}@${version}`,
         ),
       );
+  }
+
+  /**
+   * The exact version a dist-tag points at, or undefined when the package has
+   * no such tag (or the tag names a version the document does not list).
+   *
+   * Read from the `dist-tags` the abbreviated packument already carries, so a
+   * tag costs no request the walk was not going to make. A tag moves, so the
+   * caller records the version, never the tag.
+   */
+  async resolveTag(
+    basePurl: string,
+    tag: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
+    const packument = await this.packument(basePurl, signal);
+    const version = packument.body['dist-tags']?.[tag];
+    if (
+      typeof version !== 'string' ||
+      packument.body.versions[version] === undefined
+    )
+      return undefined;
+    return this.codec.canonicalizePurl(
+      `${this.codec.canonicalizePurl(basePurl)}@${version}`,
+    );
   }
 
   async inspect(
@@ -1189,5 +1160,9 @@ export {
   type LockForeignEntry,
   type LockLink,
   type LockRoot,
+  type LockWorkspace,
   type PackageLockTree,
 } from './lock-tree.js';
+export type { LockMember, LockMemberLink } from './lock-workspace.js';
+
+export * from './pnpm-lock/index.js';

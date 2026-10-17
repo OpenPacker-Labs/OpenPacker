@@ -8,14 +8,54 @@
  */
 
 import type { NativeTarget } from './host-target.js';
+import type { NativeLayoutWorkspace } from './layout-workspace.js';
+import type { WorkspaceMember } from './workspace/members.js';
 
 /** Which kinds of dependency an install leaves out. */
 export type FrozenOmit = 'dev' | 'optional' | 'peer';
+
+/**
+ * Which part of a workspace a frozen install installs, as `npm ci` reads
+ * `--workspace`, `--include-workspace-root` and `--workspaces=false`.
+ *
+ * - `all`: the root, every member and everything they need.
+ * - `members`: only these members (directories relative to the root) and what
+ *   they need; the root's own dependencies too when `includeRoot` is set.
+ * - `root`: the root's own dependencies, no member and no link to one.
+ */
+export type FrozenWorkspaceScope =
+  | { kind: 'all' }
+  | {
+      kind: 'members';
+      dirs: readonly string[];
+      includeRoot: boolean;
+    }
+  | { kind: 'root' };
+
+/** The workspace as the project's own files declare it, and the part to install. */
+export interface FrozenWorkspaceInput {
+  /**
+   * The members found on disk by the host's discovery (root included when it
+   * has a manifest); empty when the project declares no workspaces. Discovery
+   * reads every member's `package.json` strictly, so it is asked for only by a
+   * project that has a workspace to compare: the adapter calls it when the lock
+   * lists members or `package.json` declares `workspaces`, and never for a
+   * project with neither, which is installed as it always was.
+   */
+  disk(): Promise<readonly WorkspaceMember[]>;
+  scope: FrozenWorkspaceScope;
+}
 
 export interface FrozenLockOptions {
   /** The machine the install is for, in the ecosystem's own vocabulary. */
   target: NativeTarget;
   omit: ReadonlySet<FrozenOmit>;
+  /**
+   * Set by a host that discovered the project's workspace. A format that
+   * declares a `workspaceTool` is given it, so a lock that lists members is
+   * judged against the members on disk.
+   */
+  workspace?: FrozenWorkspaceInput;
 }
 
 /**
@@ -65,10 +105,11 @@ export interface FrozenLockSkip {
   version: string;
   /**
    * Why, in one word: left out by the options (`omitted`), for another
-   * platform (`platform`), needed only by something left out (`orphaned`), or
-   * shipped inside its parent's archive (`bundled`).
+   * platform (`platform`), needed only by something left out (`orphaned`),
+   * shipped inside its parent's archive (`bundled`), or outside the
+   * workspaces the install was asked for (`workspace`).
    */
-  kind: 'omitted' | 'platform' | 'orphaned' | 'bundled';
+  kind: 'omitted' | 'platform' | 'orphaned' | 'bundled' | 'workspace';
   /** The same, in words. */
   reason: string;
 }
@@ -92,6 +133,18 @@ export interface FrozenExtraction {
   acceptRedundantEntries: boolean;
 }
 
+/** The workspace part of what a frozen install does. */
+export interface FrozenLockWorkspace {
+  /**
+   * Every member directory the lock holds, root-relative. A frozen install
+   * clears each one's `node_modules` before it writes, as `npm ci` does,
+   * whichever members it then installs.
+   */
+  memberDirs: readonly string[];
+  /** What the layout links and shims: the members this install installs. */
+  layout: NativeLayoutWorkspace;
+}
+
 export interface FrozenLock {
   /** The lock file read, absolute. */
   lockPath: string;
@@ -106,4 +159,6 @@ export interface FrozenLock {
   skipped: FrozenLockSkip[];
   /** Why the lock cannot be installed as it stands; any entry stops the install. */
   refused: FrozenLockRefusal[];
+  /** Present when the lock is a workspace's. */
+  workspace?: FrozenLockWorkspace;
 }

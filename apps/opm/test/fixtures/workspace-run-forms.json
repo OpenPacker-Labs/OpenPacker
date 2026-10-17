@@ -1,0 +1,741 @@
+{
+  "scanned": {
+    "on": "2026-10-12",
+    "commits": {
+      "HoBo": "248ff34c",
+      "ai-bdd": "ea168575",
+      "ts-autocode": "91af43fb",
+      "gitlang": "60dac76b",
+      "OpenSesame": "74a8ec6d"
+    },
+    "method": "git ls-files, minus node_modules, fixture directories and HoBo external/; every package.json scripts entry, .github YAML run steps, shell scripts and git hooks, Dockerfiles, the devcontainer, and spawn-style calls with a literal argv array; three matches inside printed text are dropped"
+  },
+  "occurring": [
+    {
+      "form": "pnpm run <script>",
+      "kind": "supported",
+      "count": 96,
+      "repos": {
+        "HoBo": 93,
+        "OpenSesame": 3
+      },
+      "opm": "opm run <script>",
+      "note": "",
+      "argvs": [
+        ["run", "generated:guard"],
+        ["run", "test:property"]
+      ]
+    },
+    {
+      "form": "pnpm install",
+      "kind": "other",
+      "count": 59,
+      "repos": {
+        "HoBo": 29,
+        "ai-bdd": 13,
+        "OpenSesame": 17
+      },
+      "opm": "opm ci / opm install",
+      "note": "Not run or exec: outside this slice."
+    },
+    {
+      "form": "pnpm <script or bin>",
+      "kind": "supported",
+      "count": 55,
+      "repos": {
+        "ai-bdd": 12,
+        "OpenSesame": 43
+      },
+      "opm": "opm <script or bin>",
+      "note": "The word is the project script of that name, else the bin of that name (pnpm does the same).",
+      "argvs": [["typecheck"], ["lint"]]
+    },
+    {
+      "form": "pnpm --filter <selector> <script or bin>",
+      "kind": "supported",
+      "count": 52,
+      "repos": {
+        "HoBo": 3,
+        "OpenSesame": 49
+      },
+      "opm": "opm --filter <selector> <script or bin>",
+      "note": "The word is the project script of that name, else the bin of that name (pnpm does the same).",
+      "argvs": [
+        ["--filter", "@hobo/code", "build"],
+        ["--filter", "@hobo/convex", "build"]
+      ]
+    },
+    {
+      "form": "npm run <script>",
+      "kind": "supported",
+      "count": 43,
+      "repos": {
+        "HoBo": 21,
+        "ts-autocode": 18,
+        "gitlang": 4
+      },
+      "opm": "opm run <script>",
+      "note": "",
+      "argvs": [
+        ["run", "build"],
+        ["run", "generate"]
+      ]
+    },
+    {
+      "form": "pnpm exec <bin> <args>",
+      "kind": "supported",
+      "count": 40,
+      "repos": {
+        "HoBo": 20,
+        "ai-bdd": 5,
+        "OpenSesame": 15
+      },
+      "opm": "opm exec <bin> <args>",
+      "note": "",
+      "argvs": [
+        [
+          "exec",
+          "turbo",
+          "run",
+          "build",
+          "typecheck",
+          "lint",
+          "test:unit",
+          "test:schema",
+          "test:contract:consumer",
+          "${FILTERS[@]}",
+          "--continue=never",
+          "--concurrency=100%"
+        ],
+        ["exec", "turbo", "run", "test", "--concurrency=100%"]
+      ]
+    },
+    {
+      "form": "npx <bin or package> <args>",
+      "kind": "redirected",
+      "count": 26,
+      "repos": {
+        "HoBo": 13,
+        "OpenSesame": 13
+      },
+      "opm": "opm exec <bin> (an installed bin), or opmx <package> (fetched and sandboxed)",
+      "note": "No `opm npx`: opm answers the word with that pointer (exit 2)."
+    },
+    {
+      "form": "pnpm --filter <selector> exec <bin> <args>",
+      "kind": "supported",
+      "count": 25,
+      "repos": {
+        "HoBo": 3,
+        "ai-bdd": 4,
+        "OpenSesame": 18
+      },
+      "opm": "opm --filter <selector> exec <bin> <args>",
+      "note": "",
+      "argvs": [
+        [
+          "--filter",
+          "@hobo/conformance",
+          "exec",
+          "vitest",
+          "run",
+          "test/replay-corpus.test.ts"
+        ],
+        [
+          "--filter",
+          "@hobo/mcp",
+          "exec",
+          "vitest",
+          "run",
+          "test/injection.test.ts",
+          "test/rate-limit.test.ts"
+        ]
+      ]
+    },
+    {
+      "form": "pnpm --filter <selector> test",
+      "kind": "supported",
+      "count": 16,
+      "repos": {
+        "HoBo": 6,
+        "OpenSesame": 10
+      },
+      "opm": "opm --filter <selector> test",
+      "note": "The word is the project script of that name.",
+      "argvs": [
+        ["--filter", "@hobo/conformance", "test"],
+        ["--filter", "@hobo/cloud", "test"]
+      ]
+    },
+    {
+      "form": "pnpm <script or bin> <args>",
+      "kind": "supported",
+      "count": 14,
+      "repos": {
+        "HoBo": 3,
+        "ai-bdd": 3,
+        "OpenSesame": 8
+      },
+      "opm": "opm <script or bin> <args>",
+      "note": "The word is the project script of that name, else the bin of that name (pnpm does the same).",
+      "argvs": [
+        [
+          "test:file",
+          "src/draft/technical-proofs/componentize-artifact-trust-contract/test/publish-verify.test.ts"
+        ],
+        [
+          "python3",
+          "pip3",
+          "uv",
+          "cargo",
+          "gh",
+          "curl",
+          "tar",
+          "brew",
+          "serena",
+          "headroom",
+          "rtk",
+          "tgrep",
+          "skillopt-train",
+          "skillopt-sleep",
+          "bun",
+          "claude",
+          "codex",
+          "copilot"
+        ]
+      ]
+    },
+    {
+      "form": "npm run <script> -w <name|dir>",
+      "kind": "supported",
+      "count": 8,
+      "repos": {
+        "gitlang": 8
+      },
+      "opm": "opm run <script> -w <name|dir>",
+      "note": "npm order is opm order: the option may follow the script.",
+      "argvs": [
+        ["run", "dev", "-w", "@gitlang/web"],
+        ["run", "build", "-w", "@gitlang/chat-render"]
+      ]
+    },
+    {
+      "form": "pnpm --filter <selector> run <script>",
+      "kind": "supported",
+      "count": 6,
+      "repos": {
+        "HoBo": 6
+      },
+      "opm": "opm --filter <selector> run <script>",
+      "note": "",
+      "argvs": [
+        ["--filter", "@hobo/conformance", "run", "pretest"],
+        ["--filter", "hobo-site", "run", "dev"]
+      ]
+    },
+    {
+      "form": "npm install <flags> <packages>",
+      "kind": "other",
+      "count": 5,
+      "repos": {
+        "OpenSesame": 5
+      },
+      "opm": "opm install / opm add",
+      "note": "Not run or exec: outside this slice."
+    },
+    {
+      "form": "pnpm --filter <selector> run <script> -- <args>",
+      "kind": "supported",
+      "count": 4,
+      "repos": {
+        "HoBo": 4
+      },
+      "opm": "opm --filter <selector> run <script> -- <args>",
+      "note": "",
+      "argvs": [
+        [
+          "--filter",
+          "@hobo/cloud",
+          "run",
+          "gate:s2:live",
+          "--",
+          "--camp",
+          "cloudflare-sandbox"
+        ],
+        [
+          "--filter",
+          "@hobo/cloud",
+          "run",
+          "gate:s2:live:teardown",
+          "--",
+          "--run-id",
+          "${{",
+          "github.run_id",
+          "}}"
+        ]
+      ]
+    },
+    {
+      "form": "pnpm --dir <dir> exec <bin> <args>",
+      "kind": "supported",
+      "count": 4,
+      "repos": {
+        "HoBo": 3,
+        "OpenSesame": 1
+      },
+      "opm": "opm --dir <dir> exec <bin> <args>",
+      "note": "",
+      "argvs": [
+        [
+          "--dir",
+          "../..",
+          "exec",
+          "node",
+          "--import",
+          "tsx",
+          "packages/schema-tools/src/cli.ts",
+          "--packages-root",
+          "packages",
+          "--filter",
+          "patterns"
+        ],
+        [
+          "--dir",
+          "..",
+          "exec",
+          "node",
+          "--import",
+          "tsx",
+          "packages/schema-tools/src/cli.ts",
+          "--packages-root",
+          ".",
+          "--filter",
+          "site"
+        ]
+      ]
+    },
+    {
+      "form": "pnpm --filter <selector> <script or bin> <args>",
+      "kind": "supported",
+      "count": 4,
+      "repos": {
+        "OpenSesame": 4
+      },
+      "opm": "opm --filter <selector> <script or bin> <args>",
+      "note": "The word is the project script of that name, else the bin of that name (pnpm does the same).",
+      "argvs": [
+        [
+          "--filter",
+          "@opensesame/pages",
+          "build:profile",
+          "--profile",
+          "capability-profiles/$profile.json",
+          "--mode",
+          "hardened"
+        ],
+        [
+          "--filter",
+          "@opensesame/pages",
+          "build:profile",
+          "--profile",
+          "capability-profiles/enterprise-selected.json",
+          "--mode",
+          "hardened"
+        ]
+      ]
+    },
+    {
+      "form": "npm run <script> -w <name|dir> -- <args>",
+      "kind": "supported",
+      "count": 3,
+      "repos": {
+        "gitlang": 3
+      },
+      "opm": "opm run <script> -w <name|dir> -- <args>",
+      "note": "npm order is opm order: the option may follow the script.",
+      "argvs": [
+        ["run", "test:visual", "-w", "@gitlang/web", "--"],
+        ["run", "test:theme-gate", "-w", "@gitlang/web", "--"]
+      ]
+    },
+    {
+      "form": "pnpm run <script> -- <args>",
+      "kind": "supported",
+      "count": 2,
+      "repos": {
+        "HoBo": 2
+      },
+      "opm": "opm run <script> -- <args>",
+      "note": "",
+      "argvs": [
+        ["run", "check:relevant:staged", "--", "--base=$BASE"],
+        ["run", "standards:check", "--", "--base=origin/main"]
+      ]
+    },
+    {
+      "form": "npm install <flags>",
+      "kind": "other",
+      "count": 2,
+      "repos": {
+        "HoBo": 2
+      },
+      "opm": "opm install / opm add",
+      "note": "Not run or exec: outside this slice."
+    },
+    {
+      "form": "pnpm --version",
+      "kind": "other",
+      "count": 2,
+      "repos": {
+        "HoBo": 1,
+        "OpenSesame": 1
+      },
+      "opm": "\u2014",
+      "note": "A version query; outside this slice."
+    },
+    {
+      "form": "npm ci",
+      "kind": "other",
+      "count": 2,
+      "repos": {
+        "ts-autocode": 2
+      },
+      "opm": "opm ci",
+      "note": "Not run or exec: outside this slice."
+    },
+    {
+      "form": "pnpm test",
+      "kind": "supported",
+      "count": 2,
+      "repos": {
+        "OpenSesame": 2
+      },
+      "opm": "opm test",
+      "note": "The word is the project script of that name.",
+      "argvs": [["test"], ["test"]]
+    },
+    {
+      "form": "pnpm --silent run <script>",
+      "kind": "supported",
+      "count": 1,
+      "repos": {
+        "HoBo": 1
+      },
+      "opm": "opm --silent run <script>",
+      "note": "",
+      "argvs": [["--silent", "run", "fetch:pr-base"]]
+    },
+    {
+      "form": "pnpm --prefix <dir> test",
+      "kind": "supported",
+      "count": 1,
+      "repos": {
+        "HoBo": 1
+      },
+      "opm": "opm --prefix <dir> test",
+      "note": "The word is the project script of that name.",
+      "argvs": [
+        ["--prefix", "src/draft/technical-proofs/hobo-componentize", "test"]
+      ]
+    },
+    {
+      "form": "pnpm <script or bin> -- <args>",
+      "kind": "supported",
+      "count": 1,
+      "repos": {
+        "HoBo": 1
+      },
+      "opm": "opm <script or bin> -- <args>",
+      "note": "The word is the project script of that name, else the bin of that name (pnpm does the same).",
+      "argvs": [
+        [
+          "agent:check",
+          "--",
+          "--base=${{",
+          "github.event_name",
+          "==",
+          "pull_request"
+        ]
+      ]
+    },
+    {
+      "form": "npm install",
+      "kind": "other",
+      "count": 1,
+      "repos": {
+        "HoBo": 1
+      },
+      "opm": "opm install / opm add",
+      "note": "Not run or exec: outside this slice."
+    },
+    {
+      "form": "pnpm --prefix <dir> run <script>",
+      "kind": "supported",
+      "count": 1,
+      "repos": {
+        "HoBo": 1
+      },
+      "opm": "opm --prefix <dir> run <script>",
+      "note": "",
+      "argvs": [
+        [
+          "--prefix",
+          "src/draft/technical-proofs/s1-stage-gate",
+          "run",
+          "gate:s1"
+        ]
+      ]
+    },
+    {
+      "form": "pnpm --filter <selector> -r run <script>",
+      "kind": "supported",
+      "count": 1,
+      "repos": {
+        "ai-bdd": 1
+      },
+      "opm": "opm --filter <selector> -r run <script>",
+      "note": "",
+      "argvs": [["-r", "--filter", "./packages/**", "run", "build"]]
+    },
+    {
+      "form": "pnpm -v",
+      "kind": "other",
+      "count": 1,
+      "repos": {
+        "OpenSesame": 1
+      },
+      "opm": "\u2014",
+      "note": "A version query; outside this slice."
+    },
+    {
+      "form": "pnpm publish",
+      "kind": "other",
+      "count": 1,
+      "repos": {
+        "OpenSesame": 1
+      },
+      "opm": "opm publish",
+      "note": "Not run or exec: outside this slice."
+    },
+    {
+      "form": "pnpm --silent <script or bin> -- <args>",
+      "kind": "supported",
+      "count": 1,
+      "repos": {
+        "OpenSesame": 1
+      },
+      "opm": "opm --silent <script or bin> -- <args>",
+      "note": "The word is the project script of that name, else the bin of that name (pnpm does the same).",
+      "argvs": [
+        [
+          "-s",
+          "dev:live-nats",
+          "--",
+          "--websocket",
+          "127.0.0.1:${wsPort}",
+          "--listen",
+          "127.0.0.1:${port}",
+          "--out",
+          "$VAR",
+          "--json"
+        ]
+      ]
+    },
+    {
+      "form": "pnpm --package <package> dlx <command> <args>",
+      "kind": "redirected",
+      "count": 1,
+      "repos": {
+        "OpenSesame": 1
+      },
+      "opm": "opmx <package> (fetched and sandboxed)",
+      "note": "No `opm dlx`: opm answers the word with that pointer (exit 2)."
+    },
+    {
+      "form": "pnpm --workspace-root exec <bin> <args>",
+      "kind": "supported",
+      "count": 1,
+      "repos": {
+        "OpenSesame": 1
+      },
+      "opm": "opm --workspace-root exec <bin> <args>",
+      "note": "",
+      "argvs": [
+        [
+          "--workspace-root",
+          "exec",
+          "biome",
+          "format",
+          "--write",
+          "packages/control-plane/openapi.json"
+        ]
+      ]
+    },
+    {
+      "form": "pnpm --filter <selector> start",
+      "kind": "supported",
+      "count": 1,
+      "repos": {
+        "OpenSesame": 1
+      },
+      "opm": "opm --filter <selector> start",
+      "note": "The word is the project script of that name.",
+      "argvs": [["--filter", "@opensesame/control-plane", "start"]]
+    }
+  ],
+  "defined": [
+    {
+      "form": "pnpm -C <dir> run <script>",
+      "kind": "supported",
+      "argv": ["-C", "packages/a", "run", "build"]
+    },
+    {
+      "form": "pnpm -r run <script>",
+      "kind": "supported",
+      "argv": ["-r", "run", "build"]
+    },
+    {
+      "form": "pnpm -r --workspace-concurrency=<n> run <script>",
+      "kind": "supported",
+      "argv": ["-r", "--workspace-concurrency=2", "run", "build"]
+    },
+    {
+      "form": "pnpm -r --parallel run <script>",
+      "kind": "supported",
+      "argv": ["-r", "--parallel", "run", "build"]
+    },
+    {
+      "form": "pnpm -r --stream run <script>",
+      "kind": "supported",
+      "argv": ["-r", "--stream", "run", "build"]
+    },
+    {
+      "form": "pnpm -r --no-sort run <script>",
+      "kind": "supported",
+      "argv": ["-r", "--no-sort", "run", "build"]
+    },
+    {
+      "form": "pnpm -r --reverse run <script>",
+      "kind": "supported",
+      "argv": ["-r", "--reverse", "run", "build"]
+    },
+    {
+      "form": "pnpm -r run <script> --if-present",
+      "kind": "supported",
+      "argv": ["-r", "run", "build", "--if-present"]
+    },
+    {
+      "form": "pnpm -r exec <bin> <args>",
+      "kind": "supported",
+      "argv": ["-r", "exec", "tsc", "-b"]
+    },
+    {
+      "form": "pnpm --workspace-root run <script>",
+      "kind": "supported",
+      "argv": ["--workspace-root", "run", "build"]
+    },
+    {
+      "form": "npm run <script> --workspaces",
+      "kind": "supported",
+      "argv": ["run", "build", "--workspaces"]
+    },
+    {
+      "form": "npm run <script> -ws",
+      "kind": "supported",
+      "argv": ["run", "build", "-ws"]
+    },
+    {
+      "form": "npm run <script> --workspace=<name>",
+      "kind": "supported",
+      "argv": ["run", "build", "--workspace=a"]
+    },
+    {
+      "form": "npm run <script> --workspaces --if-present",
+      "kind": "supported",
+      "argv": ["run", "build", "--workspaces", "--if-present"]
+    },
+    {
+      "form": "npm run <script> --workspaces --include-workspace-root",
+      "kind": "supported",
+      "argv": ["run", "build", "--workspaces", "--include-workspace-root"]
+    },
+    {
+      "form": "npm run <script> --if-present",
+      "kind": "supported",
+      "argv": ["run", "build", "--if-present"]
+    },
+    {
+      "form": "npm --workspace=<name> run <script>",
+      "kind": "supported",
+      "argv": ["--workspace=a", "run", "build"]
+    },
+    {
+      "form": "npm exec -w <name> -- <bin>",
+      "kind": "supported",
+      "argv": ["exec", "-w", "a", "--", "tsc"]
+    },
+    {
+      "form": "pnpm -w run <script>",
+      "kind": "refused",
+      "argv": ["-w", "run", "build"],
+      "status": 2,
+      "message": "--workspace-root for the root"
+    },
+    {
+      "form": "pnpm -r run <script> --no-bail",
+      "kind": "refused",
+      "argv": ["-r", "run", "build", "--no-bail"],
+      "status": 2,
+      "message": "--no-bail is not supported"
+    },
+    {
+      "form": "pnpm --filter-prod <selector> run <script>",
+      "kind": "refused",
+      "argv": ["run", "build", "--filter-prod", "a"],
+      "status": 2,
+      "message": "--filter-prod is not supported"
+    },
+    {
+      "form": "pnpm --filter \"[origin/main]\" run <script>",
+      "kind": "refused",
+      "argv": ["--filter", "[origin/main]", "run", "build"],
+      "status": 2,
+      "message": "git history"
+    },
+    {
+      "form": "pnpm exec -c \"<line>\"",
+      "kind": "refused",
+      "argv": ["exec", "-c", "echo hi"],
+      "status": 2,
+      "message": "never a shell line"
+    },
+    {
+      "form": "pnpm -r run <script> --resume-from <package>",
+      "kind": "refused",
+      "argv": ["-r", "run", "build", "--resume-from", "a"],
+      "status": 2,
+      "message": "--resume-from is not supported"
+    },
+    {
+      "form": "pnpm run <script> --watch (a script option with no --)",
+      "kind": "refused",
+      "argv": ["run", "build", "--watch"],
+      "status": 2,
+      "message": "arguments for the script go after --"
+    },
+    {
+      "form": "pnpm --filter <selector> run <script>, nothing selected",
+      "kind": "refused",
+      "argv": ["--filter", "nobody", "run", "build"],
+      "status": 4,
+      "message": "No workspace member matches the filter \"nobody\""
+    },
+    {
+      "form": "pnpm dlx <package>",
+      "kind": "redirected",
+      "argv": ["dlx", "cowsay"],
+      "status": 2,
+      "message": "opmx <package>"
+    }
+  ]
+}

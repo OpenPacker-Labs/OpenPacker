@@ -1,3 +1,4 @@
+import { constants } from 'node:fs';
 import {
   chmod,
   lstat,
@@ -13,7 +14,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   applySpanEdits,
   collectFiles,
@@ -77,6 +78,26 @@ async function withTemp<T>(run: (dir: string) => Promise<T>): Promise<T> {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+const WRITE_FLAGS = constants.O_WRONLY | constants.O_RDWR;
+
+/**
+ * Wait until the filesystem clock has moved past `path`'s last change.
+ *
+ * A copy tells a changed file from its earlier self by size and times. Where
+ * timestamps are coarse (a kernel tick on many systems, a second on HFS+), a
+ * change in the same tick as the one before it gets the same time, and nothing
+ * can see it. Once this returns, any change to `path` gets a later time.
+ */
+async function afterLastChange(path: string, probe: string): Promise<void> {
+  const { ctimeNs } = await lstat(path, { bigint: true });
+  const deadline = Date.now() + 5_000;
+  for (let tick = 0; Date.now() < deadline; tick += 1) {
+    await writeFile(probe, String(tick));
+    if ((await lstat(probe, { bigint: true })).ctimeNs > ctimeNs) return;
+  }
+  throw new Error(`the filesystem clock did not move past ${path} in 5 s`);
 }
 
 describe('editJsonFile', () => {
@@ -224,6 +245,12 @@ describe('applySpanEdits', () => {
 });
 
 describe('materialiseTree', () => {
+  // A test that spies on handle-path must not leave the spy for the next one,
+  // even when it times out before its own `finally` runs.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('advertises stable fd-relative traversal on linux, darwin, and win32', () => {
     expect(supportsStableTreeLayout('linux')).toBe(true);
     expect(supportsStableTreeLayout('darwin')).toBe(true);
@@ -385,28 +412,48 @@ describe('materialiseTree', () => {
   it('refuses source files changed while they are copied', async () => {
     await withTemp(async (dir) => {
       const { materialiseTree } = await import('./layout.js');
+      const handlePath = await import('./handle-path.js');
       const source = join(dir, 'source');
       const root = join(dir, 'out');
       const file = join(source, 'large.bin');
+      const size = 16 * 1024 * 1024;
       await mkdir(source);
-      await writeFile(file, new Uint8Array(16 * 1024 * 1024));
+      await writeFile(file, new Uint8Array(size));
+      await afterLastChange(file, join(dir, 'clock'));
       const changing = await open(file, 'r+');
-      let running = true;
-      let revision = 0;
-      const mutate = (async () => {
-        while (running) {
-          await changing.write(Uint8Array.of(revision++ & 0xff), 0, 1, 0);
-          await changing.sync();
-          await new Promise<void>((resolve) => setImmediate(resolve));
-        }
-      })();
+      // Once the copy has read its first chunk, change a byte in that chunk and
+      // one in the last: a copy that went on would hold the old first byte and
+      // the new last one, which is neither version of the file.
+      let changed = false;
+      const openChild = handlePath.openChild;
+      const spy = vi
+        .spyOn(handlePath, 'openChild')
+        .mockImplementation(async (parent, name, flags, mode) => {
+          const handle = await openChild(parent, name, flags, mode);
+          if (name !== 'large.bin' || (flags & WRITE_FLAGS) !== 0)
+            return handle;
+          const read = handle.read.bind(handle);
+          vi.spyOn(handle, 'read').mockImplementation(async (...args) => {
+            const chunk = await read(...args);
+            if (!changed) {
+              changed = true;
+              await changing.write(Uint8Array.of(1), 0, 1, 0);
+              await changing.write(Uint8Array.of(1), 0, 1, size - 1);
+            }
+            return chunk;
+          });
+          return handle;
+        });
       try {
         await expect(
           materialiseTree(source, join(root, 'pkg'), root),
         ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+        expect(changed).toBe(true);
+        await expect(lstat(join(root, 'pkg'))).rejects.toMatchObject({
+          code: 'ENOENT',
+        });
       } finally {
-        running = false;
-        await mutate;
+        spy.mockRestore();
         await changing.close();
       }
     });

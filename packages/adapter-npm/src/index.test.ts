@@ -270,7 +270,6 @@ describe('dependency specifiers', () => {
 
   it.each([
     ['dependencies', { dependencies: { bar: 'github:user/bar' } }],
-    ['dependencies', { dependencies: { bar: 'npm:baz@^1' } }],
     ['dependencies', { dependencies: { bar: 'latest' } }],
     ['peerDependencies', { peerDependencies: { bar: 'next' } }],
   ])('refuses %s it would have to guess at', async (_field, metadata) => {

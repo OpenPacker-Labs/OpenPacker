@@ -493,6 +493,52 @@ fn root_for_demo() -> Requirement {
     )
 }
 
+/// A closure may select two releases of one package (two dependents want
+/// different ones), and a third requirement can accept both. The proof names
+/// one witness for it, and the checker has to agree about which, whichever
+/// order the universe lists the releases in.
+#[test]
+fn two_selected_releases_that_one_requirement_accepts_check_in_either_universe_order() {
+    let low = package('1', "shared", "1.0.0");
+    let high = package('2', "shared", "2.0.0");
+    let wants = |id: &str, vers: &str| {
+        requirement(
+            id,
+            RequirementExpression::Package {
+                purl: "pkg:npm/shared".into(),
+                vers: Some(vers.into()),
+                qualifiers: BTreeMap::new(),
+            },
+            false,
+        )
+    };
+    // The checker walks selected node ids in string order and the solve walks
+    // the universe in index order: list the releases both ways round so one of
+    // the two orders disagrees whatever the ids turn out to be.
+    for reversed in [false, true] {
+        let mut packages = vec![low.clone(), high.clone()];
+        if reversed {
+            packages.reverse();
+        }
+        let mut hard = input(
+            packages,
+            vec![
+                wants("exactly-one", "vers:npm/1.0.0"),
+                wants("exactly-two", "vers:npm/2.0.0"),
+                wants("either", "vers:npm/>=1.0.0|<3.0.0"),
+            ],
+        );
+        hard.request.objectives = vec![
+            "satisfy-hard-constraints".into(),
+            "exclude-lifecycle-denied".into(),
+        ];
+        let output = solve(&hard)
+            .unwrap_or_else(|error| panic!("universe reversed={reversed} was refused: {error}"));
+        assert_eq!(output.solution.selected_node_ids.len(), 2);
+        assert!(check(&hard, &output).unwrap().valid, "reversed={reversed}");
+    }
+}
+
 #[test]
 fn the_newest_candidate_is_chosen_by_version_not_by_sort_key_string() {
     let candidates = versions_with_two_digit_parts();

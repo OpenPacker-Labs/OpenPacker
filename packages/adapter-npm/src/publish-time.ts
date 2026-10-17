@@ -10,9 +10,7 @@ import {
   MAXIMUM_FULL_PACKUMENT_BYTES,
   aboutPackument,
 } from './packument-limits.js';
-
-const isTimestamp = (value: unknown): value is string =>
-  typeof value === 'string' && Number.isFinite(Date.parse(value));
+import { isTimestamp } from './npm-identity.js';
 
 /** What a publish time is read from: `NpmRegistryProvider.publishTime`. */
 export class PublishTimes {

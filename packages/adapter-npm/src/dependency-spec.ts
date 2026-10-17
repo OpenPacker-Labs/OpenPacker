@@ -1,5 +1,46 @@
 import { safeEcho } from '@openpacker/canonical';
 import { NPM_NAME_LIMIT } from './packument-limits.js';
+import { parseNpmRange } from './npm-range.js';
+
+/**
+ * What the right-hand side of a dependency entry asks npm to do.
+ *
+ * Anything that is not a version range and not a recognizable source is a
+ * dist-tag, as npm reads it.
+ */
+
+export type NpmDependencySpecKind =
+  | 'range'
+  | 'tag'
+  | 'alias'
+  | 'git'
+  | 'url'
+  | 'file'
+  | 'workspace';
+
+const GIT_SPEC =
+  /^(?:git(?:\+[a-z]+)?:|github:|gitlab:|bitbucket:|gist:|git@)/iu;
+const GITHUB_SHORTHAND = /^[\w.-]+\/[\w.-]+(?:#.+)?$/u;
+
+/** Read a dependency specifier the way npm does. */
+export function classifyDependencySpec(spec: string): NpmDependencySpecKind {
+  const value = spec.trim();
+  if (value.startsWith('npm:')) return 'alias';
+  if (value.startsWith('workspace:')) return 'workspace';
+  if (
+    /^(?:file|link|portal):/iu.test(value) ||
+    /^(?:\.{1,2}\/|\/|~\/)/u.test(value)
+  )
+    return 'file';
+  if (GIT_SPEC.test(value) || GITHUB_SHORTHAND.test(value)) return 'git';
+  if (/^https?:\/\//iu.test(value)) return 'url';
+  try {
+    parseNpmRange(value);
+    return 'range';
+  } catch {
+    return 'tag';
+  }
+}
 
 /**
  * How a dependency is named in a message.
@@ -40,6 +81,11 @@ export function unsupportedSpec(
 /** What is recorded of a specifier that is not a range, and is not walked. */
 export function specifierNotARange(specKind: string, range: string): string {
   return `The ${specKind} specifier "${safeEcho(range, RANGE_LIMIT)}" is not a registry version range`;
+}
+
+/** Why an alias cannot be followed, which may repeat what a registry wrote. */
+export function echoedReason(reason: string): string {
+  return safeEcho(reason, REASON_LIMIT);
 }
 
 /** What is recorded of an entry that could not be read, and is not walked. */

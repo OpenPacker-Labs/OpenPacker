@@ -21,61 +21,57 @@
  * synthetic entries.
  */
 
-import { redactText, type NativeLockEntry } from '@openpacker/adapter-core';
+import type { NativeLockEntry } from '@openpacker/adapter-core';
 import { compareText, compareVersions } from './layout-compare.js';
-import { checkLayoutLinks, type LayoutLink } from './layout-links.js';
+import {
+  chooseRootVersions,
+  directName,
+  preferredFirst,
+  reachableFrom,
+  sameEntry,
+  sortEntries,
+  wantsOf,
+} from './layout-choice.js';
+import { checkLayoutLinks } from './layout-links.js';
+import {
+  caseCollision,
+  caseVariant,
+  quoted,
+  unsafeNameProblem,
+} from './layout-names.js';
+import {
+  LayoutTooLargeError,
+  MAXIMUM_PLACEMENTS,
+  type LayoutEntry,
+  type LayoutPlan,
+  type LayoutSkip,
+  type PlanOptions,
+} from './layout-plan-types.js';
 
 export { compareVersions };
-
-/** One package the plan places. */
-export interface LayoutEntry {
-  /** Unique within the plan; what `dependencies` refer to. */
-  id: string;
-  name: string;
-  version: string;
-  digest: string;
-  direct: boolean;
-  dependencies: readonly string[];
-  source: NativeLockEntry;
-}
-
-export interface Placement {
-  entry: LayoutEntry;
-  /**
-   * Package names from the project root down: `['b', 'c']` is
-   * `node_modules/b/node_modules/c`.
-   */
-  chain: readonly string[];
-}
-
-export interface LayoutSkip {
-  entry: LayoutEntry;
-  reason: string;
-}
-
-export interface LayoutPlan {
-  /** Parents before the packages nested in them. */
-  placements: readonly Placement[];
-  skipped: readonly LayoutSkip[];
-  /**
-   * The workspace-member links, checked against the placements (see
-   * `layout-links.ts`) and in path order. Empty unless the caller asked for some.
-   */
-  links: readonly LayoutLink[];
-}
-
-/** What a planner is told besides the packages. */
-export interface PlanOptions {
-  maximumPlacements?: number;
-  /** Member links to carry in the plan; refused whole if any is not acceptable. */
-  links?: readonly LayoutLink[];
-}
+export { quoted, unsafeNameProblem };
+export {
+  LayoutTooLargeError,
+  MAXIMUM_PLACEMENTS,
+  type LayoutEntry,
+  type LayoutPlan,
+  type LayoutSkip,
+  type PlanOptions,
+  type Placement,
+} from './layout-plan-types.js';
+export {
+  LayoutPathsError,
+  planLayoutFromPaths,
+  type PlacedEntry,
+} from './layout-lock-plan.js';
 
 interface Node {
   entry: LayoutEntry | undefined;
   parent: Node | undefined;
   children: Map<string, Node>;
   chain: readonly string[];
+  /** The directory name, which is the entry's own unless it was aliased. */
+  installName: string;
 }
 
 /** The id a lock entry is known by when its lock did not name it. */
@@ -99,18 +95,15 @@ export function toLayoutEntries(
       digest: entry.digest,
       direct: !entry.transitive,
       dependencies: entry.dependencies ?? [],
+      ...(!(entry.installName === undefined) && {
+        installName: entry.installName,
+      }),
+      ...(!(entry.aliases === undefined) && { aliases: entry.aliases }),
       source: entry,
     });
   }
   return out;
 }
-
-/**
- * Most placements a plan may hold. A package that two dependents need at
- * different versions is placed once per dependent, so a lock built to nest
- * thousands of conflicting versions could otherwise ask for a tree of any size.
- */
-export const MAXIMUM_PLACEMENTS = 50_000;
 
 export function planLayout(
   entries: readonly LayoutEntry[],
@@ -128,7 +121,11 @@ export function planLayout(
 
   const invalid = new Set<string>();
   for (const entry of entries) {
-    const problem = unsafeNameProblem(entry.name);
+    const problem =
+      unsafeNameProblem(entry.name) ??
+      (entry.installName === undefined
+        ? undefined
+        : unsafeNameProblem(entry.installName));
     if (problem !== undefined) {
       invalid.add(entry.id);
       skip(entry, problem);
@@ -137,32 +134,43 @@ export function planLayout(
   const usable = (entry: LayoutEntry | undefined): entry is LayoutEntry =>
     entry !== undefined && !invalid.has(entry.id);
 
+  const wants = new Map(
+    entries.map((entry) => [entry.id, wantsOf(entry, byId, skip)]),
+  );
+
   const reachable = reachableFrom(
     entries.filter((entry) => entry.direct && usable(entry)),
     byId,
     usable,
+    wants,
   );
-  const rootChoice = chooseRootVersions(entries, reachable, usable);
+  const rootChoice = chooseRootVersions(entries, reachable, usable, wants);
 
   const root: Node = {
     entry: undefined,
     parent: undefined,
     children: new Map(),
     chain: [],
+    installName: '',
   };
   const placed: Node[] = [];
   const placedIds = new Set<string>();
   const queue: Node[] = [];
-  const place = (parent: Node, entry: LayoutEntry): Node => {
+  const place = (
+    parent: Node,
+    entry: LayoutEntry,
+    installName: string,
+  ): Node => {
     if (placed.length >= maximumPlacements)
       throw new LayoutTooLargeError(maximumPlacements);
     const node: Node = {
       entry,
       parent,
       children: new Map(),
-      chain: [...parent.chain, entry.name],
+      chain: [...parent.chain, installName],
+      installName,
     };
-    parent.children.set(entry.name, node);
+    parent.children.set(installName, node);
     placed.push(node);
     placedIds.add(entry.id);
     queue.push(node);
@@ -171,47 +179,67 @@ export function planLayout(
 
   for (const entry of sortEntries(entries.filter((e) => e.direct))) {
     if (!usable(entry)) continue;
-    const taken = root.children.get(entry.name)?.entry;
+    const name = directName(entry);
+    const taken = root.children.get(name)?.entry;
     if (taken !== undefined && !sameEntry(taken, entry)) {
       skip(
         entry,
-        `${entry.name}@${entry.version} is required directly, and so is ${taken.name}@${taken.version}; Node cannot resolve two versions of one name from the project root`,
+        entry.installName === undefined && taken.installName === undefined
+          ? `${entry.name}@${entry.version} is required directly, and so is ${taken.name}@${taken.version}; Node cannot resolve two versions of one name from the project root`
+          : `${entry.name}@${entry.version} and ${taken.name}@${taken.version} are both required directly as ${name}; Node cannot resolve two packages of one name from the project root`,
       );
       continue;
     }
-    if (taken === undefined) place(root, entry);
+    const variant = caseVariant(root, name);
+    if (variant !== undefined) {
+      skip(entry, caseCollision(entry, name, variant));
+      continue;
+    }
+    if (taken === undefined) place(root, entry, name);
   }
 
   const drain = (): void => {
     while (queue.length > 0) {
       const node = queue.shift()!;
       const dependent = node.entry!;
-      for (const id of [...dependent.dependencies].sort()) {
+      for (const { id, as } of wants.get(dependent.id) ?? []) {
         const wanted = byId.get(id);
         if (!usable(wanted)) continue;
-        const found = lookup(node, wanted.name);
+        const found = lookup(node, as);
         if (found !== undefined) {
           if (sameEntry(found.entry!, wanted)) continue;
           if (found.parent === node) {
             skip(
               wanted,
-              `${dependent.name}@${dependent.version} requires both ${found.entry!.name}@${found.entry!.version} and ${wanted.name}@${wanted.version}`,
+              `${dependent.name}@${dependent.version} requires both ${found.entry!.name}@${found.entry!.version} and ${wanted.name}@${wanted.version}${as === wanted.name ? '' : ` as ${as}`}`,
             );
             continue;
           }
           // A different version answers to this name from here: nest, so this
           // package and what it requires see the one the solve selected.
-          place(node, wanted);
+          const variant = caseVariant(node, as);
+          if (variant !== undefined) {
+            skip(wanted, caseCollision(wanted, as, variant));
+            continue;
+          }
+          place(node, wanted, as);
           continue;
         }
         // Nothing answers to the name between here and the root. The root is the
         // best place for the version most of the closure wants; any other
-        // version stays beside its dependent.
-        const preferred = rootChoice.get(wanted.name);
-        place(
-          preferred === undefined || sameEntry(preferred, wanted) ? root : node,
-          wanted,
-        );
+        // version stays beside its dependent. A directory whose name differs
+        // only by case from one already there would be the same directory on a
+        // case-insensitive filesystem, so it goes beside its dependent instead.
+        const preferred = rootChoice.get(as);
+        const home =
+          preferred === undefined || sameEntry(preferred, wanted) ? root : node;
+        const where = caseVariant(home, as) === undefined ? home : node;
+        const variant = caseVariant(where, as);
+        if (variant !== undefined) {
+          skip(wanted, caseCollision(wanted, as, variant));
+          continue;
+        }
+        place(where, wanted, as);
       }
     }
   };
@@ -231,9 +259,12 @@ export function planLayout(
     ),
   );
   for (const entry of preferredFirst(orphans, rootChoice)) {
-    const taken = root.children.get(entry.name)?.entry;
-    if (taken === undefined) {
-      place(root, entry);
+    const name = directName(entry);
+    const taken = root.children.get(name)?.entry;
+    const variant = caseVariant(root, name);
+    if (variant !== undefined) skip(entry, caseCollision(entry, name, variant));
+    else if (taken === undefined) {
+      place(root, entry, name);
       // It is installed, so what it requires has to resolve too.
       drain();
     } else if (!sameEntry(taken, entry))
@@ -257,102 +288,6 @@ export function planLayout(
   };
 }
 
-/** One package with the place its lock gave it. */
-export interface PlacedEntry {
-  entry: LayoutEntry;
-  /** Package names from the project root down, as in {@link Placement}. */
-  chain: readonly string[];
-}
-
-/** A lock whose placements cannot be laid out as written. */
-export class LayoutPathsError extends Error {
-  readonly code = 'LAYOUT_PATHS_INVALID';
-  constructor(readonly problems: readonly string[]) {
-    super(
-      `The lock's placements cannot be written as they are: ${problems.slice(0, 10).join('; ')}${problems.length > 10 ? `; and ${problems.length - 10} more` : ''}`,
-    );
-    this.name = 'LayoutPathsError';
-  }
-}
-
-/**
- * Lay out exactly the places a lock names.
- *
- * `planLayout` has to decide where each package goes, because an opm lock
- * records which package needs which and not where Node should find it. An npm
- * lock already says: its key is the path. Re-planning from the edges would
- * choose a placement that is correct but not the lock's, and a frozen install
- * is meant to be the lock. So nothing is chosen here; the chains are checked
- * and sorted, parents before the packages nested in them.
- *
- * A placement that cannot be written (an unsafe name, two packages claiming one
- * place, a package inside a parent that is not installed) is an error, not a
- * skip: dropping it would install something other than the lock.
- */
-export function planLayoutFromPaths(
-  placed: readonly PlacedEntry[],
-  options: PlanOptions = {},
-): LayoutPlan {
-  const maximumPlacements = options.maximumPlacements ?? MAXIMUM_PLACEMENTS;
-  if (placed.length > maximumPlacements)
-    throw new LayoutTooLargeError(maximumPlacements);
-  const problems: string[] = [];
-  const taken = new Map<string, LayoutEntry>();
-  for (const { entry, chain } of placed) {
-    const where = chain.join('/node_modules/');
-    if (chain.length === 0) {
-      problems.push(`${entry.id} has no place`);
-      continue;
-    }
-    const bad = chain
-      .map((name) => unsafeNameProblem(name))
-      .find((problem) => problem !== undefined);
-    if (bad !== undefined) {
-      problems.push(bad);
-      continue;
-    }
-    const key = chain.join('\0');
-    const rival = taken.get(key);
-    if (rival !== undefined) {
-      problems.push(
-        `${rival.id} and ${entry.id} both claim node_modules/${where}`,
-      );
-      continue;
-    }
-    taken.set(key, entry);
-  }
-  for (const { entry, chain } of placed) {
-    if (chain.length < 2) continue;
-    if (!taken.has(chain.slice(0, -1).join('\0')))
-      problems.push(
-        `${entry.id} lives inside ${chain.slice(0, -1).join('/node_modules/')}, which is not installed`,
-      );
-  }
-  if (problems.length > 0) throw new LayoutPathsError(problems);
-  const placements = placed
-    .map(({ entry, chain }) => ({ entry, chain }))
-    .sort(
-      (left, right) =>
-        left.chain.length - right.chain.length ||
-        compareText(left.chain.join('\0'), right.chain.join('\0')),
-    );
-  return {
-    placements,
-    skipped: [],
-    links: checkLayoutLinks(options.links ?? [], placements),
-  };
-}
-
-export class LayoutTooLargeError extends Error {
-  readonly code = 'LAYOUT_TOO_LARGE';
-  constructor(limit: number) {
-    super(
-      `The lock needs more than ${limit} package directories in node_modules; refusing to write a layout that large`,
-    );
-    this.name = 'LayoutTooLargeError';
-  }
-}
-
 /** What Node finds for `name` from the directory this package lives in. */
 function lookup(from: Node, name: string): Node | undefined {
   for (
@@ -362,138 +297,6 @@ function lookup(from: Node, name: string): Node | undefined {
   ) {
     const hit = current.children.get(name);
     if (hit !== undefined) return hit;
-  }
-  return undefined;
-}
-
-function sameEntry(left: LayoutEntry, right: LayoutEntry): boolean {
-  return (
-    left.id === right.id ||
-    (left.name === right.name &&
-      left.version === right.version &&
-      left.digest === right.digest)
-  );
-}
-
-function reachableFrom(
-  roots: readonly LayoutEntry[],
-  byId: ReadonlyMap<string, LayoutEntry>,
-  usable: (entry: LayoutEntry | undefined) => entry is LayoutEntry,
-): Set<string> {
-  const reached = new Set<string>();
-  const pending = [...roots];
-  while (pending.length > 0) {
-    const entry = pending.pop()!;
-    if (reached.has(entry.id)) continue;
-    reached.add(entry.id);
-    for (const id of entry.dependencies) {
-      const next = byId.get(id);
-      if (usable(next)) pending.push(next);
-    }
-  }
-  return reached;
-}
-
-/**
- * Which version of each name earns the root: a direct requirement, else the
- * one the most reachable packages require, else the newest. Only a name with
- * more than one candidate needs an answer.
- */
-function chooseRootVersions(
-  entries: readonly LayoutEntry[],
-  reachable: ReadonlySet<string>,
-  usable: (entry: LayoutEntry | undefined) => entry is LayoutEntry,
-): Map<string, LayoutEntry> {
-  const wantedBy = new Map<string, number>();
-  for (const entry of entries) {
-    if (!reachable.has(entry.id)) continue;
-    for (const id of new Set(entry.dependencies))
-      wantedBy.set(id, (wantedBy.get(id) ?? 0) + 1);
-  }
-  const byName = new Map<string, LayoutEntry[]>();
-  for (const entry of entries) {
-    if (!usable(entry) || !reachable.has(entry.id)) continue;
-    byName.set(entry.name, [...(byName.get(entry.name) ?? []), entry]);
-  }
-  const choice = new Map<string, LayoutEntry>();
-  for (const [name, candidates] of byName) {
-    const distinct = candidates.filter(
-      (candidate, index) =>
-        candidates.findIndex((other) => sameEntry(other, candidate)) === index,
-    );
-    if (distinct.length < 2) continue;
-    distinct.sort(
-      (left, right) =>
-        Number(right.direct) - Number(left.direct) ||
-        (wantedBy.get(right.id) ?? 0) - (wantedBy.get(left.id) ?? 0) ||
-        compareVersions(right.version, left.version) ||
-        compareText(left.id, right.id),
-    );
-    choice.set(name, distinct[0]!);
-  }
-  return choice;
-}
-
-function preferredFirst(
-  entries: readonly LayoutEntry[],
-  rootChoice: ReadonlyMap<string, LayoutEntry>,
-): LayoutEntry[] {
-  // With nothing known about who needs what, the newest version of a name wins
-  // the root: the same answer a flat layout gave when a later entry replaced an
-  // earlier one.
-  return [...entries].sort(
-    (left, right) =>
-      Number(rootChoice.get(right.name) === right) -
-        Number(rootChoice.get(left.name) === left) ||
-      compareVersions(right.version, left.version) ||
-      compareText(left.id, right.id),
-  );
-}
-
-function sortEntries(entries: readonly LayoutEntry[]): LayoutEntry[] {
-  return [...entries].sort(
-    (left, right) =>
-      compareText(left.name, right.name) ||
-      compareVersions(left.version, right.version) ||
-      compareText(left.id, right.id),
-  );
-}
-
-/**
- * `text` as JSON, with every character a terminal would not show written out
- * (`\u{200b}`). JSON leaves the controls from DEL up, the format characters and
- * U+2028 as they are, and what writes an error removes them, so a name with a
- * zero-width character in it would read as the plain name beside it and the
- * message ("member" is not a safe directory name) would look untrue.
- */
-export function quoted(text: string): string {
-  // An address in it is shown as every address is shown, which is plain text.
-  return JSON.stringify(redactText(text)).replace(
-    /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu,
-    (character) => `\\u{${character.codePointAt(0)?.toString(16) ?? ''}}`,
-  );
-}
-
-/**
- * Why a registry-supplied name is not a safe directory name, or undefined.
- *
- * A name becomes a path under a recursive delete, and a leading dot would let a
- * package replace `.bin`, so this is stricter than the registry's own rules.
- */
-export function unsafeNameProblem(name: string): string | undefined {
-  const segments = name.split('/');
-  const scoped = name.startsWith('@');
-  if (segments.length !== (scoped ? 2 : 1))
-    return `${quoted(name)} is not an npm package name`;
-  for (const [index, segment] of segments.entries()) {
-    const body = scoped && index === 0 ? segment.slice(1) : segment;
-    if (
-      body === '' ||
-      body.startsWith('.') ||
-      body.toLowerCase() === 'node_modules' ||
-      !/^[A-Za-z0-9._~+-]+$/u.test(body)
-    )
-      return `${quoted(name)} is not a safe directory name for node_modules`;
   }
   return undefined;
 }

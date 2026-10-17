@@ -2,6 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-10-11
+- Amended by [ADR 0053](0053-opm-run-across-workspace-members.md): the "Limits"
+  entry about workspaces is retired (`--filter`, `-r`, `-w`, per-member
+  scripts), and §3 gains one name (`exec node`). The rest holds for each member.
 - Relates: [ADR 0033](0033-native-supply-chain-capture-and-mitigation.md) (the
   gates a package passes before it is in `node_modules`),
   [ADR 0034](0034-opm-projects-into-native-project-formats.md) (the `layout`
@@ -69,7 +72,7 @@ own repository.
    `.bin` entry, so `opm exec x` is a script of one line. What bounds it is how
    the bin got there: through `add`/`sync`, under the supply-chain gates of ADR
    0033, as a validated shim written without running a package script (ADR
-   0043).
+   0048).
 8. **A dependency's lifecycle scripts are never run by these commands.** `run`
    starts the scripts of the project's own `package.json` only. A name is looked
    up in that file, never in a dependency's.
@@ -189,8 +192,12 @@ down from about 420 ms.
 
 Limits, stated so nobody finds them by surprise:
 
-- There are no workspaces here (ADR 0042): no `--filter`, no `--workspace`, no
-  per-member `node_modules`. `opm run` reads one `package.json`.
+- ~~There are no workspaces here (ADR 0042): no `--filter`, no `--workspace`, no
+  per-member `node_modules`. `opm run` reads one `package.json`.~~ Retired by
+  [ADR 0053](0053-opm-run-across-workspace-members.md): `opm run` and `opm exec`
+  take `--filter`, `-r`, `-w` and `--workspaces`. Linking members into
+  `node_modules` is ADR 0050's, and `opm run` without those options still reads
+  one `package.json`.
 - `run` does not search upward for a `package.json` as npm does; it uses the opm
   project root or `--path`.
 - Only the four names above are set. Tools that detect their package manager

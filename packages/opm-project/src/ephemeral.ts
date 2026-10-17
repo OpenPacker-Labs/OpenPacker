@@ -18,7 +18,8 @@ import {
   resolveRegistryArtifactDeferred,
   type RegistryOptions,
 } from './registry.js';
-import { resolveGraph, solveGraph } from './resolve.js';
+import { resolveGraph } from './resolve.js';
+import { solveGraph } from './solve.js';
 import { requireAdapterRegistry } from './adapters.js';
 import {
   captureFactsFromCatalog,

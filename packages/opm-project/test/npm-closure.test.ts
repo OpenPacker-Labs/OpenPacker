@@ -100,6 +100,7 @@ describe('dev-time specifiers do not decide the closure', () => {
     expect(graph.unresolved).toContainEqual({
       purl: 'pkg:npm/tool@1.0.0',
       reason: expect.stringContaining('depends on fmt as "github:evil/fmt"'),
+      requiredBy: ['the project'],
     });
   });
 });
@@ -248,7 +249,9 @@ describe('platform packages: one optional dependency per platform', () => {
         graph,
         rootRequirements: [{ purl: 'pkg:npm/needs-mac' }],
       }),
-    ).rejects.toThrow(/UNSATISFIABLE/u);
+    ).rejects.toThrow(
+      /pkg:npm\/needs-mac@1\.0\.0 requires pkg:npm\/native-darwin-arm64 1\.0\.0, and no such release can be installed/u,
+    );
   });
 });
 
@@ -457,127 +460,6 @@ describe('under the default policy', () => {
       packages: { app: { alias: 'app', purl: 'pkg:npm/app' } },
     });
     expect(lock.packages.app?.purl).toBe('pkg:npm/app@1.0.0');
-  });
-});
-
-describe('one version per package, and what happens when that cannot hold', () => {
-  const permissive: PolicyInput = {
-    allowYanked: false,
-    allowQuarantined: false,
-    semanticLossMaximum: 'warning',
-    requiredEvidence: [],
-  };
-  const manifestOf = (packages: OpmManifest['packages']): OpmManifest => ({
-    project: { name: 'closure', ecosystems: ['npm'] },
-    packages,
-    options: { offline: false, layout: 'opm' },
-    policy: permissive,
-  });
-  const lockOf = async (
-    registry: FixturePackage[],
-    packages: OpmManifest['packages'],
-  ) => {
-    const root = await mkdtemp(join(tmpdir(), 'opm-closure-'));
-    try {
-      return await resolveManifestToLock({
-        root,
-        manifest: manifestOf(packages),
-        offline: false,
-        registryOptions: { transport: new NpmRegistryFixture(registry) },
-      });
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  };
-
-  it('picks the version both dependents accept, not the newest of either', async () => {
-    // `left` would take 1.3.0; `right` takes only 1.2.x. Both ranges reached
-    // the solver as "any version" until the adapter attached them, so it took
-    // 1.3.0 for both and the lock paired `right` with a version it rejects.
-    const lock = await lockOf(
-      [
-        {
-          name: 'app',
-          versions: { '1.0.0': { dependencies: { left: '^1', right: '^1' } } },
-        },
-        {
-          name: 'left',
-          versions: { '1.0.0': { dependencies: { shared: '^1.0.0' } } },
-        },
-        {
-          name: 'right',
-          versions: { '1.0.0': { dependencies: { shared: '~1.2.0' } } },
-        },
-        {
-          name: 'shared',
-          versions: { '1.0.0': {}, '1.2.0': {}, '1.2.5': {}, '1.3.0': {} },
-        },
-      ],
-      { app: { alias: 'app', purl: 'pkg:npm/app', version: '1.0.0' } },
-    );
-    expect(lock.packages.shared?.purl).toBe('pkg:npm/shared@1.2.5');
-  });
-
-  it('says who cannot agree when no release of the shared package suits both', async () => {
-    // app@2 needs shared 2 and `right` cannot take it; app@1 would have agreed
-    // with it. Backing out of the newer app is a search the single-version lock
-    // does not do: it names the conflict instead of guessing which side gives.
-    await expect(
-      lockOf(
-        [
-          {
-            name: 'root',
-            versions: {
-              '1.0.0': { dependencies: { app: '*', right: '^1' } },
-            },
-          },
-          {
-            name: 'app',
-            versions: {
-              '1.0.0': { dependencies: { shared: '^1' } },
-              '2.0.0': { dependencies: { shared: '^2' } },
-            },
-          },
-          {
-            name: 'right',
-            versions: { '1.0.0': { dependencies: { shared: '^1' } } },
-          },
-          { name: 'shared', versions: { '1.4.0': {}, '2.0.0': {} } },
-        ],
-        { root: { alias: 'root', purl: 'pkg:npm/root', version: '1.0.0' } },
-      ),
-    ).rejects.toMatchObject({
-      code: 'UNRESOLVABLE',
-      message: expect.stringMatching(
-        /pkg:npm\/app@2\.0\.0 requires \^2; pkg:npm\/right@1\.0\.0 requires \^1/u,
-      ),
-    });
-  });
-
-  it('refuses, by name, a direct pin that two versions of one package would be needed for', async () => {
-    // npm would nest shared@1 under app and keep shared@2 at the top. A lock
-    // here is one entry per package name, so it cannot hold both, and it used
-    // to keep the direct one and point `app` at it without saying so.
-    await expect(
-      lockOf(
-        [
-          {
-            name: 'app',
-            versions: { '1.0.0': { dependencies: { shared: '^1' } } },
-          },
-          { name: 'shared', versions: { '1.4.0': {}, '2.0.0': {} } },
-        ],
-        {
-          app: { alias: 'app', purl: 'pkg:npm/app', version: '1.0.0' },
-          shared: { alias: 'shared', purl: 'pkg:npm/shared', version: '2.0.0' },
-        },
-      ),
-    ).rejects.toMatchObject({
-      code: 'UNRESOLVABLE',
-      message: expect.stringMatching(
-        /pkg:npm\/shared is needed at versions no single release satisfies.*the direct requirement requires 2\.0\.0.*pkg:npm\/app@1\.0\.0 requires \^1/su,
-      ),
-    });
   });
 });
 

@@ -10,12 +10,15 @@
  * The lock is read by the ecosystem's adapter (`ProjectFormat.readFrozenLock`);
  * what is generic is here. In order:
  *
- *  1. read the lock, and refuse what it holds that cannot be installed;
+ *  1. read the lock (against the workspace the project's files declare), and
+ *     refuse what it holds that cannot be installed;
  *  2. judge every package against the project's policy, before any fetch;
  *  3. take each archive from the shared store when it is there (found by the
  *     digest the lock pins) and otherwise fetch it from the lock's own URL,
  *     check it against that digest, and keep it;
- *  4. replace `node_modules` with the lock's layout, hard-linked from the store.
+ *  4. replace `node_modules` with the lock's layout, hard-linked from the store;
+ *     in a workspace, each member is linked from its name rather than fetched,
+ *     and has a `node_modules` of its own for the versions only it wants.
  *
  * Nothing is executed. A package that declares an install script is reported
  * and left as it is.
@@ -36,7 +39,7 @@ import {
   type ProjectFormat,
   type ProjectionResult,
 } from '@openpacker/adapter-core';
-import { removeTree } from '@openpacker/project-io';
+import { removeBelow, removeTree } from '@openpacker/project-io';
 import { requireAdapterRegistry } from './adapters.js';
 import { type FrozenFetchOptions } from './frozen-fetch.js';
 import {
@@ -51,6 +54,10 @@ import {
   redactSource,
   storeArchives,
 } from './frozen-store.js';
+import {
+  prepareFrozenWorkspace,
+  type FrozenWorkspaceRequest,
+} from './frozen-workspace.js';
 import { strongestClaims, type IntegrityClaim } from './integrity.js';
 import { MANIFEST_NAME, projectPaths } from './paths.js';
 import { readManifestFile } from './project.js';
@@ -64,6 +71,8 @@ export interface FrozenInstallInput extends FrozenFetchOptions {
   ecosystem?: string;
   /** Kinds of dependency to leave out: `dev` for a production install. */
   omit?: Iterable<FrozenOmit>;
+  /** Which part of a workspace to install (`-w`, `--include-workspace-root`, `--workspaces`). */
+  workspace?: FrozenWorkspaceRequest;
   /** Fetch nothing. Defaults to the project's `[options] offline`. */
   offline?: boolean;
   env?: NodeJS.ProcessEnv;
@@ -93,6 +102,8 @@ export interface FrozenInstallResult {
   skipped: readonly FrozenLockSkip[];
   /** Installed packages that declare an install script. None was run. */
   installScripts: readonly { name: string; version: string; path: string }[];
+  /** For a workspace lock: the members the lock holds, and the ones linked here. */
+  workspace?: { members: number; linked: number };
   layout: ProjectionResult;
   milliseconds: { read: number; fetch: number; layout: number; total: number };
 }
@@ -185,11 +196,13 @@ export async function installFrozen(
   const manifest = await readProjectManifest(root);
   const offline = input.offline ?? manifest?.options.offline ?? false;
 
+  const workspace = await prepareFrozenWorkspace(root, format, input.workspace);
   let lock: FrozenLock;
   try {
     lock = await format.readFrozenLock!(detected, {
       target: input.target ?? detectNativeTarget(),
       omit: new Set(input.omit ?? []),
+      ...(workspace !== undefined && { workspace }),
     });
   } catch (error) {
     throw adapterFailure(error);
@@ -240,7 +253,12 @@ export async function installFrozen(
       const archive = stored.byPath.get(pkg.path)!;
       return {
         purl: pkg.purl,
-        name: pkg.name,
+        // The package's own name, as a resolved closure's entry has; the
+        // directory it lives under is `layoutPath`, and for an aliased
+        // dependency (`"string-width-cjs": "npm:string-width@^4"`) that name
+        // is the install name.
+        name: pkg.packageName,
+        ...(pkg.name !== pkg.packageName && { installName: pkg.name }),
         scope: pkg.scope,
         exactPurl: pkg.exactPurl,
         version: pkg.version,
@@ -253,10 +271,21 @@ export async function installFrozen(
       };
     });
     // The lock is the whole tree: whatever was there before is not part of it.
+    // `npm ci` clears every workspace's `node_modules`, whichever it installs,
+    // and so does this; a member's directory comes from the lock, so each is
+    // reached from the project root without following a link.
+    for (const dir of lock.workspace?.memberDirs ?? [])
+      await removeBelow(root, `${dir}/node_modules`);
     await removeTree(join(root, 'node_modules'));
     let layout: ProjectionResult;
     try {
-      layout = await format.writeLayout!(detected, entries);
+      layout = await format.writeLayout!(
+        detected,
+        entries,
+        lock.workspace === undefined
+          ? undefined
+          : { workspace: lock.workspace.layout },
+      );
     } catch (error) {
       throw adapterFailure(error);
     }
@@ -279,6 +308,12 @@ export async function installFrozen(
           path: pkg.path,
         })),
       layout,
+      ...(lock.workspace !== undefined && {
+        workspace: {
+          members: lock.workspace.memberDirs.length,
+          linked: lock.workspace.layout.links.length,
+        },
+      }),
       milliseconds: {
         read: read - started,
         fetch: fetched - read,

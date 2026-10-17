@@ -82,6 +82,23 @@ describe('parseRunRequest', () => {
     );
     expect(parseRunRequest(['--offline'], ['test']).script).toBe('test');
   });
+
+  it('refuses the pnpm and npm options that reach it before the command instead of dropping them', () => {
+    for (const option of [
+      '-r',
+      '--filter',
+      '-C',
+      '--dir=x',
+      '--workspaces',
+      '--prefix',
+    ])
+      expect(
+        () => parseRunRequest(['--offline', option], ['test']),
+        option,
+      ).toThrow(
+        new RegExp(`Put ${option.split('=')[0]} after the command name`, 'u'),
+      );
+  });
 });
 
 describe('parseExecRequest', () => {
