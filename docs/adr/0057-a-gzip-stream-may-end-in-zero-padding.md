@@ -93,21 +93,27 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
    can end in zero bytes), so a limit taken from it could refuse an archive the
    ratio check accepts.
 8. **For npm's archives, opm refuses the classes of archive on which the two
-   reference extractors install different files.** Found by the same review and
-   narrowed, round by round, to what the tests below prove. npm extracts with
-   node-tar 6.2.1 and pnpm 10.28.0 with its own `parseTarball`. A tar that the
-   rule covers is refused with a typed code, installing neither set, in each
-   class listed here; where the two agree, opm extracts what both extract,
-   except in the three cases listed after the classes. "Install different files"
-   is one definition throughout: the files each installs from the same bytes, as
-   path and content with the first path component stripped, or pnpm throwing.
-   The claim is as strong as the 71 archives of
-   `packages/materializer/test/tar-oracle/` (each read by both extractors,
-   recorded in `oracle.json`, re-run by `generate.mjs --check`) and no stronger:
-   the classes were found by reading the two sources and by differential
-   fuzzing, neither of which can show there is no other. Two further sections
-   say what the definition leaves out on purpose: pacote's filter, and archives
-   npm extracts that pnpm itself cannot read.
+   reference extractors read different files, as far as the tests below show.**
+   Found by reviews and narrowed, round by round, to what the tests prove. npm
+   extracts with node-tar 6.2.1 and pnpm 10.28.0 with its own `parseTarball`.
+   "Read different files" is one definition throughout: the files each reads
+   from the same bytes, as path and content with the first path component
+   stripped, or pnpm throwing, or node-tar's answer changing with how it is fed.
+   node-tar is read as one buffer and in pieces of 1, 1,460, 16,384 and 65,536
+   bytes, and the readers differ if any of those five answers is not pnpm's.
+   What is claimed: of the 94 archives of
+   `packages/materializer/test/tar-oracle/` (each read by both readers, recorded
+   in `oracle.json`, re-run by `generate.mjs --check`), the 50 on which the
+   readers differ are refused, each with the code `tar-end.test.ts` names; 16 on
+   which they agree are refused as well (listed below); 1 extracts with a layout
+   other than npm's (pinned below); the other 27 extract the files node-tar
+   reads. Nothing is claimed for an archive that none of the 94 resembles. The
+   classes were found by reading the two sources, by review and by differential
+   fuzzing; `packages/materializer/test/tar-fuzz` is the fuzzing that is in the
+   repository, and what it ran is under Consequences. A fuzz can find archives
+   the readers read differently and cannot show there are none. Two further
+   sections say what the definition leaves out on purpose: pacote's filter, and
+   archives npm extracts that pnpm itself cannot read.
 
    **Where the rule applies.** The npm adapter asks for it by name, as it asks
    for `acceptRedundantEntries`: `requireNpmReaderAgreement` in the
@@ -138,9 +144,17 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
    GNU tar does not read past a lone zero block. Rust's `tar` crate was not run.
    No reading of the second entry is safe, so none is made.
 
-   **The classes refused in npm mode**, each with its oracle cases (a case is
-   refused if and only if it is one the two read differently, plus the
-   over-refusals below):
+   **A byte order mark is kept, in every ecosystem.** `TextDecoder` strips a
+   leading U+FEFF unless told not to; node-tar and pnpm keep it, so a name or a
+   pax key that begins with one is a different string from the same text without
+   it. The decoders of a header's text and of a pax body now keep it
+   (`ignoreBOM: true`; `tar-fields.test.ts`, `pax.test.ts`, the oracle's BOM
+   cases), and so does the checksum field's, for consistency: its `trim()`
+   removes a U+FEFF anyway, so no test can tell that one apart. Before, opm read
+   `<U+FEFF>package/x.js` as `package/x.js`.
+
+   **The classes refused in npm mode**, each with its oracle cases (the cases
+   the two read differently are refused; the over-refusals follow the classes):
    - **The end, `TAR_AMBIGUOUS_END`.** pnpm stops at the first header position
      whose first byte is 0 and reads a header past the end of the data (and
      fails). node-tar ends at two null blocks in a row or at the end of the
@@ -151,10 +165,14 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
      the rest of the archive with node-tar's checksum reading and null-block
      rule, made once, at the first zero byte in header position. It assumes
      node-tar is at the same offset as opm. The checksum, directory, number,
-     link-name and type classes below refuse the headers this review found after
-     which it would not be, and the fuzz found no other.
+     link-name, text and type classes below refuse the headers found after which
+     it would not be; the fuzz families under Consequences found no other, and
+     cannot show there is none.
    - **The checksum, `TAR_AMBIGUOUS_CHECKSUM`.** node-tar reads the field over
      12 bytes, into the typeflag and the link name; pnpm and opm over its 8.
+     pnpm's `parseOctal` of those 8 bytes must also give the computed sum: a
+     field that holds a line feed and then a space and digits is a number to
+     node-tar and opm and a failure for pnpm, and is refused.
    - **The prefix, `TAR_AMBIGUOUS_PREFIX`.** node-tar joins the prefix to the
      name only under `ustar\0` `00` magic; pnpm and opm always do.
    - **A directory, `TAR_AMBIGUOUS_DIRECTORY`.** node-tar takes a directory's
@@ -172,7 +190,14 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
      value that is not a safe integer) makes it drop the entry and read the
      entry's data as headers. pnpm and opm install the entry. A valid base-256
      number is accepted. A base-256 size or mode was already refused
-     (`ADAPTER_REQUIRED`).
+     (`ADAPTER_REQUIRED`). The size field is read by three functions that cut it
+     differently: opm's `tarNumber`, pnpm's `parseOctal` (copied byte for byte
+     from the 10.28.0 bundle into `tar-octal.ts`, with its source named there)
+     and node-tar's `decSmallNumber`. A size they do not read as one number is
+     refused: a NUL and then digits (pnpm skips the NUL and reads the digits;
+     node-tar and opm read 0, and node-tar reads the body as headers), a line
+     feed or a tab and then a space and digits (node-tar and opm read the
+     number; pnpm fails).
    - **A link name, `TAR_AMBIGUOUS_LINK`.** node-tar drops a header that is no
      link and has a link name ("linkpath forbidden") and reads its data as
      headers; pnpm and opm install it. That includes an extended header, whose
@@ -181,6 +206,16 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
      `[x path=X.js][directory with a link name][decoy.js]` installs `X.js` with
      npm and `decoy.js` with pnpm and opm. A directory with a link name is
      therefore refused, whether or not an extended header precedes it.
+   - **A text field, `TAR_AMBIGUOUS_TEXT`.** node-tar cuts a name, a link name
+     or a prefix with `replace(/\0.*/, '')`: the pattern has no `s` flag, so `.`
+     does not match a line feed, a carriage return, U+2028 or U+2029, and what
+     follows the first NUL is kept once such a character appears. pnpm and opm
+     cut at the NUL. A name, a link name or a prefix with any byte other than
+     NUL after its first NUL is refused (a prefix is read under `ustar\0` `00`
+     magic only, 130 bytes of it when byte 475 is zero and 155 otherwise). A
+     link name of a NUL, a line feed and any text is a link name on a file to
+     node-tar, which drops the entry ("linkpath forbidden") and reads its data
+     as headers; the oracle holds the case where that data forges `index.js`.
    - **An extended header, `TAR_AMBIGUOUS_PAX`.** (1) An extended header (`x`)
      with a path or a size, then a global header (`g`), then an entry: node-tar
      and opm name the entry by the extended path; pnpm applies the path to the
@@ -193,7 +228,20 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
      `[index.js=BENIGN][x path="package/z\nz.js"][index.js=PAYLOAD]` installs
      `index.js=PAYLOAD` with npm and `index.js=BENIGN` plus a file `z\nz.js`
      with pnpm and opm; a smuggled `size=1` gives npm a one-byte body and makes
-     it read the rest as headers.
+     it read the rest as headers. (3) A header of more than one block (over 512
+     bytes) with a byte past 0x7f in its body: node-tar decodes an `x` or `g`
+     body piece by piece as it is fed (`this[META] += chunk`), a piece handed to
+     a meta entry is 512 bytes or more, and a body of one block is always
+     delivered whole. A character cut in two by a piece boundary becomes two
+     U+FFFD and its record is ignored, so node-tar's answer depends on how the
+     archive reached it (a decompressor's output chunk, a network read, a file
+     read), where pnpm and opm read the record. The oracle holds five archives
+     of this kind, fed whole and in pieces of 1, 1,460, 16,384 and 65,536 bytes;
+     two read differently in pieces (a character across offset 512 of the body,
+     in pieces of 1 byte; across offset 16,384, in pieces of 1 and of 16,384).
+     (4) A length prefix with a leading zero (`0023 path=package/X.js`) and a
+     record whose last byte is not a newline are malformed
+     (`INVALID_PAX_HEADER`): node-tar ignores the record, pnpm applies it.
    - **A type, `TAR_AMBIGUOUS_TYPE`.** Typeflag `7` (a contiguous file) is
      extracted by node-tar and opm; pnpm throws "Unsupported file type 55".
    - **A path, `TAR_AMBIGUOUS_PATH`.** A file whose path has a backslash:
@@ -211,11 +259,14 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
    reading or an unreadable number, and a sized directory whose span holds
    nothing; an extended header with a size equal to its entry's, then a global
    header, and an extended header's path, a global header, then a directory; a
-   directory with a link name that no extended header precedes; a newline in a
-   pax record that changes nothing (a comment's value, a key); a prefix without
-   `ustar\0` `00` magic that a pax path overrides; a backslash below the
-   top-level directory. None of these, and none of the refused classes, occurs
-   in the registry samples below.
+   directory with a link name that no extended header precedes; a link name on a
+   global header, which node-tar drops; a newline in a pax record that changes
+   nothing (a comment's value, a key); a prefix without `ustar\0` `00` magic
+   that a pax path overrides; a backslash below the top-level directory; bytes
+   after the first NUL of a name that hold no line terminator; a pax header over
+   one block with a byte past 0x7f that no piece boundary can split. None of the
+   classes above, and none of these over-refusals, refuses an archive of the
+   475-archive registry sample under Consequences.
 
    **Extracted although the layouts differ, a known non-security difference
    (pinned by `PINNED` in `tar-end.test.ts`).** An entry whose name starts with
@@ -223,10 +274,15 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
    extractor does for any other (`acceptRedundantEntries`), and the layout
    (`treeToInstall`: one top-level directory is unwrapped, otherwise the store
    root is installed) then decides where files go, where npm strips the first
-   component, `.`, and keeps `package/`. A second top-level directory
-   (`other/o.js` beside `package/a.js`): npm and pnpm merge them; opm extracts
-   both and the layout installs the root. In both, the file is in the installed
-   tree at a path other than npm's; none is hidden from a reader of that tree.
+   component, `.`, and keeps `package/`. A second top-level directory that holds
+   a file (`other/o.js` beside `package/a.js`): npm and pnpm merge them; opm
+   extracts both and the layout installs the root. In both, the file is in the
+   installed tree at a path other than npm's; none is hidden from a reader of
+   that tree. A top-level directory entry with no file in it (`other/`) installs
+   nothing under npm's strip, and the layout (`treeToInstall`) no longer counts
+   it as a second top-level directory: the package is installed from `package/`,
+   as npm and pnpm install it (`layout-write.wrapper.test.ts`; before,
+   `node_modules/dep/package/index.js`).
 
    **Archives npm extracts and pnpm cannot read.** Real packages exist that npm
    installs and pnpm itself fails on, and the rule refuses them in npm mode as
@@ -250,7 +306,7 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
    `.npmignore`, or drops it if a `.npmignore` came first. The oracle therefore
    records both: `nodeTar` (what `Parse` reads, which the definition above
    compares) and `pacote` (what `tar.x` writes with that filter, to a
-   directory). `tar-end.test.ts` holds them equal for all 71 cases but for three
+   directory). `tar-end.test.ts` holds them equal for all 94 cases but for three
    ignore-file cases it lists (and a trailing slash that the file system drops).
    The filter works on names and types after node-tar has read the header, so it
    cannot turn a disagreement about which entries exist into an agreement or
@@ -290,80 +346,96 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
 - Tests, in `packages/materializer/src/`: `gzip-padding.test.ts` (padding, junk,
   junk behind padding, a member behind padding, two members, a damaged member,
   the size bound, the ratio, the digest); `gzip.test.ts` (400 seeded cases
-  against `zlib.gunzipSync`: opm accepts exactly what Node accepts with only
+  against `zlib.gunzipSync`: in each, opm accepts what Node accepts with only
   zeros after what Node read, with the same output, and refuses the rest with
-  the code each case was built for; the decoder's output bound at the bound, and
+  the code the case was built for; the decoder's output bound at the bound, and
   refused as output arrives; abort); `gzip-walk.test.ts` (CRC-32, length and
   header CRC named at their member, each optional header field alone, a cut
   trailer, the walk's budget, alone and as gunzipArchive sets it, its member
-  count, an abort at each of its checks); `tar-end.test.ts` (against the 71
+  count, an abort at each of its checks); `tar-end.test.ts` (against the 94
   archives of `test/tar-oracle/oracle.json`: with `requireNpmReaderAgreement`,
-  opm refuses exactly the cases where npm and pnpm install different files, with
-  the code, plus the listed over-refusals (`OVER_REFUSED`, each a case where
-  they agree), and extracts node-tar's set where they agree, but for the pinned
-  layout differences (`PINNED`), and holds what `tar.x` writes with pacote's
-  filter equal to what `Parse` reads but for the three ignore-file cases it
-  lists; without it, a tar with no end block, one with a sized directory, an
-  8-digit checksum and a prefix without magic extract under the general rule, a
-  lone zero block that data follows is refused, and any length of zero padding
-  after the end is accepted); `tar-numbers.test.ts` (which fields node-tar
-  decodes, under what magic, and which base-256 numbers it reads, at the
-  safe-integer bound, positive and negative, in 8 and 12 bytes);
-  `tar-fields.test.ts` (a name or prefix that is not UTF-8 is
-  `INVALID_TAR_TEXT`, not a bare `TypeError`); in `packages/opm-project/test/`,
-  `frozen-install.gzip-padding.test.ts` (an install, the refusal by package and
-  offset, the lock's integrity over the padding),
-  `frozen-install.tar-agreement.test.ts` (a pnpm lock's archive with no end
-  block is refused under its name), `install-limits.test.ts` (the option for npm
-  and for no other ecosystem) and `shared-store.limits.test.ts` (tsc over a
-  fixture: a shared-store call without `limits` does not compile); in
+  opm refuses the 50 cases on which node-tar (whole or in pieces) and pnpm read
+  different files, with the code the test lists, and the 16 listed over-refusals
+  (`OVER_REFUSED`, each a case where they agree), and extracts node-tar's set on
+  the rest but for the one pinned layout difference (`PINNED`); it holds what
+  `tar.x` writes with pacote's filter equal to what `Parse` reads but for the
+  three ignore-file cases it lists; without the option, a tar with no end block,
+  one with a sized directory, an 8-digit checksum and a prefix without magic
+  extract under the general rule, a lone zero block that data follows is
+  refused, and any length of zero padding after the end is accepted);
+  `tar-text.test.ts` (a byte after the first NUL of a name, a link name and a
+  prefix, with the prefix's 130 and 155 bytes and its magic);
+  `tar-octal.test.ts` (opm's, pnpm's and node-tar's readers of a size field, row
+  by row, and the sizes refused); `tar-pax-agreement.test.ts` (a newline in a
+  record, and the 512 and 513-byte bounds of a body with a byte past 0x7f);
+  `pax.test.ts` (malformed records, among them a length with a leading zero and
+  a record with no final newline, and a byte order mark in a key);
+  `tar-numbers.test.ts` (which fields node-tar decodes, under what magic, and
+  which base-256 numbers it reads, at the safe-integer bound, positive and
+  negative, in 8 and 12 bytes); `tar-fields.test.ts` (a name or prefix that is
+  not UTF-8 is `INVALID_TAR_TEXT`, not a bare `TypeError`; a leading byte order
+  mark is kept); `zip-names.test.ts` (a zip entry name with the UTF-8 flag set
+  that is not UTF-8 is `INVALID_ZIP_NAME`, not a bare `TypeError`); in
+  `packages/opm-project/test/`, `frozen-install.gzip-padding.test.ts` (an
+  install, the refusal by package and offset, the lock's integrity over the
+  padding), `frozen-install.tar-agreement.test.ts` (a pnpm lock's archive with
+  no end block is refused under its name), `install-limits.test.ts` (the option
+  for npm and for no other ecosystem) and `shared-store.limits.test.ts` (tsc
+  over a fixture: a shared-store call without `limits` does not compile); in
   `packages/adapter-npm`, both lock readers' `extraction`; and in
   `apps/openpacker-cli/test/install-prefix.test.ts` (an npm artifact is
   extracted under the agreement and refused with its code; any other artifact
   under the general rule).
-- The differential fuzz, two rounds. Round 5: 103,970 archives composed from
-  headers, bodies, zero, null, junk, partial and meta blocks, read by node-tar
-  6.2.1, pnpm 10.28.0 and opm in npm mode (96,000 random in the `all`, `mix`,
-  `pax`, `type`, `zero`, `num` and `name` families, 12,000 of them with the `./`
-  spellings removed, and 7,970 enumerated: checksum fields, zero blocks at every
-  position, partial blocks, magic and prefix, numeric fields, meta headers). It
-  found no divergence besides the `./` spellings, but its generator never
-  composed a pax body with a newline in a record or a directory with a link
-  name, and those were the two classes it missed (the fourth review found them
-  with `pax2c` and `dir2c`). Round 6, after the fix: 46,864 archives, 18,000 in
-  the families `pax2c` (pax headers of newline, smuggled and ordinary records
-  before a file), `dir2c` (directories with and without link names, sized,
-  slash-named, before and after an extended header), `pax2`, `special` (GNU and
-  vendor typeflags with bodies), and two of the fixer's, `pax3c` (length
-  prefixes off by one and with a leading zero, empty values, CR, tab, NUL and
-  `=` in values, multibyte paths with a byte and a character count, duplicate
-  keys, bodies that fill a block exactly) and `order2c` (extended, global,
-  directory and file headers in any order); 24,000 in `all`, `mix`, `pax`,
-  `type`, `zero`, `num`, `name` (`./` spellings removed) and `oct`; and the
-  4,864-archive enumeration of meta headers. 0 archives on which node-tar and
-  pnpm disagree and opm extracts, 0 on which they agree and opm extracts a
-  different set. Before the two fixes the same generators (seed 81; the runs
-  above use 91) gave 413 and 296 such archives in `pax2c` and `dir2c` and 24 in
-  `order2c`. The fixer also ran 44 hand-built pax and header shapes through the
-  real `tar.x`, pnpm and opm (length prefixes one too long, one too short, with
-  a leading zero and across a digit boundary; empty path, comment, size and
-  header; bodies of 511, 512, 513 and 1,024 bytes; `x` then `x`; `g` at the
-  start, after a file and at the end; duplicate path and size records;
-  multibyte, CR and space values; a path ending in a newline): all agree or are
-  refused. Not covered by any of it: what the generators do not compose
-  (compressed members, sparse files, GNU long names, which are
-  `ADAPTER_REQUIRED`); the fuzz cannot show there is no other class.
-- A sample of 475 registry archives, the first, one-third, two-thirds and last
-  version of 119 packages, 2010 to now, at most 25 MiB unpacked (run on
-  2026-10-17, this code against 1c0051c, in npm mode and under the general
-  rule): none holds a lone zero block; no archive that 1c0051c extracted is
-  refused and none it refused is extracted, in either mode. 469 extract; the 6
-  refused (5 symlinks, 1 over the ratio) are refused by both.
+- The differential fuzz that is in the repository,
+  `packages/materializer/test/tar-fuzz` (`run.mjs`, families in `families.mjs`;
+  its README says how to run it). It reads each archive with node-tar 6.2.1 fed
+  whole and in pieces of 1, 1,460, 16,384 and 65,536 bytes, with pnpm 10.28.0's
+  `parseTarball` (in a worker, under a 3-second deadline, because it spins on an
+  `x` header whose size runs past the data) and with opm in npm mode, and with
+  `--pacote` also checks the files opm returns against what `tar.x` writes with
+  pacote's filter. It fails (exit 1) on an archive the readers read differently
+  that opm extracts, and on one the readers agree on that opm extracts as
+  another set. Run on 2026-10-17, Node 22.22.0, every family below with
+  `--pacote` on the code of this ADR, and without it on `bf75b25`, the code
+  before the fifth review's fixes (R15 to R18); the seeded families with seed 1:
+
+  | Family        | What it builds                                                                                                                                                                                                                                                          | Archives | Failures on this code | Failures on `bf75b25` |
+  | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------------------- | --------------------- |
+  | `byte-sweep`  | every header byte but the checksum's set to each of 15 values (NUL, LF, CR, space, `0`, `1`, `7`, `8`, `+`, `-`, `/`, backslash, 0x80, 0xef, 0xff), in four archives (a file whose body is an entry, a plain file, a file with a ustar prefix, a pax header)            | 30,240   | 0                     | 2,113                 |
+  | `field-bytes` | 1 to 3 runs of 1 to 4 bytes in the text and number fields of five bases, the checksum right or written one of six other ways                                                                                                                                            | 20,000   | 0                     | 274                   |
+  | `pax-records` | 1 to 4 pax records from 15 shapes (newline in a path, a record inside a record, a length with a leading zero or off by one, no final newline, an empty path, a byte order mark in a key, comments of up to 1,300 bytes, with and without a byte past 0x7f), then a file | 20,000   | 0                     | 507                   |
+  | `pax-cut`     | a path with a two-byte character, after padding swept across every offset around 2,048, 2,560, 2,920, 4,380, 16,384 and 32,768                                                                                                                                          | 246      | 0                     | 6                     |
+  | `meta-order`  | every pair and every triple of 16 meta headers and files                                                                                                                                                                                                                | 4,864    | 0                     | 0                     |
+  | `zero-blocks` | zero and null blocks between entries and after them, partial blocks of three kinds at 17 lengths, a pair of files cut every 37 bytes                                                                                                                                    | 1,183    | 0                     | 0                     |
+
+  The 2,113 on `bf75b25` for `byte-sweep` is the number the fifth review found
+  with its own copy of the same sweep. Of the 507 in `pax-records`, 506 are a
+  byte order mark in a key that opm stripped and the readers kept (R16). The
+  last two families found nothing on either side: they cover orders of headers
+  that earlier rounds had already closed. What the families vary is what the
+  table says and nothing more: no compressed members, sparse files or GNU long
+  names (`ADAPTER_REQUIRED`), no header with more than a few fields changed, and
+  none of them reaches every archive. A run with no failure is not a proof that
+  there is none. Earlier rounds ran other generators, 103,970 and then 46,864
+  archives, that are not in the repository; their figures are not repeated here
+  because they cannot be reproduced from it, and what they found is in the
+  oracle.
+
+- A sample of 475 registry archives (the first, one-third, two-thirds and latest
+  version of 119 packages, 2010 to now, at most 25 MiB unpacked), run on
+  2026-10-17 on the code of this ADR in npm mode and under the general rule,
+  against `bf75b25` and against `1c0051c`: none holds a lone zero block, and no
+  archive either earlier build extracted is refused and none it refused is
+  extracted, in either mode, so no rule of section 8 (R15 to R18 included)
+  refuses an archive of the sample. 469 extract; the 6 refused (5 symlinks, 1
+  over the ratio) are refused by all three. The script is not in the repository,
+  and a later run draws the then-latest versions.
 - A sample of 386 registry archives, the first three versions and one from the
   first third of the versions of 97 packages, most from 2010 to 2014
-  (`registry-tar-end.mjs` from the second review, run on 2026-10-17 against this
-  ADR's code, the stack's base 484dc82 and the ADR's first revision 1d33ec4):
-  none holds a lone zero block or any other shape §8 refuses, and none is
+  (`registry-tar-end.mjs` from the second review, run on 2026-10-17 against the
+  code of that review, the stack's base 484dc82 and the ADR's first revision
+  1d33ec4; not re-run since, and the script is not in the repository): none
+  holds a lone zero block or any other shape §8 then refused, and none is
   refused that either earlier build accepted. 54 of them end their gzip stream
   with zero padding; the base refused each (`INVALID_COMPRESSION`) and they now
   extract. The 15 still refused are refused by all three builds, for reasons

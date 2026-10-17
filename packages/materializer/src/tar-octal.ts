@@ -64,7 +64,10 @@ export function nodeTarOctal(field: Uint8Array): number | null {
 /**
  * Refuse a size field that opm, pnpm and node-tar do not read as one number.
  * Not a number counts as 0 for node-tar, which then reads an entry with no data.
- * A base-256 size is `ADAPTER_REQUIRED` in `tarNumber`.
+ * A base-256 size is `ADAPTER_REQUIRED` in `tarNumber`. `tarNumber` accepts
+ * only what is octal digits once cut and trimmed, which node-tar reads as the
+ * same number, so the node-tar comparison does not fire on its own for any
+ * field found; it stays so that all three readers are named in one place.
  */
 export function assertSizeAgrees(header: Uint8Array, at: number): void {
   const field = header.subarray(124, 136);

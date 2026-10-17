@@ -1,10 +1,10 @@
 /**
  * The text fields of a header, where node-tar and pnpm cut a string
- * differently (ADR 0057 §8). node-tar's `decString` is
- * `buf.slice(off, off + size).toString('utf8').replace(/\0.*\/, '')`: the
- * pattern has no `s` flag and `.` does not match a line feed, a carriage
- * return, U+2028 or U+2029, so it removes the first NUL and what follows up to
- * the next line terminator and keeps the rest of the field. pnpm's
+ * differently (ADR 0057 §8). node-tar's `decString` decodes the field as UTF-8
+ * and removes the first NUL and what `.*` matches after it; the pattern has no
+ * `s` flag and `.` does not match a line feed, a carriage return, U+2028 or
+ * U+2029, so it removes the first NUL and what follows up to the next line
+ * terminator and keeps the rest of the field. pnpm's
  * `parseString` and opm's `tarText` cut at the first NUL. A name, a link name
  * or a prefix that holds a byte after its first NUL is therefore read as
  * different strings, and an entry can be dropped ("linkpath forbidden") with
