@@ -1,15 +1,18 @@
 import { createHash } from 'node:crypto';
 import {
+  mkdir,
   mkdtemp,
   readdir,
   readFile,
+  rename,
   rm,
   utimes,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { collectSharedStore } from '../src/index.js';
 
 /**
  * `opm gc --shared` and an old orphan `<key>.tree` record whose key a publish
@@ -20,31 +23,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * and a record that was put back is not reported as removed.
  */
 
-const hooks = vi.hoisted(() => ({
-  before: undefined as undefined | ((from: string) => Promise<void>),
-  after: undefined as undefined | ((from: string) => Promise<void>),
-}));
-
-vi.mock('node:fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs/promises')>();
-  const rename = async (from: string, to: string) => {
-    const before = hooks.before;
-    if (before !== undefined) await before(String(from));
-    await actual.rename(from, to);
-    const after = hooks.after;
-    if (after !== undefined) await after(String(from));
-  };
-  return { ...actual, rename, default: { ...actual, rename } };
-});
-
-const { collectSharedStore } = await import('../src/index.js');
-const real =
-  await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
-
 const temps: string[] = [];
 afterEach(async () => {
-  hooks.before = undefined;
-  hooks.after = undefined;
   await Promise.all(
     temps.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
   );
@@ -57,9 +37,9 @@ const NEW = `sha256:${createHash('sha256').update('new').digest('hex')}\n`;
 /** A publish: the record written by atomic replace, the entry made after it. */
 async function publish(root: string): Promise<void> {
   const tmp = join(root, `.${KEY}.tree.publish.tmp`);
-  await real.writeFile(tmp, NEW);
-  await real.rename(tmp, join(root, `${KEY}.tree`));
-  await real.mkdir(join(root, KEY, 'package'), { recursive: true });
+  await writeFile(tmp, NEW);
+  await rename(tmp, join(root, `${KEY}.tree`));
+  await mkdir(join(root, KEY, 'package'), { recursive: true });
 }
 
 async function store(): Promise<string> {
@@ -78,13 +58,14 @@ describe('gc and a publish of an orphan record’s key', () => {
   it('puts back a record written between its judgement and its move aside, and does not report it removed', async () => {
     const root = await store();
     let landed = false;
-    hooks.before = async (from) => {
-      if (landed || !from.endsWith(`${KEY}.tree`)) return;
-      landed = true;
-      await publish(root);
-    };
     const result = await collectSharedStore({
       env: { OPM_STORE_HOME: root },
+      steps: {
+        judged: async () => {
+          landed = true;
+          await publish(root);
+        },
+      },
     });
     expect(landed).toBe(true);
     expect(await readFile(join(root, `${KEY}.tree`), 'utf8')).toBe(NEW);
@@ -95,13 +76,14 @@ describe('gc and a publish of an orphan record’s key', () => {
   it('leaves a record written right after the old one was moved aside, and reports the old one removed', async () => {
     const root = await store();
     let landed = false;
-    hooks.after = async (from) => {
-      if (landed || !from.endsWith(`${KEY}.tree`)) return;
-      landed = true;
-      await publish(root);
-    };
     const result = await collectSharedStore({
       env: { OPM_STORE_HOME: root },
+      steps: {
+        movedAside: async () => {
+          landed = true;
+          await publish(root);
+        },
+      },
     });
     expect(landed).toBe(true);
     expect(await readFile(join(root, `${KEY}.tree`), 'utf8')).toBe(NEW);

@@ -97,7 +97,7 @@ describe('the forward run and its reverse', () => {
   const effects = patch('@@ -1,2 +1,2 @@', ' a', '-b', '+c');
   const body = `${'z\n'.repeat(60)}`;
 
-  function spend(run: (budget: PatchBudget, tree: PatchTree) => unknown) {
+  function spend(run: (budget: PatchBudget, tree: PatchTree) => void) {
     const budget = new PatchBudget();
     try {
       run(budget, files({ 'f.js': body }));

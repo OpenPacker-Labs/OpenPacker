@@ -22,6 +22,18 @@ function isMissing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === 'ENOENT';
 }
 
+/**
+ * Where something else may happen between gc's steps on an old orphan
+ * `<key>.tree` record: a publish writing the record of that key. Only the
+ * tests of that race give one; gc does nothing in between.
+ */
+export interface OrphanSteps {
+  /** After the record was judged old, before it is moved aside. */
+  judged?(record: string): Promise<void>;
+  /** After it was moved aside, before it is looked at again. */
+  movedAside?(record: string): Promise<void>;
+}
+
 export interface SharedStoreCollection {
   /** The shared root that was examined, when there is one. */
   root?: string;
@@ -52,6 +64,7 @@ export async function collectSharedStore(
     minimumAgeMs?: number;
     env?: NodeJS.ProcessEnv;
     now?: () => number;
+    steps?: OrphanSteps;
   } = {},
 ): Promise<SharedStoreCollection> {
   const requested = requestedSharedStore(input.env ?? process.env);
@@ -140,7 +153,13 @@ export async function collectSharedStore(
     await removeStableFile(`${entry}.tree`).catch(() => undefined);
     await removeStableFile(`${entry}.artifact`).catch(() => undefined);
   }
-  await collectOrphanRecords(root, now - minimumAge, input.dryRun, result);
+  await collectOrphanRecords(
+    root,
+    now - minimumAge,
+    input.dryRun,
+    result,
+    input.steps,
+  );
   return result;
 }
 
@@ -157,6 +176,7 @@ async function collectOrphanRecords(
   before: number,
   dryRun: boolean | undefined,
   result: SharedStoreCollection,
+  steps: OrphanSteps = {},
 ): Promise<void> {
   const names = new Set(await readdir(root));
   for (const name of [...names].sort()) {
@@ -172,6 +192,7 @@ async function collectOrphanRecords(
       continue;
     }
     const doomed = join(root, `.${key}.collect-${randomUUID()}`);
+    await steps.judged?.(path);
     if (
       !(await rename(path, doomed).then(
         () => true,
@@ -179,6 +200,7 @@ async function collectOrphanRecords(
       ))
     )
       continue;
+    await steps.movedAside?.(path);
     const moved = await lstat(doomed);
     // Removed only if it is the record that was judged; a record written
     // since goes back, and was never removed. (For the instant between the

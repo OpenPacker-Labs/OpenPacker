@@ -108,12 +108,22 @@ function tooLarge(path: string, size: number, atLeast = false): void {
     );
 }
 
+/** What of an open file reading a patch takes: `FileHandle` is one. */
+export interface PatchFileReader {
+  read(
+    buffer: Buffer,
+    offset: number,
+    length: number,
+    position: number,
+  ): Promise<{ readonly bytesRead: number }>;
+}
+
 /**
  * At most one byte more than a patch file may be, from the start of `handle`:
  * a file that grew since it was sized is never held whole, and the byte past
  * the bound is what says it is over it.
  */
-async function readBounded(handle: FileHandle): Promise<Buffer> {
+async function readBounded(handle: PatchFileReader): Promise<Buffer> {
   const limit = PATCH_FILE_LIMITS.file + 1;
   const chunks: Buffer[] = [];
   let total = 0;
@@ -136,6 +146,20 @@ function tooLargeTogether(files: number, size: number): void {
     );
 }
 
+/**
+ * The bytes of the patch file `path` open as `handle`, read to one byte past
+ * the bound and held to it again: a file that grew since it was sized is
+ * refused, and never held whole.
+ */
+export async function readPatchBytes(
+  handle: PatchFileReader,
+  path: string,
+): Promise<Buffer> {
+  const bytes = await readBounded(handle);
+  tooLarge(path, bytes.length, bytes.length > PATCH_FILE_LIMITS.file);
+  return bytes;
+}
+
 /** The project's patches, by key, and how they differ from the lock's record. */
 export interface ProjectPatches {
   readonly patches: ReadonlyMap<string, FrozenPatch>;
@@ -145,8 +169,10 @@ export interface ProjectPatches {
 /** Read every patch the project declares and hold the lock's record to it. */
 export async function readProjectPatches(
   root: string,
-  config: PnpmProjectConfig,
-  lock: PnpmLock,
+  config: Pick<PnpmProjectConfig, 'patches' | 'patchesFrom'>,
+  lock: Pick<PnpmLock, 'patchedDependencies'>,
+  /** Awaited once every file is sized and none is read yet; nothing by default. */
+  afterSizing: () => Promise<void> = () => Promise.resolve(),
 ): Promise<ProjectPatches> {
   const patches = new Map<string, FrozenPatch>();
   const stale: string[] = [];
@@ -172,12 +198,14 @@ export async function readProjectPatches(
   for (const path of paths)
     size += await withFileBelow(root, path, async (_, bytes) => bytes);
   tooLargeTogether(paths.length, size);
+  await afterSizing();
   let read = 0;
   for (const [index, [key]] of declared.entries()) {
     const path = paths[index]!;
-    const bytes = await withFileBelow(root, path, readBounded);
-    // A file that grew since it was sized is held to the bounds again.
-    tooLarge(path, bytes.length, bytes.length > PATCH_FILE_LIMITS.file);
+    const bytes = await withFileBelow(root, path, (handle) =>
+      readPatchBytes(handle, path),
+    );
+    // Files that grew since they were sized are held to the bound of all again.
     read += bytes.length;
     tooLargeTogether(paths.length, read);
     const recorded = lock.patchedDependencies.get(key);
