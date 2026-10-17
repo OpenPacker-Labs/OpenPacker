@@ -11,8 +11,8 @@ import { currentOwner, isOwnerAlive, type RunOwner } from './run-owner.js';
  * that removes them, so each name says which process made it (`run-owner.ts`),
  * and the next run that makes one in the same place, or `opm gc` for views,
  * removes those whose process has ended. One whose process may still be
- * running, or that another machine, boot or PID namespace made, is never
- * touched.
+ * running, or that another machine or PID namespace made, is never touched;
+ * one an earlier boot of this machine made is removed.
  */
 
 /** A name under `prefix` that belongs to this process. */
@@ -22,14 +22,14 @@ export function scratchName(prefix: string): string {
 
 /** A name under `prefix` that says `owner` made it. */
 export function scratchNameFor(prefix: string, owner: RunOwner): string {
-  const { machine, boot, pidNamespace, pid, start } = owner;
-  return `${prefix}${[machine, boot, pidNamespace, pid, start].join('.')}-${randomUUID()}`;
+  const { machine, host, boot, pidNamespace, pid, start } = owner;
+  return `${prefix}${[machine, host, boot, pidNamespace, pid, start].join('.')}-${randomUUID()}`;
 }
 
 /** Who made `name`, a name under `prefix`; undefined for any other name. */
 function ownerOf(prefix: string, name: string): RunOwner | undefined {
   if (!name.startsWith(prefix)) return undefined;
-  const [machine, boot, pidNamespace, pid, start, ...rest] = name
+  const [machine, host, boot, pidNamespace, pid, start, ...rest] = name
     .slice(prefix.length)
     .split('-')[0]!
     .split('.');
@@ -43,6 +43,7 @@ function ownerOf(prefix: string, name: string): RunOwner | undefined {
     return undefined;
   return {
     machine: machine!,
+    host: host!,
     boot: boot!,
     pidNamespace: pidNamespace!,
     pid: owner,

@@ -193,13 +193,16 @@ Decision:
    - `opmx` holds SIGINT, SIGTERM and SIGHUP while a tool runs: the first ends
      the sandboxed process tree, the run removes its view and its layout, and
      the same signal is raised again, so `opmx` ends by it.
-   - A run killed outright (SIGKILL, a crash) leaves them. Each name says who
-     made it: a pid, the time it started, and digests of its PID namespace, its
-     boot and its machine. The next run that makes one in the same place, and
-     `opm gc` for the views of a project's store, removes those whose owner has
-     ended: of this machine, boot and namespace, with its pid unused or used by
-     a process that started at another time. Anything else is taken to be
-     running and left alone.
+   - A run killed outright (SIGKILL, a crash, the power) leaves them. Each name
+     says who made it: a pid, the time it started, and digests of its PID
+     namespace, its boot, its machine id and its host name. The next run that
+     makes one in the same place, and `opm gc` for the views of a project's
+     store, removes those whose owner has ended: of this machine (machine id and
+     host name) in an earlier boot, whatever its pid; or of this machine, boot
+     and namespace, with its pid unused or used by a process that started at
+     another time. Anything else (another machine id or host name, another PID
+     namespace, a machine id this host cannot read) is another host or a
+     container sharing the store, taken to be running and left alone.
    - `opm gc` does not count a view as a store path (`isStoreView`).
    - While a view exists, each entry it shows has files with a second name, so
      the shared store's `opm gc` counts that entry as in use.
@@ -232,10 +235,14 @@ Limits:
   a handle only when it holds two or more of the run's entries. A tool's
   closure, and a project's packages, are in one store, so opm's own runs do not
   meet this.
-- What a run killed outright leaves on another machine, in another PID namespace
-  or in an earlier boot is never removed by a run or `opm gc`: whether its owner
-  still runs cannot be told from here. Remove such a directory by hand once its
-  run is known to be over.
+- What a run killed outright leaves on another machine or in another PID
+  namespace is never removed from here, by a run or by `opm gc`: whether its
+  owner still runs cannot be told. A later run on that machine, or in that
+  namespace, removes it.
+- Two machines with the same machine id and host name are taken for one, as
+  machine-id(5) requires the id to be unique: a clone that kept its original's
+  id, sharing a store with it, would have a live run's leftovers taken for an
+  earlier boot's.
 - Measured and exercised on Linux, where bwrap is the backend.
   `tool-many-deps.test.ts`, `store-view-budget.test.ts`,
   `store-view-confinement.test.ts`, `store-view-swap.test.ts`,

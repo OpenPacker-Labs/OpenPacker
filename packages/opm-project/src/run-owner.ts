@@ -10,8 +10,8 @@ import { hostname } from 'node:os';
  * namespace: a run in a container that shares the cache, or on another machine
  * that shares it over NFS under the same host name, cannot see the owner's pid
  * and would take it for ended. So the owner is a pid with the time it started,
- * and short digests of the PID namespace, the boot and the machine. Whatever
- * is not of this machine, boot and namespace is taken to be running.
+ * and short digests of its PID namespace, its boot, its machine id and its host
+ * name ('' for what this host cannot read).
  */
 export interface RunOwner {
   pid: number;
@@ -21,8 +21,10 @@ export interface RunOwner {
   pidNamespace: string;
   /** The boot the start time counts from. */
   boot: string;
-  /** The machine: its machine id and host name. */
+  /** The machine id (/etc/machine-id). */
   machine: string;
+  /** The host name. */
+  host: string;
 }
 
 let current: RunOwner | undefined;
@@ -35,23 +37,45 @@ export function currentOwner(): RunOwner {
     pidNamespace: digest(read(() => readlinkSync('/proc/self/ns/pid'))),
     boot: digest(read(() => readFileSync('/proc/sys/kernel/random/boot_id'))),
     machine: digest(
-      `${read(() => readFileSync('/etc/machine-id')) ?? read(() => readFileSync('/var/lib/dbus/machine-id')) ?? ''}\n${hostname()}`,
+      read(() => readFileSync('/etc/machine-id')) ??
+        read(() => readFileSync('/var/lib/dbus/machine-id')),
     ),
+    host: digest(hostname()),
   };
   return current;
 }
 
 /**
- * Whether the owner may still be running. Only an owner of this machine, boot
- * and PID namespace is judged: it has ended when its pid is unused, or used by
- * a process that started at another time. A pid this process may not signal,
- * or whose start it cannot read, is taken to be running, which only delays
- * removing what it left.
+ * Whether the owner may still be running.
+ *
+ * - Of this machine (its machine id and host name) in an earlier boot: no.
+ *   Nothing of that boot runs now, whatever its pids are.
+ * - Of this machine, boot and PID namespace: not when its pid is unused, or
+ *   used by a process that started at another time. A pid this process may
+ *   not signal, or whose start it cannot read, is taken to be running, which
+ *   only delays removing what it left.
+ * - Anything else (another machine id or host name, another PID namespace, or
+ *   a machine or boot this host cannot read) is another host or container
+ *   sharing the store, and is taken to be running.
+ *
+ * Two machines with the same machine id and host name are one machine here,
+ * as systemd's machine-id(5) requires the id to be unique.
  */
 export function isOwnerAlive(owner: RunOwner): boolean {
   const here = currentOwner();
+  const thisMachine =
+    here.machine !== '' &&
+    owner.machine === here.machine &&
+    owner.host === here.host;
   if (
-    owner.machine !== here.machine ||
+    thisMachine &&
+    here.boot !== '' &&
+    owner.boot !== '' &&
+    owner.boot !== here.boot
+  )
+    return false;
+  if (
+    !thisMachine ||
     owner.boot !== here.boot ||
     owner.pidNamespace !== here.pidNamespace
   )
@@ -82,11 +106,11 @@ export function startOf(pid: number): string | undefined {
   }
 }
 
+/** A short digest of `value`, or '' for a value this host cannot read. */
 const digest = (value: string | undefined) =>
-  createHash('sha256')
-    .update(value ?? '')
-    .digest('hex')
-    .slice(0, 8);
+  value === undefined || value === ''
+    ? ''
+    : createHash('sha256').update(value).digest('hex').slice(0, 8);
 
 function read(get: () => string | Buffer): string | undefined {
   try {

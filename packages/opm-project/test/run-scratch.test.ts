@@ -53,6 +53,11 @@ async function ended(): Promise<number> {
   return child.pid!;
 }
 
+/** This host has a machine id and a boot id to tell an earlier boot by. */
+const knowsItsBoot =
+  existsSync('/etc/machine-id') &&
+  existsSync('/proc/sys/kernel/random/boot_id');
+
 const exit = (child: ChildProcess) =>
   new Promise((resolve) => child.once('exit', resolve));
 
@@ -76,25 +81,47 @@ describe('what a run left', () => {
     expect(existsSync(join(dir, name))).toBe(false);
   });
 
-  it('is kept when another machine, boot or PID namespace made it, though the pid is unused here', async () => {
+  it('is kept when another machine id, host name or PID namespace made it, in this boot or another, though the pid is unused here', async () => {
     const dir = await scratchDir();
     const pid = await ended();
     const owner = { ...currentOwner(), pid, start: '' };
     const foreign = [
       { ...owner, machine: 'zzzzzzzz' },
-      { ...owner, boot: 'zzzzzzzz' },
+      { ...owner, machine: 'zzzzzzzz', boot: 'zzzzzzzz' },
+      { ...owner, host: 'zzzzzzzz' },
+      { ...owner, host: 'zzzzzzzz', boot: 'zzzzzzzz' },
+      // A machine whose id could not be read is not known to be this one.
+      { ...owner, machine: '', boot: 'zzzzzzzz' },
       { ...owner, pidNamespace: 'zzzzzzzz' },
     ].map((item) => scratchNameFor(PREFIX, item));
     const mine = scratchNameFor(PREFIX, owner);
     for (const name of [...foreign, mine]) await mkdir(join(dir, name));
     await sweepAbandoned(dir, PREFIX);
-    expect(foreign.map((name) => existsSync(join(dir, name)))).toEqual([
-      true,
-      true,
-      true,
-    ]);
+    expect(foreign.map((name) => existsSync(join(dir, name)))).toEqual(
+      foreign.map(() => true),
+    );
     expect(existsSync(join(dir, mine))).toBe(false);
   });
+
+  // After a reboot nothing of the earlier boot runs, whatever its pids are now.
+  it.runIf(knowsItsBoot)(
+    'is removed when this machine made it in an earlier boot, though its pid is in use',
+    async () => {
+      const dir = await scratchDir();
+      const name = scratchNameFor(PREFIX, {
+        ...currentOwner(),
+        boot: 'zzzzzzzz',
+      });
+      await mkdir(join(dir, name));
+      await sweepAbandoned(dir, PREFIX);
+      expect(existsSync(join(dir, name))).toBe(false);
+    },
+  );
+
+  it.skipIf(knowsItsBoot)(
+    'is removed when this machine made it in an earlier boot (needs a machine id and a boot id; not checked on this host)',
+    () => {},
+  );
 
   it.runIf(process.platform === 'linux')(
     'is removed when its pid now belongs to a process that started at another time',
