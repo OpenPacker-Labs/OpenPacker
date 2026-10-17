@@ -5,7 +5,7 @@
  */
 
 import { compareText, compareVersions } from '../layout-compare.js';
-import type { PlaceInstance, PlaceTop } from './place.js';
+import type { PlaceInstance, PlaceTop } from './place-types.js';
 
 /** The member directories that enclose `dir`, nearest first (never `dir`, never the project). */
 export function enclosingDirs(
@@ -21,14 +21,14 @@ export function enclosingDirs(
   return out;
 }
 
-/** An instance's edges in the order they are placed: a package under its own name before an alias. */
-export function orderedEdges(
-  instance: PlaceInstance,
+/** A dependent's edges in the order they are placed: a package under its own name before an alias. */
+export function orderedEdges<T extends { as: string; to: string }>(
+  dependent: { readonly edges: readonly T[] },
   instances: ReadonlyMap<string, PlaceInstance>,
-): readonly { as: string; to: string }[] {
-  const aliased = (edge: { as: string; to: string }): number =>
+): T[] {
+  const aliased = (edge: T): number =>
     Number(instances.get(edge.to)?.name !== edge.as);
-  return [...instance.edges].sort(
+  return [...dependent.edges].sort(
     (left, right) =>
       aliased(left) - aliased(right) ||
       compareText(left.as, right.as) ||
@@ -55,16 +55,24 @@ export function rootChoice(
     }
   const choice = new Map<string, string>();
   for (const [as, byTarget] of counts) {
-    const best = [...byTarget].sort(
-      ([leftKey, left], [rightKey, right]) =>
-        right - left ||
-        compareVersions(
-          instances.get(rightKey)?.version ?? '',
-          instances.get(leftKey)?.version ?? '',
-        ) ||
-        compareText(leftKey, rightKey),
-    )[0];
-    if (best !== undefined) choice.set(as, best[0]);
+    const best = mostWanted(byTarget, instances);
+    if (best !== undefined) choice.set(as, best);
   }
   return choice;
+}
+
+/** The key counted most, then the newest, then the smaller key. */
+function mostWanted(
+  counts: ReadonlyMap<string, number>,
+  instances: ReadonlyMap<string, PlaceInstance>,
+): string | undefined {
+  return [...counts].sort(
+    ([leftKey, left], [rightKey, right]) =>
+      right - left ||
+      compareVersions(
+        instances.get(rightKey)?.version ?? '',
+        instances.get(leftKey)?.version ?? '',
+      ) ||
+      compareText(leftKey, rightKey),
+  )[0]?.[0];
 }

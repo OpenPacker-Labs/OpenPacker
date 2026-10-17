@@ -5,8 +5,13 @@ import {
   type FixtureName,
 } from '../pnpm-lock/fixture-support.js';
 import { readPnpmLock } from '../pnpm-lock/index.js';
-import { worldOf } from './frozen-support.js';
+import { LINUX, worldOf } from './frozen-support.js';
 import { buildPnpmModel } from './model.js';
+import { planPlacement } from './place.js';
+import { peerSplitProblems, resolutionProblems } from './place-check.js';
+import { placeInputOf } from './place-input.js';
+import { selectTops } from './scope.js';
+import { selectInstances } from './select.js';
 
 async function read(
   fixture: FixtureName,
@@ -177,5 +182,28 @@ describe.each([
     expect(direct.length).toBeGreaterThan(0);
     for (const pkg of direct)
       expect(pkg.path.match(/node_modules/gu)).toHaveLength(1);
+  });
+});
+
+describe.each([
+  ['ai-bdd.pnpm-lock.yaml', 354],
+  ['hobo.cut.pnpm-lock.yaml', undefined],
+  ['opensesame.cut.pnpm-lock.yaml', undefined],
+] as const)('peers in the plan of %s', (name, places) => {
+  it('loads one copy of every peer a package shares with the package that depends on it', () => {
+    const model = buildPnpmModel(readPnpmLock(fixtureBytes(name)).lock);
+    const tops = selectTops(model);
+    const selection = selectInstances({
+      model,
+      tops,
+      omit: new Set(),
+      targets: [LINUX],
+    });
+    const input = placeInputOf(model, selection, tops);
+    const placement = planPlacement(input);
+    expect(placement.problems).toEqual([]);
+    expect(resolutionProblems(input, placement)).toEqual([]);
+    expect(peerSplitProblems(input, placement)).toEqual([]);
+    if (places !== undefined) expect(placement.placed).toHaveLength(places);
   });
 });

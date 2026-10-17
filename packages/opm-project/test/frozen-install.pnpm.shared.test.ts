@@ -7,7 +7,8 @@
  *
  * What the writer then does with a shared dependency: its executable is shimmed
  * where it was written, it is left out with its importer's list, and a member
- * installed alone still finds it.
+ * installed alone still finds it. And a package below a member that has a peer
+ * its dependent requires too is written where it finds that same copy.
  */
 
 import { realpathSync } from 'node:fs';
@@ -114,5 +115,80 @@ describe('a dependency the project and its members share', () => {
     // The project's own list is not installed: lint is ui's dev dependency
     // and ui is installed because web links it.
     expect(await exists(join(w.dir, 'node_modules/left'))).toBe(true);
+  });
+});
+
+/**
+ * A stand-in for React's hooks: the renderer sets the dispatcher on the copy
+ * of `react` it loaded, and a hook reads it from the copy its own package
+ * loaded. Two copies of one react instance and the hook finds none, which is
+ * React's "Invalid hook call".
+ */
+const REACT = `let dispatcher = null;
+exports.setDispatcher = (next) => { dispatcher = next; };
+exports.useState = (initial) => {
+  if (dispatcher === null) throw new Error('Invalid hook call: no dispatcher in this copy of react');
+  return dispatcher.useState(initial);
+};
+`;
+
+describe('a peer shared below a member', () => {
+  it("is the copy its dependent loads, so a hook in a UI kit's own dependency renders", async () => {
+    // site is on react 19 under a project on react 18; site -> kit -> hooks,
+    // and kit and hooks both have react as a peer.
+    const w = await pnpmWorld();
+    const peer = ['    peerDependencies:', "      react: '*'"];
+    w.pkg({ name: 'react', version: '18.3.1', files: { 'index.js': REACT } });
+    w.pkg({ name: 'react', version: '19.2.8', files: { 'index.js': REACT } });
+    w.pkg({
+      name: 'kit',
+      version: '1.0.0',
+      suffix: '(react@19.2.8)',
+      deps: { hooks: '1.0.0(react@19.2.8)', react: '19.2.8' },
+      files: {
+        'index.js':
+          "const { useCounter } = require('hooks');\nmodule.exports = () => useCounter();\n",
+      },
+      extraPackageLines: peer,
+    });
+    w.pkg({
+      name: 'hooks',
+      version: '1.0.0',
+      suffix: '(react@19.2.8)',
+      deps: { react: '19.2.8' },
+      files: {
+        'index.js':
+          "const React = require('react');\nexports.useCounter = () => React.useState(1)[0];\n",
+      },
+      extraPackageLines: peer,
+    });
+    w.importer('.', { dependencies: { react: ['^18.3.1', '18.3.1'] } });
+    w.importer('packages/site', {
+      dependencies: {
+        react: ['^19.2.8', '19.2.8'],
+        kit: ['^1.0.0', '1.0.0(react@19.2.8)'],
+      },
+    });
+    await w.write();
+    await w.install();
+    expect(
+      w.run(
+        "const React = require('react'); React.setDispatcher({ useState: (v) => [v] }); try { console.log('rendered ' + require('kit')()); } catch (e) { console.log('render failed: ' + e.message); }",
+        'packages/site',
+      ),
+    ).toBe('rendered 1');
+    const kit = join('packages/site', 'node_modules/kit');
+    const hooks = realpathSync(
+      require.resolve('hooks/package.json', { paths: [join(w.dir, kit)] }),
+    );
+    expect(
+      new Set(
+        realPaths(w, 'react', [
+          'packages/site',
+          kit,
+          hooks.slice(w.dir.length + 1, -'/package.json'.length),
+        ]),
+      ).size,
+    ).toBe(1);
   });
 });

@@ -1,10 +1,10 @@
 /**
  * What the planner is told of a selection: the instances being installed with
- * only the edges that lead to another of them, and the importers with the
- * edges and links that are kept.
+ * only the edges that lead to another of them (a peer marked as one), and the
+ * importers with the edges and links that are kept.
  */
 
-import type { PlaceInput } from './place.js';
+import type { PlaceInput } from './place-types.js';
 import type { PnpmModel } from './model.js';
 import type { Selection } from './select.js';
 
@@ -24,7 +24,13 @@ export function placeInputOf(
           version: instance.version,
           edges: instance.edges
             .filter((edge) => selection.included.has(edge.to))
-            .map((edge) => ({ as: edge.as, to: edge.to })),
+            .map((edge) => ({
+              as: edge.as,
+              to: edge.to,
+              ...(instance.pkg.peerDependencies.has(edge.as) && {
+                peer: true,
+              }),
+            })),
         },
       ] as const;
     }),
