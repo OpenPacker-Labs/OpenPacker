@@ -8,24 +8,31 @@
  * `package.json` and refuses one whose name or version is not the lock's
  * (ADR 0055 §7). The version is the one the lock records for the archive: a
  * registry package's, or a tarball entry's own `version`, which may be absent,
- * and then only the name is compared. It is compared as npm reads one: a
- * leading `v` or `=` and build metadata do not make another version, and a
- * name as pnpm compares one, without regard to case. pnpm makes the same check
- * when it reads a package back from its store (`checkPackageMismatch`,
- * `ERR_PNPM_UNEXPECTED_PKG_CONTENT_IN_STORE`, on by default through
- * `strict-store-pkg-content-check`). An npm lock is not checked here, its
- * archives being the ones npm resolved by name.
+ * and then only the name is compared. A version is the same when the text is,
+ * or when node-semver's strict `SemVer` reads both to one version (one leading
+ * `v` and build metadata aside); a name as pnpm compares one, without regard to
+ * case. pnpm makes the same check when it reads a package back from its store
+ * (`checkPackageMismatch`, `ERR_PNPM_UNEXPECTED_PKG_CONTENT_IN_STORE`, on by
+ * default through `strict-store-pkg-content-check`), but compares versions
+ * loosely (`semver.eq(…, { loose: true })`), taking `=1.0.0`, `vv1.0.0` and
+ * `01.0.0` for `1.0.0`; opm refuses those, deliberately, failing closed. An
+ * npm lock is not checked here, its archives being the ones npm resolved by
+ * name.
  */
 
-import { type FrozenLockPackage, quote } from '@openpacker/adapter-core';
+import {
+  type FrozenLockPackage,
+  npmVersion,
+  quote,
+} from '@openpacker/adapter-core';
 import { readArchiveManifest } from './frozen-scripts.js';
 import { OpmError } from './types.js';
 
-const comparable = (version: string): string =>
-  version
-    .trim()
-    .replace(/^[=v]+/u, '')
-    .split('+', 1)[0]!;
+const sameVersion = (archive: string, lock: string): boolean => {
+  if (archive === lock) return true;
+  const read = npmVersion(archive);
+  return read !== undefined && read === npmVersion(lock);
+};
 
 /**
  * The names the archive must carry and the version, if any: the lock's own
@@ -73,16 +80,17 @@ export async function checkArchiveIdentities(
       problems.push(
         `${quote(wanted)} (${pkg.path}): the archive's package.json has no ${typeof name !== 'string' ? 'name' : 'version'}`,
       );
-    else if (
-      expected.names.some(
-        (each) => each.toLowerCase() !== name.toLowerCase(),
-      ) ||
-      (compareVersion &&
-        comparable(version as string) !== comparable(expected.version!))
-    )
-      problems.push(
-        `${quote(wanted)} (${pkg.path}): the archive's package.json is ${quote(typeof version === 'string' ? `${name}@${version}` : name)}`,
-      );
+    else {
+      const versionDiffers =
+        compareVersion && !sameVersion(version as string, expected.version!);
+      if (
+        versionDiffers ||
+        expected.names.some((each) => each.toLowerCase() !== name.toLowerCase())
+      )
+        problems.push(
+          `${quote(wanted)} (${pkg.path}): the archive's package.json is ${quote(typeof version === 'string' ? `${name}@${version}` : name)}${versionDiffers ? `, and the lock records version ${quote(expected.version!)}` : ''}`,
+        );
+    }
   }
   if (problems.length > 0)
     throw new OpmError(

@@ -32,7 +32,27 @@ describe('the archives of a pnpm install', () => {
 
   it.each([
     ['another name', { name: 'a' }, /"b@1\.0\.0".* is "a@1\.0\.0"/u],
-    ['another version', { version: '9.9.9' }, /"b@1\.0\.0".* is "b@9\.9\.9"/u],
+    [
+      'another version',
+      { version: '9.9.9' },
+      /"b@1\.0\.0".* is "b@9\.9\.9", and the lock records version "1\.0\.0"/u,
+    ],
+    // pnpm compares versions loosely and takes these; opm reads one strictly.
+    [
+      'a version written =1.0.0',
+      { version: '=1.0.0' },
+      /is "b@=1\.0\.0", and the lock records version "1\.0\.0"/u,
+    ],
+    [
+      'a version written vv1.0.0',
+      { version: 'vv1.0.0' },
+      /is "b@vv1\.0\.0", and the lock records version "1\.0\.0"/u,
+    ],
+    [
+      'a version written 01.0.0',
+      { version: '01.0.0' },
+      /is "b@01\.0\.0", and the lock records version "1\.0\.0"/u,
+    ],
     ['no name', { name: undefined }, /"b@1\.0\.0".* has no name/u],
   ])(
     'refuses an archive whose own package.json gives %s, before node_modules is touched',
@@ -54,13 +74,16 @@ describe('the archives of a pnpm install', () => {
     },
   );
 
-  it('takes a version the registry wrote with a v or build metadata as the same version', async () => {
-    const w = await pnpmWorld();
-    w.pkg({ name: 'c', version: '1.0.0', manifest: { version: 'v1.0.0' } });
-    w.importer('.', { dependencies: { c: ['^1.0.0', '1.0.0'] } });
-    await w.write();
-    expect((await w.install()).installed).toBe(1);
-  });
+  it.each(['v1.0.0', '1.0.0+build.5', ' 1.0.0 '])(
+    'takes a version the archive writes %j as the same version',
+    async (version) => {
+      const w = await pnpmWorld();
+      w.pkg({ name: 'c', version: '1.0.0', manifest: { version } });
+      w.importer('.', { dependencies: { c: ['^1.0.0', '1.0.0'] } });
+      await w.write();
+      expect((await w.install()).installed).toBe(1);
+    },
+  );
 
   it('takes a name in another case as the same name, as pnpm does', async () => {
     const w = await pnpmWorld();
@@ -135,7 +158,7 @@ describe('the archives of a pnpm install', () => {
       );
       expect(result).toMatchObject({ code: 'DIGEST_MISMATCH' });
       expect(String((result as { message?: string }).message)).toMatch(
-        /the archive's package\.json is "odd@2\.0\.0"/u,
+        /the archive's package\.json is "odd@2\.0\.0", and the lock records version "1\.0\.0"/u,
       );
     });
 
