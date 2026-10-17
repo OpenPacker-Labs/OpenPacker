@@ -462,8 +462,8 @@ laying out `node_modules` (a `.bin` that is a file, say), puts `opm.toml`, the
 lock, `package.json`, `node_modules` and opm's own state back as they were: the
 step keeps a copy of them first, as hard links for `node_modules`, so it costs a
 link per file rather than the bytes. If `opm` is killed part way, the next
-command that changes the project puts it back from that copy and says so on
-stderr; a copy whose process is still running is never touched
+command that changes the project puts it back and says so on stderr. One command
+changes a project at a time; another waits, then stops (exit code 8)
 ([ADR 56](../adr/0056-a-step-finishes-or-leaves-the-project-as-it-was.md)).
 Archives are read as npm writes them: a path longer than a tar header holds is
 taken from its pax record, and a file listed twice with the same bytes is one

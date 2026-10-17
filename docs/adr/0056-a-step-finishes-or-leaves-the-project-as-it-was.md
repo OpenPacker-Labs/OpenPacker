@@ -65,35 +65,63 @@ TOML assignment at line 1").
    9,539-file node_modules on a busy four-core machine, where `cp -al` takes
    0.27 s.
 
-4. **The copy is on disk with a record of whose it is** (`rollback.json`).
-   - The record holds the owner: pid, host, and, where the system says when a
-     process started (Linux, `/proc/<pid>/stat` field 22), the start time.
-   - It also holds a state, `copying` until every file and tree is kept and then
-     `ready`, and which files and trees existed.
+4. **The copy is on disk with a record of whose it is** (`rollback.json`,
+   `rollback-record.ts`).
+   - The owner is recorded where its pid means something (`process-owner.ts`):
+     pid, hostname, and on Linux the start time (`/proc/<pid>/stat` field 22),
+     the PID namespace (`/proc/self/ns/pid`), the boot id and the machine id.
+   - The record names no path. It holds one row per entry of two fixed tables,
+     the files and the trees above, by position: whether each existed, and for a
+     file the sha256 and mode it had. The step also records the sha256 of the
+     opm.toml and lock it is about to write.
+   - It holds a state, `copying` until every file and tree is kept and then
+     `ready`. A copy that cannot be finished is removed at once.
    - A copy is renamed to `….discard` before it is removed, so a copy half
      removed is never taken for one to restore from.
    - Putting the project back is safe to repeat: a tree already moved back is
-     skipped, and files are rewritten whole.
+     skipped, and files are renamed into place whole.
 
-5. **A killed step is finished by the next one** (`rollback-recovery.ts`).
-   - Every step that changes a project runs recovery first:
-     - in the library, `addPackage`, `removePackage`, `syncProject`,
-       `updateProject` and `installProject`;
-     - in the CLI, `add`, `remove`, `sync`, `update`, `install`, `uninstall` and
-       `ci`.
-   - A copy whose owner may still be running is never touched. The owner counts
-     as running in three cases:
-     - the pid answers signal 0, and the start time matches where one was
-       recorded;
-     - the pid answers with EPERM (another user's process);
-     - the copy was made on another host, which nothing here can judge.
-   - For the rest, a `ready` copy that was not being discarded means the project
-     may be half way, and it is put back. A `copying` copy (the step had not
-     started writing) or a `….discard` copy (the step had finished) is only
-     removed.
-   - The CLI says what it did in one line on stderr: "opm: put the project back
-     as it was before a step that process 4242 did not finish, and removed
-     .opm/.rollback-…".
+5. **One step at a time, and a killed step is finished by the next one**
+   (`project-step.ts`, `step-lock.ts`, `rollback-recovery.ts`).
+   - Every library function that changes a project runs as a step on the root it
+     was given: `initProject`, `importNativeProject`, `addPackage`,
+     `removePackage`, `syncProject`, `updateProject`, `installProject`,
+     `uninstallProject`, `switchGeneration`, `collectGarbage` and
+     `installFrozen`. The CLI keeps no list: each of its commands that changes a
+     project (`init`, `import`, `add`, `remove`, `sync`, `update`, `install`,
+     `uninstall`, `ci`, `rollback`, `gc`, `packslip pin --write` and `approve`)
+     is one such step. A host package's `add`, and a dry-run `gc`, change no
+     project and take none. A step inside a step neither locks nor recovers
+     again.
+   - A step first takes the project's lock: it writes `.opm/step-<uuid>.lock`
+     with `O_EXCL`, naming its owner, and holds the lock when no other such file
+     names an owner that may be running. Otherwise it removes its file, waits
+     (10 s by default; the CLI says for whom) and refuses with `PROJECT_BUSY`. A
+     file whose owner is gone is removed by whoever sees it; its name is that
+     owner's alone, so this never takes a live step's lock. Two steps cannot
+     both hold the lock, since each listed the others after its own file
+     existed.
+   - Holding the lock, the step recovers what is in its own `.opm`, and nowhere
+     else (`opm ci --path <dir>` recovers `<dir>`, never a parent):
+     - a copy that is not a directory of this user, or is a link, or a `.opm`
+       that is not a directory, stops the step (`UNSAFE_PATH`);
+     - a record that cannot be read for any reason but ENOENT stops it
+       (`UNAVAILABLE`), and one of another shape or version stops it too
+       (`INVALID_ROLLBACK`), the copy kept either way;
+     - a copy whose owner may still be running stops it (`PROJECT_BUSY`). The
+       owner counts as running when its hostname, machine id, boot id or PID
+       namespace differs from this process's or is known on one side only; when
+       its pid answers signal 0 with the start time recorded (or none was); and
+       when the pid answers with EPERM;
+     - a `ready` copy that was not being discarded means the project may be half
+       way, and it is put back, unless opm.toml or the lock holds neither what
+       the copy kept nor what the step was about to write: someone wrote it
+       since, so the step stops (`ROLLBACK_CONFLICT`) and the copy is kept;
+     - a copy with no record yet, a `copying` copy (the step had not started
+       writing) or a `….discard` copy (the step had finished) is removed.
+   - Each copy recovered is told to `step.onRecovered`; the CLI says it in one
+     line on stderr: "opm: put the project back as it was before a step that
+     process 4242 did not finish, and removed .opm/.rollback-…".
 
 ## Consequences
 
@@ -106,18 +134,29 @@ TOML assignment at line 1").
   not.
 - The store keeps what a failed step materialised; `opm gc` removes entries no
   generation uses.
+- Two opm commands on one project run one after the other. The second waits up
+  to 10 s for the first, then stops with exit code 8 and names it.
 
 Limits:
 
-- A copy cut short between creating its directory and writing its record has
-  only the pid in its name, and is judged on this host. A project on a disk
-  shared between machines could have a live copy from elsewhere removed in that
-  window, though never restored from.
+- The lock and the copies exclude steps of opm only, and only those that run
+  through a step: a host that calls `installFromLock` or `writeManifestFile`
+  itself, another tool, or an edit by hand is not excluded. The digests catch a
+  later write to opm.toml or the lock; one to node_modules or `.opm` state alone
+  is not seen, and would be undone.
+- A step stops, rather than guess, at a copy or a lock whose owner it cannot
+  judge (another machine, boot or PID namespace sharing the project). If that
+  owner is really gone, a person removes the file the message names.
 - Where no start time is available (macOS, Windows), a reused pid keeps a stale
-  copy waiting until that process ends. It is never a reason to touch a live
-  copy.
-- `opm ci` installs a package-lock.json through its own path (ADR 0046). It runs
-  recovery first but takes no copy of its own.
-- The kill was exercised on Linux, with a child process that keeps its copy,
+  copy or lock waiting until that process ends. It is never a reason to touch a
+  live one. Those platforms record pid and hostname only, and were not run.
+- A lock file is written as it is created; one left empty by a process killed in
+  between is taken for a live lock for 5 s, then removed.
+- Only `add`, `sync` and `update` keep a copy. The other steps lock and recover
+  first, but a kill part way through `install` (with a lock), `remove`,
+  `uninstall`, `init`, `import`, `rollback`, `gc` or `ci` (ADR 0046) is not put
+  back.
+- The kill was exercised on Linux: with a child process that keeps its copy,
   starts the step's writes and is killed with SIGKILL
-  (`rollback-recovery.test.ts`). macOS and Windows were not run.
+  (`rollback-recovery.test.ts`), and by the review's harness, which kills a step
+  at each of its file-system calls and a recovery at each of its own.
