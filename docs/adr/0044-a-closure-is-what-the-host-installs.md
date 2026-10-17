@@ -130,8 +130,11 @@ before it.
    among releases and reading what they require takes the ecosystem's own
    version grammar, so a package served by a delegated adapter plugin, which
    exports none, is locked as the direct entry it is and its dependencies are
-   not walked. The policy, digest and size refusals propagated before and still
-   do.
+   not walked. Without a codec nothing can tell a range or a dist-tag from a
+   version either, so `isExactVersion` takes any hint after `@` for a version,
+   and a range or a tag is sent to the plugin as written, for its registry to
+   accept or refuse. The policy, digest and size refusals propagated before and
+   still do.
 
 8. **One provider per ecosystem per resolve**, over a transport that answers a
    repeated read of the same document from memory (never an artifact download),
