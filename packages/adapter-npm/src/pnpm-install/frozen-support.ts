@@ -101,6 +101,11 @@ export function member(
       optionalPeers: new Set(),
       workspaces: undefined,
       bin: {},
+      ...(typeof (manifest['publishConfig'] as { directory?: unknown })
+        ?.directory === 'string' && {
+        publishDirectory: (manifest['publishConfig'] as { directory: string })
+          .directory,
+      }),
     },
   };
 }

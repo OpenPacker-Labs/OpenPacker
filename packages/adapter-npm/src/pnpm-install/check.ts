@@ -154,7 +154,20 @@ export function freshnessProblems(input: {
           auto,
         ),
       ),
+    ...[...model.tops.values()]
+      .filter((top) => present.has(top.id))
+      .flatMap((top) => {
+        const directory =
+          byDir.get(top.dir)?.manifest.publishDirectory ??
+          (top.dir === '' ? config.project.publishDirectory : undefined);
+        return directory === undefined
+          ? []
+          : [
+              `${top.id === '.' ? 'the project' : quote(top.id)} declares publishConfig.directory ${quote(directory)} and pnpm-lock.yaml records no publishDirectory for it`,
+            ];
+      }),
     ...overrideProblems(lock, config.overrides),
+    ...ignoredProblems(lock.ignoredOptionalDependencies, config),
     ...catalogProblems(lock, config.catalogs),
     ...config.patches.map(
       (key) =>
@@ -162,6 +175,20 @@ export function freshnessProblems(input: {
     ),
   ];
   return { stale, doubts: [...new Set(doubts)] };
+}
+
+/** pnpm compares the two lists sorted; the lock's own list is refused before this. */
+function ignoredProblems(
+  inLock: readonly string[],
+  config: PnpmProjectConfig,
+): string[] {
+  const show = (names: readonly string[]) =>
+    `[${[...names].sort().map(quote).join(',')}]`;
+  return show(inLock) === show(config.ignoredOptionalDependencies)
+    ? []
+    : [
+        `ignoredOptionalDependencies is ${show(config.ignoredOptionalDependencies)} in the project and ${show(inLock)} in pnpm-lock.yaml`,
+      ];
 }
 
 /** Throw the error a lock opm cannot hold to the project's overrides is. */
