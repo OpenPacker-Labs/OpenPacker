@@ -50,3 +50,32 @@ export function memberTableExcess(members: number): number {
       paid,
   );
 }
+
+/*
+ * The elements of an object the parser builds. A member whose name is an array
+ * index (`"0"` to `"4294967294"`, written without a sign or a leading zero) is
+ * not in the member table: V8 keeps it as an element. The first one below 1,024
+ * gives a young object a fast store of `i + i/2 + 16` slots of 8 bytes, grown
+ * the same way by each later index within 1,024 of it, and V8 keeps it fast up
+ * to 5,000 slots however few members it holds (`kMaxUncheckedFastElementsLength`):
+ * `{"1023":0,"2575":0}` kept 31,240 bytes. Past 5,000 slots V8 keeps a store
+ * fast only while it is smaller than three times the dictionary it would
+ * otherwise be (nine slots for each entry of `NumberDictionary::ComputeCapacity`
+ * of the members), which is at most 27 slots a member; a dictionary itself is
+ * three slots an entry. Measured on Node 20, 21 and 22:
+ * `canonical/test/elements.json`.
+ */
+
+/** Bytes of one slot of an elements store. */
+export const ELEMENT_SLOT = 8;
+
+/** The fast store the first index-named member of an object may make: 5,000 slots and a header. */
+export const FIRST_INDEX_MEMBER = 5000 * ELEMENT_SLOT + 16;
+
+/** Each index-named member: the most a store past 5,000 slots keeps for one. */
+export const INDEX_MEMBER = 27 * ELEMENT_SLOT;
+
+/** Whether V8 keeps a member of this name as an element. */
+export function isArrayIndex(name: string): boolean {
+  return /^(?:0|[1-9]\d{0,9})$/u.test(name) && Number(name) <= 4294967294;
+}

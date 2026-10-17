@@ -7,7 +7,11 @@ import {
   PARSE_COSTS,
   SMALL_INTEGER_LIMIT,
 } from './costs.js';
-import { memberTableExcess } from './member-table.js';
+import {
+  FIRST_INDEX_MEMBER,
+  INDEX_MEMBER,
+  memberTableExcess,
+} from './member-table.js';
 
 /**
  * What a parse may still spend. The parser charges it as each part of the tree
@@ -146,6 +150,16 @@ export class ParseBudget {
         table,
       offset,
     );
+  }
+
+  /**
+   * The member just named is an array index, which V8 keeps as an element:
+   * `first` for the object's first, which may make its elements store
+   * (`member-table.ts`).
+   */
+  indexMember(first: boolean, offset: number): void {
+    const store = (first ? FIRST_INDEX_MEMBER : 0) + INDEX_MEMBER;
+    this.charge(store, store, offset);
   }
 
   private charge(peak: number, retained: number, offset: number): void {

@@ -6,6 +6,7 @@ import type {
 import { ParseBudget } from './budget.js';
 import { safeEcho } from './echo.js';
 import { CanonicalJsonError, type CanonicalParseLimits } from './errors.js';
+import { isArrayIndex } from './member-table.js';
 import { scanString, validString } from './string-token.js';
 
 export * from './errors.js';
@@ -140,6 +141,7 @@ class JsonParser {
       [key: string]: JsonValue;
     };
     const keys = new Set<string>();
+    let indexed = 0;
     this.space();
     if (this.take('}')) return result;
     while (true) {
@@ -149,6 +151,7 @@ class JsonParser {
       const key = this.string(keys.size);
       if (keys.has(key)) this.fail(`Duplicate object member: ${safeEcho(key)}`);
       keys.add(key);
+      if (isArrayIndex(key)) this.budget.indexMember(!indexed++, this.index);
       this.space();
       if (!this.take(':')) this.fail('Expected colon after object member name');
       result[key] = this.value(depth + 1);
