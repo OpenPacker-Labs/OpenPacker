@@ -121,6 +121,20 @@ describe('opm ci, in a repository whose lock holds an entry it refuses', () => {
         member(lock, 'packages', 'packages/l').name = `lnk${text}`;
       },
     ],
+    [
+      "a workspace member's directory, the member not linked",
+      (lock, manifest, text) => {
+        // A directory can hold anything in its name but a slash and a NUL.
+        const dir = `packages/l${text.replaceAll('/', '_')}`;
+        const packages = member(lock, 'packages');
+        manifest.workspaces = ['packages/*'];
+        member(packages, '').workspaces = ['packages/*'];
+        renameKey(packages, 'packages/l', dir);
+        delete packages['node_modules/lnk'];
+        delete member(manifest, 'dependencies').lnk;
+        delete member(packages, '', 'dependencies').lnk;
+      },
+    ],
   ])('one line, when it is %s', async (_, edit) => {
     await expectNoNewLines(repo('links', edit), CI);
   });
