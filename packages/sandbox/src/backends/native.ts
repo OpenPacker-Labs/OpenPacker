@@ -191,6 +191,7 @@ export function createBwrapBackend(): SandboxBackend {
           environment: input.env,
           directoryAuthorities,
           ...(!(executableAuthority === undefined) && { executableAuthority }),
+          asRoot: process.geteuid?.() === 0,
         });
         return await spawnCapture({
           argv,
@@ -238,6 +239,12 @@ export function buildBwrapArgv(input: {
   environment?: Readonly<Record<string, string>>;
   directoryAuthorities?: readonly { path: string; childFd: number }[];
   executableAuthority?: { path: string; childFd: number };
+  /**
+   * bwrap is run by root. It then gives the sandboxed process every capability
+   * root has, unless told not to, and CAP_SYS_ADMIN can remount a read-only
+   * bind read-write. Run by any other user it gives none.
+   */
+  asRoot?: boolean;
 }): string[] {
   const args: string[] = [
     input.bwrap,
@@ -246,6 +253,7 @@ export function buildBwrapArgv(input: {
     '--unshare-pid',
     '--unshare-ipc',
   ];
+  if (input.asRoot === true) args.push('--cap-drop', 'ALL');
   if (!input.network) args.push('--unshare-net');
   args.push('--clearenv');
   for (const [name, value] of Object.entries(input.environment ?? {}).sort(
