@@ -76,6 +76,7 @@ describe('a patch opm refuses although pnpm would apply it', () => {
     ['lib\\..\\outside.js', 'holds a backslash'],
     ['lib//x.js', 'an empty or "." segment'],
     ['./x.js', 'an empty or "." segment'],
+    ['lib/\u0000x.js', 'holds a NUL character'],
   ])('names %j, which %s (UNSAFE_PATH)', (path, problem) => {
     expect(() => readPatchText(create(path), 'patches/a.patch')).toThrow(
       expect.objectContaining({
