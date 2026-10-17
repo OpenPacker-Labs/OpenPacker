@@ -83,7 +83,7 @@ export function explainEntry(
       `  purl: ${plainLine(requirement.purl)}`,
     );
     if (requirement.installName !== undefined)
-      lines.push(`  installed as: ${requirement.installName}`);
+      lines.push(`  installed as: ${plainLine(requirement.installName)}`);
     if (requirement.version)
       lines.push(`  version constraint: ${plainLine(requirement.version)}`);
     if (requirement.source)
@@ -103,10 +103,10 @@ export function explainEntry(
     for (const requirer of requirersOf(lock, key)) {
       const by = lock.packages[requirer.key];
       lines.push(
-        `  required by ${requirer.key}${by === undefined ? '' : ` (${by.purl})`}` +
+        `  required by ${plainLine(requirer.key)}${by === undefined ? '' : ` (${plainLine(by.purl)})`}` +
           (requirer.installName === undefined
             ? ''
-            : ` as ${requirer.installName}`),
+            : ` as ${plainLine(requirer.installName)}`),
       );
     }
   }
