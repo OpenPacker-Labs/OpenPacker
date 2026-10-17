@@ -20,6 +20,7 @@
 
 import { unsafe } from './errors.js';
 import { assertNumbersAgree } from './tar-numbers.js';
+import { assertSizeAgrees, pnpmOctal } from './tar-octal.js';
 import { assertTextAgrees } from './tar-text.js';
 
 const BLOCK = 512;
@@ -128,6 +129,7 @@ export function assertHeaderAgrees(header: Uint8Array, at: number): void {
   assertChecksumAgrees(header, at);
   assertPrefixAgrees(header, at);
   assertTextAgrees(header, at, ustar);
+  assertSizeAgrees(header, at);
   assertNumbersAgree(header, at, ustar);
   assertLinkNameAgrees(header, at);
 }
@@ -142,10 +144,16 @@ function hasUstarMagic(header: Uint8Array): boolean {
 
 /** Refuse a checksum field that node-tar reads as another number than opm. */
 function assertChecksumAgrees(header: Uint8Array, at: number): void {
-  if (nodeTarChecksum(header) !== headerSum(header))
+  const sum = headerSum(header);
+  if (nodeTarChecksum(header) !== sum)
     throw unsafe(
       'TAR_AMBIGUOUS_CHECKSUM',
       `the header at offset ${at} has a checksum field npm reads over 12 bytes as another number: npm skips the entry, pnpm reads it`,
+    );
+  if (pnpmOctal(header.subarray(148, 156)) !== sum)
+    throw unsafe(
+      'TAR_AMBIGUOUS_CHECKSUM',
+      `the header at offset ${at} has a checksum field that pnpm reads as another number or fails on: npm and opm read it`,
     );
 }
 

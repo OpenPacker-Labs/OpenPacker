@@ -70,6 +70,12 @@ const REFUSED: Record<string, string> = {
   'a ctime that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
   'a uid that is a base-256 number too large to be safe':
     'TAR_AMBIGUOUS_NUMBER',
+  'a size field that is a NUL, then digits': 'TAR_AMBIGUOUS_NUMBER',
+  'a size field that is a line feed, a space and digits':
+    'TAR_AMBIGUOUS_NUMBER',
+  'a size field that is a tab, a space and digits': 'TAR_AMBIGUOUS_NUMBER',
+  'a checksum field that is a line feed, a space and digits':
+    'TAR_AMBIGUOUS_CHECKSUM',
   'an extended header with a path, a global header, then a file':
     'TAR_AMBIGUOUS_PAX',
   'a contiguous file (typeflag 7)': 'TAR_AMBIGUOUS_TYPE',

@@ -1,10 +1,21 @@
 /**
  * Cases about numeric fields only node-tar reads: uid, gid, mtime, and under
  * `ustar\0` `00` magic devmajor, devminor and (byte 475 zero) atime and ctime.
- * A base-256 number it cannot decode makes it drop the entry.
+ * A base-256 number it cannot decode makes it drop the entry. And the octal
+ * size and checksum fields all three read, which pnpm cuts differently (a NUL
+ * before the digits; a control whitespace before a space).
  */
 
-import { Z, a, file, invalidBase256 } from './blocks.mjs';
+import { Z, a, b, entry, file, invalidBase256 } from './blocks.mjs';
+
+/** A header edit that writes `text` (Latin-1) over the size field. */
+const sizeField = (text) => (header) => {
+  header.fill(0, 124, 136);
+  Buffer.from(text, 'latin1').copy(header, 124);
+};
+/** A file of `AAAA` whose size field is spelled `text`. */
+const sized = (text) =>
+  entry('package/s.js', 'AAAA', { edit: sizeField(text) });
 
 const invalid = (name, offset, length) => [
   a,
@@ -60,6 +71,47 @@ export const NUMBER_CASES = {
         invalidBase256(8).copy(header, 329);
       },
     }),
+    Z,
+    Z,
+  ],
+  'a size field that is a NUL, then digits': [
+    file('package/index.js', 'BENIGN'),
+    entry('package/a.js', '', { edit: sizeField('\0' + '00000001001') }),
+    file('package/evil.js', 'EVIL'),
+    file('package/tail.js', 'T'),
+    Z,
+    Z,
+  ],
+  'a size field that is a line feed, a space and digits': [
+    a,
+    sized('\n 0000000004'),
+    b,
+    Z,
+    Z,
+  ],
+  'a size field that is a tab, a space and digits': [
+    a,
+    sized('\t 0000000004'),
+    b,
+    Z,
+    Z,
+  ],
+  'a checksum field that is a line feed, a space and digits': [
+    a,
+    entry('package/c.js', 'AAAA', {
+      checksum: (sum) =>
+        Buffer.from(`\n ${sum.toString(8).padStart(5, '0')}\0`, 'latin1'),
+    }),
+    b,
+    Z,
+    Z,
+  ],
+  'size fields spelled as writers spell them': [
+    a,
+    sized('0000000004 \0'),
+    entry('package/t.js', 'AAAA', { edit: sizeField('00000000004 ') }),
+    entry('package/u.js', 'AAAA', { edit: sizeField(' 0000000004\0') }),
+    b,
     Z,
     Z,
   ],
