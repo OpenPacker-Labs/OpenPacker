@@ -40,6 +40,8 @@ export const PATCH_FILE_LIMITS = {
   total: 64 * 1024 * 1024,
 } as const;
 
+const MiB = 1024 * 1024;
+
 const code = (error: unknown): string | undefined =>
   // SAFETY: Node file errors carry an optional string `code`.
   (error as NodeJS.ErrnoException).code;
@@ -94,13 +96,35 @@ async function withFileBelow<T>(
   }
 }
 
-/** Refuse one patch file past `PATCH_FILE_LIMITS.file`. */
-function tooLarge(path: string, size: number): void {
+/**
+ * Refuse one patch file past `PATCH_FILE_LIMITS.file`. `atLeast` is for a file
+ * read to one byte past the bound, whose size is not known.
+ */
+function tooLarge(path: string, size: number, atLeast = false): void {
   if (size > PATCH_FILE_LIMITS.file)
     throw new ProviderError(
       'SIZE_LIMIT',
-      `the patch file ${quote(path)} is ${size} bytes, more than the ${PATCH_FILE_LIMITS.file} opm reads of one patch file`,
+      `the patch file ${quote(path)} is ${atLeast ? 'at least ' : ''}${size} bytes, more than the ${PATCH_FILE_LIMITS.file} opm reads of one patch file`,
     );
+}
+
+/**
+ * At most one byte more than a patch file may be, from the start of `handle`:
+ * a file that grew since it was sized is never held whole, and the byte past
+ * the bound is what says it is over it.
+ */
+async function readBounded(handle: FileHandle): Promise<Buffer> {
+  const limit = PATCH_FILE_LIMITS.file + 1;
+  const chunks: Buffer[] = [];
+  let total = 0;
+  while (total < limit) {
+    const chunk = Buffer.allocUnsafe(Math.min(MiB, limit - total));
+    const { bytesRead } = await handle.read(chunk, 0, chunk.length, total);
+    if (bytesRead === 0) break;
+    chunks.push(chunk.subarray(0, bytesRead));
+    total += bytesRead;
+  }
+  return Buffer.concat(chunks, total);
 }
 
 /** Refuse patch files that come to more than `PATCH_FILE_LIMITS.total`. */
@@ -151,11 +175,9 @@ export async function readProjectPatches(
   let read = 0;
   for (const [index, [key]] of declared.entries()) {
     const path = paths[index]!;
-    const bytes = await withFileBelow(root, path, (handle) =>
-      handle.readFile(),
-    );
+    const bytes = await withFileBelow(root, path, readBounded);
     // A file that grew since it was sized is held to the bounds again.
-    tooLarge(path, bytes.length);
+    tooLarge(path, bytes.length, bytes.length > PATCH_FILE_LIMITS.file);
     read += bytes.length;
     tooLargeTogether(paths.length, read);
     const recorded = lock.patchedDependencies.get(key);
