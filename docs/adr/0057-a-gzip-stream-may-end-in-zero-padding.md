@@ -92,11 +92,26 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
    a lower bound on where the stream ends (a trailer's length, and deflate data,
    can end in zero bytes), so a limit taken from it could refuse an archive the
    ratio check accepts.
-8. **opm refuses what the two reference extractors read differently.** Found by
-   the same review. npm extracts with node-tar 6.2.1 and pnpm 10.28.0 with its
-   own `parseTarball`; where the two would install different files from one
-   archive, opm installs neither set and refuses the archive with a typed code,
-   rather than choose a side. Where they agree, opm extracts what both extract.
+8. **For npm's archives, opm refuses what the two reference extractors read
+   differently.** Found by the same review. npm extracts with node-tar 6.2.1 and
+   pnpm 10.28.0 with its own `parseTarball`; where the two would install
+   different files from one archive, opm installs neither set and refuses the
+   archive with a typed code, rather than choose a side. Where they agree, opm
+   extracts what both extract.
+
+   The rule covers the archives the npm adapter materializes, the ones those two
+   are the readers of: an npm lock's and a pnpm lock's tarballs (`opm ci`) and
+   an npm package `opm add` or `opm install` fetches. The adapter asks for it by
+   name, as it asks for `acceptRedundantEntries`: its frozen lock's `extraction`
+   carries `requireNpmReaderAgreement`, `installArchiveLimits` sets it for the
+   npm ecosystem, and the materializer applies it only when the limits say so.
+   It never guesses from the archive. Every other tar (a crate, an sdist, an OCI
+   layer, a plugin) keeps the general rule, node-tar's and GNU tar's end: the
+   archive ends at two zero blocks in a row or at the end of the data, a lone
+   zero block is skipped and the next block read as a header, the checksum is
+   read over its 8 bytes and the prefix is joined whatever the magic. A tar with
+   no zero block at its end therefore still extracts there.
+
    The cases, each in `packages/materializer/test/tar-oracle/` (both readers
    over the same bytes, 19 archives; `generate.mjs --check` re-runs them):
    - **The end, `TAR_AMBIGUOUS_END`.** pnpm stops at the first header position
@@ -128,12 +143,8 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
 
    This replaces the first answer to the review, which skipped a lone zero block
    and extracted the entries after it as npm does, and so installed, from a pnpm
-   lock, files pnpm itself never installs. The rules apply to every tar the
-   materializer reads, whatever the ecosystem: a refusal is the safe side of any
-   disagreement. None of these shapes appears in the registry sample below, nor
-   among the 1,739 archives of OpenSesame's lock; a tar from another ecosystem
-   that ends with no zero block (pnpm's failure) is now refused too, which no
-   test here has met.
+   lock, files pnpm itself never installs. None of the refused shapes appears in
+   the registry sample below, nor among the 1,739 archives of OpenSesame's lock.
 
 ## Consequences
 
@@ -162,11 +173,17 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
   header CRC named at their member, each optional header field alone, a cut
   trailer, the walk's budget, alone and as gunzipArchive sets it, its member
   count, an abort at each of its checks); `tar-end.test.ts` (against
-  `test/tar-oracle/oracle.json`: opm refuses exactly the cases where npm and
-  pnpm install different files, with the code, and extracts node-tar's set where
-  they agree); and
-  `packages/opm-project/test/frozen-install.gzip-padding.test.ts` (an install,
-  the refusal by package and offset, the lock's integrity over the padding).
+  `test/tar-oracle/oracle.json`: with `requireNpmReaderAgreement`, opm refuses
+  exactly the cases where npm and pnpm install different files, with the code,
+  and extracts node-tar's set where they agree; without it, a tar with no end
+  block, one with a lone zero block, an 8-digit checksum and a prefix without
+  magic extract under the general rule); in `packages/opm-project/test/`,
+  `frozen-install.gzip-padding.test.ts` (an install, the refusal by package and
+  offset, the lock's integrity over the padding),
+  `frozen-install.tar-agreement.test.ts` (a pnpm lock's archive with no end
+  block is refused under its name) and `install-limits.test.ts` (the option for
+  npm and for no other ecosystem); and in `packages/adapter-npm`, both lock
+  readers' `extraction`.
 - A sample of 386 registry archives, the first three versions and one from the
   first third of the versions of 97 packages, most from 2010 to 2014
   (`registry-tar-end.mjs` from the second review, run on 2026-10-17 against this
