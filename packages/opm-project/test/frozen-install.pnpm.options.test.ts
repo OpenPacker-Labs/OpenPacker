@@ -224,6 +224,21 @@ describe('planFrozen of a pnpm workspace', () => {
     await expect(stat(join(w.dir, '..', 'plan-store'))).rejects.toThrow();
   });
 
+  it("plans a transitive registry package whose version has build metadata, which the policy takes as the registry's", async () => {
+    const w = await pnpmWorld();
+    w.pkg({ name: 'b', version: '1.0.0+build.5' });
+    w.pkg({ name: 'a', version: '1.0.0', deps: { b: '1.0.0+build.5' } });
+    w.importer('.', { dependencies: { a: ['^1.0.0', '1.0.0'] } });
+    await w.write();
+    const plan = await planFrozen({
+      root: w.dir,
+      transport: w.registry,
+      env: { OPM_STORE_HOME: join(w.dir, '..', 'plan-store') },
+      target: linux,
+    });
+    expect(plan).toMatchObject({ instances: 2, archives: 2 });
+  });
+
   it('refuses what the install would, before the first byte', async () => {
     const w = await fixture();
     await writeFile(

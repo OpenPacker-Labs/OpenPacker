@@ -295,6 +295,13 @@ snapshots:
     expect(url('a@1.0.0+build.1')).toBe(
       'https://registry.example/a/-/a-1.0.0.tgz',
     );
+    // A registry package, which the policy treats as one: not a "tarball".
+    expect(
+      sourceOfInstance(
+        model.instances.get('a@1.0.0+build.1')!,
+        'https://registry.example/',
+      ),
+    ).toMatchObject({ kind: 'registry' });
     expect(url('@s/b@2.0.0')).toBe(
       'https://registry.example/@s/b/-/b-2.0.0.tgz',
     );
