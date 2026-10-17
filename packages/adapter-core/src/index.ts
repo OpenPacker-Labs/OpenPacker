@@ -48,20 +48,7 @@ export { npmVersion, npmVersionsEqual } from './npm-semver-range.js';
 import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
 import type { NativeLayoutWorkspace } from './layout-workspace.js';
 import type { WorkspaceTool } from './workspace/members.js';
-export type {
-  FrozenExtraction,
-  FrozenLock,
-  FrozenLockOptions,
-  FrozenLockPackage,
-  FrozenLockRefusal,
-  FrozenLockPeers,
-  FrozenLockSkip,
-  FrozenLockWorkspace,
-  FrozenOmit,
-  FrozenSourceKind,
-  FrozenWorkspaceInput,
-  FrozenWorkspaceScope,
-} from './frozen-lock.js';
+export type * from './frozen-lock.js';
 export type {
   NativeLayoutLink,
   NativeLayoutMember,
