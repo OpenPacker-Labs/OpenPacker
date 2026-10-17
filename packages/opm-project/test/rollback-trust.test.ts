@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
-  currentProcessOwner,
+  currentOwner,
   recoverInterruptedSteps,
   syncProject,
 } from '../src/index.js';
@@ -232,7 +232,7 @@ describe.runIf(unshare)('a live step in another PID namespace', () => {
       expect(owner.pid).toBe(1);
       expect(owner.host).toBe(hostname());
       expect(owner.pidNamespace).not.toBe(
-        (await currentProcessOwner()).pidNamespace,
+        (await currentOwner()).pidNamespace,
       );
       await expect(recoverInterruptedSteps(root)).rejects.toMatchObject({
         code: 'PROJECT_BUSY',

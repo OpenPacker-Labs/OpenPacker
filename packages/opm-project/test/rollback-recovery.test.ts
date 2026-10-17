@@ -4,7 +4,11 @@ import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
-import { recoverInterruptedSteps, syncProject } from '../src/index.js';
+import {
+  currentOwner,
+  recoverInterruptedSteps,
+  syncProject,
+} from '../src/index.js';
 import { undoStep } from '../src/install-commit.js';
 import { snapshotProject } from '../src/project-rollback.js';
 import {
@@ -124,6 +128,28 @@ describe('a copy whose owner may be alive', () => {
     });
     expect(await copies(root)).toHaveLength(1);
     await kept.discard();
+  });
+});
+
+/** Whether this machine says which machine and which boot it is. */
+const self = await currentOwner();
+const knowsBoot = self.machineId !== undefined && self.bootId !== undefined;
+
+describe('a copy made before this machine last started', () => {
+  it.runIf(knowsBoot)('is put back, whatever its pid names now', async () => {
+    const root = await project();
+    const before = await snapshot(root);
+    await snapshotProject(root);
+    await writeFile(join(root, 'opm.toml'), 'half-written\n');
+    const [name] = await copies(root);
+    // This process's pid and start time, on an earlier boot.
+    await editRecord(root, name!, (record) => {
+      record.owner.bootId = '00000000-0000-4000-8000-000000000000';
+    });
+    expect(await recoverInterruptedSteps(root)).toEqual([
+      expect.objectContaining({ restored: true }),
+    ]);
+    expect(await snapshot(root)).toEqual(before);
   });
 });
 

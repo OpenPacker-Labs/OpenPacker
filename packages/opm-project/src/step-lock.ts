@@ -12,10 +12,10 @@ import {
   type ProjectPaths,
 } from './paths.js';
 import {
-  currentProcessOwner,
+  currentOwner,
   describeProcessOwner,
   parseProcessOwner,
-  processOwnerMayBeAlive,
+  isOwnerAlive,
   type ProcessOwner,
 } from './process-owner.js';
 import { OpmError } from './types.js';
@@ -71,7 +71,7 @@ export async function acquireStepLock(
   const name = `${PREFIX}${randomUUID()}${SUFFIX}`;
   const body = `${JSON.stringify({
     lockVersion: 1,
-    owner: await currentProcessOwner(),
+    owner: await currentOwner(),
   })}\n`;
   const deadline = Date.now() + options.waitMs;
   let told = false;
@@ -197,7 +197,7 @@ async function judge(
         Date.now() - Number(info.mtimeMs) > PARTIAL_AFTER_MS
         ? 'dead'
         : 'unknown';
-    return (await processOwnerMayBeAlive(owner)) ? owner : 'dead';
+    return (await isOwnerAlive(owner)) ? owner : 'dead';
   } catch (error) {
     // SAFETY: only the errno code of a file-system error is read.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'gone';

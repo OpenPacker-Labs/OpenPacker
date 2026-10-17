@@ -46,10 +46,10 @@ export {
 } from './project-step.js';
 export type { StepLockHolder } from './step-lock.js';
 export {
-  currentProcessOwner,
+  currentOwner,
   describeProcessOwner,
   parseProcessOwner,
-  processOwnerMayBeAlive,
+  isOwnerAlive,
   type ProcessOwner,
 } from './process-owner.js';
 export { snapshotProject } from './project-rollback.js';

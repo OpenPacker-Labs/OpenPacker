@@ -108,11 +108,13 @@ TOML assignment at line 1").
      - a record that cannot be read for any reason but ENOENT stops it
        (`UNAVAILABLE`), and one of another shape or version stops it too
        (`INVALID_ROLLBACK`), the copy kept either way;
-     - a copy whose owner may still be running stops it (`PROJECT_BUSY`). The
-       owner counts as running when its hostname, machine id, boot id or PID
-       namespace differs from this process's or is known on one side only; when
-       its pid answers signal 0 with the start time recorded (or none was); and
-       when the pid answers with EPERM;
+     - a copy whose owner may still be running stops it (`PROJECT_BUSY`). An
+       owner with this machine's machine id and hostname and another boot id is
+       gone: it ran before this machine last started. Otherwise the owner counts
+       as running when its hostname, machine id, boot id or PID namespace
+       differs from this process's or is known on one side only; when its pid
+       answers signal 0 with the start time recorded (or none was); and when the
+       pid answers with EPERM;
      - a `ready` copy that was not being discarded means the project may be half
        way, and it is put back, unless opm.toml or the lock holds neither what
        the copy kept nor what the step was about to write: someone wrote it
@@ -147,6 +149,9 @@ Limits:
 - A step stops, rather than guess, at a copy or a lock whose owner it cannot
   judge (another machine, boot or PID namespace sharing the project). If that
   owner is really gone, a person removes the file the message names.
+- The earlier-boot rule trusts the machine id. Two machines cloned from one
+  image that kept its `/etc/machine-id`, with one hostname and a shared project,
+  would each take the other's live step for one of an earlier boot.
 - Where no start time is available (macOS, Windows), a reused pid keeps a stale
   copy or lock waiting until that process ends. It is never a reason to touch a
   live one. Those platforms record pid and hostname only, and were not run.

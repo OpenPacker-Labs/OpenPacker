@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { projectPaths, readStableFile } from './paths.js';
 import {
   describeProcessOwner,
-  processOwnerMayBeAlive,
+  isOwnerAlive,
   type ProcessOwner,
 } from './process-owner.js';
 import { absent, discardCopy, restoreFrom } from './project-rollback.js';
@@ -74,7 +74,7 @@ export async function recoverHeldProject(
       await discardCopy(holder);
       continue;
     }
-    if (await processOwnerMayBeAlive(record.owner))
+    if (await isOwnerAlive(record.owner))
       throw new OpmError(
         'PROJECT_BUSY',
         `${copy} belongs to a step of ${describeProcessOwner(record.owner)} that may still be running, and opm cannot tell from here. Run this again when it has finished; if it is not running, remove ${copy} to keep the project as it is now.`,

@@ -19,13 +19,20 @@ import { hostname } from 'node:os';
  * - `startTime`: field 22 of `/proc/<pid>/stat`, since a pid is given to
  *   another process once its own ends.
  *
- * The rule ({@link processOwnerMayBeAlive}) never lets a live holder be judged
- * gone. Where any of the first three differs from this process's, or is known
- * on one side only, nothing here can judge the pid, and the holder counts as
- * alive. Where they agree, the pid must not answer signal 0 (ESRCH), or must
- * answer with another start time, for the holder to count as gone. A system
- * that says none of this (macOS, Windows) compares hostnames and pids alone:
- * a reused pid then keeps a stale holder waiting, never the reverse.
+ * The rule ({@link isOwnerAlive}) never lets a live holder be judged gone,
+ * with one exception that is certain: a holder of this machine (same machine
+ * id and hostname) from an earlier boot (another boot id) is gone, since
+ * every process of that boot ended with it. Otherwise, where the machine id,
+ * boot id or PID namespace differs from this process's, or is known on one
+ * side only, nothing here can judge the pid, and the holder counts as alive.
+ * Where they agree, the pid must not answer signal 0 (ESRCH), or must answer
+ * with another start time, for the holder to count as gone. A system that
+ * says none of this (macOS, Windows) compares hostnames and pids alone: a
+ * reused pid then keeps a stale holder waiting, never the reverse.
+ *
+ * The exception trusts the machine id: two machines cloned from one image
+ * that kept its `/etc/machine-id`, with one hostname, sharing a project,
+ * would each take the other's live holder for one of an earlier boot.
  */
 export interface ProcessOwner {
   pid: number;
@@ -47,7 +54,7 @@ const PLACE = ['host', 'machineId', 'bootId', 'pidNamespace'] as const;
 let self: Promise<ProcessOwner> | undefined;
 
 /** This process, as a record would name it. Read once per process. */
-export function currentProcessOwner(): Promise<ProcessOwner> {
+export function currentOwner(): Promise<ProcessOwner> {
   self ??= readCurrentOwner();
   return self;
 }
@@ -76,13 +83,13 @@ async function readCurrentOwner(): Promise<ProcessOwner> {
 
 /**
  * Whether `owner` may still be running. False only when this process can tell
- * that it is not: same machine, boot and PID namespace, and the pid is free or
- * belongs to a process that started at another time.
+ * that it is not: this machine at an earlier boot; or this machine, boot and
+ * PID namespace, and the pid is free or belongs to a process that started at
+ * another time.
  */
-export async function processOwnerMayBeAlive(
-  owner: ProcessOwner,
-): Promise<boolean> {
-  const here = await currentProcessOwner();
+export async function isOwnerAlive(owner: ProcessOwner): Promise<boolean> {
+  const here = await currentOwner();
+  if (fromEarlierBoot(owner, here)) return false;
   for (const field of PLACE) if (owner[field] !== here[field]) return true;
   try {
     process.kill(owner.pid, 0);
@@ -97,6 +104,18 @@ export async function processOwnerMayBeAlive(
   if (here.startTime === undefined) return true;
   const now = await startTimeOf(String(owner.pid));
   return now === undefined || now === owner.startTime;
+}
+
+/** Same machine id and hostname as `here`, and another boot of it. */
+function fromEarlierBoot(owner: ProcessOwner, here: ProcessOwner): boolean {
+  return (
+    here.machineId !== undefined &&
+    owner.machineId === here.machineId &&
+    owner.host === here.host &&
+    here.bootId !== undefined &&
+    owner.bootId !== undefined &&
+    owner.bootId !== here.bootId
+  );
 }
 
 /** `process 4242 on vm`, for messages. */

@@ -21,7 +21,7 @@ import {
   projectPaths,
   writeStableFile,
 } from './paths.js';
-import { currentProcessOwner } from './process-owner.js';
+import { currentOwner } from './process-owner.js';
 import {
   DISCARD_SUFFIX,
   LOCK_INDEX,
@@ -76,7 +76,7 @@ export async function snapshotProject(
   intended: IntendedWrites = {},
 ): Promise<ProjectSnapshot> {
   const paths = projectPaths(root);
-  const owner = await currentProcessOwner();
+  const owner = await currentOwner();
   await ensureStableDirectory(paths.opmDir);
   const holder = join(
     paths.opmDir,
