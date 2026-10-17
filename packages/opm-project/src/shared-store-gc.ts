@@ -3,7 +3,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { lstat, readdir, rename, stat } from 'node:fs/promises';
+import { link, lstat, readdir, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   openStableDirectory,
@@ -25,7 +25,10 @@ function isMissing(error: unknown): boolean {
 export interface SharedStoreCollection {
   /** The shared root that was examined, when there is one. */
   root?: string;
-  /** Entries removed, or that would be on a dry run. */
+  /**
+   * Entries removed, or that would be on a dry run, with the leftovers of
+   * installs that died and the records whose entry is gone.
+   */
   removed: string[];
   /** Entries some project still links to, or that a kept patched copy was made from. */
   referenced: number;
@@ -72,7 +75,7 @@ export async function collectSharedStore(
   // What an install or an earlier collection left half-done when it died.
   for (const leftover of await readdir(root, { withFileTypes: true })) {
     if (
-      !leftover.isDirectory() ||
+      !(leftover.isDirectory() || leftover.isFile()) ||
       !/^\.sha256-[0-9a-f]{64}(?:-patch-[0-9a-f]{64})?\.(materialize|collect)-/u.test(
         leftover.name,
       )
@@ -83,7 +86,9 @@ export async function collectSharedStore(
     if (info === undefined || now - info.mtimeMs < minimumAge) continue;
     result.removed.push(path);
     if (input.dryRun !== true)
-      await removeStableTree(path).catch(() => undefined);
+      await (leftover.isDirectory() ? removeStableTree : removeStableFile)(
+        path,
+      ).catch(() => undefined);
   }
   const keys = (await readdir(root, { withFileTypes: true }))
     .filter(
@@ -135,7 +140,49 @@ export async function collectSharedStore(
     await removeStableFile(`${entry}.tree`).catch(() => undefined);
     await removeStableFile(`${entry}.artifact`).catch(() => undefined);
   }
+  await collectOrphanRecords(root, now - minimumAge, input.dryRun, result);
   return result;
+}
+
+/**
+ * Remove every `<key>.tree` whose entry is gone and that is older than
+ * `before`: an install or a collection that stopped between the record and
+ * the entry leaves one, and no publish of that key may follow. A young one
+ * may be a publish about to rename its entry into place. The record is moved
+ * aside before it is removed, and put back if a publish replaced it in the
+ * meantime (an atomic replace is a new inode).
+ */
+async function collectOrphanRecords(
+  root: string,
+  before: number,
+  dryRun: boolean | undefined,
+  result: SharedStoreCollection,
+): Promise<void> {
+  const names = new Set(await readdir(root));
+  for (const name of [...names].sort()) {
+    const key = /^(sha256-[0-9a-f]{64}(?:-patch-[0-9a-f]{64})?)\.tree$/u.exec(
+      name,
+    )?.[1];
+    if (key === undefined || names.has(key)) continue;
+    const path = join(root, name);
+    const judged = await lstat(path).catch(() => undefined);
+    if (judged?.isFile() !== true || judged.mtimeMs >= before) continue;
+    result.removed.push(path);
+    if (dryRun === true) continue;
+    const doomed = join(root, `.${key}.collect-${randomUUID()}`);
+    if (
+      !(await rename(path, doomed).then(
+        () => true,
+        () => false,
+      ))
+    )
+      continue;
+    const moved = await lstat(doomed);
+    if (moved.ino !== judged.ino || moved.dev !== judged.dev)
+      // Never over a record written since.
+      await link(doomed, path).catch(() => undefined);
+    await removeStableFile(doomed).catch(() => undefined);
+  }
 }
 
 /** True when any file under `entry` has a second name somewhere else. */

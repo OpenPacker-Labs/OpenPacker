@@ -178,7 +178,9 @@ inside the bundle.
     was. `opm gc --shared` reads the key under ADR 0048 §8's rules: kept while a
     project links any of its files, kept while its `.tree`, or the directory
     itself while it has no record, is younger than the age rule, removed with
-    its record otherwise, and a leftover `.<key>.materialize-` cleared once old.
+    its record otherwise, and a leftover `.<key>.materialize-` cleared once old,
+    as is a `<key>.tree` whose entry is gone (an install or a collection that
+    stopped between the two leaves one; this holds for an archive's record too).
     While a patched copy is kept, so is the archive's entry it was made from,
     although no project links that one: an install proves the archive to be the
     package the lock names before it adopts the copy (point 12), and an offline

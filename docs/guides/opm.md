@@ -831,7 +831,9 @@ files, so an entry in which every file has a link count of one is linked by no
 project and is removed. Entries younger than ten minutes are left alone (an
 install may be about to link them), as are entries any project still uses and
 the archive entry a kept patched copy was made from (`opm ci` checks the archive
-before it adopts the copy, offline too).
+before it adopts the copy, offline too). A `.tree` record whose entry is gone,
+which an install or a collection that stopped half way leaves, is removed once
+it is ten minutes old.
 
 ### Shell environment
 
