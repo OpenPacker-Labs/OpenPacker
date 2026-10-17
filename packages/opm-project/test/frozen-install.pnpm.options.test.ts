@@ -1,4 +1,4 @@
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { planFrozen } from '../src/index.js';
@@ -151,6 +151,16 @@ describe('choosing members of a pnpm workspace', () => {
     await expect(
       stat(join(w.dir, 'packages/web/node_modules')),
     ).rejects.toThrow();
+  });
+
+  it('names pnpm-workspace.yaml when a pnpm project has no workspace to select from', async () => {
+    const w = await pnpmWorld();
+    w.importer('.', {});
+    await w.write();
+    await rm(join(w.dir, 'pnpm-workspace.yaml'));
+    await expect(w.install({ workspace: { filter: ['web'] } })).rejects.toThrow(
+      /declares none \(no pnpm-workspace\.yaml\)/u,
+    );
   });
 
   it('refuses a selector that matches nothing, before anything is fetched', async () => {
