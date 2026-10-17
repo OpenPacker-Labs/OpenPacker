@@ -69,12 +69,30 @@ TOML assignment at line 1").
    `rollback-record.ts`, `rollback-files.ts`, `rollback-restore.ts`).
    - The owner is recorded where its pid means something (`process-owner.ts`):
      pid, hostname, and on Linux the start time (`/proc/<pid>/stat` field 22),
-     the PID namespace (`/proc/self/ns/pid`), the boot id and the machine id.
-   - The record names no path. It holds one row per entry of two fixed tables,
-     the files and the trees above, by position. A file row has the sha256 and
-     the mode of the file; a tree row says it was a directory, or absent. The
-     step also records the sha256 of the opm.toml and lock it is about to write,
-     or of opm.toml as it is for a step that leaves it alone (`opm sync`).
+     the PID namespace (`/proc/self/ns/pid`), and the boot id and the machine id
+     as **digests**, never the ids: machine-id(5) calls the machine id
+     confidential, and the record sits in a project that is committed, cached
+     and shared. A digest is `d1-` and 32 hex digits of an HMAC-SHA-256 keyed by
+     what it names (`opm.owner.machine.v1`, `opm.owner.boot.v1`); a record an
+     earlier opm wrote with the raw ids is read back as their digests. The
+     hostname is kept as `[A-Za-z0-9._-]`, anything else as `_`, so that a lock
+     cannot write to a terminal.
+   - The record names no path to put back into; every path is rebuilt from the
+     tables. It does name the project it was made in: the root directory's
+     device and inode (a rename within a file system keeps them, a copy does
+     not) and its real path (a project restored to the same place keeps it). A
+     copy is put back only into a project that agrees on either; one that
+     arrived in another project's `.opm` (a `cp -a`, a CI cache, an archive) is
+     `INVALID_ROLLBACK` in plain words, and is removed, with nothing else
+     touched, by `opm recover --abandon-step`. If the project it names has this
+     very `.opm` (a bind mount or volume two projects share), the copy is that
+     project's own and is neither put back nor removed from here.
+   - Beyond that it names no path. It holds one row per entry of two fixed
+     tables, the files and the trees above, by position. A file row has the
+     sha256 and the mode of the file; a tree row says it was a directory, or
+     absent. The step also records the sha256 of the opm.toml and lock it is
+     about to write, or of opm.toml as it is for a step that leaves it alone
+     (`opm sync`).
    - A link is kept as a link. A project file that is a symbolic link is a row
      with its target (and the digest of the target), never read through; a
      `node_modules` that is a link is a tree row holding its target, and what is
@@ -86,18 +104,34 @@ TOML assignment at line 1").
    - A copy is renamed to `….discard` before it is removed, so a copy half
      removed is never taken for one to restore from.
    - Putting the project back checks everything before it changes anything: each
-     kept file is opened no-follow, has one name (`nlink` 1) and hashes to its
-     recorded digest, a kept tree is a directory, and no project file has become
-     a directory. A link or a second name in the copy is `UNSAFE_PATH`; bytes
-     that are not the recorded ones, or a missing file, are `ROLLBACK_CONFLICT`;
-     nothing is written in either case.
-   - Then each file is written whole to `.<name>.opm-restore` beside its name,
-     flushed (`fsync` of the file, not of the directory), and renamed over it:
-     opm.toml is never empty or half written, a link at the name is replaced, a
-     file that has other names is left as it is for them, and the mode is the
-     recorded one. A putting back that is killed leaves at most that one name,
-     which the next one overwrites. It is safe to repeat: a tree already moved
-     back is skipped.
+     kept file is opened no-follow, has one name (`nlink` 1), is no larger than
+     64 MiB (a larger one is refused before it is read, here and when a copy is
+     taken) and hashes to its recorded digest, a kept tree is a directory, and
+     no project file has become a directory. A link or a second name in the copy
+     is `UNSAFE_PATH`; bytes that are not the recorded ones, a missing file, or
+     a kept tree that is missing without the copy having begun to move it, are
+     `ROLLBACK_CONFLICT`; nothing is written in either case.
+   - Then each file is written whole to `.<name>.opm-restore` beside its name
+     through the directory's handle, flushed (`fsync` of the file, not of the
+     directory), and renamed over it: opm.toml is never empty or half written, a
+     link at the name is replaced, a file that has other names is left as it is
+     for them, and the mode is the recorded one. Every step, under its lock,
+     first removes the `.<name>.opm-restore` names a putting back that was
+     killed left, whether or not its copy is still there.
+   - It is safe to repeat. A tree is marked (`trees/<i>.moving`, flushed) before
+     anything is done to it; a kept tree that is gone with its mark was moved
+     back, and one that is gone without is a copy that lost it and is refused.
+   - **Mounts.** A `node_modules` that is a mount point (a Docker volume) cannot
+     be removed or renamed over, and the copy of it, made across file systems,
+     is a copy of the bytes rather than of links (each `add`, `sync` and
+     `update` pays for the whole tree). The directory is emptied and the kept
+     tree copied in; the kept tree stays whole until all of it is in place. A
+     file bind-mounted into the project (a name a rename cannot replace) is
+     written in place, after the copy is marked (`files/<i>.putting`) so that a
+     write cut short is finished by the next putting back and not taken for a
+     conflict. Anything else the file system refuses (a read-only volume, a full
+     disk) is `UNAVAILABLE` naming the path, why, that the copy is kept, and to
+     run `opm recover` or remove the copy: never an errno or a call.
 
 5. **One step at a time, and a killed step is finished by the next one**
    (`project-step.ts`, `step-lock.ts`, `rollback-recovery.ts`,
@@ -112,6 +146,9 @@ TOML assignment at line 1").
      `--to`, `gc`, `recover`, `packslip pin --write` and `approve`) is one such
      step. A host package's `add`, and a dry-run `gc`, change no project and
      take none. A step inside a step neither locks nor recovers again.
+   - A step works on the directory the project is in, whatever name it was
+     reached by (a symbolic link to it, a bind mount of it); the lock and the
+     recovery are of that directory.
    - A step first takes the project's lock: it writes `.opm/step-<id>.lock` with
      `O_EXCL`, naming its owner, and holds the lock when no other such file
      names an owner that may be running. Otherwise it removes its file, waits
@@ -120,7 +157,9 @@ TOML assignment at line 1").
      anything else is `INVALID_SPEC`. A file whose owner is gone is removed by
      whoever sees it; its name is that owner's alone, so this never takes a live
      step's lock. Two steps cannot both hold the lock, since each listed the
-     others after its own file existed.
+     others after its own file existed. A project opm may not write to (a
+     read-only volume) stops here with `UNAVAILABLE`, saying which `.opm` and
+     why, and nothing changed.
    - Holding the lock, the step recovers what is in its own `.opm`, and nowhere
      else (`opm ci --path <dir>` recovers `<dir>`, never a parent):
      - a copy that is not a directory of this user, or is a link, or a `.opm`
@@ -135,30 +174,58 @@ TOML assignment at line 1").
        process's, or is known on one side only, cannot be judged and counts as
        running; one unreadable on both sides agrees, so a host that hides a
        field is not immortal. Where the place agrees the pid decides: free
-       (ESRCH) is gone; a zombie or dead process (`/proc` state Z or X) is gone;
-       a start time that differs from the recorded one is gone (EPERM does not
-       settle it either way); an unreadable start time is running;
+       (ESRCH) is gone; a zombie or dead process (`/proc` state Z or X) is gone,
+       unless it leads threads that still run (more than one entry in
+       `/proc/<pid>/task`), which is the process; a start time that differs from
+       the recorded one is gone (EPERM does not settle it either way); an
+       unreadable start time is running;
      - a `ready` copy that was not being discarded means the project may be half
        way, and it is put back, unless opm.toml or the lock holds neither what
-       the copy kept nor what the step was about to write: someone wrote it
-       since, so the step stops (`ROLLBACK_CONFLICT`) and the copy is kept;
+       the copy kept nor what the step was about to write, or package.json or
+       package-lock.json holds neither what the copy kept nor one of the
+       contents the step told the copy it was about to write (below): someone
+       wrote it since, so the step stops (`ROLLBACK_CONFLICT`) and the copy is
+       kept. Remove the copy to keep the project as it is now;
      - a copy with no record yet, a `copying` copy (the step had not started
        writing) or a `….discard` copy (the step had finished) is removed.
    - Each copy recovered is told to `step.onRecovered`; the CLI says it in one
      line on stderr: "opm: put the project back as it was before a step that
      process 4242 did not finish, and removed .opm/.rollback-…".
+   - **package.json and package-lock.json are told to the copy.** The native
+     projection writes them late, through `writeFileAtomic`
+     (`@openpacker/project-io`). Before each such write the step adds the digest
+     of what the file is about to hold to the copy's record (`also`, the
+     last 32) and replaces the record durably (`rollback-journal.ts`, through
+     `observeWrites`, which `writeFileAtomic` awaits). So a hand edit or an
+     `npm install` between a kill and the next step is not taken for the step's
+     work: it is `ROLLBACK_CONFLICT`, not reverted. `node_modules` is the one
+     tree that is not guarded.
    - **A step that cannot be judged has a way out**
-     (`opm recover --abandon-step <id>`, `abandonStep`). A container restarted
-     over a project, a reused CI workspace or a changed host name leaves a lock
-     and a copy whose owner is in another PID namespace, boot or host. The
-     refusal prints the command. The operator says the step is dead: opm removes
-     the locks of that owner and recovers its copies as above, and prints what
-     it did. It is refused (`STEP_ALIVE`, exit 8) for an owner whose place is
-     this machine and boot and PID namespace and whose pid answers, and for this
-     process; it does not touch another owner's lock or copy, which still stops
-     the step. For an owner of another place the assertion is the operator's: a
-     step that is in fact running on another host goes on writing the project
-     while this one puts the copy back.
+     (`opm recover --abandon-step <id> [--force]`, `abandonStep`). A container
+     restarted over a project, a reused CI workspace or a changed host name
+     leaves a lock and a copy whose owner is in another PID namespace, boot or
+     host. The refusal names the command, not a forced one. What the operator is
+     told, and asked, depends on what opm can know of the owner:
+     - running here (its pid answers in this PID namespace), or this process:
+       `STEP_ALIVE`, exit 8, always, `--force` or not;
+     - provably dead (an earlier boot of this machine, or a pid that is free
+       here): done, as ordinary recovery would;
+     - of another place: `PROJECT_BUSY`, exit 8, until `--force`. The refusal
+       names the owner, the file and when it was written, and says what being
+       wrong costs: if that step is running it goes on writing the project with
+       its lock gone and its work undone. `opm --help` says the same;
+     - a lock that does not say who holds it (empty, cut short, from a newer
+       opm): the same, with its own cost (other steps may run on the project,
+       and if that step is running it writes without a lock); with `--force`
+       only that lock file is removed and the command says so. It is named by
+       the id its file name carries;
+     - a copy made in another project: removed, nothing else touched, no
+       confirmation, even if its owner runs here, unless that project shares
+       this `.opm`.
+
+     Once confirmed, opm removes the locks of that owner and recovers its copies
+     as above, and prints what it did; it does not touch another owner's lock or
+     copy, which still stops the step.
 
 ## Consequences
 
@@ -181,12 +248,22 @@ Limits:
 - The lock and the copies exclude steps of opm only, and only those that run
   through a step: a host that calls `installFromLock` or `writeManifestFile`
   itself, another tool, or an edit by hand is not excluded.
-- Only opm.toml and the lock are guarded against a later write, and only for a
-  step that keeps a copy (`add`, `sync`, `update`). `package.json`,
-  `package-lock.json` and opm's `.opm/*.json` are written by the native
-  projection with bytes the step does not know in advance, so a copy puts them
-  back as it kept them; a write to `node_modules` or `.opm` state alone is not
-  seen, and would be undone.
+- opm.toml, the lock, package.json and package-lock.json are guarded against a
+  later write, and only for a step that keeps a copy (`add`, `sync`, `update`).
+  opm's `.opm/*.json` and `node_modules` are not: a copy puts them back as it
+  kept them, so a write to them alone (an `npm install` into `node_modules`
+  after a kill) is not seen, and would be undone. A write to package.json that
+  does not go through `writeFileAtomic` is not told to the copy, and is refused
+  as a conflict.
+- A `node_modules` on a volume is copied, not linked, each time a copy is taken,
+  and put back by copying; a project whose root is on a file system that cannot
+  link pays the same.
+- On a host with no machine id (most container images, which have no
+  `/etc/machine-id`) the earlier-boot rule does not fire: a step killed there is
+  recovered while the machine stays up, and after a reboot its lock and copy
+  cannot be placed and need `opm recover --abandon-step`. The module header says
+  how another holder (a run's scratch, a lease) maps its own record onto the
+  owner rule, including a digest of the host name as the machine.
 - A step stops, rather than guess, at a copy or a lock whose owner it cannot
   judge. `opm recover --abandon-step` is the way out; it is the operator's word
   that the step is dead, and a wrong word is a second writer.
@@ -206,6 +283,9 @@ Limits:
 - A `node_modules` that is a link is put back as that link; what is behind it is
   not kept. The file written to put a file back is flushed, its directory is
   not.
+- A file system that folds case could not be run (this kernel refuses tmpfs
+  `casefold` and an ext4 casefold image); every name opm makes is lower case,
+  and the ids it compares itself are compared lower-cased.
 - The kill was exercised on Linux: with a child process that keeps its copy,
   starts the step's writes and is killed with SIGKILL
   (`rollback-recovery.test.ts`), a sync killed while it links and a recovery
