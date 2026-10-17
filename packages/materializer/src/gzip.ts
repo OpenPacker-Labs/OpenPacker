@@ -80,6 +80,7 @@ export function inflate(
   return new Promise((resolve, reject) => {
     // A listener added to a signal already aborted would never be called.
     if (signal?.aborted) {
+      engine.destroy();
       reject(signal.reason);
       return;
     }

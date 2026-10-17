@@ -159,7 +159,7 @@ export async function inspectArchive(
         )
       : undefined;
   const expanded = gunzipped?.expanded ?? bytes;
-  // Measured against the gzip stream alone: zero padding buys no expansion.
+  // Measured against the gzip stream alone: zero padding buys no acceptance.
   if (gunzipped)
     validateRatio(expanded.byteLength, gunzipped.streamEnd, limits);
   assertMemoryBudget(bytes.byteLength, expanded.byteLength, limits);

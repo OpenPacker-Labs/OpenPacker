@@ -116,6 +116,19 @@ describe('the walk is bounded', () => {
     });
   });
 
+  it("is held to the decoder's limit when gunzipArchive starts it", async () => {
+    // zlib finds the bad CRC-32 before it hands over the member's last
+    // chunk, so its own pass never sees 150 bytes over a limit of 100: the
+    // walk's budget is what stops the walk.
+    const bad = flip(gzipSync(new Uint8Array(150).fill(7)), 5);
+    expect(await ours(bad, 100)).toEqual({
+      accepted: false,
+      code: 'INVALID_COMPRESSION',
+      message: 'incorrect data check',
+    });
+    expect(await ours(bad, 200)).toMatchObject({ message: at(0) });
+  });
+
   it('stops after 1,024 members', async () => {
     const empty = gzipSync(new Uint8Array(0));
     const many = concat(...Array.from({ length: 1100 }, () => empty));
@@ -203,8 +216,11 @@ describe('an abort while the walk runs', () => {
   it('is the abort when the signal was aborted before an inflate starts', async () => {
     const run = stop();
     run.controller.abort(run.reason);
+    const engine = createGunzip();
     await expect(
-      inflate(createGunzip(), gzipSync(text('abc')), 1 << 20, run.signal),
+      inflate(engine, gzipSync(text('abc')), 1 << 20, run.signal),
     ).rejects.toBe(run.reason);
+    // The engine it was handed is not left for the garbage collector.
+    expect(engine.destroyed).toBe(true);
   });
 });
