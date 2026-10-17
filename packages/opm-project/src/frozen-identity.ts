@@ -9,12 +9,15 @@
  * (ADR 0055 §7). The version is the one the lock records for the archive: a
  * registry package's, or a tarball entry's own `version`, which may be absent,
  * and then only the name is compared. It is compared as npm reads one: a
- * leading `v` or `=` and build metadata do not make another version. Neither
- * pnpm nor npm checks this; an npm lock is not checked here either, its
+ * leading `v` or `=` and build metadata do not make another version, and a
+ * name as pnpm compares one, without regard to case. pnpm makes the same check
+ * when it reads a package back from its store (`checkPackageMismatch`,
+ * `ERR_PNPM_UNEXPECTED_PKG_CONTENT_IN_STORE`, on by default through
+ * `strict-store-pkg-content-check`). An npm lock is not checked here, its
  * archives being the ones npm resolved by name.
  */
 
-import type { FrozenLockPackage } from '@openpacker/adapter-core';
+import { type FrozenLockPackage, quote } from '@openpacker/adapter-core';
 import { readArchiveManifest } from './frozen-scripts.js';
 import { OpmError } from './types.js';
 
@@ -23,10 +26,6 @@ const comparable = (version: string): string =>
     .trim()
     .replace(/^[=v]+/u, '')
     .split('+', 1)[0]!;
-
-/** A value from an archive, quoted, and cut to a length a line can hold. */
-const show = (text: string): string =>
-  JSON.stringify(text.length > 200 ? `${text.slice(0, 200)}...` : text);
 
 /**
  * The names the archive must carry and the version, if any: the lock's own
@@ -72,15 +71,17 @@ export async function checkArchiveIdentities(
       (compareVersion && typeof version !== 'string')
     )
       problems.push(
-        `${show(wanted)} (${pkg.path}): the archive's package.json has no ${typeof name !== 'string' ? 'name' : 'version'}`,
+        `${quote(wanted)} (${pkg.path}): the archive's package.json has no ${typeof name !== 'string' ? 'name' : 'version'}`,
       );
     else if (
-      expected.names.some((each) => each !== name) ||
+      expected.names.some(
+        (each) => each.toLowerCase() !== name.toLowerCase(),
+      ) ||
       (compareVersion &&
         comparable(version as string) !== comparable(expected.version!))
     )
       problems.push(
-        `${show(wanted)} (${pkg.path}): the archive's package.json is ${show(typeof version === 'string' ? `${name}@${version}` : name)}`,
+        `${quote(wanted)} (${pkg.path}): the archive's package.json is ${quote(typeof version === 'string' ? `${name}@${version}` : name)}`,
       );
   }
   if (problems.length > 0)
