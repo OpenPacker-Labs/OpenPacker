@@ -205,11 +205,14 @@ function leftOut(result: Pick<FrozenPlan, 'skipped'>): string | undefined {
     .join(', ');
 }
 
-/** What `opm ci --plan` says: the install up to the first byte fetched, and nothing done. */
+/**
+ * What `opm ci --plan` says: the install up to the first byte fetched, and
+ * nothing done. The same plan is the same text, so it carries no wall time.
+ */
 function printPlan(plan: FrozenPlan, io: CommandIo, root: string): void {
   io.stdout.write(
     `Plan for ${resolve(root)} (${plan.lockPath}): nothing was fetched or written\n` +
-      `  ${plan.instances} package${plan.instances === 1 ? '' : 's'} in ${plan.places} place${plan.places === 1 ? '' : 's'} under node_modules, from ${plan.archives} archive${plan.archives === 1 ? '' : 's'}, in ${(plan.milliseconds / 1000).toFixed(1)} s\n`,
+      `  ${plan.instances} package${plan.instances === 1 ? '' : 's'} in ${plan.places} place${plan.places === 1 ? '' : 's'} under node_modules, from ${plan.archives} archive${plan.archives === 1 ? '' : 's'}\n`,
   );
   const clause = leftOut(plan);
   if (clause !== undefined) io.stdout.write(`  left out: ${clause}\n`);
