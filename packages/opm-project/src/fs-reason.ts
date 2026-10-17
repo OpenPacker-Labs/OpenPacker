@@ -27,3 +27,12 @@ export function isRefusal(error: Error): error is NodeJS.ErrnoException {
     ['EACCES', 'EPERM', 'EROFS', 'ENOSPC', 'EDQUOT'].includes(error.code)
   );
 }
+
+/**
+ * Text taken from a file in the project (a path a record names) as a message
+ * shows it: control characters, an escape sequence among them, are `?`.
+ */
+export function printable(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\u0000-\u001f\u007f-\u009f]/gu, '?');
+}

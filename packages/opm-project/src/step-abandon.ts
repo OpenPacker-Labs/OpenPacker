@@ -1,4 +1,4 @@
-import { lstat, readdir } from 'node:fs/promises';
+import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { projectPaths, readStableFile } from './paths.js';
 import {
@@ -18,10 +18,11 @@ import {
 import { discardCopy } from './rollback-files.js';
 import {
   copyId,
+  foreignCopy,
   recoverHeldProject,
   type RecoveredStep,
 } from './rollback-recovery.js';
-import { otherProject } from './rollback-project.js';
+import { otherProject, sharesOpmDir } from './rollback-project.js';
 import {
   DISCARD_SUFFIX,
   ROLLBACK_PREFIX,
@@ -89,7 +90,7 @@ export async function abandonStep(
   id: string,
   options: AbandonOptions = {},
 ): Promise<AbandonedStep> {
-  const paths = projectPaths(root);
+  const paths = projectPaths(await realpath(root).catch(() => root));
   const named = await find(paths.root, paths.opmDir, id);
   const waitMs = parseStepWait(
     String(options.waitMs ?? DEFAULT_STEP_WAIT_MS),
@@ -101,7 +102,10 @@ export async function abandonStep(
   };
   if (named.foreign !== undefined) {
     // Not a step of this project: nothing of it is running here or needs
-    // putting back, so there is nothing to confirm and nothing else to touch.
+    // putting back, so there is nothing to confirm and nothing else to touch,
+    // unless the project it belongs to has this very .opm.
+    if (await sharesOpmDir(named.foreign, paths.opmDir))
+      throw await foreignCopy(paths.root, named.name, named.foreign, true);
     const lock = await acquireStepLock(paths, lockOptions);
     try {
       await discardCopy(join(paths.opmDir, named.name));

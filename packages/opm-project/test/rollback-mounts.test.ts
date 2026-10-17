@@ -212,4 +212,61 @@ describeNamespaced('a project laid out over mounts', mountNamespace, () => {
     expect(report.error?.message).not.toMatch(/\/proc\/self\/fd|EROFS|open '/u);
     expect(report.copies).toEqual([]);
   }, 60_000);
+
+  it("keeps two projects that share one .opm from putting back or removing each other's copy", async () => {
+    const report = await inMounts(`
+      const { abandonStep } = await import(${JSON.stringify(sources.index)});
+      const other = root + '-b';
+      await mkdir(join(other, '.opm'), { recursive: true });
+      await writeFile(join(other, 'opm.toml'), 'the other one\\n');
+      mount('--bind', join(root, '.opm'), join(other, '.opm'));
+      await snapshotProject(root);
+      await writeFile(join(root, 'opm.toml'), 'half-written\\n');
+      await dead();
+      const [name] = (await readdir(join(root, '.opm'))).filter((n) => n.startsWith('.rollback-'));
+      const errors: string[] = [];
+      try { await recoverInterruptedSteps(other); } catch (error) { errors.push(error.code + ': ' + error.message); }
+      try { await abandonStep(other, name.replace(/^[.]rollback-[0-9]+-/u, '')); } catch (error) { errors.push(error.code + ': ' + error.message); }
+      report.leftovers = errors;
+      report.copies = (await readdir(join(root, '.opm'))).filter((n) => n.startsWith('.rollback-'));
+      report.manifest = await readFile(join(other, 'opm.toml'), 'utf8');
+      report.recovered = await recoverInterruptedSteps(root);
+      report.restored = (await readFile(join(root, 'opm.toml'), 'utf8')) !== 'half-written\\n';
+      await rm(other, { recursive: true, force: true }).catch(() => undefined);
+    `);
+    expect(report.error).toBeUndefined();
+    expect(report.leftovers).toEqual([
+      expect.stringMatching(
+        /^INVALID_ROLLBACK: .*shares this \.opm directory with .*run opm recover in /u,
+      ),
+      expect.stringMatching(
+        /^INVALID_ROLLBACK: .*shares this \.opm directory with /u,
+      ),
+    ]);
+    expect(report.copies).toHaveLength(1);
+    expect(report.manifest).toBe('the other one\n');
+    expect(report.recovered).toEqual([
+      expect.objectContaining({ restored: true }),
+    ]);
+    expect(report.restored).toBe(true);
+  }, 60_000);
+
+  it('recovers a project from a copy made under another name of its directory (a bind mount of it)', async () => {
+    const report = await inMounts(`
+      const alias = root + '-alias';
+      await mkdir(alias);
+      mount('--bind', root, alias);
+      const before = await readFile(join(root, 'opm.toml'), 'utf8');
+      await snapshotProject(alias);
+      await writeFile(join(root, 'opm.toml'), 'half-written\\n');
+      await dead();
+      report.recovered = await recoverInterruptedSteps(root);
+      report.restored = (await readFile(join(root, 'opm.toml'), 'utf8')) === before;
+    `);
+    expect(report.error).toBeUndefined();
+    expect(report.recovered).toEqual([
+      expect.objectContaining({ restored: true }),
+    ]);
+    expect(report.restored).toBe(true);
+  }, 60_000);
 });

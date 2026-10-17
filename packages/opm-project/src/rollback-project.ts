@@ -1,4 +1,5 @@
 import { realpath, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { RollbackProject } from './rollback-record.js';
 
 /**
@@ -33,4 +34,22 @@ export async function otherProject(
     (here.dev === recorded.dev && here.ino === recorded.ino) ||
     here.path === recorded.path;
   return same ? undefined : recorded.path;
+}
+
+/**
+ * Whether the project a copy was made in has this very `.opm` (a directory two
+ * projects share by a bind mount or a volume): then the copy is that project's
+ * own, in use or waiting for it, and is neither put back nor removed from here.
+ */
+export async function sharesOpmDir(
+  made: string,
+  opmDir: string,
+): Promise<boolean> {
+  const [theirs, ours] = await Promise.all([
+    stat(join(made, '.opm'), { bigint: true }).catch(() => undefined),
+    stat(opmDir, { bigint: true }),
+  ]);
+  return (
+    theirs !== undefined && theirs.dev === ours.dev && theirs.ino === ours.ino
+  );
 }

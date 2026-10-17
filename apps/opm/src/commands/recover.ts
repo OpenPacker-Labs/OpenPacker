@@ -6,6 +6,7 @@ import {
   describeProcessOwner,
   describeRecovery,
   parseStepWait,
+  printable,
   recoverInterruptedSteps,
   requireOpmRoot,
   type StepOptions,
@@ -122,7 +123,7 @@ export async function runRecoverCommand(
   const foreign = result.recovered.find((copy) => copy.foreign !== undefined);
   if (foreign !== undefined) {
     io.stdout.write(
-      `Removed ${foreign.copy}, made for the project at ${foreign.foreign}; this project was not changed\n`,
+      `Removed ${foreign.copy}, made for the project at ${printable(foreign.foreign!)}; this project was not changed\n`,
     );
     return 0;
   }

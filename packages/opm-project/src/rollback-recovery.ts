@@ -14,7 +14,12 @@ import {
   readLive,
   sweepRestoreNames,
 } from './rollback-files.js';
-import { otherProject, projectIdentity } from './rollback-project.js';
+import {
+  otherProject,
+  projectIdentity,
+  sharesOpmDir,
+} from './rollback-project.js';
+import { printable } from './fs-reason.js';
 import { markerOf, marked, restoreFrom } from './rollback-restore.js';
 import {
   DISCARD_SUFFIX,
@@ -98,8 +103,9 @@ export async function recoverHeldProject(
       ? await otherProject(paths.root, record.project)
       : undefined;
     if (foreign !== undefined) {
-      if (abandoned?.(record.owner) !== true)
-        throw await foreignCopy(paths.root, name, foreign);
+      const shared = await sharesOpmDir(foreign, paths.opmDir);
+      if (abandoned?.(record.owner) !== true || shared)
+        throw await foreignCopy(paths.root, name, foreign, shared);
       await discardCopy(holder);
       recovered.push({ copy, owner: record.owner, restored: false, foreign });
       continue;
@@ -131,7 +137,7 @@ export function copyId(name: string): string {
 /** One line for each copy recovered, as `opm` prints it on stderr. */
 export function describeRecovery(step: RecoveredStep): string {
   if (step.foreign !== undefined)
-    return `opm: removed ${step.copy}, which was made for the project at ${step.foreign}; this project was not changed`;
+    return `opm: removed ${step.copy}, which was made for the project at ${printable(step.foreign)}; this project was not changed`;
   return step.restored
     ? `opm: put the project back as it was before a step that process ${step.owner.pid} did not finish, and removed ${step.copy}`
     : `opm: removed ${step.copy}, left by process ${step.owner.pid} before it changed the project`;
@@ -219,16 +225,24 @@ async function assertRestorable(
   }
 }
 
-/** A copy made in another project: said plainly, with the way out that changes nothing else. */
-async function foreignCopy(
+/**
+ * A copy made in another project: said plainly, with the way out that changes
+ * nothing else. When that project has this very `.opm` the copy is its own
+ * (in use, or waiting for it to recover), and the way out is there.
+ */
+export async function foreignCopy(
   root: string,
   name: string,
   made: string,
+  shared: boolean,
 ): Promise<OpmError> {
   const copy = join('.opm', name);
-  const here = (await projectIdentity(root)).path;
+  const there = printable(made);
+  const here = printable((await projectIdentity(root)).path);
   return new OpmError(
     'INVALID_ROLLBACK',
-    `${copy} was made in another project, ${made}, and this one is ${here}. Putting it back would replace this project's files with that one's, so opm made no change. If it came along by accident (a copied .opm, a cache), run: opm recover --abandon-step ${copyId(name)} (it only removes the copy), or remove ${copy}.`,
+    shared
+      ? `${copy} was made by the project at ${there}, which shares this .opm directory with ${here}. It is that project's own copy, and opm will not put it back here or remove it from here. opm made no change; run opm recover in ${there}.`
+      : `${copy} was made in another project, ${there}, and this one is ${here}. Putting it back would replace this project's files with that one's, so opm made no change. If it came along by accident (a copied .opm, a cache), run: opm recover --abandon-step ${copyId(name)} (it only removes the copy), or remove ${copy}.`,
   );
 }

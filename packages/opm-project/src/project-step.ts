@@ -66,8 +66,12 @@ export async function projectStep<T>(
     options?.waitMs === undefined
       ? DEFAULT_STEP_WAIT_MS
       : parseStepWait(String(options.waitMs), 'The step wait');
-  const paths = projectPaths(root);
-  const key = await realpath(paths.root).catch(() => paths.root);
+  // The lock and the recovery are of the directory the project is in, whatever
+  // name it was reached by (a symbolic link to it, a bind mount of it).
+  const key = await realpath(projectPaths(root).root).catch(
+    () => projectPaths(root).root,
+  );
+  const paths = projectPaths(key);
   const held = holding.getStore();
   if (held?.has(key) === true) return work();
   const lock = await acquireStepLock(paths, {

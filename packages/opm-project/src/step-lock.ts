@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, rmdir, type FileHandle } from 'node:fs/promises';
+import { lstat, rmdir, stat, type FileHandle } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { lstatChild } from '@openpacker/project-io';
 import { isRefusal, plainReason } from './fs-reason.js';
@@ -93,7 +93,7 @@ export async function acquireStepLock(
     abandonedFiles?: ReadonlySet<string>;
   },
 ): Promise<StepLock | undefined> {
-  const root = await lstat(paths.root).catch(() => undefined);
+  const root = await stat(paths.root).catch(() => undefined);
   if (root === undefined || !root.isDirectory()) return undefined;
   const createdOpmDir =
     (await lstat(paths.opmDir).catch(() => undefined)) === undefined;

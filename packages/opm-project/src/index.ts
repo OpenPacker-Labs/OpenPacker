@@ -75,6 +75,7 @@ export {
   writeOwnerFile,
   type OwnerFileProblem,
 } from './owner-file.js';
+export { printable } from './fs-reason.js';
 export { snapshotProject } from './project-rollback.js';
 
 export {
