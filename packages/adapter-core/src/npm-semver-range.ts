@@ -195,8 +195,13 @@ function desugar(piece: string): string {
   return text.trim().replace(STAR, '');
 }
 
-/** A version as node-semver's strict `SemVer` writes it back, or undefined when it refuses it. */
-function version(text: string): string | undefined {
+/**
+ * A version as node-semver's strict `SemVer` writes it back (no `v`, no build
+ * metadata), or undefined where `new SemVer(text)` throws: leading zeros in a
+ * number or in a numeric prerelease identifier (`1.2.3-01`), a partial version,
+ * a `=` in front.
+ */
+export function npmVersion(text: string): string | undefined {
   if (text.length > MAX_LENGTH) return undefined;
   const match = FULL.exec(text.trim());
   if (match === null) return undefined;
@@ -219,7 +224,7 @@ function comparator(text: string): NpmComparator | undefined {
     | '>'
     | '>=';
   if (match[2] === undefined || match[2] === '') return { operator: '' };
-  const written = version(match[2]);
+  const written = npmVersion(match[2]);
   return written === undefined ? undefined : { operator, version: written };
 }
 
