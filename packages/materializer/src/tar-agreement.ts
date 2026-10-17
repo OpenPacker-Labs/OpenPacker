@@ -202,11 +202,32 @@ export function assertEntryAgrees(
       `${spelled} is a contiguous file (typeflag 7): npm extracts it, pnpm throws "Unsupported file type"`,
     );
   const file = type === '0' || type === '\0';
+  if (file && !spelled.endsWith('/')) assertPathAgrees(spelled);
   if (type === '5' ? size !== 0 : file && spelled.endsWith('/'))
     throw unsafe(
       'TAR_AMBIGUOUS_DIRECTORY',
       type === '5'
         ? `the directory ${spelled} has a size of ${size} bytes: npm takes it for 0, pnpm and opm skip that many bytes and read no entry inside them`
         : `${spelled} is a file named like a directory: npm makes a directory of it, pnpm installs a file`,
+    );
+}
+
+/**
+ * Refuse a file path the three readers place differently. node-tar strips the
+ * first component whatever it is, and drops a path with only one; pnpm trims
+ * the first component at a slash or a backslash and keeps a path with none; opm
+ * reads a backslash as a separator. A name with a backslash is refused whether
+ * or not npm and pnpm agree on it, as opm would install it elsewhere than both.
+ */
+function assertPathAgrees(spelled: string): void {
+  if (spelled.includes('\\'))
+    throw unsafe(
+      'TAR_AMBIGUOUS_PATH',
+      `${spelled} has a backslash: node-tar keeps it in the name, pnpm trims at it, opm reads it as a separator`,
+    );
+  if (!spelled.includes('/'))
+    throw unsafe(
+      'TAR_AMBIGUOUS_PATH',
+      `${spelled} is a file with no directory above it: npm's strip drops it, pnpm installs it`,
     );
 }

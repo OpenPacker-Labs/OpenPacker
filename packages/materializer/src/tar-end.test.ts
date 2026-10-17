@@ -70,6 +70,8 @@ const REFUSED: Record<string, string> = {
   'a contiguous file (typeflag 7)': 'TAR_AMBIGUOUS_TYPE',
   'a file with a link name': 'TAR_AMBIGUOUS_LINK',
   'an extended header with a link name, then a file': 'TAR_AMBIGUOUS_LINK',
+  'a file whose only path component has a backslash': 'TAR_AMBIGUOUS_PATH',
+  'a file with no directory above it': 'TAR_AMBIGUOUS_PATH',
 };
 
 /**
@@ -79,6 +81,21 @@ const REFUSED: Record<string, string> = {
 const OVER_REFUSED: Record<string, string> = {
   'an extended header with a size, a global header, then a file':
     'TAR_AMBIGUOUS_PAX',
+  'a file with a backslash below the top-level directory': 'TAR_AMBIGUOUS_PATH',
+};
+
+/**
+ * Extracted although npm's set and opm's differ: the paths opm returns (the
+ * first component stripped, as above) where `npm` is what node-tar installs.
+ * A leading `./` is node-tar's first component, which it strips; opm drops the
+ * `.` segment as npm's extractor does for any other (`acceptRedundantEntries`),
+ * so `package/` is left for the layout to unwrap.
+ */
+const PINNED: Record<string, Files> = {
+  'a file whose name starts with ./': [
+    ['a.js', 'a'],
+    ['dot.js', 'd'],
+  ],
 };
 
 const disagree = (item: OracleCase) =>
@@ -86,6 +103,7 @@ const disagree = (item: OracleCase) =>
 
 const NPM: MaterializationLimits = {
   ...DEFAULT_MATERIALIZATION_LIMITS,
+  acceptRedundantEntries: true,
   requireNpmReaderAgreement: true,
 };
 const GENERAL = DEFAULT_MATERIALIZATION_LIMITS;
@@ -132,6 +150,14 @@ describe('a tar archive npm and pnpm read', () => {
     ).toEqual(Object.keys(OVER_REFUSED));
   });
 
+  it('pins only differences it can state', () => {
+    for (const name of Object.keys(PINNED)) {
+      const item = oracle.cases.find((found) => found.name === name)!;
+      expect(disagree(item), name).toBe(false);
+      expect(PINNED[name], name).not.toEqual(item.nodeTar.entries);
+    }
+  });
+
   it.each(oracle.cases.map((item) => [item.name, item] as const))(
     '%s',
     async (name, item) => {
@@ -142,7 +168,7 @@ describe('a tar archive npm and pnpm read', () => {
         disagree(item)
           ? { code: REFUSED[name] }
           : OVER_REFUSED[name] === undefined
-            ? item.nodeTar.entries
+            ? (PINNED[name] ?? item.nodeTar.entries)
             : { code: OVER_REFUSED[name] },
       );
     },
