@@ -480,6 +480,20 @@ tree on disk (`require.resolve.paths`, `package.json` read at the place found).
 | OpenSesame                                                     | refused by name for its 4 `patchedDependencies` (exit 3); its `.deepsec` lock plans (287 packages, 288 places)                                                                                                                                                                     |
 | a stale lock                                                   | `zod` edited in `packages/sdk/package.json`: `packages/sdk: zod is "^9.9.9" in package.json and "^4.6.5" in pnpm-lock.yaml`, exit 3, the previous `node_modules` as it was                                                                                                         |
 
+**After §9's amendment (2026-10-17)**, the same runs give one real path per
+instance wherever versions agree. ai-bdd (`git archive` of ea16857):
+`opm ci --plan` gives 353 packages in 354 places (the table's 362), and `opm ci`
+installs 354, 352 from the store; `vitest` and `zod` resolve from the project,
+`packages/verify`, `packages/sdk` and `packages/cli` to one real path each,
+`require` of zod from the project and from `packages/sdk` is one module object,
+`opm exec tsc -- --version` prints 5.9.3, and the reporters test of
+`packages/sdk` (22) passes. HoBo's whole lock plans 1,851 packages in 2,383
+places (the table's 2,564); 156 places are in a member's own `node_modules`,
+none of them an instance the member would find above it: each is there because
+the project holds another instance of the name (`vitest@4.1.9` against
+`@types/node@22.20.0`, in 57 members beside the project's against 24.13.2, as
+npm would place it too).
+
 **HoBo's `allowBuilds`**, which this install does not run (`esbuild`,
 `@ast-grep/cli`, `@bufbuild/buf`, `protobufjs`): each was installed by `opm ci`
 and its bin run without the script. `esbuild --version` prints 0.28.1 (its
