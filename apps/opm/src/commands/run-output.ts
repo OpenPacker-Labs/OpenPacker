@@ -29,6 +29,15 @@ export type OutputMode = 'group' | 'stream';
 
 type Stream = 'stdout' | 'stderr';
 
+/**
+ * `text` as one line of plain text: what a terminal may act on written as an
+ * escape, and the line feed and tab `terminalSafe` leaves alone too, so that a
+ * directory name cannot make a line of its own.
+ */
+function oneLine(text: string): string {
+  return terminalSafe(text).replaceAll('\n', '\\n').replaceAll('\t', '\\t');
+}
+
 /** Where to cut `text` at `limit`: never between the two halves of a surrogate pair. */
 function cutAt(text: string, limit: number): number {
   const before = text.charCodeAt(limit - 1);
