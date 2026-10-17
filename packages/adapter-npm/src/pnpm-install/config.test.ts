@@ -34,7 +34,7 @@ describe("a pnpm project's settings", () => {
     expect(config.overrides.size).toBe(0);
     expect(config.catalogs.size).toBe(0);
     expect(config.supportedArchitectures).toBeUndefined();
-    expect(config.patches).toEqual([]);
+    expect(config.patches).toEqual(new Map());
   });
 
   it("takes package.json's overrides over the workspace file's, whole, as pnpm 10 does", async () => {
@@ -103,12 +103,21 @@ describe("a pnpm project's settings", () => {
     expect(fromFile.supportedArchitectures?.os).toEqual(['linux']);
   });
 
-  it('lists the patches a project declares', async () => {
-    const config = await read(
+  it("takes package.json's patches over the workspace file's, whole, as pnpm 10 does", async () => {
+    const both = await read(
       { pnpm: { patchedDependencies: { 'a@1.0.0': 'p/a.patch' } } },
       'patchedDependencies:\n  b@2.0.0: p/b.patch\n',
     );
-    expect(config.patches).toEqual(['a@1.0.0', 'b@2.0.0']);
+    expect(both.patches).toEqual(new Map([['a@1.0.0', 'p/a.patch']]));
+    expect(both.patchesFrom).toBe('package.json pnpm.patchedDependencies');
+    const fromFile = await read(
+      { name: 'a' },
+      'patchedDependencies:\n  b@2.0.0: p/b.patch\n',
+    );
+    expect(fromFile.patches).toEqual(new Map([['b@2.0.0', 'p/b.patch']]));
+    expect(fromFile.patchesFrom).toBe(
+      'pnpm-workspace.yaml patchedDependencies',
+    );
   });
 
   it.each([

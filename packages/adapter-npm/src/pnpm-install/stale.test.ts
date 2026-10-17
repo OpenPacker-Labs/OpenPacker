@@ -4,6 +4,7 @@ import { readPnpmLock } from '../pnpm-lock/index.js';
 import { importerProblems, type ManifestLists } from './fresh.js';
 import { worldOf } from './frozen-support.js';
 import { LOCK, dependency, pkg } from './lock-support.js';
+import { writeBelow } from './patch-support.js';
 
 const AI_BDD = fixtureBytes('ai-bdd.pnpm-lock.yaml');
 const HOBO = fixtureBytes('hobo.cut.pnpm-lock.yaml');
@@ -323,14 +324,15 @@ snapshots:
     await expect(fine.read()).resolves.toMatchObject({ refused: [] });
   });
 
-  it('refuses a project that declares a patch, as its own rule', async () => {
-    const message = await stale(AI_BDD, {
+  it('refuses a project that declares a patch the lock does not record, as a stale lock', async () => {
+    const world = await worldOf(AI_BDD, {
       root: {
         pnpm: { patchedDependencies: { 'semver@7.7.2': 'patches/s.patch' } },
       },
     });
-    expect(message).toBe(
-      'opm ci does not install this project as it is: the project declares a patch for "semver@7.7.2", which opm does not apply',
+    await writeBelow(world.project.root, 'patches/s.patch', '');
+    await expect(world.read()).rejects.toThrow(
+      'pnpm-lock.yaml is not up to date with the project (pnpm install --frozen-lockfile would refuse too): the project declares a patch for "semver@7.7.2" ("patches/s.patch") and pnpm-lock.yaml records none',
     );
   });
 });
