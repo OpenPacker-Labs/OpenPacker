@@ -171,6 +171,15 @@ describe('applyOverrides, as pnpm 10 applies overrides', () => {
       {},
     );
     expect(ranged.peerDependencies.get('react')).toBe('^18.3.0');
+    // node-semver reads `v18` and `~>18.3` as ranges, so pnpm keeps them peers.
+    for (const loose of ['v18', '~>18.3'])
+      expect(
+        applyOverrides(
+          manifest,
+          new Map([['react', loose]]),
+          {},
+        ).peerDependencies.get('react'),
+      ).toBe(loose);
   });
 
   it('writes a file: or link: replacement relative to the importer', () => {

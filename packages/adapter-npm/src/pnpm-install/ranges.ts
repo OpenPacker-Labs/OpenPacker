@@ -31,6 +31,10 @@ interface Comparator {
 
 const ANY: Comparator = { operator: '', version: '' };
 
+/** node-semver's `replaceGTE0`: `>=0.0.0` (build metadata aside, no prerelease) is `*`. */
+const isGte0 = (operator: string, version: string): boolean =>
+  operator === '>=' && version.split('+', 1)[0] === '0.0.0';
+
 const compare = (left: string, right: string): number =>
   compareParsedVersions(parseSemver(left), parseSemver(right));
 
@@ -58,19 +62,52 @@ function comparatorSets(range: string): Comparator[][] | undefined {
       }
       if (item.type !== 'comparison' || item.operator === '!=')
         return undefined;
-      set.push({
-        operator: item.operator === '=' ? '' : item.operator,
-        version: item.version,
-      });
+      set.push(
+        isGte0(item.operator, item.version)
+          ? ANY
+          : {
+              operator: item.operator === '=' ? '' : item.operator,
+              version: item.version,
+            },
+      );
     }
-    sets.push(set);
+    // node-semver drops `*` from a set that holds anything else.
+    const bounded = set.filter((comparator) => comparator !== ANY);
+    sets.push(bounded.length > 0 ? bounded : [ANY]);
   }
   return sets;
 }
 
+/** node-semver's XRANGEIDENTIFIER. */
+const XR = String.raw`(?:0|[1-9]\d*|[xX*])`;
+/**
+ * Ahead: a version as node-semver's XRANGEPLAIN reads one after its `[v=\s]*`
+ * (a prerelease or build only after three parts), to where the comparator ends.
+ */
+const VERSION_AHEAD = String.raw`(?=${XR}(?:\.${XR}(?:\.${XR}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)?)?(?:$|[\s|]))`;
+const TILDE = new RegExp(String.raw`~\s*>?\s*[v=\s]*${VERSION_AHEAD}`, 'gu');
+const CARET = new RegExp(String.raw`\^\s*[v=\s]*${VERSION_AHEAD}`, 'gu');
+const PREFIX = new RegExp(
+  String.raw`(?<=^|[\s|])(<=|>=|<|>|=)?\s*[v=]*${VERSION_AHEAD}`,
+  'gu',
+);
+
+/**
+ * `text` with the spellings node-semver reads and the range reader does not
+ * written as the reader's: `~>` is `~`, and a `v` or `=` before a version, after
+ * an operator or alone, is nothing (`v1`, `v1.x`, `>=v1`, `^=1`, `~>v1`). A
+ * version node-semver would not read there (`v1-beta`) is left as written.
+ */
+function plainSpelling(text: string): string {
+  return text.replace(TILDE, '~').replace(CARET, '^').replace(PREFIX, '$1');
+}
+
 /** `semver.validRange(text) !== null`, as far as the forms opm reads go. */
 export function isRange(text: string): boolean {
-  return comparatorSets(text) !== undefined;
+  return (
+    comparatorSets(text) !== undefined ||
+    comparatorSets(plainSpelling(text)) !== undefined
+  );
 }
 
 /** `new Range(comparator).test(version)`: the comparator, and the prerelease rule. */
