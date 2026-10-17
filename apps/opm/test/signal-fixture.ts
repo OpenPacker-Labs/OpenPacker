@@ -45,12 +45,32 @@ function withMarker(marker: string): string[][] {
   return found;
 }
 
-async function until(test: () => Promise<boolean> | boolean, what: string) {
+export async function until(
+  test: () => Promise<boolean> | boolean,
+  what: string,
+) {
   for (let tries = 0; tries < 600; tries += 1) {
     if (await test()) return;
     await sleep(100);
   }
   throw new Error(`timed out waiting for ${what}`);
+}
+
+/** `script` (a module) run in a child process: what it prints, and how it ends. */
+export async function startScript(script: string, work: string) {
+  const file = join(work, 'run.ts');
+  await writeFile(file, script);
+  const child = spawn(viteNode, [file], {
+    cwd: join(here, '..'),
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => (output += chunk));
+  child.stderr.on('data', (chunk) => (output += chunk));
+  const exited = new Promise<NodeJS.Signals | number | null>((resolve) =>
+    child.on('exit', (code, how) => resolve(how ?? code)),
+  );
+  return { child, exited, output: () => output.trim() };
 }
 
 /**
@@ -65,18 +85,7 @@ export async function signalledScript(input: {
   signal: NodeJS.Signals;
   made: () => Promise<boolean>;
 }) {
-  const file = join(input.work, 'run.ts');
-  await writeFile(file, input.script);
-  const child = spawn(viteNode, [file], {
-    cwd: join(here, '..'),
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let output = '';
-  child.stdout.on('data', (chunk) => (output += chunk));
-  child.stderr.on('data', (chunk) => (output += chunk));
-  const exited = new Promise<NodeJS.Signals | number | null>((resolve) =>
-    child.on('exit', (code, how) => resolve(how ?? code)),
-  );
+  const { child, exited, output } = await startScript(input.script, input.work);
   // The tool itself, not only bwrap, which carries the same arguments.
   await until(
     () =>
@@ -86,9 +95,11 @@ export async function signalledScript(input: {
   );
   const state = [child.exitCode, await input.made()];
   if (state[0] !== null || state[1] !== true)
-    throw new Error(`the run was not under way: ${state.join(' ')}\n${output}`);
+    throw new Error(
+      `the run was not under way: ${state.join(' ')}\n${output()}`,
+    );
   child.kill(input.signal);
   const how = await exited;
   await until(() => withMarker(input.marker).length === 0, 'the tool to end');
-  return { how, output: output.trim() };
+  return { how, output: output() };
 }

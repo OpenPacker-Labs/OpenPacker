@@ -12,11 +12,14 @@ import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { EphemeralTool } from '@openpacker/opm-project';
 import { holdingSignals } from '../src/opmx-signals.js';
+import { setTimeout as sleep } from 'node:timers/promises';
 import {
   canSandbox,
   PLAIN_NODE,
   signalledScript,
   source,
+  startScript,
+  until,
 } from './signal-fixture.js';
 
 /**
@@ -54,6 +57,29 @@ describe('holdingSignals', () => {
       expect(process.listenerCount(name)).toBe(before);
     },
   );
+
+  it('ends at once by a second signal, by its own code, without waiting for the run', async () => {
+    const before = process.listenerCount('SIGTERM');
+    const raised: string[] = [];
+    let finish: () => void = () => undefined;
+    const removing = new Promise<void>((resolve) => (finish = resolve));
+    const held = holdingSignals(
+      async () => {
+        await removing;
+        return 'removed late';
+      },
+      (signal) => raised.push(signal),
+    );
+    process.emit('SIGHUP', 'SIGHUP');
+    expect(raised).toEqual([]);
+    // The run is still being removed: the second signal does not wait for it.
+    process.emit('SIGTERM', 'SIGTERM');
+    expect(raised).toEqual(['SIGTERM']);
+    expect(process.listenerCount('SIGTERM')).toBe(before);
+    finish();
+    // Not raised a third time when the run does end.
+    expect([await held, raised]).toEqual(['removed late', ['SIGTERM']]);
+  });
 
   it('raises nothing when no signal came', async () => {
     const raised: string[] = [];
@@ -114,6 +140,38 @@ async function signalledRun(
     `,
   });
 }
+
+describe('a second signal while a run is being removed', () => {
+  it('ends opmx at once, by that signal', { timeout: 60_000 }, async () => {
+    const work = await mkdtemp(join(tmpdir(), 'opmx-signals-twice-'));
+    temps.push(work);
+    const run = await startScript(
+      `import { holdingSignals } from ${source('../src/opmx-signals.ts')};
+       ${PLAIN_NODE}
+       // A run whose removal never ends.
+       setInterval(() => {}, 1000);
+       console.log('held');
+       await holdingSignals(() => new Promise(() => {}));
+      `,
+      work,
+    );
+    try {
+      await until(() => run.output().includes('held'), 'the run to be held');
+      run.child.kill('SIGINT');
+      await sleep(700);
+      // The first only asks it to end, and it is still being removed.
+      expect([run.child.exitCode, run.child.signalCode]).toEqual([null, null]);
+      run.child.kill('SIGINT');
+      const how = await Promise.race([
+        run.exited,
+        sleep(10_000).then(() => 'still running after the second'),
+      ]);
+      expect(how).toBe('SIGINT');
+    } finally {
+      run.child.kill('SIGKILL');
+    }
+  });
+});
 
 describe.runIf(canSandbox)('opmx stopped while a tool runs', () => {
   it(

@@ -10,6 +10,12 @@ const HELD = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
  * `body` then removes what it made, and the same signal is raised again with
  * opmx's own handlers gone, so opmx ends as that signal says (by it, as the
  * shell sees it), exactly as it would have.
+ *
+ * A second signal while `body` is still removing what it made means the
+ * sender will not wait: it is raised at once, with the handlers gone, and opmx
+ * ends by it without finishing. The tree was already ended by the first
+ * (`--die-with-parent` ends it again with opmx); what was left is removed by
+ * the next run in the same place, as for a run killed outright.
  */
 export async function holdingSignals<T>(
   body: (signal: AbortSignal) => Promise<T>,
@@ -18,18 +24,28 @@ export async function holdingSignals<T>(
 ): Promise<T> {
   const controller = new AbortController();
   let received: NodeJS.Signals | undefined;
+  let escalated = false;
   const handlers = HELD.map((name) => {
     const handler = () => {
-      received ??= name;
-      controller.abort();
+      if (received === undefined) {
+        received = name;
+        controller.abort();
+        return;
+      }
+      escalated = true;
+      release();
+      raise(name);
     };
     process.on(name, handler);
     return [name, handler] as const;
   });
+  const release = () => {
+    for (const [name, handler] of handlers) process.off(name, handler);
+  };
   try {
     return await body(controller.signal);
   } finally {
-    for (const [name, handler] of handlers) process.off(name, handler);
-    if (received !== undefined) raise(received);
+    release();
+    if (received !== undefined && !escalated) raise(received);
   }
 }
