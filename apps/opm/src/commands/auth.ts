@@ -68,7 +68,8 @@ export async function runAuthCommand(
   if (sub === 'set') return runSet(args, io);
   if (sub === 'list') return runList(io);
   if (sub === 'unset') return runUnset(args, io);
-  io.stderr.write(
+  say(
+    io.stderr,
     `Unknown auth subcommand: ${sub ?? '(none)'}. Use set | list | unset.\n\n${AUTH_USAGE}`,
   );
   return EXIT.usage;
@@ -78,7 +79,8 @@ async function runSet(args: AuthArgs, io: AuthCliIo): Promise<number> {
   const origin = option(args, 'origin');
   const tokenEnv = option(args, 'token-env');
   if (origin === undefined) {
-    io.stderr.write(
+    say(
+      io.stderr,
       `opm auth set requires --origin <https-origin>\n\n${AUTH_USAGE}`,
     );
     return EXIT.usage;
@@ -114,7 +116,8 @@ async function runList(io: AuthCliIo): Promise<number> {
 async function runUnset(args: AuthArgs, io: AuthCliIo): Promise<number> {
   const origin = option(args, 'origin');
   if (origin === undefined) {
-    io.stderr.write(
+    say(
+      io.stderr,
       `opm auth unset requires --origin <https-origin>\n\n${AUTH_USAGE}`,
     );
     return EXIT.usage;

@@ -25,7 +25,6 @@ import {
   importNativeProject,
   initProject,
   installProject,
-  listGenerations,
   listInstalled,
   buildPackageManifest,
   hostSandboxFromPolicy,
@@ -498,7 +497,8 @@ export async function runOpm(
           }),
         });
         if (graph.truncated.length > 0)
-          io.stderr.write(
+          say(
+            io.stderr,
             `opm: candidate sets were bounded for ${graph.truncated.length} package(s); ` +
               `a solve over a truncated universe can report unsatisfiable for a solvable problem\n`,
           );
@@ -1141,7 +1141,7 @@ function writeHostInstallResult(
   if (outcome.stdout) outRaw(io, outcome.stdout);
   if (outcome.stderr) io.stderr.write(outcome.stderr);
   if (outcome.exitCode !== 0) {
-    io.stderr.write(`opm: host install exited ${outcome.exitCode}\n`);
+    say(io.stderr, `opm: host install exited ${outcome.exitCode}\n`);
     return EXIT_CODES.internal;
   }
   out(
