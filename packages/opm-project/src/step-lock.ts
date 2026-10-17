@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, rmdir, type FileHandle } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { lstatChild } from '@openpacker/project-io';
 import {
   openChild,
@@ -49,8 +49,24 @@ export interface StepLockHolder {
   owner?: ProcessOwner;
 }
 
+/** A lock file that was removed because its owner is gone. */
+export interface RemovedLock {
+  file: string;
+  owner: ProcessOwner;
+}
+
 export interface StepLock {
+  /** The locks of owners that are gone, removed on the way. */
+  readonly removed: readonly RemovedLock[];
   release(): Promise<void>;
+}
+
+/** The id of a step lock file, `step-<id>.lock`: what `opm recover --abandon-step` names. */
+export function stepLockId(file: string): string | undefined {
+  const name = basename(file);
+  return name.startsWith(PREFIX) && name.endsWith(SUFFIX)
+    ? name.slice(PREFIX.length, -SUFFIX.length)
+    : undefined;
 }
 
 /**
@@ -62,6 +78,11 @@ export async function acquireStepLock(
   options: {
     waitMs: number;
     onWait?: (holder: StepLockHolder) => void;
+    /**
+     * Owners to take as gone whatever the system says: the operator asserted
+     * that their step is dead (`opm recover --abandon-step`).
+     */
+    abandoned?: (owner: ProcessOwner) => boolean;
   },
 ): Promise<StepLock | undefined> {
   const root = await lstat(paths.root).catch(() => undefined);
@@ -79,8 +100,15 @@ export async function acquireStepLock(
     const dir = await openStableDirectory(paths.opmDir, true);
     try {
       if (await createLockFile(dir, name, body)) {
-        const holders = await liveHolders(dir, name);
-        if (holders.length === 0) return held(paths, dir, name, createdOpmDir);
+        const removed: RemovedLock[] = [];
+        const holders = await liveHolders(
+          dir,
+          name,
+          options.abandoned,
+          removed,
+        );
+        if (holders.length === 0)
+          return held(paths, dir, name, createdOpmDir, removed);
         await removeChild(dir, name, { force: true });
         if (Date.now() >= deadline) throw busy(holders[0]!);
         if (!told) options.onWait?.(holders[0]!);
@@ -134,9 +162,11 @@ function held(
   dir: FileHandle,
   name: string,
   createdOpmDir: boolean,
+  removed: readonly RemovedLock[],
 ): StepLock {
   let released = false;
   return {
+    removed,
     release: async () => {
       if (released) return;
       released = true;
@@ -155,30 +185,41 @@ function held(
 async function liveHolders(
   dir: FileHandle,
   own: string,
+  abandoned: ((owner: ProcessOwner) => boolean) | undefined,
+  removed: RemovedLock[],
 ): Promise<StepLockHolder[]> {
   const holders: StepLockHolder[] = [];
   for (const entry of (await readDirChild(dir)).sort()) {
     if (entry === own || !entry.startsWith(PREFIX) || !entry.endsWith(SUFFIX))
       continue;
     const file = join('.opm', entry);
-    const judged = await judge(dir, entry);
+    const judged = await judge(dir, entry, abandoned);
     if (judged === 'gone') continue;
-    if (judged === 'dead') {
+    if (judged.dead) {
       await removeChild(dir, entry, { force: true });
+      if (judged.owner !== undefined)
+        removed.push({ file, owner: judged.owner });
       continue;
     }
-    holders.push({ file, ...(!(judged === 'unknown') && { owner: judged }) });
+    holders.push({
+      file,
+      ...(!(judged.owner === undefined) && { owner: judged.owner }),
+    });
   }
   return holders;
 }
 
+/** What a lock file says: its owner, if it can be read, and whether that owner is gone. */
+type Judged = { owner?: ProcessOwner; dead: boolean } | 'gone';
+
 async function judge(
   dir: FileHandle,
   entry: string,
-): Promise<ProcessOwner | 'dead' | 'gone' | 'unknown'> {
+  abandoned: ((owner: ProcessOwner) => boolean) | undefined,
+): Promise<Judged> {
   try {
     const info = await lstatChild(dir, entry);
-    if (!info.isFile()) return 'unknown';
+    if (!info.isFile()) return { dead: false };
     let owner: ProcessOwner | undefined;
     try {
       // SAFETY: parsed below; anything unexpected is a holder not judged.
@@ -193,11 +234,13 @@ async function judge(
     if (owner === undefined)
       // Created and not yet written, or written by something else: only a
       // file that has stayed empty or unreadable for a while is a leftover.
-      return info.size === 0n &&
-        Date.now() - Number(info.mtimeMs) > PARTIAL_AFTER_MS
-        ? 'dead'
-        : 'unknown';
-    return (await isOwnerAlive(owner)) ? owner : 'dead';
+      return {
+        dead:
+          info.size === 0n &&
+          Date.now() - Number(info.mtimeMs) > PARTIAL_AFTER_MS,
+      };
+    const dead = abandoned?.(owner) === true || !(await isOwnerAlive(owner));
+    return { owner, dead };
   } catch (error) {
     // SAFETY: only the errno code of a file-system error is read.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'gone';
@@ -206,12 +249,13 @@ async function judge(
 }
 
 function busy(holder: StepLockHolder): OpmError {
+  const id = stepLockId(holder.file);
   const who =
     holder.owner === undefined
       ? `a lock opm cannot read (${holder.file})`
       : `${describeProcessOwner(holder.owner)} (${holder.file})`;
   return new OpmError(
     'PROJECT_BUSY',
-    `Another opm step is changing this project: ${who}. Run this again when it has finished; if no opm is running there, remove ${holder.file}.`,
+    `Another opm step is changing this project: ${who}. Run this again when it has finished (--wait <ms> waits longer). If that step is dead and cannot be seen from here (another container or host), run: opm recover --abandon-step ${id ?? holder.file}`,
   );
 }

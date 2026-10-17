@@ -71,7 +71,7 @@ describe('two steps on one project', () => {
     await expect(
       projectStep(
         root,
-        { waitMs: 300, onWait: (holder) => waited.push(holder.file) },
+        { waitMs: 1_500, onWait: (holder) => waited.push(holder.file) },
         async () => 'second',
       ),
     ).rejects.toMatchObject({

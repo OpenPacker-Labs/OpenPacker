@@ -54,6 +54,8 @@ export async function recoverHeldProject(
     path: string,
     maximumBytes: number,
   ) => Promise<string> = readStableFile,
+  /** Owners the operator asserted are dead (`opm recover --abandon-step`). */
+  abandoned?: (owner: ProcessOwner) => boolean,
 ): Promise<RecoveredStep[]> {
   const paths = projectPaths(root);
   const opm = await lstat(paths.opmDir).catch(absent);
@@ -74,10 +76,13 @@ export async function recoverHeldProject(
       await discardCopy(holder);
       continue;
     }
-    if (await isOwnerAlive(record.owner))
+    if (
+      abandoned?.(record.owner) !== true &&
+      (await isOwnerAlive(record.owner))
+    )
       throw new OpmError(
         'PROJECT_BUSY',
-        `${copy} belongs to a step of ${describeProcessOwner(record.owner)} that may still be running, and opm cannot tell from here. Run this again when it has finished; if it is not running, remove ${copy} to keep the project as it is now.`,
+        `${copy} belongs to a step of ${describeProcessOwner(record.owner)} that may still be running, and opm cannot tell from here. Run this again when it has finished (--wait <ms> waits longer). If that step is dead and cannot be seen from here (another container or host), run: opm recover --abandon-step ${copyId(name)}`,
       );
     const restore = record.state === 'ready' && !name.endsWith(DISCARD_SUFFIX);
     if (restore) {
@@ -87,6 +92,13 @@ export async function recoverHeldProject(
     recovered.push({ copy, owner: record.owner, restored: restore });
   }
   return recovered;
+}
+
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/u;
+
+/** The id of a copy, `.rollback-<pid>-<id>`: what `opm recover --abandon-step` names. */
+export function copyId(name: string): string {
+  return UUID.exec(name)?.[0] ?? name;
 }
 
 /** One line for each copy recovered, as `opm` prints it on stderr. */

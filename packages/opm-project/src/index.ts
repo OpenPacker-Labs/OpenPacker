@@ -38,13 +38,16 @@ export {
   shellQuote,
 } from './environment-script.js';
 export { describeRecovery, type RecoveredStep } from './rollback-recovery.js';
+export { abandonStep, type AbandonedStep } from './step-abandon.js';
 export {
   DEFAULT_STEP_WAIT_MS,
+  MAX_STEP_WAIT_MS,
+  parseStepWait,
   projectStep,
   recoverInterruptedSteps,
   type StepOptions,
 } from './project-step.js';
-export type { StepLockHolder } from './step-lock.js';
+export type { RemovedLock, StepLockHolder } from './step-lock.js';
 export {
   currentOwner,
   describeProcessOwner,

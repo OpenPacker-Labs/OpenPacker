@@ -3,6 +3,7 @@ import { realpath } from 'node:fs/promises';
 import { projectPaths } from './paths.js';
 import { recoverHeldProject, type RecoveredStep } from './rollback-recovery.js';
 import { acquireStepLock, type StepLockHolder } from './step-lock.js';
+import { OpmError } from './types.js';
 
 /**
  * Every library function that changes a project runs its work through
@@ -27,12 +28,31 @@ export interface StepOptions {
   onRecovered?: (step: RecoveredStep) => void;
   /** Told once when the step waits for another step on the project. */
   onWait?: (holder: StepLockHolder) => void;
-  /** How long to wait for another step before refusing with `PROJECT_BUSY`. */
+  /**
+   * How long to wait for another step before refusing with `PROJECT_BUSY`:
+   * whole milliseconds from 0 to {@link MAX_STEP_WAIT_MS}, 10 s by default.
+   */
   waitMs?: number;
 }
 
 /** Ten seconds: a step on a large project takes a few. */
 export const DEFAULT_STEP_WAIT_MS = 10_000;
+/** An hour: a wait is for another opm, which does not take longer. */
+export const MAX_STEP_WAIT_MS = 3_600_000;
+
+/**
+ * A wait in milliseconds as a person gives it (`--wait`, `OPM_STEP_WAIT_MS`):
+ * whole milliseconds from 0 to {@link MAX_STEP_WAIT_MS}.
+ */
+export function parseStepWait(text: string, source: string): number {
+  const wait = /^\d{1,9}$/u.test(text) ? Number(text) : Number.NaN;
+  if (!(wait >= 0 && wait <= MAX_STEP_WAIT_MS))
+    throw new OpmError(
+      'INVALID_SPEC',
+      `${source} takes whole milliseconds from 0 to ${MAX_STEP_WAIT_MS}, not ${JSON.stringify(text)}`,
+    );
+  return wait;
+}
 
 /** The project roots the current asynchronous call chain holds a step on. */
 const holding = new AsyncLocalStorage<ReadonlySet<string>>();
@@ -42,12 +62,16 @@ export async function projectStep<T>(
   options: StepOptions | undefined,
   work: () => Promise<T>,
 ): Promise<T> {
+  const waitMs =
+    options?.waitMs === undefined
+      ? DEFAULT_STEP_WAIT_MS
+      : parseStepWait(String(options.waitMs), 'The step wait');
   const paths = projectPaths(root);
   const key = await realpath(paths.root).catch(() => paths.root);
   const held = holding.getStore();
   if (held?.has(key) === true) return work();
   const lock = await acquireStepLock(paths, {
-    waitMs: options?.waitMs ?? DEFAULT_STEP_WAIT_MS,
+    waitMs,
     ...(!(options?.onWait === undefined) && { onWait: options.onWait }),
   });
   try {

@@ -256,7 +256,7 @@ async function pin(
   const root = await requireOpmRoot(cwd);
   // Read again inside the step: what it holds is what a killed step left put
   // back, and nothing else writes it meanwhile.
-  return projectStep(root, cliStep(io), async () => {
+  return projectStep(root, cliStep(io, args.options), async () => {
     const manifest = await readManifestFile(projectPaths(root).manifest);
     return pinIn(root, manifest, release.project, fingerprint, io);
   });
@@ -304,7 +304,9 @@ async function approve(
       'opm packslip approve requires the 16-character proposal id from the refusal message',
     );
   const root = await requireOpmRoot(cwd);
-  return projectStep(root, cliStep(io), () => approveIn(root, id, io));
+  return projectStep(root, cliStep(io, args.options), () =>
+    approveIn(root, id, io),
+  );
 }
 
 async function approveIn(
