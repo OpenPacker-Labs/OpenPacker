@@ -33,11 +33,18 @@ export {
 } from './lock.js';
 export { reproducibleLockForm } from './lock-reproducible.js';
 export {
-  describeRecovery,
+  environmentScript,
+  environmentVariables,
+  shellQuote,
+} from './environment-script.js';
+export { describeRecovery, type RecoveredStep } from './rollback-recovery.js';
+export {
+  DEFAULT_STEP_WAIT_MS,
+  projectStep,
   recoverInterruptedSteps,
-  type RecoveredStep,
-} from './rollback-recovery.js';
-export { snapshotProject } from './project-rollback.js';
+  type StepOptions,
+} from './project-step.js';
+export type { StepLockHolder } from './step-lock.js';
 export {
   currentProcessOwner,
   describeProcessOwner,
@@ -45,6 +52,7 @@ export {
   processOwnerMayBeAlive,
   type ProcessOwner,
 } from './process-owner.js';
+export { snapshotProject } from './project-rollback.js';
 
 export {
   assertDigest,
@@ -160,9 +168,6 @@ export {
   collectGarbage,
   collectableStorePaths,
   environmentPaths,
-  environmentScript,
-  environmentVariables,
-  shellQuote,
   generationDigest,
   listGenerations,
   mergeStoreReferences,

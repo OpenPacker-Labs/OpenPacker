@@ -3,7 +3,7 @@ import {
   readProjectState,
   uninstallPackages,
 } from './install.js';
-import { writeLockfile } from './lock.js';
+import { serializeLockfile } from './lock.js';
 import { projectNativeFormats, type NativeProjectionReport } from './native.js';
 import { projectPaths, writeStableFile } from './paths.js';
 import { snapshotProject, type ProjectSnapshot } from './project-rollback.js';
@@ -39,10 +39,17 @@ export async function commitInstall(input: {
       offline: input.offline,
       ...(!(manifest.policy === undefined) && { policy: manifest.policy }),
       beforeLinking: async () => {
-        snapshot = await snapshotProject(input.root);
-        if (input.writeManifest)
-          await writeStableFile(paths.manifest, serializeManifest(manifest));
-        await writeLockfile(paths.lock, lock);
+        const manifestText = input.writeManifest
+          ? serializeManifest(manifest)
+          : undefined;
+        const lockText = serializeLockfile(lock);
+        snapshot = await snapshotProject(input.root, {
+          ...(!(manifestText === undefined) && { manifest: manifestText }),
+          lock: lockText,
+        });
+        if (manifestText !== undefined)
+          await writeStableFile(paths.manifest, manifestText);
+        await writeStableFile(paths.lock, lockText);
         // What is installed under a key the lock no longer has: adding the
         // package that makes a name two versions re-keys the first
         // (`ansi-regex` is `ansi-regex.5.0.1` and `ansi-regex.6.4.0` now),
@@ -65,7 +72,32 @@ export async function commitInstall(input: {
     await snapshot?.discard();
     return { state, native };
   } catch (error) {
-    await snapshot?.restore();
+    if (snapshot !== undefined)
+      await undoStep(
+        error instanceof Error ? error : new Error(String(error)),
+        snapshot,
+      );
     throw error;
+  }
+}
+
+/**
+ * Put the project back after the step failed with `error`. When that fails
+ * too, both are reported: the step's error says why the step stopped, the
+ * other why the project is not as it was. The copy stays, `ready`, for the
+ * next step to put back.
+ */
+export async function undoStep(
+  error: Error,
+  snapshot: ProjectSnapshot,
+): Promise<void> {
+  try {
+    await snapshot.restore();
+  } catch (failed) {
+    const reason = failed instanceof Error ? failed.message : String(failed);
+    throw new AggregateError(
+      [error, failed],
+      `${error.message}; putting the project back failed too (${reason}), and the next opm step that changes the project puts it back`,
+    );
   }
 }

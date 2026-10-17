@@ -10,7 +10,7 @@ import { renameInstalled } from './rename-installed.js';
 import { serializeManifest } from './toml.js';
 import type { OpmLockfile, OpmManifest, ProjectState } from './types.js';
 import { OpmError } from './types.js';
-import { recoverInterruptedSteps } from './rollback-recovery.js';
+import { projectStep, type StepOptions } from './project-step.js';
 import { manifestAliasNamed } from './why.js';
 
 /**
@@ -28,6 +28,7 @@ export async function removePackage(input: {
   /** The requirement's alias, or a PURL that names exactly one requirement. */
   alias: string;
   offline?: boolean;
+  step?: StepOptions;
 }): Promise<{
   /** The alias that was removed. */
   alias: string;
@@ -36,9 +37,11 @@ export async function removePackage(input: {
   state: ProjectState;
   native?: NativeProjectionReport;
 }> {
+  return projectStep(input.root, input.step, () => removeInStep(input));
+}
+
+async function removeInStep(input: { root: string; alias: string }) {
   const paths = projectPaths(input.root);
-  // A step a killed process left half way is finished first.
-  await recoverInterruptedSteps(input.root);
   const manifest = await readManifestFile(paths.manifest);
   const alias = manifestAliasNamed(manifest, input.alias);
   if (alias === undefined) {

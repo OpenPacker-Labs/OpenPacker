@@ -6,7 +6,7 @@ import type {
   ProjectState,
 } from './types.js';
 import { OpmError } from './types.js';
-import { recoverInterruptedSteps } from './rollback-recovery.js';
+import { projectStep, type StepOptions } from './project-step.js';
 import { loadCatalogs } from './catalog.js';
 import { digestOf, readProjectState } from './install.js';
 import { readLockfile } from './lock.js';
@@ -33,6 +33,7 @@ export async function updateProject(input: {
   catalogPaths?: readonly string[];
   /** Transport / endpoint overrides for hosts and tests. */
   registryOptions?: RegistryOptions;
+  step?: StepOptions;
 }): Promise<{
   manifest: OpmManifest;
   lock: OpmLockfile;
@@ -40,9 +41,18 @@ export async function updateProject(input: {
   native?: NativeProjectionReport;
   updated: readonly string[];
 }> {
+  return projectStep(input.root, input.step, () => updateInStep(input));
+}
+
+async function updateInStep(input: {
+  root: string;
+  aliases?: readonly string[];
+  latest?: boolean;
+  offline?: boolean;
+  catalogPaths?: readonly string[];
+  registryOptions?: RegistryOptions;
+}) {
   const paths = projectPaths(input.root);
-  // A step a killed process left half way is finished first.
-  await recoverInterruptedSteps(input.root);
   const manifest = await readManifestFile(paths.manifest);
   const offline = input.offline ?? manifest.options.offline;
   const latest = input.latest === true;

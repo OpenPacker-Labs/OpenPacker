@@ -10,7 +10,12 @@ import type {
 } from './types.js';
 import { installArchiveLimits } from './install-limits.js';
 import { OpmError } from './types.js';
-import { recoverInterruptedSteps } from './rollback-recovery.js';
+import { projectStep, type StepOptions } from './project-step.js';
+import {
+  addHostPackage,
+  assertEcosystemAllowed,
+  type AddPackageResult,
+} from './add-host.js';
 import {
   canonicalCatalogPurl,
   canonicalPurlOrSelf,
@@ -45,16 +50,7 @@ import {
 } from './lock.js';
 import { reproducibleLockForm } from './lock-reproducible.js';
 import { commitInstall } from './install-commit.js';
-import {
-  hostSandboxFromPolicy,
-  installSystemPackage,
-  planSystemInstall,
-} from './system.js';
-import {
-  assertPackageIdentityMatchesRequest,
-  type InstallOutcome,
-  type InstallPlan,
-} from '@openpacker/adapter-core';
+import { assertPackageIdentityMatchesRequest } from '@openpacker/adapter-core';
 import type { NativeProjectionReport } from './native.js';
 import {
   bindManifestSourceAuthority,
@@ -140,6 +136,15 @@ export async function initProject(input: {
   root: string;
   name?: string;
   force?: boolean;
+  step?: StepOptions;
+}): Promise<{ manifestPath: string; created: boolean }> {
+  return projectStep(input.root, input.step, () => initInStep(input));
+}
+
+async function initInStep(input: {
+  root: string;
+  name?: string;
+  force?: boolean;
 }): Promise<{ manifestPath: string; created: boolean }> {
   const paths = projectPaths(input.root);
   try {
@@ -201,41 +206,14 @@ export async function addPackage(input: {
   dryRun?: boolean;
   /** Transport / endpoint overrides for the registry walk (tests, hosts). */
   registryOptions?: RegistryOptions;
-}): Promise<{
-  manifest: OpmManifest;
-  lock: OpmLockfile;
-  state: ProjectState;
-  alias: string;
-  /** What was written into the ecosystem's own project files. */
-  native?: NativeProjectionReport;
-  /** When the adapter prefers host install, the plan/outcome is returned. */
-  hostInstall?: {
-    plan: InstallPlan;
-    outcome?: InstallOutcome;
-  };
-}> {
+  step?: StepOptions;
+}): Promise<AddPackageResult> {
   const paths = projectPaths(input.root);
-  // A step a killed process left half way is finished first.
-  await recoverInterruptedSteps(input.root);
-  const manifest = await readManifestFile(paths.manifest);
   const parsed = parsePackageSpec(input.spec, {
     ...(input.ecosystem !== undefined && { ecosystem: input.ecosystem }),
     ...(input.source !== undefined && { source: input.source }),
     ...(input.alias !== undefined && { alias: input.alias }),
   });
-
-  // Fail closed if ecosystem not allowed when project restricts
-  if (
-    parsed.ecosystem &&
-    manifest.project.ecosystems.length > 0 &&
-    !manifest.project.ecosystems.includes(parsed.ecosystem)
-  ) {
-    throw new OpmError(
-      'ECOSYSTEM_DENIED',
-      `Ecosystem "${parsed.ecosystem}" is not in project.ecosystems`,
-    );
-  }
-
   const ecosystem = parsed.ecosystem ?? ecosystemFromPurl(parsed.purl);
   // Host/profile install is selected by Registry Definition capabilities, not
   // a separate CLI product. Project-store materialize remains the default for
@@ -243,90 +221,57 @@ export async function addPackage(input: {
   if (
     !input.source &&
     (await requireAdapterRegistry().prefersHostInstall(ecosystem))
-  ) {
-    const exact =
-      parsed.version !== undefined
-        ? `${stripPurlVersion(parsed.purl)}@${parsed.version}`
-        : parsed.purl.startsWith('pkg:')
-          ? parsed.purl
-          : `pkg:${ecosystem}/${parsed.alias}`;
-    const sandbox = hostSandboxFromPolicy(manifest.policy);
-    const planOptions = {
-      ...(input.offline !== undefined && { offline: input.offline }),
-      ...(input.dryRun !== undefined && { dryRun: input.dryRun }),
-      ...(input.allowElevation !== undefined && {
-        allowElevation: input.allowElevation,
-      }),
-      sandbox,
-    };
-    const plan = await planSystemInstall(exact, planOptions);
-    const outcome =
-      input.dryRun === true
-        ? undefined
-        : await installSystemPackage(exact, {
-            ...(input.offline !== undefined && { offline: input.offline }),
-            ...(input.allowElevation !== undefined && {
-              allowElevation: input.allowElevation,
-            }),
-            sandbox,
-          });
+  )
+    return addHostPackage({
+      ...input,
+      manifest: await readManifestFile(paths.manifest),
+      parsed,
+      ecosystem,
+    });
+  return projectStep(input.root, input.step, async () => {
+    const manifest = await readManifestFile(paths.manifest);
+    assertEcosystemAllowed(manifest, parsed.ecosystem);
     const alias = assertSafeSegment(parsed.alias, 'package alias');
-    const state = (await readProjectState(paths.projectState)) ?? {
-      schemaVersion: 1 as const,
-      packages: {},
-    };
-    return {
-      manifest,
-      lock: emptyLockfile(),
-      state,
+    const requirement: PackageRequirement = {
       alias,
-      hostInstall: {
-        plan,
-        ...(!(outcome === undefined) && { outcome }),
-      },
+      purl: stripPurlVersion(parsed.purl),
     };
-  }
+    if (parsed.version !== undefined) requirement.version = parsed.version;
+    if (parsed.installName !== undefined)
+      requirement.installName = parsed.installName;
+    if (parsed.source !== undefined) requirement.source = parsed.source;
+    else if (input.source !== undefined) requirement.source = input.source;
 
-  const alias = assertSafeSegment(parsed.alias, 'package alias');
-  const requirement: PackageRequirement = {
-    alias,
-    purl: stripPurlVersion(parsed.purl),
-  };
-  if (parsed.version !== undefined) requirement.version = parsed.version;
-  if (parsed.installName !== undefined)
-    requirement.installName = parsed.installName;
-  if (parsed.source !== undefined) requirement.source = parsed.source;
-  else if (input.source !== undefined) requirement.source = input.source;
+    assertLabelIsFree(manifest, alias, requirement.purl);
+    manifest.packages[alias] = requirement;
 
-  assertLabelIsFree(manifest, alias, requirement.purl);
-  manifest.packages[alias] = requirement;
-
-  const offline = input.offline ?? manifest.options.offline;
-  const lock = await resolveManifestToLock({
-    root: input.root,
-    manifest,
-    offline,
-    ...(input.catalogPaths !== undefined && {
-      catalogPaths: input.catalogPaths,
-    }),
-    ...(input.registryOptions !== undefined && {
-      registryOptions: input.registryOptions,
-    }),
-    previousLock: await readPreviousLock(paths.lock),
+    const offline = input.offline ?? manifest.options.offline;
+    const lock = await resolveManifestToLock({
+      root: input.root,
+      manifest,
+      offline,
+      ...(input.catalogPaths !== undefined && {
+        catalogPaths: input.catalogPaths,
+      }),
+      ...(input.registryOptions !== undefined && {
+        registryOptions: input.registryOptions,
+      }),
+      previousLock: await readPreviousLock(paths.lock),
+    });
+    // The whole lock, not just the alias that was named: a package is not
+    // installed in any useful sense without the things it needs, and the lock
+    // now carries them. A refused or unsatisfiable add used to leave its
+    // requirement in opm.toml; one that fails installing it leaves the project
+    // as it was.
+    const { state, native } = await commitInstall({
+      root: input.root,
+      manifest,
+      lock,
+      offline,
+      writeManifest: true,
+    });
+    return { manifest, lock, state, alias, native };
   });
-  // The whole lock, not just the alias that was named: a package is not
-  // installed in any useful sense without the things it needs, and the lock now
-  // carries them. A refused or unsatisfiable add used to leave its requirement
-  // in opm.toml; one that fails installing it leaves the project as it was.
-  const { state, native } = await commitInstall({
-    root: input.root,
-    manifest,
-    lock,
-    offline,
-    writeManifest: true,
-  });
-
-  return { manifest, lock, state, alias, native };
 }
 
 export async function syncProject(input: {
@@ -335,15 +280,23 @@ export async function syncProject(input: {
   catalogPaths?: readonly string[];
   /** Transport / endpoint overrides for the registry walk (tests, hosts). */
   registryOptions?: RegistryOptions;
+  step?: StepOptions;
 }): Promise<{
   manifest: OpmManifest;
   lock: OpmLockfile;
   state: ProjectState;
   native?: NativeProjectionReport;
 }> {
+  return projectStep(input.root, input.step, () => syncInStep(input));
+}
+
+async function syncInStep(input: {
+  root: string;
+  offline?: boolean;
+  catalogPaths?: readonly string[];
+  registryOptions?: RegistryOptions;
+}) {
   const paths = projectPaths(input.root);
-  // A step a killed process left half way is finished first.
-  await recoverInterruptedSteps(input.root);
   const manifest = await readManifestFile(paths.manifest);
   const offline = input.offline ?? manifest.options.offline;
   const lock = await resolveManifestToLock({
@@ -371,14 +324,17 @@ export async function syncProject(input: {
 export async function installProject(input: {
   root: string;
   offline?: boolean;
+  step?: StepOptions;
 }): Promise<{
   lock: OpmLockfile;
   state: ProjectState;
   native?: NativeProjectionReport;
 }> {
+  return projectStep(input.root, input.step, () => installInStep(input));
+}
+
+async function installInStep(input: { root: string; offline?: boolean }) {
   const paths = projectPaths(input.root);
-  // A step a killed process left half way is finished first.
-  await recoverInterruptedSteps(input.root);
   const manifest = await readManifestFile(paths.manifest);
   const lock = await readLockfile(paths.lock);
   if (!lock || Object.keys(lock.packages).length === 0) {
@@ -568,12 +524,14 @@ function normalizedRequirementSource(source: string, root: string): string {
 export async function uninstallProject(input: {
   root: string;
   alias?: string;
+  step?: StepOptions;
 }): Promise<ProjectState> {
-  if (input.alias) {
-    return uninstallPackages({ root: input.root, aliases: [input.alias] });
-  }
-  await uninstallAll(input.root);
-  return { schemaVersion: 1, packages: {} };
+  return projectStep(input.root, input.step, async () => {
+    if (input.alias)
+      return uninstallPackages({ root: input.root, aliases: [input.alias] });
+    await uninstallAll(input.root);
+    return { schemaVersion: 1, packages: {} };
+  });
 }
 
 export async function listInstalled(

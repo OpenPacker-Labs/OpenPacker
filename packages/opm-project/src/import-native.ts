@@ -17,6 +17,7 @@ import {
   projectPaths,
 } from './paths.js';
 import { initProject, writeManifestFile } from './project.js';
+import { projectStep, type StepOptions } from './project-step.js';
 import { aliasFromNativeName, stripPurlVersion } from './spec.js';
 import { defaultManifest } from './toml.js';
 import type { OpmManifest, PackageRequirement } from './types.js';
@@ -34,6 +35,14 @@ export interface NativeImportResult {
 }
 
 export async function importNativeProject(input: {
+  root: string;
+  force?: boolean;
+  step?: StepOptions;
+}): Promise<NativeImportResult> {
+  return projectStep(input.root, input.step, () => importInStep(input));
+}
+
+async function importInStep(input: {
   root: string;
   force?: boolean;
 }): Promise<NativeImportResult> {

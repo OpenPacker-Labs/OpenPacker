@@ -13,10 +13,24 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ENVIRONMENT_STATE, GENERATIONS_DIR } from './generations.js';
-import { NATIVE_STATE } from './native.js';
-import { OPM_DIR, projectPaths, writeStableFile } from './paths.js';
-import { currentOwner, type RollbackOwner } from './rollback-owner.js';
+import {
+  ensureStableDirectory,
+  projectPaths,
+  writeStableFile,
+} from './paths.js';
+import { currentProcessOwner } from './process-owner.js';
+import {
+  DISCARD_SUFFIX,
+  LOCK_INDEX,
+  MANIFEST_INDEX,
+  ROLLBACK_FILES,
+  ROLLBACK_PREFIX,
+  ROLLBACK_RECORD,
+  ROLLBACK_TREES,
+  sha256,
+  type KeptFile,
+  type RollbackRecord,
+} from './rollback-record.js';
 
 /**
  * What an install changes once it starts linking, kept so a failure part way
@@ -31,48 +45,12 @@ import { currentOwner, type RollbackOwner } from './rollback-owner.js';
  * still holds the old tree after the install has replaced every name in it, and
  * costs one link per file, not the bytes. Small files are copied outright.
  *
- * The copy is on disk, with a record of whose it is (`rollback.json`), so a
- * process killed before it could put the project back or discard the copy
- * leaves enough for the next step to do it (`rollback-recovery.ts`).
+ * The copy is on disk, with a record of whose it is (`rollback.json`,
+ * `rollback-record.ts`), so a process killed before it could put the project
+ * back or discard the copy leaves enough for the next step to do it
+ * (`rollback-recovery.ts`). It is taken inside a step (`project-step.ts`), so
+ * no other step runs on the project while it exists.
  */
-
-/** Copies of a project are `.opm/.rollback-<pid>-<uuid>`. */
-export const ROLLBACK_PREFIX = '.rollback-';
-/** A copy being removed: never one to restore from. */
-export const DISCARD_SUFFIX = '.discard';
-export const ROLLBACK_RECORD = 'rollback.json';
-
-/** Files an install may rewrite, relative to the project root. */
-const FILES = [
-  'opm.toml',
-  'opm.lock.json',
-  'package.json',
-  'package-lock.json',
-  join(OPM_DIR, 'project.json'),
-  join(OPM_DIR, NATIVE_STATE),
-  join(OPM_DIR, ENVIRONMENT_STATE),
-] as const;
-
-/**
- * Trees an install may change, relative to the project root. node_modules is
- * kept as hard links (its files are the store's); opm's own small trees are
- * copied, so nothing depends on how they are written.
- */
-const TREES = [
-  { path: 'node_modules', copy: false },
-  { path: join(OPM_DIR, 'bin'), copy: true },
-  { path: join(OPM_DIR, 'links'), copy: true },
-  { path: join(OPM_DIR, GENERATIONS_DIR), copy: true },
-] as const;
-
-export interface RollbackRecord {
-  rollbackVersion: 1;
-  /** `copying` until every file and tree is kept: only `ready` restores. */
-  state: 'copying' | 'ready';
-  owner: RollbackOwner;
-  files: { path: string; present: boolean }[];
-  trees: { path: string; present: boolean }[];
-}
 
 export interface ProjectSnapshot {
   /** Put every file and tree back as it was when the snapshot was taken. */
@@ -81,15 +59,23 @@ export interface ProjectSnapshot {
   discard(): Promise<void>;
 }
 
-export async function snapshotProject(root: string): Promise<ProjectSnapshot> {
+/** What the step is about to write first, so recovery knows it when it sees it. */
+export interface IntendedWrites {
+  manifest?: string | Uint8Array;
+  lock?: string | Uint8Array;
+}
+
+export async function snapshotProject(
+  root: string,
+  intended: IntendedWrites = {},
+): Promise<ProjectSnapshot> {
   const paths = projectPaths(root);
-  const owner = await currentOwner();
+  const owner = await currentProcessOwner();
+  await ensureStableDirectory(paths.opmDir);
   const holder = join(
     paths.opmDir,
     `${ROLLBACK_PREFIX}${owner.pid}-${randomUUID()}`,
   );
-  await mkdir(join(holder, 'files'), { recursive: true });
-  await mkdir(join(holder, 'trees'));
   const record: RollbackRecord = {
     rollbackVersion: 1,
     state: 'copying',
@@ -97,56 +83,92 @@ export async function snapshotProject(root: string): Promise<ProjectSnapshot> {
     files: [],
     trees: [],
   };
-  await writeRecord(holder, record);
-  for (const [index, file] of FILES.entries()) {
-    const bytes = await readFile(join(paths.root, file)).catch(absent);
-    if (bytes !== undefined)
-      await writeFile(join(holder, 'files', String(index)), bytes);
-    record.files.push({ path: file, present: bytes !== undefined });
+  try {
+    await mkdir(holder);
+    await writeRecord(holder, record);
+    await mkdir(join(holder, 'files'));
+    await mkdir(join(holder, 'trees'));
+    const after = new Map<number, string | Uint8Array>();
+    if (intended.manifest !== undefined)
+      after.set(MANIFEST_INDEX, intended.manifest);
+    if (intended.lock !== undefined) after.set(LOCK_INDEX, intended.lock);
+    const files: KeptFile[] = [];
+    for (const [index, file] of ROLLBACK_FILES.entries())
+      files.push(
+        await keepFile(
+          join(paths.root, file),
+          join(holder, 'files', String(index)),
+          after.get(index),
+        ),
+      );
+    const trees: boolean[] = [];
+    for (const [index, tree] of ROLLBACK_TREES.entries())
+      trees.push(
+        await keepTree(
+          join(paths.root, tree.path),
+          join(holder, 'trees', String(index)),
+          tree.copy,
+        ),
+      );
+    Object.assign(record, { state: 'ready', files, trees });
+    await writeRecord(holder, record);
+  } catch (error) {
+    // A copy that could not be finished (a full disk, a file that cannot be
+    // read) is no use to anyone: it goes now, not at the next step.
+    await discardCopy(holder).catch(() => undefined);
+    throw error;
   }
-  for (const [index, tree] of TREES.entries())
-    record.trees.push({
-      path: tree.path,
-      present: await keepTree(
-        join(paths.root, tree.path),
-        join(holder, 'trees', String(index)),
-        tree.copy,
-      ),
-    });
-  record.state = 'ready';
-  await writeRecord(holder, record);
   return {
     restore: () => restoreFrom(paths.root, holder, record),
     discard: () => discardCopy(holder),
   };
 }
 
+async function keepFile(
+  live: string,
+  kept: string,
+  intended: string | Uint8Array | undefined,
+): Promise<KeptFile> {
+  const after = intended === undefined ? {} : { after: sha256(intended) };
+  const info = await lstat(live).catch(absent);
+  const bytes = info === undefined ? undefined : await readFile(live);
+  if (info === undefined || bytes === undefined)
+    return { before: null, ...after };
+  await writeFile(kept, bytes, { mode: 0o600 });
+  return { before: sha256(bytes), mode: info.mode & 0o7777, ...after };
+}
+
 /**
- * Put the project back from a `ready` copy, then remove the copy. Safe to run
- * again after it was itself interrupted: a tree already moved back is skipped,
- * and files are rewritten whole.
+ * Put the project back from a `ready` copy, then remove the copy. Every path
+ * comes from the tables, never from the record. Safe to run again after it
+ * was itself interrupted: a tree already moved back is skipped, and files are
+ * rewritten whole, each under a temporary name renamed over the old.
  */
 export async function restoreFrom(
   root: string,
   holder: string,
   record: RollbackRecord,
 ): Promise<void> {
-  for (const [index, tree] of record.trees.entries()) {
+  for (const [index, tree] of ROLLBACK_TREES.entries()) {
     const live = join(root, tree.path);
     const kept = join(holder, 'trees', String(index));
-    if (!tree.present) await rm(live, { recursive: true, force: true });
+    if (record.trees[index] !== true)
+      await rm(live, { recursive: true, force: true });
     else if ((await lstat(kept).catch(absent)) !== undefined) {
       await rm(live, { recursive: true, force: true });
       await rename(kept, live);
     }
   }
-  for (const [index, file] of record.files.entries()) {
-    const path = join(root, file.path);
-    if (!file.present) await rm(path, { force: true });
+  for (const [index, file] of ROLLBACK_FILES.entries()) {
+    const path = join(root, file);
+    const kept = record.files[index];
+    if (kept === undefined || kept.before === null)
+      await rm(path, { force: true });
     else
-      await writeFile(
+      await writeStableFile(
         path,
         await readFile(join(holder, 'files', String(index))),
+        kept.mode ?? 0o644,
       );
   }
   await discardCopy(holder);
@@ -160,11 +182,7 @@ export async function discardCopy(holder: string): Promise<void> {
   const gone = holder.endsWith(DISCARD_SUFFIX)
     ? holder
     : `${holder}${DISCARD_SUFFIX}`;
-  if (gone !== holder)
-    await rename(holder, gone).catch((error: unknown) => {
-      if (absent(error) === undefined) return;
-      throw error;
-    });
+  if (gone !== holder) await rename(holder, gone).catch(absent);
   await rm(gone, { recursive: true, force: true });
 }
 
@@ -176,9 +194,8 @@ async function writeRecord(holder: string, record: RollbackRecord) {
 }
 
 /** `undefined` for a path that does not exist; anything else is thrown. */
-function absent(error: unknown): undefined {
-  // SAFETY: only the errno code of a file-system error is read.
-  if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+export function absent(error: NodeJS.ErrnoException): undefined {
+  if (error.code === 'ENOENT') return undefined;
   throw error;
 }
 

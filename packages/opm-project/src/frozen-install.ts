@@ -59,6 +59,7 @@ import {
 import { strongestClaims, type IntegrityClaim } from './integrity.js';
 import { MANIFEST_NAME, projectPaths } from './paths.js';
 import { readManifestFile } from './project.js';
+import { projectStep, type StepOptions } from './project-step.js';
 import type { OpmManifest } from './types.js';
 import { OpmError } from './types.js';
 
@@ -78,6 +79,8 @@ export interface FrozenInstallInput extends FrozenFetchOptions {
   target?: NativeTarget;
   /** The time policy is evaluated at. */
   now?: () => string;
+  /** Told what a killed step left and this one finished first. */
+  step?: StepOptions;
   /** Archives read at the same time. */
   concurrency?: number;
   signal?: AbortSignal;
@@ -182,6 +185,12 @@ function adapterFailure(error: unknown): Error {
 }
 
 export async function installFrozen(
+  input: FrozenInstallInput,
+): Promise<FrozenInstallResult> {
+  return projectStep(input.root, input.step, () => installFrozenInStep(input));
+}
+
+async function installFrozenInStep(
   input: FrozenInstallInput,
 ): Promise<FrozenInstallResult> {
   const started = now();
