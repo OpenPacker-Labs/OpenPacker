@@ -127,7 +127,13 @@ describe('opm ci over a pnpm lock with patchedDependencies', () => {
         expect(a.run("console.log(require('x/lib.js'))", from)).toBe('patched');
         expect(a.run("console.log(require('x/added.js'))", from)).toBe('added');
       }
-      const x = join(a.dir, 'packages/web/node_modules/x');
+      // The copy the member loads, wherever the one real path is (#179's
+      // placement puts a member's direct dependency at the project when it
+      // serves there).
+      const x = a.run(
+        "console.log(require('path').dirname(require.resolve('x/package.json')))",
+        'packages/web',
+      );
       await expect(stat(join(x, 'gone.js'))).rejects.toMatchObject({
         code: 'ENOENT',
       });
@@ -186,7 +192,10 @@ describe('opm ci over a pnpm lock with patchedDependencies', () => {
       await a.install({ offline: true });
       expect(a.run("console.log(require('x/lib.js'))")).toBe('patched');
       await rm(join(a.dir, 'node_modules'), { recursive: true });
-      await rm(join(a.dir, 'packages/web/node_modules'), { recursive: true });
+      await rm(join(a.dir, 'packages/web/node_modules'), {
+        recursive: true,
+        force: true,
+      });
       const empty = await gc();
       expect(empty.referenced).toBe(0);
       expect(await entries(store)).toEqual([]);
