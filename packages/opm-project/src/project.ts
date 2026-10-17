@@ -39,10 +39,10 @@ import { defaultRelease } from './default-release.js';
 import {
   emptyLockfile,
   readLockfile,
-  reproducibleLockForm,
   serializeLockfile,
   writeLockfile,
 } from './lock.js';
+import { reproducibleLockForm } from './lock-reproducible.js';
 import {
   hostSandboxFromPolicy,
   installSystemPackage,
@@ -904,12 +904,9 @@ async function resolveRequirement(input: {
       if (error instanceof OpmError) throw error;
       continue;
     }
-    // Keep the manifest's equivalent spelling in user-facing state while the
-    // catalog map and all comparisons remain canonical.
-    const entryPurl = exactPurl(
-      stripPurlVersion(input.req.purl),
-      entry.version,
-    );
+    // The canonical spelling, whichever one opm.toml was typed with: a lock
+    // holds one spelling of one identity (`lock-purl.ts`).
+    const entryPurl = exactPurl(stripPurlVersion(requestedPurl), entry.version);
     const facts = captureFactsFromSourceUri(entryPurl, sourceUri, {
       evaluationTime,
       dependencyDepth: 0,

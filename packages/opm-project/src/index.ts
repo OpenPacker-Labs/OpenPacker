@@ -28,10 +28,10 @@ export {
   emptyLockfile,
   parseLockfile,
   readLockfile,
-  reproducibleLockForm,
   serializeLockfile,
   writeLockfile,
 } from './lock.js';
+export { reproducibleLockForm } from './lock-reproducible.js';
 
 export {
   assertDigest,

@@ -539,8 +539,11 @@ errors rather than guessing npm because it is popular.
 
 An npm scope can be typed as npm spells it, `pkg:npm/@vercel/sdk`, or as the
 PURL spec encodes it, `pkg:npm/%40vercel/sdk`, wherever a PURL is read (`add`,
-`remove`, `why`, `search`, `versions`, `info`). Output, `opm.toml` and the lock
-always carry the encoded form.
+`remove`, `why`, `search`, `versions`, `info`). Output and the lock always carry
+the encoded form, whatever was typed and wherever the package came from (a lock
+an older build wrote with `@` is read the same way and rewritten encoded the
+next time it is written). `opm.toml` keeps what you typed, and is compared with
+the lock as the encoded form.
 
 ### What is checked
 
