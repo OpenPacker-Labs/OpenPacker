@@ -1,11 +1,10 @@
 import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
 import * as dependencyText from './dependency-spec.js';
 import { HeldPackuments, type PackumentRecord } from './held-packuments.js';
+import { PublishTimes } from './publish-time.js';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
 import { npmTargetPredicate } from './platform.js';
 import {
-  FULL_PACKUMENT_LIMITS,
-  MAXIMUM_FULL_PACKUMENT_BYTES,
   MAXIMUM_PACKUMENT_BYTES,
   PACKUMENT_LIMITS,
   aboutPackument,
@@ -32,7 +31,6 @@ import {
   compareCodePoints,
   formatPurl,
   header,
-  isDocumentRefusal,
   json,
   jsonWithCost,
   packageNodeId,
@@ -123,9 +121,6 @@ export interface NpmPackageLockV3 {
     }
   >;
 }
-
-const isTimestamp = (value: unknown): value is string =>
-  typeof value === 'string' && Number.isFinite(Date.parse(value));
 
 const npmName = (namespace: string | undefined, name: string): string =>
   namespace === undefined ? name : `@${namespace.replace(/^@/, '')}/${name}`;
@@ -761,10 +756,7 @@ export class NpmRegistryProvider implements CatalogProvider {
     extensions: { 'openpacker.dev/packument': 'abbreviated-install-v1' },
   };
   readonly #records: HeldPackuments;
-  readonly #times = new Map<
-    string,
-    Promise<Record<string, string> | undefined>
-  >();
+  readonly #times: PublishTimes;
   readonly #libc = new Map<
     string,
     Promise<{ libc?: string[]; reason: string }>
@@ -777,6 +769,9 @@ export class NpmRegistryProvider implements CatalogProvider {
     private readonly codec = new NpmCodec(),
   ) {
     this.#records = new HeldPackuments(transport, endpoint);
+    this.#times = new PublishTimes(transport, endpoint, (base, signal) =>
+      this.packument(base, signal),
+    );
   }
 
   async identify(query: string): Promise<readonly PackageIdentity[]> {
@@ -879,55 +874,13 @@ export class NpmRegistryProvider implements CatalogProvider {
   ): Promise<PublishTimeEvidence | undefined> {
     const parsed = parsePurl(this.codec.canonicalizePurl(exactPurl));
     if (!parsed.version) return undefined;
-    const base = formatPurl({ ...parsed, version: undefined });
-    const record = await this.packument(base, signal);
-    const listed = record.body.time?.[parsed.version];
-    if (isTimestamp(listed))
-      return { publishedAt: listed, source: 'packument-time' };
-    const modified = record.body.modified;
-    if (
-      needed.settledBefore !== undefined &&
-      isTimestamp(modified) &&
-      Date.parse(modified) <= Date.parse(needed.settledBefore)
-    )
-      return { publishedNoLaterThan: modified, source: 'packument-modified' };
-    let pending = this.#times.get(base);
-    if (pending === undefined) {
-      pending = this.fetchFullTimes(parsed, signal);
-      this.#times.set(base, pending);
-    }
-    const times = await pending;
-    const exact = times?.[parsed.version];
-    return isTimestamp(exact)
-      ? { publishedAt: exact, source: 'full-packument' }
-      : undefined;
-  }
-
-  private async fetchFullTimes(
-    parsed: ReturnType<typeof parsePurl>,
-    signal?: AbortSignal,
-  ): Promise<Record<string, string> | undefined> {
-    const name = npmName(parsed.namespace, parsed.name);
-    try {
-      const response = await this.transport.request({
-        url: `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(name)}`,
-        signal,
-        maximumBytes: MAXIMUM_FULL_PACKUMENT_BYTES,
-        headers: { accept: 'application/json' },
-      });
-      return json<{ time?: Record<string, string> }>(
-        response,
-        FULL_PACKUMENT_LIMITS,
-      ).time;
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      // A document refused for its size or shape is a fact about it, and the
-      // caller needs it to say why no time was had. A registry that is down or
-      // answers with an error is not: that stays "no time", as it always was.
-      if (isDocumentRefusal(error))
-        throw aboutPackument(name, error, 'full packument');
-      return undefined;
-    }
+    return this.#times.of(
+      formatPurl({ ...parsed, version: undefined }),
+      npmName(parsed.namespace, parsed.name),
+      parsed.version,
+      needed,
+      signal,
+    );
   }
 
   async fetchArtifactRecord(
