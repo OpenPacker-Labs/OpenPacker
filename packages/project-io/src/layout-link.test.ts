@@ -185,6 +185,11 @@ describe('materialiseTree link mode', () => {
 });
 
 describe('collectFilesFromHandle over a tree others hard-link', () => {
+  // 150 collections race a loop that links and unlinks as fast as the thread
+  // pool lets it. 0.4 to 0.5 s alone, 16 s at a load of 20 to 42 during npm run
+  // verify (every package's tests at once on 4 CPUs), past the package's 15 s.
+  // It asserts what each collection finds, never how long the rounds take, so
+  // the bound only has to outlast that load.
   it('does not mistake another link appearing for the tree changing', async () => {
     const { collectFilesFromHandle } = await import('./layout-collect.js');
     const { openStableDirectory } = await import('./index.js');
@@ -222,5 +227,5 @@ describe('collectFilesFromHandle over a tree others hard-link', () => {
       churn = false;
       await churning;
     }
-  });
+  }, 60_000);
 });
