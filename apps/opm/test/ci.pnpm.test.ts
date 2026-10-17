@@ -185,6 +185,35 @@ describe('opm ci with a pnpm-lock.yaml', () => {
   });
 });
 
+describe('what opm ci writes to the terminal', () => {
+  it('escapes a control sequence a package.json that is not JSON echoes, wherever the message comes from', async () => {
+    const p = await project();
+    // V8's JSON.parse quotes the bad text in its message: an OSC that sets the
+    // terminal's title, a CSI, and a right-to-left override.
+    await writeFile(
+      join(p.dir, 'package.json'),
+      '\u202e\u001b]0;PWN\u0007\u009b2J',
+    );
+    const c = capture();
+    const code = await runOpm(['ci', '--plan', '--path', p.dir], c.io, '/', {
+      fetch: p.fetcher,
+    });
+    expect(code).not.toBe(EXIT_CODES.success);
+    expect(c.err).toContain('\\u001b]0;PWN\\u0007');
+    const raw = [...c.err].filter((character) => {
+      const code = character.codePointAt(0)!;
+      return (
+        (code < 0x20 && code !== 0x0a) ||
+        (code >= 0x7f && code <= 0x9f) ||
+        (code >= 0x202a && code <= 0x202e)
+      );
+    });
+    expect(raw).toEqual([]);
+    expect(c.err.endsWith('\n')).toBe(true);
+    expect(p.urls).toEqual([]);
+  });
+});
+
 describe('opm ci in a project with both locks', () => {
   const both = async (packageManager?: string) => {
     const p = await project(
