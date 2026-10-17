@@ -16,7 +16,6 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { DEFAULT_MATERIALIZATION_LIMITS } from '@openpacker/materializer';
 import { packTarGzip } from '@openpacker/project-io';
 import {
   captureFactsFromSourceUri,
@@ -26,7 +25,6 @@ import {
   initProject,
   lockPackageFromSource,
   materializeLockPackage,
-  materializeThroughSharedStore,
   sharedStoreRoot,
   storeKeyFromDigest,
   usableSharedRoot,
@@ -37,6 +35,7 @@ import {
 } from '../src/install.js';
 import { sharedStoreHome } from '../src/paths.js';
 import { uniqueBytes } from './disk-usage.js';
+import { materializeThroughSharedStore } from './shared-store-limits.js';
 
 const temps: string[] = [];
 afterEach(async () => {
@@ -149,7 +148,6 @@ describe('the default shared store', () => {
 
     const { bytes, digest } = archive();
     const result = await materializeThroughSharedStore({
-      limits: DEFAULT_MATERIALIZATION_LIMITS,
       digest,
       projectStorePath: join(project, storeKeyFromDigest(digest)),
       bytes,
@@ -230,7 +228,6 @@ describe('the shared entry', () => {
     const key = storeKeyFromDigest(digest);
 
     await materializeThroughSharedStore({
-      limits: DEFAULT_MATERIALIZATION_LIMITS,
       digest,
       projectStorePath: join(a, key),
       bytes,
@@ -238,7 +235,6 @@ describe('the shared entry', () => {
       env,
     });
     await materializeThroughSharedStore({
-      limits: DEFAULT_MATERIALIZATION_LIMITS,
       digest,
       projectStorePath: join(b, key),
       bytes,
@@ -275,7 +271,6 @@ describe('the shared entry', () => {
     const key = storeKeyFromDigest(digest);
 
     const result = await materializeThroughSharedStore({
-      limits: DEFAULT_MATERIALIZATION_LIMITS,
       digest,
       projectStorePath: join(project, key),
       bytes,
@@ -300,7 +295,6 @@ describe('the shared entry', () => {
     const results = await Promise.all(
       projects.map((project) =>
         materializeThroughSharedStore({
-          limits: DEFAULT_MATERIALIZATION_LIMITS,
           digest,
           projectStorePath: join(project, key),
           bytes,
@@ -321,7 +315,6 @@ describe('the shared entry', () => {
     const key = storeKeyFromDigest(digest);
     const env = { OPM_STORE_HOME: shared };
     await materializeThroughSharedStore({
-      limits: DEFAULT_MATERIALIZATION_LIMITS,
       digest,
       projectStorePath: join(await tempDir('opm-proj-'), key),
       bytes,
@@ -334,7 +327,6 @@ describe('the shared entry', () => {
 
     await expect(
       materializeThroughSharedStore({
-        limits: DEFAULT_MATERIALIZATION_LIMITS,
         digest,
         projectStorePath: join(await tempDir('opm-proj-'), key),
         bytes,
@@ -351,7 +343,6 @@ describe('the shared entry', () => {
     const env = { OPM_STORE_HOME: shared };
     const earlier = await tempDir('opm-proj-');
     await materializeThroughSharedStore({
-      limits: DEFAULT_MATERIALIZATION_LIMITS,
       digest,
       projectStorePath: join(earlier, key),
       bytes,
@@ -365,7 +356,6 @@ describe('the shared entry', () => {
     const project = await tempDir('opm-proj-');
 
     const result = await materializeThroughSharedStore({
-      limits: DEFAULT_MATERIALIZATION_LIMITS,
       digest,
       projectStorePath: join(project, key),
       bytes: async () => {
@@ -512,7 +502,6 @@ describe('opm gc --shared', () => {
   async function install(shared: string, key: string, bytes: Uint8Array) {
     const project = await tempDir('opm-proj-');
     await materializeThroughSharedStore({
-      limits: DEFAULT_MATERIALIZATION_LIMITS,
       digest: `sha256:${key.slice('sha256-'.length)}`,
       projectStorePath: join(project, key),
       bytes,

@@ -78,11 +78,7 @@ export async function materializeThroughSharedStore(input: {
   /** Already resolved by the caller; skips resolving it again. */
   sharedRoot?: string;
   linkFile?: (existingPath: string, newPath: string) => Promise<void>;
-  /**
-   * Bounds the archive is extracted under. Required: the option that makes an
-   * npm archive be read as npm and pnpm read it (`requireNpmReaderAgreement`,
-   * ADR 0057 §8) rides on it, so a forgotten argument would fail open.
-   */
+  /** Required: it carries `requireNpmReaderAgreement` (ADR 0057 §8). */
   limits: MaterializationLimits;
 }): Promise<{ path: string; shared: boolean; treeDigest?: string }> {
   const digest = assertDigest(input.digest);
@@ -224,7 +220,7 @@ export async function publishSharedEntry(input: {
   format: ArchiveFormat;
   bytes: Uint8Array | (() => Promise<Uint8Array>);
   seal?: boolean;
-  /** Bounds the archive is extracted under; required, as for materializeThroughSharedStore. */
+  /** Required, as for `materializeThroughSharedStore`. */
   limits: MaterializationLimits;
 }): Promise<{ path: string; treeDigest: string }> {
   const storeKey = storeKeyFromDigest(input.digest);
