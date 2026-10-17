@@ -58,6 +58,8 @@ const NPM: MaterializationLimits = {
   ...DEFAULT_MATERIALIZATION_LIMITS,
   requireNpmReaderAgreement: true,
 };
+const GENERAL = DEFAULT_MATERIALIZATION_LIMITS;
+const Z = Buffer.alloc(512);
 const bytesOf = (name: string) =>
   new Uint8Array(
     Buffer.from(
@@ -115,16 +117,40 @@ describe('a tar archive of any other ecosystem', () => {
     ).toEqual([['a.js', 'a']]);
   });
 
-  it('skips a lone zero block and reads the entries after it, as node-tar does', async () => {
+  it('refuses a lone zero block that more data follows: the readers disagree', async () => {
+    const general = DEFAULT_MATERIALIZATION_LIMITS;
+    for (const name of [
+      'a lone zero block between entries',
+      'lone zero blocks between three entries',
+      'a lone zero block before the first entry',
+      'a lone zero block, then a block that is not a header',
+    ])
+      expect(await opm(bytesOf(name), general), name).toEqual({
+        code: 'TAR_AMBIGUOUS_END',
+      });
+  });
+
+  it('refuses a lone zero block and a partial block that is not zero', async () => {
+    const a = bytesOf('the end of the data ends it');
     expect(
-      await opm(
-        bytesOf('a lone zero block between entries'),
-        DEFAULT_MATERIALIZATION_LIMITS,
-      ),
-    ).toEqual([
-      ['a.js', 'a'],
-      ['b.js', 'b'],
-    ]);
+      await opm(Buffer.concat([a, Z, Buffer.alloc(100, 0x41)]), GENERAL),
+    ).toEqual({ code: 'TAR_AMBIGUOUS_END' });
+  });
+
+  it('accepts any length of zero padding after the end marker', async () => {
+    const a = bytesOf('the end of the data ends it');
+    for (const padding of [
+      Buffer.alloc(0),
+      Buffer.alloc(100),
+      Buffer.alloc(512),
+      Buffer.alloc(512 + 100),
+      Buffer.alloc(9216),
+    ])
+      for (const marker of [Z, Buffer.concat([Z, Z])])
+        expect(
+          await opm(Buffer.concat([a, marker, padding]), GENERAL),
+          `${marker.length} + ${padding.length}`,
+        ).toEqual([['a.js', 'a']]);
   });
 
   it('ends at two zero blocks and reads nothing after them', async () => {

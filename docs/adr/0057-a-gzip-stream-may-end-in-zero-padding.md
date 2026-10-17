@@ -106,11 +106,17 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
    carries `requireNpmReaderAgreement`, `installArchiveLimits` sets it for the
    npm ecosystem, and the materializer applies it only when the limits say so.
    It never guesses from the archive. Every other tar (a crate, an sdist, an OCI
-   layer, a plugin) keeps the general rule, node-tar's and GNU tar's end: the
-   archive ends at two zero blocks in a row or at the end of the data, a lone
-   zero block is skipped and the next block read as a header, the checksum is
-   read over its 8 bytes and the prefix is joined whatever the magic. A tar with
-   no zero block at its end therefore still extracts there.
+   layer, a plugin) keeps the general rule: the archive ends at two zero blocks
+   in a row or at the end of the data, whatever follows two zero blocks is not
+   read, the checksum is read over its 8 bytes and the prefix is joined whatever
+   the magic. A tar with no zero block at its end therefore still extracts
+   there, and so does one padded with any length of zeros. A lone zero block
+   that anything but zeros follows is refused (`TAR_AMBIGUOUS_END`) in every
+   ecosystem: on `[a][Z][b][Z][Z]` GNU tar 1.35 lists `a` and warns "A lone zero
+   block", Python's `tarfile` lists `a`, Go's `archive/tar` returns `a` and then
+   an error, node-tar lists `a` and `b`, so no reading of the second entry is
+   safe. (The first review's answer read it as node-tar does; this one does
+   not.)
 
    The cases, each in `packages/materializer/test/tar-oracle/` (both readers
    over the same bytes, 19 archives; `generate.mjs --check` re-runs them):

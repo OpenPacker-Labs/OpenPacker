@@ -66,11 +66,19 @@ function nodeTarReadsOn(bytes: Uint8Array, from: number): boolean {
   return false;
 }
 
+/** Whether the block at `at` is all zero; one cut short by the data's end counts for its length. */
+function zeroBlock(bytes: Uint8Array, at: number): boolean {
+  return bytes.subarray(at, at + BLOCK).every((byte) => byte === 0);
+}
+
 /**
  * Where the next header is, from `offset`, or undefined where the archive
  * ends. With `npmReaders`, only where npm and pnpm agree (`endsHere`).
- * Otherwise the general rule, node-tar's and GNU tar's: two zero blocks in a
- * row or the end of the data end it, and a lone zero block is skipped.
+ * Otherwise the general rule: the data's end, or two zero blocks in a row, end
+ * it, and what follows them is not read. A lone zero block that anything but
+ * zeros follows is refused: GNU tar 1.35 (a warning), Python's `tarfile` and
+ * Go's `archive/tar` (an error) stop reading at it, node-tar reads on, so no
+ * reading of it is safe.
  */
 export function nextHeader(
   bytes: Uint8Array,
@@ -78,12 +86,13 @@ export function nextHeader(
   npmReaders: boolean,
 ): number | undefined {
   if (npmReaders) return endsHere(bytes, offset) ? undefined : offset;
-  const zero = (at: number) =>
-    bytes.subarray(at, at + BLOCK).every((byte) => byte === 0);
   if (offset + BLOCK > bytes.byteLength) return undefined;
-  if (!zero(offset)) return offset;
-  if (zero(offset + BLOCK)) return undefined;
-  return offset + 2 * BLOCK <= bytes.byteLength ? offset + BLOCK : undefined;
+  if (!zeroBlock(bytes, offset)) return offset;
+  if (zeroBlock(bytes, offset + BLOCK)) return undefined;
+  throw unsafe(
+    'TAR_AMBIGUOUS_END',
+    `a lone zero block at offset ${offset} is followed by more data: GNU tar, Python's tarfile and Go's archive/tar stop there, node-tar reads on`,
+  );
 }
 
 /**
