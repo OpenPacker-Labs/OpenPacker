@@ -323,14 +323,14 @@ snapshots:
     await expect(fine.read()).resolves.toMatchObject({ refused: [] });
   });
 
-  it('is stale when the project declares a patch, which opm does not apply', async () => {
+  it('refuses a project that declares a patch, as its own rule', async () => {
     const message = await stale(AI_BDD, {
       root: {
         pnpm: { patchedDependencies: { 'semver@7.7.2': 'patches/s.patch' } },
       },
     });
-    expect(message).toContain(
-      'the project declares a patch for "semver@7.7.2", which opm does not apply',
+    expect(message).toBe(
+      'opm ci does not install this project as it is: the project declares a patch for "semver@7.7.2", which opm does not apply',
     );
   });
 });
