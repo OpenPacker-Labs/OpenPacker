@@ -48,19 +48,31 @@ export function lockRefusals(model: PnpmModel): FrozenLockRefusal[] {
   return out;
 }
 
-/** Refusals about the importers being installed: a link must land on a member. */
+/**
+ * Refusals about the importers being installed: a link must land on a member
+ * the project has. `present` is the importers the project still has.
+ */
 export function importerRefusals(
   model: PnpmModel,
   tops: ReadonlySet<string>,
+  present: ReadonlySet<string> = new Set(model.tops.keys()),
 ): FrozenLockRefusal[] {
   const out: FrozenLockRefusal[] = [];
   for (const id of tops)
-    for (const edge of model.tops.get(id)?.edges ?? [])
-      if (edge.kind === 'link' && edge.memberId === undefined)
+    for (const edge of model.tops.get(id)?.edges ?? []) {
+      if (edge.kind !== 'link') continue;
+      const path = `importers[${quote(id)}][${quote(edge.as)}]`;
+      if (edge.memberId === undefined)
         out.push({
-          path: `importers[${quote(id)}][${quote(edge.as)}]`,
+          path,
           reason: `links ${quote(edge.target)}, which is not a workspace member (an importer of this lock); opm links members only`,
         });
+      else if (!present.has(edge.memberId))
+        out.push({
+          path,
+          reason: `links ${quote(edge.target)}, an importer of the lock that the project no longer has; opm links members it has only`,
+        });
+    }
   return out;
 }
 

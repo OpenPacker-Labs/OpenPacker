@@ -17,12 +17,19 @@ import { quote } from './quote.js';
 
 const idOfDir = (dir: string): string => (dir === '' ? '.' : dir);
 
-/** The ids of the importers to install, or every importer when there is no scope. */
+/**
+ * The ids of the importers to install, or every importer the project still has
+ * (`present`, every importer when absent) when there is no scope. A link to an
+ * importer the project no longer has is not followed; `importerRefusals` names
+ * it.
+ */
 export function selectTops(
   model: PnpmModel,
   scope: FrozenWorkspaceScope = { kind: 'all' },
+  present: ReadonlySet<string> = new Set(model.tops.keys()),
 ): ReadonlySet<string> {
-  if (scope.kind === 'all') return new Set(model.tops.keys());
+  if (scope.kind === 'all')
+    return new Set([...model.tops.keys()].filter((id) => present.has(id)));
   if (scope.kind === 'root') return new Set(model.tops.has('.') ? ['.'] : []);
   const seeds = [
     ...scope.dirs.map(idOfDir),
@@ -43,7 +50,11 @@ export function selectTops(
     // or by root never follows (ADR 0051 §9).
     if (id === '.') continue;
     for (const edge of model.tops.get(id)?.edges ?? [])
-      if (edge.kind === 'link' && edge.memberId !== undefined)
+      if (
+        edge.kind === 'link' &&
+        edge.memberId !== undefined &&
+        present.has(edge.memberId)
+      )
         pending.push(edge.memberId);
   }
   return chosen;

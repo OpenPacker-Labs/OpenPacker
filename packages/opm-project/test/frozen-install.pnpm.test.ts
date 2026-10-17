@@ -1,4 +1,11 @@
-import { lstat, mkdir, readlink, stat, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  readdir,
+  readlink,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, pnpmWorld, type PnpmWorld } from './frozen-pnpm-fixture.js';
@@ -178,24 +185,43 @@ describe('installFrozen of a pnpm workspace', () => {
     ]);
   });
 
-  it("refuses a lock whose importers are not the project's members, naming both sides", async () => {
+  it('leaves alone an importer the project no longer has, and a new member with no dependencies, as pnpm does', async () => {
     const w = await fixture();
     await w.write({
       lock: w
         .lockText()
         .replace('importers:\n', 'importers:\n\n  "packages/ghost": {}\n'),
     });
-    await expect(w.install()).rejects.toThrow(
-      /the lock lists "packages\/ghost", which the project does not have/u,
-    );
-    await w.write();
+    await mkdir(join(w.dir, 'packages/ghost/node_modules/keep'), {
+      recursive: true,
+    });
     await mkdir(join(w.dir, 'packages/extra'), { recursive: true });
     await writeFile(
       join(w.dir, 'packages/extra/package.json'),
       '{"name":"extra","version":"1.0.0"}',
     );
-    await expect(w.install()).rejects.toThrow(
-      /the project has "packages\/extra", which the lock does not list/u,
+    await w.install();
+    // Not a member: the install neither clears nor fills its node_modules.
+    expect(await readdir(join(w.dir, 'packages/ghost/node_modules'))).toEqual([
+      'keep',
+    ]);
+  });
+
+  it('refuses a member with dependencies that the lock does not list, as its own rule', async () => {
+    const w = await fixture();
+    await w.write();
+    await mkdir(join(w.dir, 'packages/extra'), { recursive: true });
+    await writeFile(
+      join(w.dir, 'packages/extra/package.json'),
+      '{"name":"extra","version":"1.0.0","dependencies":{"left":"^1.0.0"}}',
     );
+    const error = await w.install().then(
+      () => undefined,
+      (thrown: Error) => thrown,
+    );
+    expect(error?.message).toMatch(
+      /does not list every member of the project's workspace .*"packages\/extra", which the lock does not list and which has dependencies/u,
+    );
+    expect(error?.message).not.toMatch(/would refuse too/u);
   });
 });

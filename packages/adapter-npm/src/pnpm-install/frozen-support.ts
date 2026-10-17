@@ -35,6 +35,8 @@ export interface Tweaks {
   workspaceYaml?: string;
   /** Extra keys for the root `package.json`. */
   root?: Manifest;
+  /** Change the members found on disk (a member removed, or one added). */
+  disk?: (members: WorkspaceMember[]) => WorkspaceMember[];
 }
 
 export interface World {
@@ -75,7 +77,8 @@ function linkNames(
   return names;
 }
 
-function member(
+/** A member as discovery gives one, with the dependency lists of `manifest`. */
+export function member(
   dir: string,
   manifest: Manifest,
   name: string,
@@ -169,7 +172,8 @@ export async function worldOf(
     root: dir,
     manifestPath: join(dir, 'package.json'),
   };
-  const disk = parsed.importers.length > 1 ? members : [];
+  const found = parsed.importers.length > 1 ? members : [];
+  const disk = tweaks.disk?.(found) ?? found;
   return {
     project,
     lockPath,

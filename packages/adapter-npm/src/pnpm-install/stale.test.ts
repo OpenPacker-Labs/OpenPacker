@@ -116,14 +116,17 @@ describe("a lock held to the importers' package.json", () => {
     expect(message.match(/ in package\.json and /gu)).toHaveLength(16);
   });
 
-  it("judges a member's link by the member's own name", async () => {
-    const message = await stale(AI_BDD, {
+  it('links a member under the name the lock gives it, as pnpm does, whatever the member is called', async () => {
+    const world = await worldOf(AI_BDD, {
       manifest: (id, manifest) =>
         id === 'packages/sdk' ? { ...manifest, name: 'not-sdk' } : manifest,
     });
-    expect(message).toContain(
-      '"packages/cli" links "packages/sdk" as "@ai-bdd/sdk", and the member there is called "not-sdk": opm links a member under its own name only',
-    );
+    const lock = await world.read();
+    expect(lock.refused).toEqual([]);
+    expect(lock.workspace?.layout.links).toContainEqual({
+      path: 'node_modules/@ai-bdd/sdk',
+      target: '../../packages/sdk',
+    });
   });
 });
 
