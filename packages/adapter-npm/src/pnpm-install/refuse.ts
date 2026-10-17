@@ -133,14 +133,16 @@ export function sourceOfInstance(
       problem: `${label} has only a sha1 integrity, which does not pin its bytes`,
     };
   // pnpm's own address (`@pnpm/tarball-url`): the version without its build
-  // metadata, which the registry's file name does not carry.
+  // metadata, which the registry's file name does not carry; it is classified
+  // by that version too, or the registry's own path reads as a tarball's.
+  const version = instance.version.split('+', 1)[0]!;
   const url =
     resolution.kind === 'tarball'
       ? resolution.tarball
-      : `${registry.replace(/\/+$/u, '')}/${instance.name}/-/${instance.name.split('/').at(-1)}-${instance.version.split('+', 1)[0]}.tgz`;
+      : `${registry.replace(/\/+$/u, '')}/${instance.name}/-/${instance.name.split('/').at(-1)}-${version}.tgz`;
   const source = classifyResolved({
     packageName: instance.name,
-    version: instance.version,
+    version,
     resolved: url,
   });
   if ('problem' in source) return { problem: `${label} ${source.problem}` };
