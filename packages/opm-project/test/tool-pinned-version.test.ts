@@ -7,12 +7,13 @@ import {
 } from './npm-registry-fixture.js';
 
 /**
- * `opmx pkg:npm/cowsay@1.5.0`: the release asked for is not the newest, and the
- * two want different majors of a dependency (cowsay 1.5.0 wants
- * `string-width@~2.1.1`, 1.6.0 wants `^4.2.3`). The closure was solved from the
- * tool's name alone, so the solver chose the newest release: the pinned tool
- * had no edges, the newest came along as a "dependency", and the layout gave
- * the tool the dependency version its own range refuses.
+ * `opmx pkg:npm/cowsay@1.5.0`: the release asked for is not the newest. The
+ * closure was solved from the tool's name alone, so the solver chose the newest
+ * release: the pinned tool had no edges of its own, the newest came along as a
+ * "dependency", and the layout placed the tool's dependencies by most wanted
+ * (cowsay 1.5.0 got string-width 4.2.3; its own range is ~2.1.1). Here the two
+ * releases of `say` want different majors of `width`, so the closure shows
+ * which release it was solved from.
  */
 
 const registry: FixturePackage[] = [
