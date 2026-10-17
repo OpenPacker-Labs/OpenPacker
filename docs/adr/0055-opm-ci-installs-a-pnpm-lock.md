@@ -266,14 +266,16 @@ design:
        comparator sorts first, sorted the same way, so the order written decides
        as it does for pnpm; `-` drops the dependency; a `file:` or `link:`
        replacement is made relative to the importer; a peer is overridden too,
-       and moves to `dependencies` when the replacement is not a peer range. A
+       and moves to `dependencies` when the replacement is not a peer range
+       (node-semver's `validRange`, which takes `v1` and `~>1` as ranges too). A
        selector is split at the first `>` pnpm splits at. The range reader
        agrees with node-semver on ranges of whole versions without a prerelease
        written with `^`, `~`, comparators, x-ranges, hyphen ranges and `||` (0
-       differences over about 45,000 random pairs against node-semver 7.8); a
-       range outside those forms (`~>1`, `v1.x`, `<*`, `<=1.2`, a prerelease
-       bound) is not guessed: whether the override applies is refused as opm's
-       own rule, naming it.
+       differences over about 45,000 random pairs against node-semver 7.8, and
+       over the 37,182 of the second review's differential; `>=0.0.0` is `*`, as
+       node-semver's `replaceGTE0` makes it); a range outside those forms
+       (`~>1`, `v1.x`, `<*`, `<=1.2`, a prerelease bound) is not guessed:
+       whether the override applies is refused as opm's own rule, naming it.
     5. **`ignoredOptionalDependencies`**: a lock written with it is refused
        (§20); a project that sets it (`package.json` first, then the workspace
        file) when the lock does not is stale, as pnpm finds it
