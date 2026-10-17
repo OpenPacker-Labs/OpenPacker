@@ -192,7 +192,10 @@ Decision:
 3. **A run removes both when it ends** (`run-scratch.ts`, `run-owner.ts`).
    - `opmx` holds SIGINT, SIGTERM and SIGHUP while a tool runs: the first ends
      the sandboxed process tree, the run removes its view and its layout, and
-     the same signal is raised again, so `opmx` ends by it.
+     the same signal is raised again, so `opmx` ends by it. A second signal,
+     whichever it is, while they are still being removed does not wait: it is
+     raised at once and `opmx` ends by it, leaving what was not yet removed to
+     the next run in the same place.
    - A run killed outright (SIGKILL, a crash, the power) leaves them. Each name
      says who made it: a pid, the time it started, and digests of its PID
      namespace, its boot, its machine id and its host name. The next run that
@@ -202,15 +205,40 @@ Decision:
      and namespace, with its pid unused or used by a process that started at
      another time. Anything else (another machine id or host name, another PID
      namespace, a machine id this host cannot read) is another host or a
-     container sharing the store, taken to be running and left alone.
+     container sharing the store, taken to be running and left alone. A host
+     with no readable machine id (`/etc/machine-id` and
+     `/var/lib/dbus/machine-id` both absent: minimal container images, macOS,
+     Windows) therefore removes no leftover at all, even one of its own boot
+     with an unused pid. The owner rule of #182 (`process-owner.ts`) needs the
+     machine id only to tell an earlier boot, and judges a pid without it; this
+     one is to be replaced by it. Measured with both files masked in a mount
+     namespace: a leftover of a dead pid was removed with the machine id
+     readable and kept with it masked.
    - `opm gc` does not count a view as a store path (`isStoreView`).
    - While a view exists, each entry it shows has files with a second name, so
-     the shared store's `opm gc` counts that entry as in use.
+     the shared store's `opm gc --shared` counts that entry as in use, and keeps
+     it. A view left behind by a run killed outright, on a host that does not
+     remove it (above), keeps its entries in the shared store until it is
+     removed by hand.
 4. **As root, the sandboxed process holds no capabilities** (`native.ts`). bwrap
    run by root gives the process root's capabilities unless told to drop them,
    and CAP_SYS_ADMIN remounts any read-only bind read-write. The bwrap backend
    passes `--cap-drop ALL` when its effective uid is 0; for any other user bwrap
    gives none. This predates views and held for every bind.
+   - Root's other capabilities go with it, CAP_DAC_OVERRIDE and
+     CAP_DAC_READ_SEARCH among them. The sandboxed process is uid 0 and no more:
+     it is held to a file's mode like any user, as its owner for files uid 0
+     owns and as "other" for the rest. Measured with bwrap run by root, over a
+     0600 file and a 0755 directory, both owned by uid 1000: before, the file
+     was read and a name made in the directory (`CapEff 000001fffeffffff`); with
+     `--cap-drop ALL` both give `Permission denied` (`CapEff 0`).
+   - What that means for `opmx` run as root: a project, a tool cache or a store
+     that belongs to another user and whose modes refuse "other" (0600 files,
+     0700 directories) is no longer readable or writable inside the sandbox, as
+     it would not be for that user's neighbour. Files uid 0 owns, and files any
+     user can read, are unaffected, which is every file of a root-owned cache.
+     Run `opmx` as the user the files belong to, or make them readable, for the
+     rest. No test of the suites reached this.
 
 Consequences:
 
@@ -246,12 +274,14 @@ Limits:
 - Measured and exercised on Linux, where bwrap is the backend.
   `tool-many-deps.test.ts`, `store-view-budget.test.ts`,
   `store-view-confinement.test.ts`, `store-view-swap.test.ts`,
-  `store-view-gc.test.ts`, `run-scratch.test.ts`, `tool-pinned-version.test.ts`,
-  `tool-layout-versions.test.ts` and `tool-peer.test.ts` (opm-project),
-  `opmx-signals.test.ts` and `opmx-bin-path.test.ts` (apps/opm), and
-  `root-capabilities.test.ts` and `handles.test.ts` (sandbox) cover it. The
-  sandboxed ones are skipped where bwrap is absent. The automatic CI lane does
-  not run these suites; the manual one (`ci.yml`) runs them on GitHub's
-  `ubuntu-latest` with no step that installs bubblewrap, and whether that image
-  has it was not checked. The root-only ones (capabilities, a sweep in another
-  PID namespace) are skipped for any other user.
+  `store-view-gc.test.ts`, `store-view-handles.test.ts`,
+  `store-view-dispose.test.ts`, `run-scratch.test.ts`,
+  `tool-pinned-version.test.ts`, `tool-layout-versions.test.ts` and
+  `tool-peer.test.ts` (opm-project), `opmx-signals.test.ts`,
+  `opmx-run-signals.test.ts` and `opmx-bin-path.test.ts` (apps/opm), and
+  `root-capabilities.test.ts`, `handles.test.ts` and `handles-oracle.test.ts`
+  (sandbox) cover it. The sandboxed ones are skipped where bwrap is absent. The
+  automatic CI lane does not run these suites; the manual one (`ci.yml`) runs
+  them on GitHub's `ubuntu-latest` with no step that installs bubblewrap, and
+  whether that image has it was not checked. The root-only ones (capabilities, a
+  sweep in another PID namespace) are skipped for any other user.
