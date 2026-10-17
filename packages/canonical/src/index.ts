@@ -8,13 +8,8 @@ import { safeEcho } from './echo.js';
 import { CanonicalJsonError, type CanonicalParseLimits } from './errors.js';
 import { scanString, validString } from './string-token.js';
 
-export {
-  CanonicalJsonError,
-  CanonicalJsonLimitError,
-  type CanonicalParseLimits,
-} from './errors.js';
+export * from './errors.js';
 export * from './costs.js';
-export * from './member-table.js';
 export * from './member-table.js';
 export {
   ECHO_LIMIT,
@@ -35,11 +30,7 @@ export {
   type TextSink,
 } from './output.js';
 export { OverlongHostError, parseUntrustedUrl } from './untrusted-url.js';
-export {
-  hasOverlongHost,
-  LONGEST_HOST_LENGTH,
-  writtenHostLength,
-} from './url-host.js';
+export * from './url-host.js';
 
 export interface CanonicalDigestProjection {
   readonly id: DigestProjection['id'];
