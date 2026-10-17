@@ -162,19 +162,21 @@ describe('the lists of opm ci, from a lock', () => {
   }
 
   it('lists the entries it cannot install, one to a line', async () => {
+    // Workspace members are installed (ADR 0051); a link out of the project
+    // is not, and two of them are two lines.
     const { dir, err, code } = await ci(
-      { workspaces: ['packages/*'], dependencies: { a: '1.0.0' } },
+      { dependencies: { a: '1.0.0' } },
       {
         'node_modules/a': registry('a'),
-        'node_modules/member': { resolved: 'packages/member', link: true },
-        'packages/member': { name: 'member', version: '1.0.0' },
+        'node_modules/l1': { resolved: '../l1', link: true },
+        'node_modules/l2': { resolved: '../l2', link: true },
       },
     );
     expect(code).toBe(EXIT_CODES.invalidInput);
     expect(err).toBe(
       `opm: Refusing to install ${join(dir, 'package-lock.json')}: it holds 2 entries opm ci cannot install, and installing the rest would not be installing the lock:\n` +
-        '  node_modules/member: a link to packages/member; workspace members and links are not installed yet\n' +
-        '  packages/member: a workspace member (member); workspaces are not installed yet\n',
+        '  node_modules/l1: a link that points at ../l1, which leaves the project root; only a workspace member may be linked\n' +
+        '  node_modules/l2: a link that points at ../l2, which leaves the project root; only a workspace member may be linked\n',
     );
   });
 

@@ -136,7 +136,7 @@ describe('what opm ci repeats of the fields of a lock entry it refuses', () => {
       'node_modules/p0': { link: true, resolved: target },
     });
     expect(code).toBe(3);
-    expect(written).toContain('node_modules/p0: a link to ');
+    expect(written).toContain('node_modules/p0: a link that points at ');
     expect(written).not.toContain(MARKER);
     expect(written).not.toContain('user:');
     expect(plain(written)).toBe(true);
@@ -157,6 +157,8 @@ describe('what opm ci repeats of the fields of a lock entry it refuses', () => {
     const link = await ci({
       'node_modules/p2': { link: true, resolved: '../packages/shared' },
     });
-    expect(link.written).toContain('a link to ../packages/shared;');
+    expect(link.written).toContain(
+      'a link that points at ../packages/shared, which leaves',
+    );
   });
 });
