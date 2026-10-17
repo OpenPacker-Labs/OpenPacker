@@ -289,12 +289,14 @@ export async function runOpm(
         const offline = offlineOverride(args);
         // remove rewrites the manifest and lock; verify bound plugins first.
         await registerBoundPlugins(root, adapterRegistry);
-        await removePackage({
+        const removed = await removePackage({
           root,
           alias,
           ...(!(offline === undefined) && { offline }),
         });
-        io.stdout.write(`Removed ${alias} from manifest, lock, and install\n`);
+        io.stdout.write(
+          `Removed ${removed.alias} from manifest, lock, and install\n`,
+        );
         return EXIT_CODES.success;
       }
       case 'ci': {
@@ -1236,7 +1238,7 @@ Usage:
   opm init [--name <name>] [--path <dir>]
   opm import --native [--path <dir>] [--force]
   opm add <spec> [--ecosystem|-e <eco>] [--source <file|url>] [--alias <name>] [--offline|--online]
-  opm remove <alias>
+  opm remove <alias|purl>
   opm install [--offline|--online]
   opm ci [--path <dir>] [--production] [--omit <dev|optional|peer>] [--offline|--online]
          [--workspace|-w <name|dir>]... [--include-workspace-root] [--workspaces[=false]|--no-workspaces]
@@ -1253,7 +1255,7 @@ Usage:
   opm sync [--offline|--online]
   opm update [alias...] [--latest] [--offline|--online]
   opm list
-  opm why <alias>
+  opm why <alias|name|purl>
   opm gc [--keep <n>] [--dry-run]     remove store paths no retained generation uses
   opm gc --shared [--dry-run]         remove entries of the user-level package store
                                       that no project links to

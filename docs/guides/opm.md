@@ -529,6 +529,11 @@ opm info pkg:npm/lodash@4.17.21       # digest, size, media type, download URL
 A bare name is fail-closed the same way `opm add` is: `opm versions lodash`
 errors rather than guessing npm because it is popular.
 
+An npm scope can be typed as npm spells it, `pkg:npm/@vercel/sdk`, or as the
+PURL spec encodes it, `pkg:npm/%40vercel/sdk`, wherever a PURL is read (`add`,
+`remove`, `why`, `search`, `versions`, `info`). Output, `opm.toml` and the lock
+always carry the encoded form.
+
 ### What is checked
 
 An install from a registry is verified three times over, and none of the checks
@@ -592,13 +597,14 @@ versions locks both, as npm and pnpm do: `opm add tinybench` next to
 dependent; it is held at several only where none does. The second version of a
 name is keyed `<name>.<version>` in `opm.lock.json`; an alias is an entry in the
 requiring package's `aliases`, and `opm list` shows it as `as=[…]`.
-`opm why <name>` takes a manifest alias, a lock key, a package name or an
-install name and says which package requires the entry and under what name.
-`opm remove` leaves the keys a fresh resolve would write (a name left at one
-version is keyed by its name again), so `opm install` still accepts the lock. A
-label in `opm.toml` names one package: `opm add is-number@npm:is-odd` over an
-`is-number` that is another package is refused, and says to remove it or to use
-`--alias`.
+`opm why <name>` takes a manifest alias, a lock key, a package name, an install
+name or a PURL (with a version, the entries at that version) and says which
+package requires the entry and under what name. `opm remove` takes an alias or
+the PURL of a requirement. `opm remove` leaves the keys a fresh resolve would
+write (a name left at one version is keyed by its name again), so `opm install`
+still accepts the lock. A label in `opm.toml` names one package:
+`opm add is-number@npm:is-odd` over an `is-number` that is another package is
+refused, and says to remove it or to use `--alias`.
 
 `opm ci` installs both shapes from a lock without resolving anything, a
 workspace's too ([below](#installing-a-workspace-lock)); `opm add`, `opm sync`
@@ -644,14 +650,14 @@ their verifier evidence can be independently replayed.
 | `opm init`                               | Create `opm.toml` + `.opm/`                                                                                                                                                                                                        |
 | `opm import --native`                    | One-shot: read native project files into `opm.toml`. Native files are not authority after import.                                                                                                                                  |
 | `opm add <spec>`                         | Add to manifest, resolve, lock, install                                                                                                                                                                                            |
-| `opm remove <alias>`                     | Drop from manifest + lock + install                                                                                                                                                                                                |
+| `opm remove <alias\|purl>`               | Drop from manifest + lock + install                                                                                                                                                                                                |
 | `opm install`                            | Materialize lock into `.opm/store` + bins                                                                                                                                                                                          |
 | `opm ci` / `opm install --frozen`        | Install exactly what a committed `package-lock.json` says into `node_modules`, a workspace's too (`-w`, `--include-workspace-root`, `--workspaces[=false]`): no resolving, no scripts ([below](#installing-exactly-a-lock-opm-ci)) |
 | `opm uninstall [alias]`                  | Remove install (manifest/lock kept unless `remove`)                                                                                                                                                                                |
 | `opm sync`                               | Resolve manifest → lock → install (idempotent)                                                                                                                                                                                     |
 | `opm update [alias...] [--latest]`       | Bump selected ranged directs to the newest in-range version and re-solve their closure; exact pins unchanged unless `--latest` rewrites the manifest. Not `sync`.                                                                  |
 | `opm list`                               | Show aliases, PURLs, digests, install status                                                                                                                                                                                       |
-| `opm why <alias>`                        | Why a package is present                                                                                                                                                                                                           |
+| `opm why <alias\|name\|purl>`            | Why a package is present                                                                                                                                                                                                           |
 | `opm run [script] [options] [-- args]`   | Run a `package.json` script, or with `--filter`/`-r`/`-w` in workspace members ([below](#across-the-members-of-a-workspace)). Not sandboxed.                                                                                       |
 | `opm exec [options] <bin> [-- args]`     | Run an executable from `node_modules/.bin`, in the project or in members. Never fetches, never searches PATH (`node` aside). Not sandboxed.                                                                                        |
 | `opm <script\|bin> [args]`               | A word that is no command: the project script of that name, else the bin (`opm typecheck`, `opm --filter a build`).                                                                                                                |

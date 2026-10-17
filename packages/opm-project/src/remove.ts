@@ -10,6 +10,7 @@ import { renameInstalled } from './rename-installed.js';
 import { serializeManifest } from './toml.js';
 import type { OpmLockfile, OpmManifest, ProjectState } from './types.js';
 import { OpmError } from './types.js';
+import { manifestAliasNamed } from './why.js';
 
 /**
  * Take a requirement out of the project, and everything only it needed.
@@ -23,9 +24,12 @@ import { OpmError } from './types.js';
  */
 export async function removePackage(input: {
   root: string;
+  /** The requirement's alias, or a PURL that names exactly one requirement. */
   alias: string;
   offline?: boolean;
 }): Promise<{
+  /** The alias that was removed. */
+  alias: string;
   manifest: OpmManifest;
   lock: OpmLockfile;
   state: ProjectState;
@@ -33,18 +37,19 @@ export async function removePackage(input: {
 }> {
   const paths = projectPaths(input.root);
   const manifest = await readManifestFile(paths.manifest);
-  if (!manifest.packages[input.alias]) {
+  const alias = manifestAliasNamed(manifest, input.alias);
+  if (alias === undefined) {
     throw new OpmError(
       'NOT_FOUND',
       `Package "${input.alias}" is not in ${MANIFEST_NAME}`,
     );
   }
-  delete manifest.packages[input.alias];
+  delete manifest.packages[alias];
   await writeManifestFile(paths.manifest, manifest);
 
   const lock = (await readLockfile(paths.lock)) ?? emptyLockfile();
   const previousAliases = Object.keys(lock.packages);
-  const removed = lock.packages[input.alias];
+  const removed = lock.packages[alias];
   if (removed) {
     removed.reason = 'transitive';
     // Whatever still needs it finds it under its own name; nothing asks for
@@ -83,5 +88,5 @@ export async function removePackage(input: {
     lock,
   });
 
-  return { manifest, lock, state, native };
+  return { alias, manifest, lock, state, native };
 }
