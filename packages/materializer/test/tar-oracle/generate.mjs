@@ -13,6 +13,10 @@
  * starts, as test/pnpm-patch-oracle does). Each case's bytes are written into
  * the oracle, so the test reads the very bytes the readers were given.
  *
+ * node-tar is fed each case as one buffer (`nodeTar`) and in pieces of 1, 1,460,
+ * 16,384 and 65,536 bytes; `fed` holds the entries for each piece size that
+ * reads differently, so a case whose answer depends on how it was fed shows.
+ *
  * Each case also records `pacote`: the files `tar.x` writes with pacote's own
  * filter (pacote.mjs), which skips what is no file and renames `.gitignore`.
  *
@@ -63,8 +67,15 @@ function loadParseTarball(directory) {
   return load().parseTarball;
 }
 
-/** The files node-tar reads, as pacote installs them: `strip: 1`. */
-async function nodeTar(Parse, bytes) {
+/**
+ * The pieces node-tar is fed in besides one buffer: 1 byte at a time (it
+ * consumes 512-byte units), a network segment, zlib's output chunk and a
+ * larger read. It decodes a pax header of more than one block piece by piece.
+ */
+const FEEDS = [1, 1460, 16384, 65536];
+
+/** The files node-tar reads, as pacote installs them: `strip: 1`, fed in pieces of `piece` bytes. */
+async function nodeTar(Parse, bytes, piece = bytes.length) {
   const entries = [];
   const warnings = [];
   const parser = new Parse({
@@ -82,7 +93,9 @@ async function nodeTar(Parse, bytes) {
   await new Promise((resolve, reject) => {
     parser.on('end', resolve);
     parser.on('error', reject);
-    parser.end(bytes);
+    for (let at = 0; at < bytes.length; at += piece)
+      parser.write(bytes.subarray(at, at + piece));
+    parser.end();
   });
   return { entries, warnings };
 }
@@ -115,10 +128,18 @@ async function generate(nodeTarDirectory, pnpmDirectory) {
   const cases = [];
   for (const [name, parts] of Object.entries(CASES)) {
     const bytes = Buffer.concat(parts);
+    const nodeTarWhole = await nodeTar(Parse, bytes);
+    const fed = {};
+    for (const piece of FEEDS) {
+      const read = await nodeTar(Parse, bytes, piece);
+      if (!isDeepStrictEqual(read.entries, nodeTarWhole.entries))
+        fed[piece] = read.entries;
+    }
     cases.push({
       name,
       bytes: bytes.toString('base64'),
-      nodeTar: await nodeTar(Parse, bytes),
+      nodeTar: nodeTarWhole,
+      fed,
       pacote: await pacoteInstalls(tar, bytes),
       pnpm: pnpm(parseTarball, bytes),
     });

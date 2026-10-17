@@ -4,6 +4,7 @@
  */
 
 import { END_CASES } from './cases-end.mjs';
+import { CHUNK_CASES } from './cases-chunks.mjs';
 import { ENTRY_CASES } from './cases-entries.mjs';
 import { META_CASES } from './cases-meta.mjs';
 import { OVER_CASES } from './cases-over.mjs';
@@ -18,5 +19,6 @@ export const CASES = {
   ...META_CASES,
   ...PATH_CASES,
   ...TEXT_CASES,
+  ...CHUNK_CASES,
   ...OVER_CASES,
 };

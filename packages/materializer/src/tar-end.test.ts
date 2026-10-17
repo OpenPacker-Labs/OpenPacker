@@ -26,6 +26,8 @@ interface OracleCase {
   name: string;
   bytes: string;
   nodeTar: { entries: Files; warnings: string[] };
+  /** node-tar's entries for each piece size it reads differently from one buffer. */
+  fed: Record<string, Files>;
   pnpm: { entries?: Files; error?: string };
   pacote: { entries?: Files; error?: string };
 }
@@ -99,6 +101,10 @@ const REFUSED: Record<string, string> = {
   'a link name of a NUL and a line feed, on a file': 'TAR_AMBIGUOUS_TEXT',
   'a link name of a NUL and a line feed hides a forged entry':
     'TAR_AMBIGUOUS_TEXT',
+  'an extended header with a character across offset 512 of its body':
+    'TAR_AMBIGUOUS_PAX',
+  'an extended header with a character across offset 16,384':
+    'TAR_AMBIGUOUS_PAX',
 };
 
 /**
@@ -111,6 +117,8 @@ const OVER_REFUSED: Record<string, string> = {
   'a directory with a link name': 'TAR_AMBIGUOUS_LINK',
   'a file with a backslash below the top-level directory': 'TAR_AMBIGUOUS_PATH',
   'a name with data after a NUL and no line terminator': 'TAR_AMBIGUOUS_TEXT',
+  'a longer extended header with non-ASCII bytes no cut can split':
+    'TAR_AMBIGUOUS_PAX',
   'a lone zero block, then a header with no path': 'TAR_AMBIGUOUS_END',
   'a lone zero block, then a directory': 'TAR_AMBIGUOUS_END',
   'a lone zero block, then a base-256 checksum': 'TAR_AMBIGUOUS_END',
@@ -164,8 +172,11 @@ const PACOTE: Record<string, Files> = {
   ],
 };
 
+/** node-tar's answers (fed whole, and in each piece size that differs) are all pnpm's. */
 const disagree = (item: OracleCase) =>
-  !isDeepStrictEqual(item.nodeTar.entries, item.pnpm.entries);
+  [item.nodeTar.entries, ...Object.values(item.fed)].some(
+    (entries) => !isDeepStrictEqual(entries, item.pnpm.entries),
+  );
 
 const NPM: MaterializationLimits = {
   ...DEFAULT_MATERIALIZATION_LIMITS,
