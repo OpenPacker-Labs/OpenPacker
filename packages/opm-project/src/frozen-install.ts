@@ -38,7 +38,8 @@ import {
   prepareFrozen,
   type FrozenInstallInput,
 } from './frozen-prepare.js';
-import { installScriptFlags } from './frozen-scripts.js';
+import { checkArchiveIdentities } from './frozen-identity.js';
+import { installScriptFlags, scriptedPackages } from './frozen-scripts.js';
 import {
   frozenArchiveLimits,
   openStore,
@@ -102,6 +103,7 @@ export async function installFrozen(
     });
     const fetched = now();
     const declares = await installScriptFlags(lock.packages, stored.byPath);
+    await checkArchiveIdentities(lock.packages, stored.byPath);
     const entries = lock.packages.map((pkg): NativeLockEntry => {
       const archive = stored.byPath.get(pkg.path)!;
       return {
@@ -154,13 +156,7 @@ export async function installFrozen(
       shared: store.shared,
       skipped: lock.skipped,
       ...(lock.targets !== undefined && { targets: lock.targets }),
-      installScripts: lock.packages
-        .filter((pkg) => declares.get(pkg.path) === true)
-        .map((pkg) => ({
-          name: pkg.packageName,
-          version: pkg.version,
-          path: pkg.path,
-        })),
+      installScripts: scriptedPackages(lock.packages, declares, stored.byPath),
       layout,
       ...(lock.workspace !== undefined && {
         workspace: {
