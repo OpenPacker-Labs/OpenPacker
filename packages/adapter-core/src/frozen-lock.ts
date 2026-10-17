@@ -138,6 +138,30 @@ export interface FrozenLockPackage {
    * package unless the project allows that kind of release.
    */
   withdrawn?: 'yanked' | 'quarantined' | 'revoked' | 'delisted';
+  /**
+   * A patch the lock applies to this package's files before they are
+   * installed (pnpm's `patchedDependencies`). The patched files are a package
+   * of their own: never the unpatched archive's, and never another patch's.
+   */
+  patch?: FrozenPatch;
+}
+
+/** A patch file a lock applies to a package, read once by the adapter. */
+export interface FrozenPatch {
+  /** The key the lock declares it under: `name@version`, `name@range` or `name`. */
+  readonly key: string;
+  /** The patch file, relative to the project root, as the lock records it. */
+  readonly file: string;
+  /** The hash the lock records for it, checked against `text`. */
+  readonly hash: string;
+  /**
+   * sha256, hex, of the text as pnpm 10 hashes it, whatever form `hash` has:
+   * what names the patched package, so one patch is one package however the
+   * lock that asked for it spells its hash.
+   */
+  readonly digest: string;
+  /** The file's text, as read and hashed: what is applied. */
+  readonly text: string;
 }
 
 export interface FrozenLockSkip {

@@ -14,7 +14,11 @@ export { quote, terminalSafe } from './terminal-text.js';
 import { createNpmRangeEngine, type RangeEngine } from './workspace/ranges.js';
 import { npmRangeAst } from './npm-semver-range.js';
 import { quote } from './terminal-text.js';
-import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
+import type {
+  FrozenLock,
+  FrozenLockOptions,
+  FrozenPatch,
+} from './frozen-lock.js';
 import type { NativeLayoutWorkspace } from './layout-workspace.js';
 import type { WorkspaceTool } from './workspace/members.js';
 export type {
@@ -26,6 +30,7 @@ export type {
   FrozenLockSkip,
   FrozenLockWorkspace,
   FrozenOmit,
+  FrozenPatch,
   FrozenSourceKind,
   FrozenWorkspaceInput,
   FrozenWorkspaceScope,
@@ -493,6 +498,18 @@ export interface ProjectFormat {
     project: DetectedProject,
     options: FrozenLockOptions,
   ): Promise<FrozenLock>;
+
+  /**
+   * Apply a patch `readFrozenLock` gave a package to that package's extracted
+   * files in `packageDir`, a private copy no layout links yet: whole, or
+   * throwing with the files as they were. Called after the archive was proved
+   * to be the package the lock names, and before anything is published.
+   */
+  applyFrozenPatch?(
+    packageDir: string,
+    patch: FrozenPatch,
+    label: string,
+  ): Promise<void>;
 
   /**
    * Where `writeLayout` can write when `root` holds no native manifest.
