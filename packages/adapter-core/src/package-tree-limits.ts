@@ -58,3 +58,43 @@ export function segmentProblem(segment: string): SegmentProblem | undefined {
     };
   return undefined;
 }
+
+/**
+ * The directory every path of a package begins with in an archive (npm's
+ * tarballs hold `package/...`). The materializer counts it, as a segment and
+ * as bytes, in the bounds above; a path "below the package" is held to them
+ * with it in front.
+ */
+export const PACKAGE_ROOT = 'package';
+
+/**
+ * What two entries of an archive are compared by, to refuse a pair that one
+ * case-insensitive file system would make one file (`CASE_COLLISION`). The
+ * materializer refuses an archive with two entries of one key, and the files
+ * a pnpm patch creates are held to the same key against the files of the
+ * package (ADR 0056 §13). A pair that differs only in Unicode normalization
+ * (an NFC name beside an NFD one) has two keys, in an archive and in a patch.
+ */
+export const collisionKey = (path: string): string => path.toLowerCase();
+
+/**
+ * Bytes a system call takes in a path, the terminating NUL included (Linux's
+ * `PATH_MAX`; macOS takes 1,024 and Windows fewer, neither is checked). The
+ * directories the store keeps a package in count against it.
+ */
+export const SYSTEM_PATH_MAX = 4096;
+
+/**
+ * Why a path of `pathBytes` bytes cannot be made below a directory of
+ * `directoryBytes` bytes, or undefined: the whole path is what the system
+ * takes, and its parts passing their own bounds is not enough.
+ */
+export function wholePathProblem(
+  directoryBytes: number,
+  pathBytes: number,
+): string | undefined {
+  const total = directoryBytes + 1 + pathBytes;
+  return total < SYSTEM_PATH_MAX
+    ? undefined
+    : `is ${pathBytes} bytes long, and below the ${directoryBytes}-byte directory it is made in comes to ${total} bytes, more than the ${SYSTEM_PATH_MAX - 1} a system call takes in a path`;
+}

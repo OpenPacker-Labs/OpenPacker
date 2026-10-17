@@ -72,6 +72,19 @@ export function patchPathProblem(path: string): string | undefined {
   return undefined;
 }
 
+/** The path a patch names that takes the most bytes (empty for a patch that names none). */
+export function longestPath(effects: readonly PatchEffect[]): {
+  readonly path: string;
+  readonly bytes: number;
+} {
+  let longest = { path: '', bytes: 0 };
+  for (const path of pathsOf(effects)) {
+    const bytes = Buffer.byteLength(path, 'utf8');
+    if (bytes > longest.bytes) longest = { path, bytes };
+  }
+  return longest;
+}
+
 /** Every path a patch names. */
 export function pathsOf(effects: readonly PatchEffect[]): string[] {
   return effects.flatMap((effect) =>
@@ -126,6 +139,10 @@ export function withAncestors(
 /** The entries of a patch's tree, held to the files an archive may hold. */
 export const entriesOf = (paths: Iterable<string>): string[] =>
   withAncestors(paths, PACKAGE_TREE_LIMITS.maximumFiles);
+
+/** A path as a message shows it: whole when short, its two ends otherwise. */
+export const shownPath = (path: string): string =>
+  path.length > 160 ? `${path.slice(0, 120)}...${path.slice(-30)}` : path;
 
 const parentOf = (path: string): string | undefined => {
   const at = path.lastIndexOf('/');
@@ -280,6 +297,13 @@ export async function loadPatchTree(
     const info = await lstat(where).catch((error: NodeJS.ErrnoException) => {
       // Below a file or a missing directory, nothing is there.
       if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return undefined;
+      // The net under `patchPathProblem` and the whole-path check: a name or
+      // a path this file system does not take is a refusal that names it.
+      if (error.code === 'ENAMETOOLONG')
+        throw new PatchRefusal(
+          'UNSAFE_PATH',
+          `${quote(shownPath(path))} in the patch is longer than the file system takes`,
+        );
       throw error;
     });
     if (info === undefined) {

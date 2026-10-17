@@ -8,6 +8,7 @@ import {
   PACKAGE_TREE_LIMITS,
   ProviderError,
   quote,
+  wholePathProblem,
   type FrozenPatch,
 } from '@openpacker/adapter-core';
 import { applyEffects, PatchBudget, PatchRefusal } from './apply.js';
@@ -17,8 +18,10 @@ import {
   commitPatchTree,
   entriesOf,
   loadPatchTree,
+  longestPath,
   patchPathProblem,
   pathsOf,
+  shownPath,
 } from './tree.js';
 
 export {
@@ -58,7 +61,7 @@ export function readPatchText(text: string, file: string): PatchEffect[] {
     if (problem !== undefined)
       throw new ProviderError(
         'UNSAFE_PATH',
-        `the patch ${quote(file)} names the path ${quote(shown(path))}, which ${problem}; opm applies a patch only below the package it patches`,
+        `the patch ${quote(file)} names the path ${quote(shownPath(path))}, which ${problem}; opm applies a patch only below the package it patches`,
       );
   }
   const { maximumFiles } = PACKAGE_TREE_LIMITS;
@@ -79,9 +82,10 @@ export function readPatchText(text: string, file: string): PatchEffect[] {
   return effects;
 }
 
-/** A path as a message shows it: whole when short, its two ends otherwise. */
-const shown = (path: string): string =>
-  path.length > 160 ? `${path.slice(0, 120)}...${path.slice(-30)}` : path;
+/** The most bytes in a path the patch names, for fitting it under a directory. */
+export function patchPathBytes(patch: FrozenPatch): number {
+  return longestPath(readPatchText(patch.text, patch.file)).bytes;
+}
 
 /**
  * Apply `patch` to the package whose files are in `packageDir`, whole or not
@@ -96,6 +100,17 @@ export async function applyPnpmPatch(
   budget: PatchBudget = new PatchBudget(),
 ): Promise<void> {
   const effects = readPatchText(patch.text, patch.file);
+  // The whole path is what the system takes, `packageDir` in front included.
+  const { path, bytes } = longestPath(effects);
+  const problem = wholePathProblem(
+    Buffer.byteLength(packageDir, 'utf8'),
+    bytes,
+  );
+  if (problem !== undefined)
+    throw new ProviderError(
+      'UNSAFE_PATH',
+      `the patch ${quote(patch.file)} names the path ${quote(shownPath(path))}, which ${problem}`,
+    );
   try {
     const tree = await loadPatchTree(packageDir, effects, budget);
     const before = new Map(tree.nodes);

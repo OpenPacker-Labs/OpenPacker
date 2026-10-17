@@ -11,7 +11,7 @@ export {
 } from './host-target.js';
 export * from './workspace/index.js';
 export { quote, terminalSafe } from './terminal-text.js';
-export { PACKAGE_TREE_LIMITS, segmentProblem } from './package-tree-limits.js';
+export * from './package-tree-limits.js';
 export { ProviderError } from './provider-error.js';
 import { ProviderError } from './provider-error.js';
 import { createNpmRangeEngine, type RangeEngine } from './workspace/ranges.js';

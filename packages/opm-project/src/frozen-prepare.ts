@@ -19,6 +19,7 @@ import {
 } from '@openpacker/adapter-core';
 import { requireAdapterRegistry } from './adapters.js';
 import { type FrozenFetchOptions } from './frozen-fetch.js';
+import { assertPatchesFit } from './frozen-patch-fit.js';
 import {
   assertFrozenAllowed,
   frozenPolicyDocument,
@@ -234,6 +235,7 @@ export async function prepareFrozen(
       'UNSUPPORTED_LOCK',
       `opm ci installs from archives with a pinned digest, and cannot install ${unfetchable.length} package${unfetchable.length === 1 ? '' : 's'} from a git or path source yet:\n${listLines(unfetchable.map((pkg) => `${labelOf(pkg)}: ${redactSource(pkg.source)}`))}`,
     );
+  assertPatchesFit(lock.packages, format, root, env);
   const claims = new Map<string, IntegrityClaim[]>(
     lock.packages.map((pkg) => [
       pkg.path,
