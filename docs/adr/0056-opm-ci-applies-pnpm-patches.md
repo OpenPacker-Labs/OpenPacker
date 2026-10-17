@@ -165,15 +165,22 @@ inside the bundle.
       4, as pnpm's `ENOENT`); a path that leaves the project through `..` or an
       absolute path, or that is reached through a link (`UNSAFE_PATH`, exit 7);
       a patch that names a path outside its package or with an empty, `.` or
-      `..` segment, a backslash or NUL (`UNSAFE_PATH`); a patch pnpm cannot read
-      (`INVALID_PATCH`, exit 3); and, as a stale lock (exit 3, "pnpm install
-      --frozen-lockfile would refuse too"), a key added or removed, a path
-      moved, a file edited;
+      `..` segment, a backslash or NUL, or one past the bounds of a path in an
+      archive, 128 segments or 4,096 UTF-8 bytes (`UNSAFE_PATH`); a patch that
+      names more than the 100,000 files an archive may hold (`SIZE_LIMIT`, exit
+      7); the three bounds are `PACKAGE_TREE_LIMITS`, the ones `opm ci` extracts
+      an archive under, so no path of a patched entry is one an archive could
+      not hold; a patch pnpm cannot read (`INVALID_PATCH`, exit 3); and, as a
+      stale lock (exit 3, "pnpm install --frozen-lockfile would refuse too"), a
+      key added or removed, a path moved, a file edited;
     - when it is applied (exit 3): a patch that does not apply (`PATCH_FAILED`).
 14. **What pnpm does that opm refuses, and why:**
     - a path in the patch that leaves the package, or a link in the package on
       the way to a path it names: pnpm follows both and writes outside the
       package; opm writes only below it;
+    - a path past an archive's bounds: pnpm makes the directories whatever their
+      depth (a 12 KB patch names a path 2,000 deep), and opm refuses it as it
+      refuses that path in an archive;
     - a patch that fails for a bare-name key, or with `ignorePatchFailures`:
       pnpm warns and installs the package unpatched; opm refuses, because a lock
       that says a package is patched and an install where it is not are two

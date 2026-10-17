@@ -151,4 +151,18 @@ describe('opm ci with a pnpm lock that patches a package', () => {
       'the patch file "patches/lib.patch" does not exist',
     );
   });
+
+  it('refuses at --plan, exit 7, a patch that names a path 2,000 directories deep', async () => {
+    const path = `${'d/'.repeat(2_000)}x.js`;
+    const deep = PATCH.split('index.js').join(path);
+    const p = await project(deep, deep);
+    const c = capture();
+    expect(await runOpm(['ci', '--plan', '--path', p.dir], c.io, '/')).toBe(
+      EXIT_CODES.verificationFailed,
+    );
+    expect(c.seen.out).toBe('');
+    expect(c.seen.err).toContain(
+      'is 2001 segments deep, more than the 128 a path in an archive may be',
+    );
+  });
 });
