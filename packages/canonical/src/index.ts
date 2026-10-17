@@ -14,6 +14,8 @@ export {
   type CanonicalParseLimits,
 } from './errors.js';
 export * from './costs.js';
+export * from './member-table.js';
+export * from './member-table.js';
 export {
   ECHO_LIMIT,
   plainLine,
