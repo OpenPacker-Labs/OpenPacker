@@ -13,13 +13,21 @@
  * the bounds of a path in an archive (`PACKAGE_TREE_LIMITS`: 128 segments,
  * 4,096 UTF-8 bytes). pnpm takes whatever path the patch gives, `../../x` and
  * a path 40,000 directories deep included; opm refuses the patch.
+ *
+ * Every lookup of a path walks its ancestors, and every named path and each
+ * directory above it costs an `lstat`; both are charged to the patch's work
+ * budget (`apply.ts`), in characters, as the work on a file's text is: a
+ * patch that names one path 128 directories deep over and over, or thousands
+ * of them, is refused as too costly instead of run for minutes. The paths a
+ * patch names and the directories above them are also held to the number of
+ * files an archive may hold.
  */
 
 import { constants } from 'node:fs';
 import { chmod, lstat, mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PACKAGE_TREE_LIMITS, quote } from '@openpacker/adapter-core';
-import { PatchRefusal, type PatchTree } from './apply.js';
+import { PatchBudget, PatchRefusal, type PatchTree } from './apply.js';
 import type { PatchEffect } from './parse.js';
 
 /** A path below the package as a patch names it. */
@@ -55,24 +63,51 @@ export function pathsOf(effects: readonly PatchEffect[]): string[] {
 
 /**
  * Each path and every directory above it, shortest first, and in the order
- * they are first named within one depth. One pass over each path's segments:
- * a prefix is a slice of the path, never a join of its segments again.
+ * they are first named within one depth. A prefix is a slice of the path,
+ * never a join of its segments again. The prefixes of a path that were seen
+ * are its shortest ones (every prefix of a path seen is seen with it), so the
+ * first one not seen is found by bisection, and a path that shares 127
+ * directories with an earlier one costs 7 lookups, not 128.
+ *
+ * `limit` is the most entries the result may hold; one past it is a
+ * `PatchRefusal` (`SIZE_LIMIT`) before the rest is built.
  */
-export function withAncestors(paths: readonly string[]): string[] {
+export function withAncestors(
+  paths: Iterable<string>,
+  limit = Number.POSITIVE_INFINITY,
+): string[] {
   const seen = new Set<string>();
   const byDepth: string[][] = [];
-  for (const path of paths)
-    for (let depth = 0, end = path.indexOf('/'); ; depth += 1) {
-      const prefix = end === -1 ? path : path.slice(0, end);
-      if (!seen.has(prefix)) {
-        seen.add(prefix);
-        (byDepth[depth] ??= []).push(prefix);
-      }
-      if (end === -1) break;
-      end = path.indexOf('/', end + 1);
+  let count = 0;
+  for (const path of paths) {
+    const ends: number[] = [];
+    for (let at = path.indexOf('/'); at !== -1; at = path.indexOf('/', at + 1))
+      ends.push(at);
+    ends.push(path.length);
+    let low = 0;
+    for (let high = ends.length; low < high; ) {
+      const middle = (low + high) >> 1;
+      if (seen.has(path.slice(0, ends[middle]))) low = middle + 1;
+      else high = middle;
     }
+    for (let depth = low; depth < ends.length; depth += 1) {
+      const prefix = path.slice(0, ends[depth]);
+      seen.add(prefix);
+      (byDepth[depth] ??= []).push(prefix);
+      count += 1;
+      if (count > limit)
+        throw new PatchRefusal(
+          'SIZE_LIMIT',
+          `it names paths that, with the directories above them, come to more than the ${limit} files a package's archive may hold`,
+        );
+    }
+  }
   return byDepth.flat();
 }
+
+/** The entries of a patch's tree, held to the files an archive may hold. */
+export const entriesOf = (paths: Iterable<string>): string[] =>
+  withAncestors(paths, PACKAGE_TREE_LIMITS.maximumFiles);
 
 const parentOf = (path: string): string | undefined => {
   const at = path.lastIndexOf('/');
@@ -88,9 +123,19 @@ const errno = (code: string, message: string): Error =>
  */
 export class OverlayTree implements PatchTree {
   readonly #nodes: Map<string, PatchNode | undefined>;
+  readonly #budget: PatchBudget;
 
-  constructor(base: ReadonlyMap<string, PatchNode | undefined>) {
+  /**
+   * `budget` is charged, in characters, for every path a lookup hashes and
+   * every ancestor it visits: a lookup costs the depth of its path times the
+   * path's length, so a deep path costs thousands of times a shallow one.
+   */
+  constructor(
+    base: ReadonlyMap<string, PatchNode | undefined>,
+    budget: PatchBudget = new PatchBudget(),
+  ) {
     this.#nodes = new Map(base);
+    this.#budget = budget;
   }
 
   /** Where each path ends: a file, a directory, or nothing. */
@@ -99,11 +144,14 @@ export class OverlayTree implements PatchTree {
   }
 
   #get(path: string): PatchNode | undefined {
+    this.#budget.charge(path.length + 1);
     if (!this.#nodes.has(path))
       throw new Error(`the patch tree does not hold ${path}`);
     // A path below a file is not there.
-    for (let up = parentOf(path); up !== undefined; up = parentOf(up))
+    for (let up = parentOf(path); up !== undefined; up = parentOf(up)) {
+      this.#budget.charge(up.length + 1);
       if (this.#nodes.get(up)?.kind === 'file') return undefined;
+    }
     return this.#nodes.get(path);
   }
 
@@ -119,6 +167,7 @@ export class OverlayTree implements PatchTree {
   #ensureParent(path: string): void {
     const parent = parentOf(path);
     if (parent === undefined) return;
+    this.#budget.charge(parent.length + 1);
     this.#ensureParent(parent);
     const node = this.#get(parent);
     if (node?.kind === 'file')
@@ -190,14 +239,25 @@ export class OverlayTree implements PatchTree {
   }
 }
 
-/** Read every path the patch names below `root`, and each directory above it. */
+/**
+ * What an `lstat` of a path costs the budget, before the path's own length:
+ * a system call, and the path joined and walked by the system.
+ */
+export const LSTAT_UNITS = 2048;
+
+/**
+ * Read every path the patch names below `root`, and each directory above it,
+ * charging `budget` for each `lstat` and each file read.
+ */
 export async function loadPatchTree(
   root: string,
   effects: readonly PatchEffect[],
+  budget: PatchBudget = new PatchBudget(),
 ): Promise<OverlayTree> {
   const base = new Map<string, PatchNode | undefined>();
   // Shortest first, so a link is found before anything below it is looked at.
-  for (const path of withAncestors(pathsOf(effects))) {
+  for (const path of entriesOf(pathsOf(effects))) {
+    budget.charge(LSTAT_UNITS + path.length);
     const where = join(root, ...path.split('/'));
     const info = await lstat(where).catch((error: NodeJS.ErrnoException) => {
       // Below a file or a missing directory, nothing is there.
@@ -217,15 +277,13 @@ export async function loadPatchTree(
         'UNSAFE_PATH',
         `${quote(path)} in the package is a link or not a regular file`,
       );
-    base.set(path, {
-      kind: 'file',
-      bytes: await readFile(where, {
-        flag: constants.O_RDONLY | constants.O_NOFOLLOW,
-      }),
-      mode: info.mode & 0o7777,
+    const bytes = await readFile(where, {
+      flag: constants.O_RDONLY | constants.O_NOFOLLOW,
     });
+    budget.charge(bytes.length + 1);
+    base.set(path, { kind: 'file', bytes, mode: info.mode & 0o7777 });
   }
-  return new OverlayTree(base);
+  return new OverlayTree(base, budget);
 }
 
 const sameFile = (

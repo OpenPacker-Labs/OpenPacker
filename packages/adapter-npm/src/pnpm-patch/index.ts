@@ -10,11 +10,12 @@ import {
   quote,
   type FrozenPatch,
 } from '@openpacker/adapter-core';
-import { applyEffects, PatchRefusal } from './apply.js';
+import { applyEffects, PatchBudget, PatchRefusal } from './apply.js';
 import { HeaderLineTooLong, MAXIMUM_HEADER_LINE } from './header-lines.js';
 import { parsePatchFile, type PatchEffect } from './parse.js';
 import {
   commitPatchTree,
+  entriesOf,
   loadPatchTree,
   patchPathProblem,
   pathsOf,
@@ -66,6 +67,15 @@ export function readPatchText(text: string, file: string): PatchEffect[] {
       'SIZE_LIMIT',
       `the patch ${quote(file)} names ${paths.size} paths, more than the ${maximumFiles} files a package's archive may hold`,
     );
+  try {
+    entriesOf(paths);
+  } catch (error) {
+    if (!(error instanceof PatchRefusal)) throw error;
+    throw new ProviderError(
+      error.code,
+      `the patch ${quote(file)} names ${paths.size} paths, which with the directories above them come to more than the ${maximumFiles} files a package's archive may hold`,
+    );
+  }
   return effects;
 }
 
@@ -84,10 +94,12 @@ export async function applyPnpmPatch(
   label: string,
 ): Promise<void> {
   const effects = readPatchText(patch.text, patch.file);
+  // One budget for the tree read, the patch run and, if it fails, its reverse.
+  const budget = new PatchBudget();
   try {
-    const tree = await loadPatchTree(packageDir, effects);
+    const tree = await loadPatchTree(packageDir, effects, budget);
     const before = new Map(tree.nodes);
-    if (!applyEffects(effects, tree))
+    if (!applyEffects(effects, tree, budget))
       throw new ProviderError(
         'PATCH_FAILED',
         `the patch ${quote(patch.file)} (patchedDependencies ${quote(patch.key)}) does not apply to ${quote(label)}, and pnpm would refuse it too (ERR_PNPM_PATCH_FAILED); nothing was installed`,
