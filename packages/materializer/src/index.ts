@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, readdir, rmdir, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { PACKAGE_TREE_LIMITS } from '@openpacker/adapter-core';
+import { PACKAGE_TREE_LIMITS, segmentProblem } from '@openpacker/adapter-core';
 import { collectStream, type ArtifactSource } from '@openpacker/artifact-model';
 import { compareCanonicalStrings, sha256 } from '@openpacker/canonical';
 import type { ArtifactDescriptor, Digest } from '@openpacker/contracts';
@@ -101,19 +101,11 @@ export function validateArchivePath(
     parts.some((part) => part === '' || part === '.' || part === '..')
   )
     throw unsafe('PATH_TRAVERSAL', input);
-  // Windows device names are reserved at every directory level and stay
-  // reserved with an extension, so extracting an entry called `CON` or
-  // `aux.txt` there writes to a device rather than a file. Trailing dots and
-  // spaces are stripped on resolution, so `a.` and `a` would name one file on
-  // Windows and two here — which defeats the duplicate and case-collision
-  // checks below. Both are refused on every platform, because an archive that
-  // only extracts safely on Linux is not safely extractable.
+  // The names an archive refuses on every platform are one rule, shared with
+  // the paths a pnpm patch may name (`segmentProblem`).
   for (const part of parts) {
-    if (part.includes(':'))
-      throw unsafe('WINDOWS_ALTERNATE_DATA_STREAM', input);
-    if (/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(part))
-      throw unsafe('WINDOWS_RESERVED_NAME', input);
-    if (/[ .]$/u.test(part)) throw unsafe('WINDOWS_TRAILING_CHARACTER', input);
+    const problem = segmentProblem(part);
+    if (problem !== undefined) throw unsafe(problem.code, input);
   }
   if (parts.length > limits.maximumDepth)
     throw unsafe('PATH_DEPTH_LIMIT', input);

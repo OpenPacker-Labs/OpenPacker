@@ -1,11 +1,12 @@
 /**
- * The bounds of a path in an archive are one definition, in
- * `@openpacker/adapter-core`, shared with the store's limits and with the paths
- * a pnpm patch may name (ADR 0056 §13). The materializer took 128 and 4,096
- * into a literal of its own, where the two could drift apart silently; these
- * tests fail if it stops reading them from there.
+ * The bounds of a path in an archive and the names an archive refuses are one
+ * definition, in `@openpacker/adapter-core`, shared with the store's limits
+ * and with the paths a pnpm patch may name (ADR 0056 §13). The materializer
+ * took 128 and 4,096 into a literal of its own, where the two could drift
+ * apart silently; these tests fail if it stops reading them from there.
  */
 
+import { segmentProblem } from '@openpacker/adapter-core';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@openpacker/adapter-core', async (importOriginal) => ({
@@ -42,4 +43,31 @@ describe('the bounds of a path in an archive', () => {
       expect.objectContaining({ code: 'PATH_LENGTH_LIMIT' }),
     );
   });
+});
+
+describe('the names an archive refuses', () => {
+  it.each([
+    ['lib/aux.js', 'WINDOWS_RESERVED_NAME'],
+    ['lib/CON', 'WINDOWS_RESERVED_NAME'],
+    ['lib/nul.txt', 'WINDOWS_RESERVED_NAME'],
+    ['lib/a:b', 'WINDOWS_ALTERNATE_DATA_STREAM'],
+    ['lib/trailing.', 'WINDOWS_TRAILING_CHARACTER'],
+    ['lib/space ', 'WINDOWS_TRAILING_CHARACTER'],
+    ['lib/com1.json', 'WINDOWS_RESERVED_NAME'],
+  ])('refuse %s as %s, the code of the shared rule', async (path, code) => {
+    const { validateArchivePath } = await materializer();
+    expect(() => validateArchivePath(`package/${path}`)).toThrow(
+      expect.objectContaining({ code }),
+    );
+    expect(segmentProblem(path.split('/')[1]!)?.code).toBe(code);
+  });
+
+  it.each(['lib/X.js', 'lib/console.js', 'lib/auxiliary', 'lib/com10.js'])(
+    'take %s',
+    async (path) => {
+      const { validateArchivePath } = await materializer();
+      expect(validateArchivePath(`package/${path}`)).toBe(`package/${path}`);
+      expect(segmentProblem(path.split('/')[1]!)).toBeUndefined();
+    },
+  );
 });

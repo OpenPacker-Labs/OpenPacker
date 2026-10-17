@@ -11,8 +11,10 @@
  * A path is a `/`-separated path below the package: no `..`, `.` or empty
  * segment, not absolute, no `\` (a name the store refuses) or NUL, and within
  * the bounds of a path in an archive (`PACKAGE_TREE_LIMITS`: 128 segments,
- * 4,096 UTF-8 bytes). pnpm takes whatever path the patch gives, `../../x` and
- * a path 40,000 directories deep included; opm refuses the patch.
+ * 4,096 UTF-8 bytes, and no segment an archive refuses: a Windows device name,
+ * a `:`, a trailing dot or space; none past 255 bytes). pnpm takes whatever
+ * path the patch gives, `../../x` and a path 40,000 directories deep included;
+ * opm refuses the patch.
  *
  * Every lookup of a path walks its ancestors, and every named path and each
  * directory above it costs an `lstat`; both are charged to the patch's work
@@ -26,7 +28,11 @@
 import { constants } from 'node:fs';
 import { chmod, lstat, mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { PACKAGE_TREE_LIMITS, quote } from '@openpacker/adapter-core';
+import {
+  PACKAGE_TREE_LIMITS,
+  quote,
+  segmentProblem,
+} from '@openpacker/adapter-core';
 import { PatchBudget, PatchRefusal, type PatchTree } from './apply.js';
 import type { PatchEffect } from './parse.js';
 
@@ -34,6 +40,9 @@ import type { PatchEffect } from './parse.js';
 export type PatchNode =
   | { readonly kind: 'file'; readonly bytes: Buffer; readonly mode: number }
   | { readonly kind: 'dir' };
+
+/** The longest name a file system takes for a file or a directory. */
+export const MAXIMUM_SEGMENT_BYTES = 255;
 
 /** What is wrong with a path a patch names, or undefined. */
 export function patchPathProblem(path: string): string | undefined {
@@ -51,6 +60,15 @@ export function patchPathProblem(path: string): string | undefined {
   if (segments.includes('..')) return 'leaves the package (a ".." segment)';
   if (segments.some((segment) => segment === '' || segment === '.'))
     return 'is not a plain path below the package (an empty or "." segment)';
+  for (const segment of segments) {
+    // The names an archive refuses on every platform: the materializer's rule.
+    const problem = segmentProblem(segment);
+    if (problem !== undefined)
+      return `has the segment ${JSON.stringify(segment)}, which ${problem.reason}; an archive refuses it on every platform`;
+    const length = Buffer.byteLength(segment, 'utf8');
+    if (length > MAXIMUM_SEGMENT_BYTES)
+      return `has a segment of ${length} bytes, more than the ${MAXIMUM_SEGMENT_BYTES} a file name may be`;
+  }
   return undefined;
 }
 
