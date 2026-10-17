@@ -36,13 +36,21 @@ const REFUSED: Record<string, string> = {
   'a lone zero block, a block that is not a header, then an entry':
     'TAR_AMBIGUOUS_END',
   'a node-tar null block between entries': 'TAR_AMBIGUOUS_END',
+  'an 8-digit checksum with no terminator, typeflag 0 after it':
+    'TAR_AMBIGUOUS_CHECKSUM',
+  'a prefix in a header without ustar magic': 'TAR_AMBIGUOUS_PREFIX',
+  'a prefix in a GNU header (magic "ustar  ")': 'TAR_AMBIGUOUS_PREFIX',
+  'a header whose name starts with NUL, its path in the prefix':
+    'TAR_AMBIGUOUS_END',
 };
 
 const disagree = (item: OracleCase) =>
   !isDeepStrictEqual(item.nodeTar.entries, item.pnpm.entries);
 
 /** What opm installs from `bytes`, as the oracle records it, or its refusal. */
-async function opm(bytes: Uint8Array): Promise<Files | { code?: string | undefined }> {
+async function opm(
+  bytes: Uint8Array,
+): Promise<Files | { code?: string | undefined }> {
   try {
     return (await inspectArchive(bytes, 'tar'))
       .filter(({ type }) => type === 'file')

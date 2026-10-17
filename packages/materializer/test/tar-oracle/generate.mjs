@@ -91,6 +91,53 @@ export const CASES = {
   'a node-tar null block between entries': [a, N, b, Z, Z],
   'a lone zero block, then a node-tar null block': [a, Z, N, b],
   'a node-tar null block, then a zero block': [a, N, Z, b],
+  'an 8-digit checksum with no terminator, typeflag 0 after it': [
+    a,
+    file('package/eight.js', 'e', {
+      checksum: (sum) => sum.toString(8).padStart(8, '0'),
+    }),
+    Z,
+    Z,
+  ],
+  'an 8-digit checksum with no terminator, typeflag NUL after it': [
+    a,
+    file('package/ok.js', 'k', {
+      edit: (header) => header.fill(0, 156, 157),
+      checksum: (sum) => sum.toString(8).padStart(8, '0'),
+    }),
+    Z,
+    Z,
+  ],
+  'a prefix in a header without ustar magic': [
+    a,
+    file('noprefix.js', 'p', {
+      prefix: 'package',
+      edit: (header) => header.fill(0, 257, 265),
+    }),
+    Z,
+    Z,
+  ],
+  'a prefix in a GNU header (magic "ustar  ")': [
+    a,
+    file('gnu.js', 'g', {
+      prefix: 'package',
+      edit: (header) => header.write('ustar  \0', 257),
+    }),
+    Z,
+    Z,
+  ],
+  'a long path split into a ustar prefix': [
+    a,
+    file('file.js', 'l', { prefix: `package/${'d'.repeat(60)}` }),
+    Z,
+    Z,
+  ],
+  'a header whose name starts with NUL, its path in the prefix': [
+    a,
+    file('', 'h', { prefix: 'package/hidden.js' }),
+    Z,
+    Z,
+  ],
 };
 
 function loadParseTarball(directory) {

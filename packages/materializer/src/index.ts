@@ -18,7 +18,11 @@ import {
 import { MaterializationError, unsafe } from './errors.js';
 import { gunzipArchive } from './gzip.js';
 import { MAXIMUM_PAX_HEADER_BYTES, parsePaxRecords } from './pax.js';
-import { endsHere } from './tar-agreement.js';
+import {
+  assertChecksumAgrees,
+  assertPrefixAgrees,
+  endsHere,
+} from './tar-agreement.js';
 
 export { MaterializationError };
 
@@ -436,8 +440,10 @@ function parseTar(
     if (count > limits.maximumFiles)
       throw unsafe('FILE_COUNT_LIMIT', `${count}`);
     verifyTarChecksum(header);
+    assertChecksumAgrees(header, offset);
     const name = tarText(header.subarray(0, 100));
     const prefix = tarText(header.subarray(345, 500));
+    assertPrefixAgrees(header, prefix, offset);
     const size = tarNumber(header.subarray(124, 136));
     const mode = tarNumber(header.subarray(100, 108));
     const type = String.fromCharCode(header[156] ?? 0);

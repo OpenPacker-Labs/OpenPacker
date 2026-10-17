@@ -86,3 +86,28 @@ export function endsHere(bytes: Uint8Array, offset: number): boolean {
     );
   return true;
 }
+
+/** Refuse a checksum field that node-tar reads as another number than opm. */
+export function assertChecksumAgrees(header: Uint8Array, at: number): void {
+  if (nodeTarChecksum(header) !== headerSum(header))
+    throw unsafe(
+      'TAR_AMBIGUOUS_CHECKSUM',
+      `the header at offset ${at} has a checksum field npm reads over 12 bytes as another number: npm skips the entry, pnpm reads it`,
+    );
+}
+
+/** Refuse a prefix that node-tar ignores: one without `ustar\0` `00` magic. */
+export function assertPrefixAgrees(
+  header: Uint8Array,
+  prefix: string,
+  at: number,
+): void {
+  if (prefix === '') return;
+  const magic = header.subarray(257, 265);
+  const ustar = [0x75, 0x73, 0x74, 0x61, 0x72, 0, 0x30, 0x30];
+  if (!ustar.every((byte, index) => magic[index] === byte))
+    throw unsafe(
+      'TAR_AMBIGUOUS_PREFIX',
+      `the header at offset ${at} has a prefix and no ustar magic: npm ignores the prefix, pnpm joins it to the name`,
+    );
+}
