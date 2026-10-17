@@ -17,6 +17,7 @@
  * prefix. What a member holds back is then its block (up to the group limit)
  * and at most one unfinished line per stream.
  */
+import { terminalSafe } from '@openpacker/adapter-core';
 import type { ChildIo } from './run-child.js';
 
 export const GROUP_LIMIT = 8 * 1024 * 1024;
@@ -27,6 +28,15 @@ export const LINE_LIMIT = 64 * 1024;
 export type OutputMode = 'group' | 'stream';
 
 type Stream = 'stdout' | 'stderr';
+
+/**
+ * `text` as one line of plain text: what a terminal may act on written as an
+ * escape, and the line feed and tab `terminalSafe` leaves alone too, so that a
+ * directory name cannot make a line of its own.
+ */
+function oneLine(text: string): string {
+  return terminalSafe(text).replaceAll('\n', '\\n').replaceAll('\t', '\\t');
+}
 
 /** Where to cut `text` at `limit`: never between the two halves of a surrogate pair. */
 function cutAt(text: string, limit: number): number {
@@ -110,7 +120,7 @@ export class MemberOutput {
   /** The streams for one step of the member (`build`, `prebuild`, `tsc`). */
   step(name: string): ChildIo {
     this.endLines();
-    this.prefix = `${this.label} ${name}: `;
+    this.prefix = oneLine(`${this.label} ${name}: `);
     return {
       stdout: { write: (chunk) => this.take('stdout', String(chunk)) },
       stderr: { write: (chunk) => this.take('stderr', String(chunk)) },

@@ -53,6 +53,11 @@ const RAW: readonly { file: string; argument: string; why: string }[] = [
     argument: 'chunk',
     why: "a child's own output, passed through",
   },
+  {
+    file: 'commands/run-output.ts',
+    argument: 'text',
+    why: "a member's own line, passed through as a child's is, behind a prefix of the member's name that `oneLine` escapes (run-workspace-labels.test.ts)",
+  },
 ];
 
 /** The text between the parenthesis that opens at `open` and its match, skipping strings and templates. */
@@ -111,7 +116,11 @@ function sources(): { file: string; text: string }[] {
 
 describe('what apps/opm writes to a terminal', () => {
   const writes = sources().flatMap(({ file, text }) =>
-    [...text.matchAll(/\b(?:stdout|stderr)\??\.write\(/gu)].map((match) => ({
+    [
+      ...text.matchAll(
+        /\b(?:stdout|stderr)\??\.write\(|\bout\[[\w.]+\]\.write\(/gu,
+      ),
+    ].map((match) => ({
       file,
       argument: argumentAt(text, match.index + match[0].length - 1),
     })),
