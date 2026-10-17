@@ -85,8 +85,43 @@ ${snapshot}
     expect(pinned.packages[0]).toMatchObject({
       sourceKind: 'tarball',
       source: 'https://example.test/odd-1.0.0.tgz',
+      archiveIdentity: { version: '1.0.0' },
     });
   });
+
+  it.each([
+    ['its entry version', '    version: 1.0.0\n', { version: '1.0.0' }],
+    ['no version when its entry has none', '', {}],
+    [
+      'the name its entry writes beside the key',
+      '    name: odd\n    version: 2.0.0\n',
+      { name: 'odd', version: '2.0.0' },
+    ],
+  ])(
+    'tells the host the archive of a tarball holds %s',
+    async (_label, fields, archiveIdentity) => {
+      const url = 'https://example.test/odd-1.0.0.tgz';
+      const world = await worldOf(
+        LOCK(`importers:
+
+  .:
+    dependencies:
+${dependency('odd', url, url)}
+packages:
+
+  'odd@${url}':
+    resolution: {tarball: ${url}, integrity: ${INTEGRITY}}
+${fields}
+snapshots:
+
+  odd@${url}: {}
+`),
+      );
+      const [only] = (await world.read()).packages;
+      expect(only!.version).toBe(url);
+      expect(only!.archiveIdentity).toEqual(archiveIdentity);
+    },
+  );
 
   it('refuses a package from a git repository', async () => {
     const commit = 'a'.repeat(40);

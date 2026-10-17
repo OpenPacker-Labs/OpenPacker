@@ -8,6 +8,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, pnpmWorld } from './frozen-pnpm-fixture.js';
+import { sri, tarballOf } from './frozen-workspace-fixture.js';
 
 afterEach(cleanup);
 
@@ -59,5 +60,73 @@ describe('the archives of a pnpm install', () => {
     w.importer('.', { dependencies: { c: ['^1.0.0', '1.0.0'] } });
     await w.write();
     expect((await w.install()).installed).toBe(1);
+  });
+
+  describe('a dependency on an https: tarball', () => {
+    const url = 'https://registry.npmjs.org/odd/-/odd-1.0.0.tgz';
+    /**
+     * A lock as pnpm writes one for `"odd": "<url>"`, the review's repro: the
+     * entry's `version` is the archive's, when it has one.
+     */
+    const lockFor = (bytes: Uint8Array, entry: string) =>
+      `lockfileVersion: '9.0'\n\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n\nimporters:\n\n  .:\n    dependencies:\n      odd:\n        specifier: ${url}\n        version: ${url}\n\npackages:\n\n  odd@${url}:\n    resolution: {integrity: ${sri(bytes)}, tarball: ${url}}\n${entry}\nsnapshots:\n\n  odd@${url}: {}\n`;
+    const install = async (
+      archive: { name: string; version: string },
+      entry: string,
+    ) => {
+      const w = await pnpmWorld();
+      const bytes = tarballOf({
+        ...archive,
+        files: { 'index.js': 'module.exports=1' },
+      });
+      w.registry.archives.set(url, bytes);
+      w.importer('.', { dependencies: { odd: [url, url] } });
+      await w.write({ lock: lockFor(bytes, entry) });
+      return w.install().then(
+        (result) => ({ installed: result.installed }),
+        (thrown: Error & { code?: string }) => ({
+          code: thrown.code,
+          message: thrown.message,
+        }),
+      );
+    };
+
+    it('installs one whose archive has the version the lock records for it', async () => {
+      expect(
+        await install(
+          { name: 'odd', version: '1.0.0' },
+          '    version: 1.0.0\n',
+        ),
+      ).toEqual({ installed: 1 });
+    });
+
+    it('refuses one whose archive has another version than the lock records', async () => {
+      const result = await install(
+        { name: 'odd', version: '2.0.0' },
+        '    version: 1.0.0\n',
+      );
+      expect(result).toMatchObject({ code: 'DIGEST_MISMATCH' });
+      expect(String((result as { message?: string }).message)).toMatch(
+        /the archive's package\.json is "odd@2\.0\.0"/u,
+      );
+    });
+
+    it('refuses one whose lock writes another name beside its key', async () => {
+      expect(
+        await install(
+          { name: 'odd', version: '1.0.0' },
+          '    name: other\n    version: 1.0.0\n',
+        ),
+      ).toMatchObject({ code: 'DIGEST_MISMATCH' });
+    });
+
+    it('compares only the name when the lock records no version for it', async () => {
+      expect(await install({ name: 'odd', version: '7.7.7' }, '')).toEqual({
+        installed: 1,
+      });
+      expect(
+        await install({ name: 'even', version: '7.7.7' }, ''),
+      ).toMatchObject({ code: 'DIGEST_MISMATCH' });
+    });
   });
 });

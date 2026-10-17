@@ -46,6 +46,7 @@ describe.each([
         `https://registry.npmjs.org/${pkg.packageName}/-/${pkg.packageName.split('/').at(-1)}-${pkg.version}.tgz`,
       );
       expect(pkg.path.endsWith(`node_modules/${pkg.name}`)).toBe(true);
+      expect(pkg.archiveIdentity).toEqual({ version: pkg.version });
     }
   });
 
