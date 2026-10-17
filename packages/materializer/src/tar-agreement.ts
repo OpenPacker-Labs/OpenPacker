@@ -67,11 +67,31 @@ function nodeTarReadsOn(bytes: Uint8Array, from: number): boolean {
 }
 
 /**
+ * Where the next header is, from `offset`, or undefined where the archive
+ * ends. With `npmReaders`, only where npm and pnpm agree (`endsHere`).
+ * Otherwise the general rule, node-tar's and GNU tar's: two zero blocks in a
+ * row or the end of the data end it, and a lone zero block is skipped.
+ */
+export function nextHeader(
+  bytes: Uint8Array,
+  offset: number,
+  npmReaders: boolean,
+): number | undefined {
+  if (npmReaders) return endsHere(bytes, offset) ? undefined : offset;
+  const zero = (at: number) =>
+    bytes.subarray(at, at + BLOCK).every((byte) => byte === 0);
+  if (offset + BLOCK > bytes.byteLength) return undefined;
+  if (!zero(offset)) return offset;
+  if (zero(offset + BLOCK)) return undefined;
+  return offset + 2 * BLOCK <= bytes.byteLength ? offset + BLOCK : undefined;
+}
+
+/**
  * Whether the archive ends at `offset`, a header position, where npm and pnpm
  * agree that it does; false where both read a header there. Anything else is
  * refused as TAR_AMBIGUOUS_END.
  */
-export function endsHere(bytes: Uint8Array, offset: number): boolean {
+function endsHere(bytes: Uint8Array, offset: number): boolean {
   if (bytes[offset] !== 0) {
     if (offset + BLOCK <= bytes.byteLength) return false;
     throw unsafe(

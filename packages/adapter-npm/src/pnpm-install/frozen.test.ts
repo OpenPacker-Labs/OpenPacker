@@ -23,6 +23,11 @@ describe.each([
   it('installs every instance the independent walk installs, each at one place or more', async () => {
     const lock = await read(name);
     expect(lock.refused).toEqual([]);
+    // npm and pnpm are this lock's tar readers (ADR 0057 §8).
+    expect(lock.extraction).toEqual({
+      acceptRedundantEntries: true,
+      requireNpmReaderAgreement: true,
+    });
     const model = buildPnpmModel(readPnpmLock(fixtureBytes(name)).lock);
     const instances = new Set(lock.packages.map((pkg) => pkg.instance));
     expect(instances.size).toBeGreaterThan(250);

@@ -64,6 +64,7 @@ const DEFAULT_CONCURRENCY = 8;
  */
 export function frozenArchiveLimits(extraction: {
   acceptRedundantEntries: boolean;
+  requireNpmReaderAgreement?: boolean;
 }): MaterializationLimits {
   return {
     ...DEFAULT_MATERIALIZATION_LIMITS,
@@ -73,6 +74,9 @@ export function frozenArchiveLimits(extraction: {
     maximumCompressionRatio: 128,
     maximumMemoryBytes: 3 * 1024 * 1024 * 1024,
     ...(extraction.acceptRedundantEntries && { acceptRedundantEntries: true }),
+    ...(extraction.requireNpmReaderAgreement === true && {
+      requireNpmReaderAgreement: true,
+    }),
   };
 }
 
