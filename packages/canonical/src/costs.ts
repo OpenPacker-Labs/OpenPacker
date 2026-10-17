@@ -18,8 +18,9 @@
  *   For each of the thirty-eight shapes the weights were fitted on, the cost
  *   is at least the heap the parse needed. An object of a few dozen members
  *   can need more: V8 gives its dictionary up to three slots a member, and
- *   such a document at the limit needed up to 1.23 times its cost (ADR 0044,
- *   "Shapes found since").
+ *   such a document at the limit needed up to 1.23 times its cost while the
+ *   parse encoded the tree again, and 1.06 times since (ADR 0044, "Shapes found
+ *   since"). `member-table.ts` models that dictionary; it is not charged yet.
  * - `retained` is what the finished tree keeps, for a holder that keeps trees
  *   (a resolve counts the packuments it holds by it). It is above what the
  *   tree kept for every real packument, and below it by up to 1.64 times for

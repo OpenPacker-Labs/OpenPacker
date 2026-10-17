@@ -1477,8 +1477,9 @@ against 1 GiB. 768 MiB for the full packument would have left 2 percent of the
 heap; 720 leaves 7 percent, and 1.28 times `@wix/wix-code-types`. The slowest
 document accepted takes 13.2 s of CPU, at the full limit. That arithmetic
 assumes the cost is at least the peak, which the objects of a few dozen members
-found since are not: their peak at the full limit is 862 MiB, and with their
-text and the process 1,043 MiB.
+found since are not: their peak at the full limit was 862 MiB, and with their
+text and the process 1,043 MiB; since the parse stopped encoding the tree again,
+744 and 925 MiB.
 
 **Held against the worst a hostile registry can send.** For each shape, a
 document at 0.95 of the limit (or at the byte bound, if that comes first) must
@@ -1601,12 +1602,61 @@ wall.
   at 0.999 of the limit in one more: inside the 1 GiB the limit is set for, with
   nothing to spare. At the abbreviated limit (512 MiB, 64 MiB) every row above
   was accepted inside 1 GiB, at most at 981 MiB of RSS and 8.9 s of CPU (the
-  same shape). Charging a dictionary by its size would fix both the cost and the
-  estimate and is not done here: it changes what every real packument costs, and
-  the survey records no object sizes to say by how much, so it needs the 22
-  packuments read again. So does the other way to make room, taking out the
-  check that encodes the tree again (below), which on a copy took the least heap
-  of the object of 86 members from 968 to 850 MiB.
+  same shape). What was done about it since is the next section.
+
+**Since: the re-encode taken out, and the member table measured.**
+
+- **The parse no longer encodes the tree it built** (`parse-once.test.ts`). Each
+  check that encoding made, the parser makes as it builds each part (a lone
+  surrogate in any string or name, a number that is not a safe integer or is -0,
+  a duplicate name, an object that is not plain), and a parse cannot build a
+  cycle or a sparse array. Shown before it was taken out: the canonical and
+  `adapter-npm` suites, with the call instrumented, made 74 and 171 parses and
+  the call refused none; 200,000 seeded random documents (escaped and lone
+  surrogates, -0, 2^53, `1e2`, `1e-400`, fractions, `__proto__`, duplicate
+  names, truncations), 133,836 accepted and 66,164 refused, give the same
+  outcome with and without it (the digest of every canonical encoding and every
+  error's name and message is the same); so do the 38 calibration shapes in
+  ASCII and with a `€` (76 documents) and the 22 real packuments. At the same
+  document, the least heap fell from 928 to 850 MiB (86 members, ASCII), 993 to
+  925 (86 members, `€`), 840 to 712 (22 members, ASCII), 906 to 775 (22 members,
+  `€`), 462 to 385 (`@wix/wix-code-types`, full) and 473 to 331 (`renovate`,
+  full). The objects of 22 members now need 0.87 of their cost at the full
+  limit; those of 86 members still need 1.06 (the first bisection of the `€`
+  document gave 1,022 to 1,043 MiB and this one 993: a bisection moves by up to
+  5 percent between runs). The weights were not lowered, so every other shape is
+  further above its peak than before.
+- **The 38 calibration shapes measured again** on this parser, each at the size
+  of the table above (800,000 pieces, or 24 MiB of text for long strings; the
+  shapes written again from the description above, the first script not having
+  been kept): every one needs at most 0.60 of its cost (objects nested five
+  deep, 708 MiB of peak for 1,178 of cost), and most under half.
+- **The member table.** The model is `member-table.ts`, held against what an
+  object of 0 to 128 members kept (`canonical/test/member-tables.json`): 4
+  entries for 0 to 3 members, 8 for 4 and 5, 16 for 6 to 11, 32 for 12 to 21, 64
+  for 22 to 43, 128 for 44 to 85 and 256 for 86 to 128, 24 bytes an entry, at
+  all 129 counts. Charged at its size, crediting what an object's weight pays
+  (the empty table) and what a member's pays (16 of its 40 retained bytes, the
+  rest being its name's header when the name is its own), the objects of 86 and
+  22 members at the full limit are 68,034 and 253,224 of them, need a heap of
+  468 and 454 MiB (496 and 496 with a `€`), and so 0.55 and 0.53 of their cost
+  (0.54 and 0.54). The 22 real packuments were read again on 2026-10-17 with the
+  member count of every object (`packument-survey-objects.json`), and the same
+  charge takes `@wix/wix-code-types`' full packument from 561.9 to 598.3 MiB:
+  the limit 1.20 times what it needs, 83.1 percent of it used, past the four
+  fifths the headroom rule allows. `renovate`'s full packument goes from 486.3
+  to 540.6 MiB (1.33 times, 75.1 percent). Crediting a member more moves
+  `@wix/wix-code-types` to 588.7 MiB (24 a member, 1.22 times), 574.5 (36, 1.25
+  times, 79.8 percent) and 569.8 (all 40, 1.26 times, 79.1 percent); crediting
+  nothing, to 617.8 (1.17 times). At a credit of 40 the objects of 86 and 22
+  members would need about 0.68 and 0.65 of their cost, but the estimate of what
+  an object keeps would be under it for objects whose names are their own. What
+  the two documents need is far below any of these costs: at the peak, 196 MiB
+  for `@wix/wix-code-types` (a least heap of 385 MiB, less 146 MiB of two-byte
+  text and 43) and 150 MiB for `renovate`. The charge is therefore not made, and
+  the limits are as they were, until it is decided which credit is right or what
+  gives; the objects of 86 members stay the one shape whose peak is above its
+  cost, by 1.06 times, with 99 MiB of a 1 GiB heap to spare.
 
 **The shapes of the table above, end to end.** The same loopback server and the
 repository's own `BoundedFetchTransport` and `NpmRegistryProvider`, every body
@@ -1660,16 +1710,10 @@ limit is a value for every 16 bytes of the bound is gone with that limit; and
 `MemoizingTransport.TOTAL_LIMIT` in `walk-concurrency.test.ts` is
 `DEFAULT_RETAINED_BYTES`.
 
-**Not done.** The parse ends by encoding the finished tree again
-(`canonicalize(value)` in `parse()`), which the checks it makes (safe integers,
-lone surrogates, duplicate names, plain objects) already did as the tree was
-built. Taken out, on a copy, parses took 30 to 45 percent less CPU in every
-shape tried (4.26 to 2.32 s for 800,000 members of empty objects, 1.99 to 1.36 s
-for 8,000,000 numbers, 1.04 to 0.69 s for 800,000 empty objects, 0.60 to 0.38 s
-for 800,000 strings), 15 percent less peak for the document of members (353 to
-299 MiB) and none for the others (675 against 691 MiB for 8,000,000 numbers).
-That would lower the cost of every parse and is not part of this change: the
-weights above are of the parser as it is.
+**Done since.** The parse ended by encoding the finished tree again, which on a
+copy cost 30 to 45 percent of its CPU in every shape tried; it no longer does
+("Since: the re-encode taken out", above). The weights are of the parser as it
+was, and are above what it needs now.
 
 ### Not done: reading only what the walk needs
 
@@ -1701,9 +1745,11 @@ retention budget, is a bound on the resolve.
    heaviest document each limit lets through, of the seventeen kinds tried, was
    read in a heap of 1 GiB with 558 MiB and 802 MiB at the largest peak (table
    in "A budget that weighs what a tree allocates"), and of eight kinds found
-   since, objects of 86 members need up to 1.23 times the limit and were read in
-   a heap of 1 GiB with nothing to spare ("Shapes found since"). The parse is on
-   the main thread, so it is one at a time.
+   since, objects of 86 members needed up to 1.23 times the limit and were read
+   in a heap of 1 GiB with nothing to spare ("Shapes found since"); since the
+   parse stopped encoding the tree again they need 1.06 times, with 99 MiB to
+   spare ("Since: the re-encode taken out"). The parse is on the main thread, so
+   it is one at a time.
 3. **What a resolve keeps, and the budget on it.** Before, the provider kept
    every packument it had read, the body and the tree parsed from it, until the
    resolve ended, and nothing asked it to forget one: six different 12 MiB
@@ -1804,17 +1850,42 @@ retention budget, is a bound on the resolve.
    These were measured before the memo's entry and the provider's for one
    document were made one, so the counted figures count each packument's text
    twice, once for each holder; peak RSS is what the process held either way.
-   The resolve counts 259 MiB at its peak, so the default evicts once and
-   changes nothing measurable; 128 MiB takes the peak from 890 to 745 MiB (16
-   percent) for one more request; 64 MiB to 585 (34 percent) and none to 582 (35
-   percent), and the CPU from 15 to 10 and 7.6 s, because less is alive to be
-   collected, at the price of 52 and 76 more requests and 40 and 46 MB more
-   served. The counted peak never passes the budget by more than the one
-   document being added (`next`'s record counts 105 MiB): 129 MiB for a budget
-   of 64, where 64 + 105 would be 169. The peak does not fall below 580 MiB,
-   which is the parse of `next`'s one large packument and the walk's own work.
-   Load was 4 to 31 over the three rounds; peak RSS did not move with it, CPU
-   and wall did. Against the live registry, `opm resolve pkg:npm/next` (22
+   Measured again on the final build (one entry for a document, the parse not
+   encoding the tree again), with the harness written again because the first
+   was not kept: the same document as served on 2026-10-17 (25.66 MB), whose
+   newest version (16.4.2) has its own dependencies replaced by the sixty
+   libraries (`^1.0.0` each, each library 0.36 MB), resolved by `resolveGraph`
+   from that version through the real provider and memo, the transport injected
+   with etags and 304s. It asks for 61 documents, not 80 (the first harness's
+   root and dependencies were not recorded), so the two tables are not
+   comparable row for row. Three runs each, at a load of 8 to 19:
+
+   | budget                | requests | MB served | evictions | counted peak MiB | CPU s   | peak RSS MiB  |
+   | --------------------- | -------- | --------- | --------- | ---------------- | ------- | ------------- |
+   | unlimited             | 61       | 42.6      | 0         | 180              | 2.8-3.0 | 316, 370, 373 |
+   | 256 MiB (the default) | 61       | 42.6      | 0         | 180              | 2.9-3.4 | 370, 370, 371 |
+   | 128 MiB               | 61       | 42.6      | 1         | 129              | 2.8-3.2 | 361, 362, 362 |
+   | 64 MiB                | 72       | 71.1      | 40        | 104              | 3.9-4.4 | 459, 459, 460 |
+   | none                  | 122      | 85.3      | 244       | 104              | 4.4-5.0 | 525, 527, 562 |
+
+   The resolve now counts 180 MiB at its peak, each document's text once, so the
+   default lets nothing go. A smaller budget costs memory here instead of saving
+   it: with the parse no longer encoding the tree again, a tree is cheaper to
+   keep than to parse again, and 64 MiB and none read `next` again (11 and 61
+   more requests, 28.5 and 42.7 MB more) and peak at 459 and 525 to 562 MiB
+   against 370. The counted peak passes the budget by at most the entry being
+   added: 104 MiB for a budget of 64 and of none, `next`'s record alone. In the
+   first measurement, the resolve counted 259 MiB at its peak, so the default
+   evicts once and changes nothing measurable; 128 MiB takes the peak from 890
+   to 745 MiB (16 percent) for one more request; 64 MiB to 585 (34 percent) and
+   none to 582 (35 percent), and the CPU from 15 to 10 and 7.6 s, because less
+   is alive to be collected, at the price of 52 and 76 more requests and 40 and
+   46 MB more served. The counted peak never passes the budget by more than the
+   one document being added (`next`'s record counts 105 MiB): 129 MiB for a
+   budget of 64, where 64 + 105 would be 169. The peak does not fall below 580
+   MiB, which is the parse of `next`'s one large packument and the walk's own
+   work. Load was 4 to 31 over the three rounds; peak RSS did not move with it,
+   CPU and wall did. Against the live registry, `opm resolve pkg:npm/next` (22
    packages), three runs of the build before and the build after at the default
    budget: 939, 888 and 800 MiB and 19.1 to 20.6 s before; 485, 575 and 441 MiB
    and 11.3 to 13.8 s after. That is not the budget: the same build with the
@@ -1900,15 +1971,17 @@ archive's bound on what it expands to and is not touched here.
   ASCII and with one `€`, at 0.97 of the limit, every one was read inside 1 GiB
   too, in at most 8.9 s (abbreviated) and 14.6 s (full) and at a peak RSS of at
   most 981 and 1,362 MiB, but the heaviest of them, objects of 86 members with a
-  `€` at the full limit, has nothing to spare: its least heap in a bisection was
+  `€` at the full limit, had nothing to spare: its least heap in a bisection was
   1,022 to 1,043 MiB, and it completed in every run at 1,024 ("Shapes found
-  since"). The load was 4 to 17, so wall seconds ran to 10.4 and 18.7 and were
-  12.6 at a load of 4. These are the heaviest kinds tried and not a proven
-  maximum: a kind that allocates more for each unit of cost than any of them
-  would exceed the figures, which is why `parse-calibration.test.ts` measures
-  twelve again on whatever Node runs the tests. The heap leaves room for the
-  text of the document, which is two bytes a character if one is past U+00FF
-  (128 MiB and 192 MiB), and for 43 MiB of the process: 683 MiB and 955 MiB.
+  since"). Since the parse stopped encoding the tree again, its least heap is
+  925 MiB ("Since: the re-encode taken out"). The load was 4 to 17, so wall
+  seconds ran to 10.4 and 18.7 and were 12.6 at a load of 4. These are the
+  heaviest kinds tried and not a proven maximum: a kind that allocates more for
+  each unit of cost than any of them would exceed the figures, which is why
+  `parse-calibration.test.ts` measures twelve again on whatever Node runs the
+  tests. The heap leaves room for the text of the document, which is two bytes a
+  character if one is past U+00FF (128 MiB and 192 MiB), and for 43 MiB of the
+  process: 683 MiB and 955 MiB.
 - Before the cost limit the value limit allowed 2,169 to 2,683 MiB in 22.5 to
   30.4 s for an abbreviated packument and 3,149 to 3,956 MiB in 37.1 to 44.1 s
   for a full one (history, the tables above); 64 MiB of one object of
@@ -1927,20 +2000,21 @@ archive's bound on what it expands to and is not touched here.
   a hostile registry is more than 1 GiB. Measured through the real memo and
   provider at the default budget, `publishTime` of a hostile abbreviated
   packument and then a hostile full one, each at 0.97 of its limit (objects of
-  86 members with a `€`), under `--max-old-space-size=1024`: the call held the
-  abbreviated tree in its own frame while it waited for the full one, and the
-  process ended with exit 134 in both runs, where the full document alone
-  completes. It now reads the abbreviated document in a frame that has ended by
-  then (`publish-time.ts`; `held-packument.test.ts` measures the heap while the
-  full one is on its way: 112 MiB of the abbreviated tree before, 0 after), and
-  the pair completes, at a peak RSS of 1,521 and 1,522 MiB and 18.8 and 20.6 s
-  of CPU (a load of 15 to 20). The review measured 1,427 to 1,445 MiB and 13.5
-  to 17.2 s for its pair. That is accepted for opm as it is run, and not claimed
-  as a bound under a 1 GiB heap: opm runs with Node's default heap (on the 16 GB
-  machine of these measurements Node 22's limit is 8,240 MiB), the pair does not
-  end it there, and no one document can end it under 1 GiB. A resolve held to 1
-  GiB would need a budget, and a full packument limit, that leave room for each
-  other, which is a decision about the real packuments first.
+  86 members with a `€`, before the parse stopped encoding the tree again),
+  under `--max-old-space-size=1024`: the call held the abbreviated tree in its
+  own frame while it waited for the full one, and the process ended with exit
+  134 in both runs, where the full document alone completes. It now reads the
+  abbreviated document in a frame that has ended by then (`publish-time.ts`;
+  `held-packument.test.ts` measures the heap while the full one is on its way:
+  112 MiB of the abbreviated tree before, 0 after), and the pair completes, at a
+  peak RSS of 1,521 and 1,522 MiB and 18.8 and 20.6 s of CPU (a load of 15 to
+  20). The review measured 1,427 to 1,445 MiB and 13.5 to 17.2 s for its pair.
+  That is accepted for opm as it is run, and not claimed as a bound under a 1
+  GiB heap: opm runs with Node's default heap (on the 16 GB machine of these
+  measurements Node 22's limit is 8,240 MiB), the pair does not end it there,
+  and no one document can end it under 1 GiB. A resolve held to 1 GiB would need
+  a budget, and a full packument limit, that leave room for each other, which is
+  a decision about the real packuments first.
 - A refusal for cost or for values is exit 9 (`internal`) from `opm`, as a
   registry's other unusable document is (`INVALID_PROVIDER_METADATA`), where a
   refusal for bytes is exit 8. That is how it was; it is not changed here.
@@ -1986,36 +2060,43 @@ archive's bound on what it expands to and is not touched here.
   through the CLI, 8 for a registry that changed a document and 2 for a budget
   written wrongly, the latter from the real binary (`retention-exit.test.ts`), a
   transport over an injected `fetch` that does not say it can be asked again
-  (`refetchable.test.ts`), and the heap-number charge (`parse-costs.test.ts`).
-  The weights' other shapes, the 96 MiB bodies, the time figures, the
-  live-registry runs and the peak RSS of the resolve of `next` were measured by
-  scripts run for this amendment, which are not in the repository, and no test
-  fails if those figures change.
+  (`refetchable.test.ts`), the heap-number charge (`parse-costs.test.ts`), a
+  parse that does not encode the tree again and still refuses what that encoding
+  refused (`parse-once.test.ts`), the member-table model against what an object
+  of 0 to 128 members kept (`member-tables.test.ts` over `member-tables.json`),
+  and the member counts of every surveyed packument's objects, which must add up
+  to its row (`packument-headroom.test.ts` over
+  `packument-survey-objects.json`). The weights' other shapes, the 96 MiB
+  bodies, the time figures, the live-registry runs and the peak RSS of the
+  resolve of `next` were measured by scripts run for this amendment, which are
+  not in the repository, and no test fails if those figures change.
 - The full packument of `@wix/wix-code-types` is at three quarters of its byte
-  bound (72.96 of 96 MiB) and costs 561.5 of 720 MiB by the survey's composition
-  (the review read it live at 561.9): the limit is 1.28 times what it needs, and
-  it needs 78.0 percent of the limit, leaving 22.0 percent. The rule the
-  headroom test holds every real packument to is the same thing read either way:
-  the limit at least 1.25 times the need, which is the need at most 80 percent
-  of the limit. So its cost would bind at 93.6 MiB if it grew in the same shape,
-  though it grows only 0.35 MiB a year. `renovate`'s full document is at 71
-  percent of its byte bound (68.58 MiB) and costs 483 MiB; it reaches 96 MiB in
-  about 1.3 years at last year's pace, before its cost reaches the limit (at
-  1.49 times under), and its abbreviated document reaches 64 MiB in about 2.9,
-  costing 415 MiB of 512 by then; the bounds should be revisited before then.
-  Raising the full packument's byte bound means accepting a larger limit: the
-  heap left for a document of 96 MiB of two-byte text is already 7 percent.
+  bound (72.96 of 96 MiB) and costs 561.6 of 720 MiB by its composition as read
+  again on 2026-10-17, and 561.9 by the parser: the limit is 1.28 times what it
+  needs, and it needs 78.0 percent of the limit, leaving 22.0 percent. The rule
+  the headroom test holds every real packument to is the same thing read either
+  way: the limit at least 1.25 times the need, which is the need at most 80
+  percent of the limit. So its cost would bind at about 93.5 MiB if it grew in
+  the same shape, though it grows only 0.35 MiB a year. `renovate`'s full
+  document is at 72 percent of its byte bound (69.14 MiB on 2026-10-17, 68.58
+  five days before) and costs 486.3 MiB; it reaches 96 MiB in about 1.3 years at
+  last year's pace, before its cost reaches the limit (at 1.48 times under), and
+  its abbreviated document reaches 64 MiB in about 2.9, costing 415 MiB of 512
+  by then; the bounds should be revisited before then. Raising the full
+  packument's byte bound means accepting a larger limit: the heap left for a
+  document of 96 MiB of two-byte text is already 7 percent.
 - The sample is 4,887 names and the full packument of 400 of them (above); it is
   not the registry, and it missed `renovate`, which a second look found. The
   composition of each of the 22 packuments in `packument-survey.ts` is of one
   day.
-- Parsing is the cost of a large document: the canonical parser reads 14 to 17
-  MB a second, `next`'s packument takes 1.4 s of CPU, `renovate`'s abbreviated
-  2.0 s, `@wix/wix-code-types`'s full 4.2 s, and the resolve of `next` is
-  CPU-bound at 11 to 14 s. The parse ends by encoding the finished tree again,
-  which costs 30 to 45 percent of the CPU of a parse and 15 percent of the peak
-  of a document of members, and the checks it makes were made as the tree was
-  built (see "Not done" under the budget).
+- Parsing is the cost of a large document: the canonical parser read 14 to 17 MB
+  a second, `next`'s packument took 1.4 s of CPU, `renovate`'s abbreviated 2.0
+  s, `@wix/wix-code-types`'s full 4.2 s, and the resolve of `next` was CPU-bound
+  at 11 to 14 s. The parse then ended by encoding the finished tree again; it no
+  longer does ("Since: the re-encode taken out"), and on 2026-10-17, two runs
+  each, `next`'s packument took 0.80 to 0.88 s against 1.40 to 1.49 s with the
+  encoding, `@wix/wix-code-types`' full 2.1 to 2.3 s against 4.0, and
+  `renovate`'s full 2.0 s against 3.9 to 4.1: 29 to 36 MB a second.
 - `opm add` of `@prisma/client` and `@wix/wix-code-types` stops at their
   tarballs on the archive's expanded-size bound (64 MiB), a different limit that
   is not changed here.
