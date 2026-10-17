@@ -231,9 +231,7 @@ describe.runIf(unshare)('a live step in another PID namespace', () => {
       ).owner as { pid: number; host: string; pidNamespace?: string };
       expect(owner.pid).toBe(1);
       expect(owner.host).toBe(hostname());
-      expect(owner.pidNamespace).not.toBe(
-        (await currentOwner()).pidNamespace,
-      );
+      expect(owner.pidNamespace).not.toBe((await currentOwner()).pidNamespace);
       await expect(recoverInterruptedSteps(root)).rejects.toMatchObject({
         code: 'PROJECT_BUSY',
       });
