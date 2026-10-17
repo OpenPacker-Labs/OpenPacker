@@ -48,7 +48,18 @@ describe('pnpm-workspace.yaml in discovery', () => {
       'pnpm-workspace.yaml': 'packages: []\ncatalog:\n  a: ^1\n  a: ^2\n',
     });
     expect(error.code).toBe('WORKSPACE_DECLARATION_INVALID');
-    expect(error.message).toMatch(/"a" is written twice in one mapping/u);
+    expect(error.message).toMatch(/has the duplicate key "a" in one mapping/u);
+  });
+
+  it('refuses 1 beside "1" as a duplicate key, as pnpm does', async () => {
+    const error = await refusal({
+      'package.json': { name: 'r' },
+      'pnpm-workspace.yaml': 'packages: []\ncatalog:\n  1: ^1\n  "1": ^2\n',
+    });
+    expect(error.code).toBe('WORKSPACE_DECLARATION_INVALID');
+    expect(error.message).toBe(
+      'pnpm-workspace.yaml has the duplicate key "1" in one mapping (a key is compared as text, as pnpm compares it, so 1 and "1" are one key)',
+    );
   });
 
   it('refuses a tag, and writes nothing to stderr', async () => {
