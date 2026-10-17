@@ -6,10 +6,11 @@
  * --plan` refuses it before anything is fetched.
  */
 
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { PATCH_WORK_BUDGET } from './apply.js';
 import { applyPnpmPatch, readPatchText } from './index.js';
 import { withAncestors } from './tree.js';
 
@@ -123,4 +124,76 @@ describe('the bounds of a patch', () => {
     expect(withAncestors(paths)).toHaveLength(127 + 2_000);
     expect(performance.now() - started).toBeLessThan(2_000);
   });
+});
+
+describe('the work a patch may do', () => {
+  const patchOf = (text: string) => ({
+    key: 'x@1.0.0',
+    file: 'p.patch',
+    hash: '',
+    digest: '',
+    text,
+  });
+
+  async function packageWith(name: string, text: string): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), 'pnpm-patch-work-'));
+    temps.push(dir);
+    await writeFile(join(dir, name), text);
+    return dir;
+  }
+
+  it('is 256 MiB of characters read, compared and written', () => {
+    expect(PATCH_WORK_BUDGET).toBe(256 * 1024 * 1024);
+  });
+
+  it('refuses, as too costly, the 146 KB patch of 2,000 sections that each change one line of one 2 MB file', async () => {
+    const body = `A\n${Array.from({ length: 50_000 }, (_, index) => `line ${index} ${'x'.repeat(30)}`).join('\n')}\n`;
+    const sections: string[] = [];
+    for (let index = 0; index < 2_000; index += 1) {
+      const [from, to] = index % 2 === 0 ? ['A', 'B'] : ['B', 'A'];
+      sections.push(
+        'diff --git a/big.js b/big.js',
+        '--- a/big.js',
+        '+++ b/big.js',
+        '@@ -1 +1 @@',
+        `-${from}`,
+        `+${to}`,
+      );
+    }
+    const text = `${sections.join('\n')}\n`;
+    expect(Buffer.byteLength(text)).toBe(146_000);
+    const dir = await packageWith('big.js', body);
+    const started = performance.now();
+    await expect(
+      applyPnpmPatch(dir, patchOf(text), 'x@1.0.0'),
+    ).rejects.toMatchObject({
+      code: 'PATCH_FAILED',
+      message: expect.stringContaining(
+        'it is too costly to apply: it would read, compare and write more than 268435456 characters',
+      ),
+    });
+    expect(performance.now() - started).toBeLessThan(20_000);
+    expect(await readFile(join(dir, 'big.js'), 'utf8')).toBe(body);
+  }, 120_000);
+
+  it('compares a line of 80,000 spaces in one pass, ignoring its trailing whitespace as pnpm does', async () => {
+    const wide = `${' '.repeat(80_000)}x`;
+    const dir = await packageWith('wide.js', `${wide}  \nold\n`);
+    const text = [
+      'diff --git a/wide.js b/wide.js',
+      '--- a/wide.js',
+      '+++ b/wide.js',
+      '@@ -1,2 +1,2 @@',
+      ` ${wide}`,
+      '-old',
+      '+new',
+      '',
+    ].join('\n');
+    const started = performance.now();
+    await applyPnpmPatch(dir, patchOf(text), 'x@1.0.0');
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(await readFile(join(dir, 'wide.js'), 'utf8')).toBe(
+      `${wide}  \nnew\n`,
+    );
+  }, 120_000);
 });

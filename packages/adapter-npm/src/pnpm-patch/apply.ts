@@ -20,7 +20,13 @@
  *   applied if so: the package already had the change.
  *
  * A `PatchRefusal` is opm's, not pnpm's, and is never taken for a failed
- * patch: the tree is not one opm will patch (a link, a directory renamed).
+ * patch: the tree is not one opm will patch (a link, a directory renamed), or
+ * applying it would cost more than `PATCH_WORK_BUDGET`.
+ *
+ * pnpm trims with `s.replace(/\s+$/, "")`, which backtracks: a line of n
+ * spaces and one letter costs n^2 (80,000 spaces, 12 s). `trimEnd` removes the
+ * same characters (`\s` and `trimEnd` both mean WhiteSpace and
+ * LineTerminator) in one pass.
  */
 
 import type { Hunk, PatchEffect } from './parse.js';
@@ -66,14 +72,46 @@ type Modification =
   | { readonly type: 'pop' }
   | { readonly type: 'push'; readonly line: string };
 
-const trimRight = (text: string): string => text.replace(/\s+$/u, '');
+/**
+ * The work one patch may do, in characters of the package's files read,
+ * compared and written, and lines moved. pnpm decodes, splits, joins and
+ * writes a whole file for each section that patches it, so K sections that
+ * each change one line of one large file cost K times that file: a 146 KB
+ * patch of 2,000 such sections ran for a minute, and a 16 MiB one would run
+ * for an hour. A real patch changes a file in one section; the largest of the
+ * measured ones (ADR 0056 §9) spends a fraction of a percent of this.
+ */
+export const PATCH_WORK_BUDGET = 256 * 1024 * 1024;
+
+/** What one application of a patch has spent of its budget. */
+export class PatchBudget {
+  #spent = 0;
+
+  constructor(readonly limit: number = PATCH_WORK_BUDGET) {}
+
+  get spent(): number {
+    return this.#spent;
+  }
+
+  /** Spend `work`; refuse the patch once the budget is gone. */
+  charge(work: number): void {
+    this.#spent += work;
+    if (this.#spent > this.limit)
+      throw new PatchRefusal(
+        'PATCH_FAILED',
+        `it is too costly to apply: it would read, compare and write more than ${this.limit} characters of the package's files, which no real patch comes near (a file patched again in section after section), and opm stops there instead of running on as pnpm would`,
+      );
+  }
+}
 
 /** `evaluateHunk`: the changes, if the hunk fits `fuzzingOffset` lines from its place. */
 function evaluateHunk(
   hunk: Hunk,
   fileLines: readonly string[],
   fuzzingOffset: number,
+  budget: PatchBudget,
 ): Modification[] | null {
+  budget.charge(1);
   const result: Modification[] = [];
   let contextIndex = hunk.header.original.start - 1 + fuzzingOffset;
   if (contextIndex < 0) return null;
@@ -91,7 +129,9 @@ function evaluateHunk(
       continue;
     }
     for (const line of part.lines) {
-      if (trimRight(fileLines[contextIndex]!) !== trimRight(line)) return null;
+      const original = fileLines[contextIndex]!;
+      budget.charge(original.length + line.length + 1);
+      if (original.trimEnd() !== line.trimEnd()) return null;
       contextIndex++;
     }
     if (part.type === 'deletion') {
@@ -113,14 +153,22 @@ function applyHunks(
   path: string,
   hunks: readonly Hunk[],
   dryRun: boolean,
+  budget: PatchBudget,
 ): void {
-  const fileLines = tree.readText(path).split(/\n/u);
+  const text = tree.readText(path);
+  budget.charge(text.length + 1);
+  const fileLines = text.split(/\n/u);
   const mode = tree.mode(path);
   const result: Modification[][] = [];
   for (const [index, hunk] of hunks.entries()) {
     let fuzzingOffset = 0;
     for (;;) {
-      const modifications = evaluateHunk(hunk, fileLines, fuzzingOffset);
+      const modifications = evaluateHunk(
+        hunk,
+        fileLines,
+        fuzzingOffset,
+        budget,
+      );
       if (modifications !== null) {
         result.push(modifications);
         break;
@@ -137,6 +185,10 @@ function applyHunks(
     for (const modification of modifications)
       switch (modification.type) {
         case 'splice':
+          // Every line after the splice moves.
+          budget.charge(
+            Math.max(fileLines.length - modification.index - diffOffset, 0) + 1,
+          );
           fileLines.splice(
             modification.index + diffOffset,
             modification.numToDelete,
@@ -151,7 +203,9 @@ function applyHunks(
         case 'push':
           fileLines.push(modification.line);
       }
-  tree.write(path, fileLines.join('\n'), mode);
+  const written = fileLines.join('\n');
+  budget.charge(written.length + 1);
+  tree.write(path, written, mode);
 }
 
 /** A new file's text: the hunk's first part, with a final newline unless it says not. */
@@ -171,8 +225,10 @@ export function executeEffects(
   effects: readonly PatchEffect[],
   tree: PatchTree,
   dryRun: boolean,
+  budget: PatchBudget = new PatchBudget(),
 ): void {
-  for (const effect of effects)
+  for (const effect of effects) {
+    budget.charge(1);
     switch (effect.type) {
       case 'file deletion':
         if (!dryRun) tree.unlink(effect.path);
@@ -189,15 +245,17 @@ export function executeEffects(
           );
         break;
       case 'file creation':
-        if (!dryRun)
-          tree.write(effect.path, createdText(effect.hunk), effect.mode);
-        else if (tree.exists(effect.path))
+        if (!dryRun) {
+          const created = createdText(effect.hunk);
+          budget.charge(created.length + 1);
+          tree.write(effect.path, created, effect.mode);
+        } else if (tree.exists(effect.path))
           throw new Error(
             `Trying to create file that already exists: ${effect.path}`,
           );
         break;
       case 'patch':
-        applyHunks(tree, effect.path, effect.hunks, dryRun);
+        applyHunks(tree, effect.path, effect.hunks, dryRun, budget);
         break;
       case 'mode change':
         // pnpm reads the mode (which throws for a missing file) and sets the
@@ -205,6 +263,7 @@ export function executeEffects(
         tree.mode(effect.path);
         tree.chmod(effect.path, effect.newMode);
     }
+  }
 }
 
 /**
@@ -216,14 +275,15 @@ export function executeEffects(
 export function applyEffects(
   effects: readonly PatchEffect[],
   tree: PatchTree,
+  budget: PatchBudget = new PatchBudget(),
 ): boolean {
   try {
-    executeEffects(effects, tree, false);
+    executeEffects(effects, tree, false, budget);
     return true;
   } catch (error) {
     if (error instanceof PatchRefusal) throw error;
     try {
-      executeEffects(reversePatch(effects), tree, true);
+      executeEffects(reversePatch(effects), tree, true, budget);
     } catch (again) {
       if (again instanceof PatchRefusal) throw again;
       return false;

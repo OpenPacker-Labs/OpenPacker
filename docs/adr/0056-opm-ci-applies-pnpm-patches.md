@@ -97,9 +97,11 @@ inside the bundle.
      as 20 either way; 21 fails the file;
    - a line matches when the two are equal after trailing whitespace is trimmed,
      so a `\r` in the file or the patch, or a trailing space, does not stop a
-     hunk; inserted lines are written as the patch has them, and the file is
-     split and joined at `\n` only (so a CRLF file patched by an LF patch has
-     mixed endings, as with pnpm);
+     hunk (pnpm trims with `/\s+$/`, which backtracks and takes 12 s over a line
+     of 80,000 spaces and a letter; opm uses `trimEnd`, which removes the same
+     characters in one pass); inserted lines are written as the patch has them,
+     and the file is split and joined at `\n` only (so a CRLF file patched by an
+     LF patch has mixed endings, as with pnpm);
    - a new file (`new file mode 100644` or `100755`) replaces a file already at
      its path, a deleted file's text is not compared, a rename never overwrites,
      a mode change sets 644 or 755; any other mode (a symlink's `120000`) makes
@@ -124,6 +126,21 @@ inside the bundle.
    rules above, and the files are written only when it applied. Where pnpm fails
    it leaves what it did up to the failure; opm leaves the package as it was,
    and the install stops.
+
+   **The work is bounded.** Like pnpm, the applier reads, splits, joins and
+   writes a whole file for every section that patches it, so a patch of K
+   sections that each change one line of one large file costs K times that file:
+   2,000 such sections, 146 KB, against a 2 MB file ran for a minute, and a 16
+   MiB patch would run for an hour. opm counts the characters it reads, compares
+   and writes, and the lines a splice moves, and refuses a patch past 256 MiB of
+   them as too costly (`PATCH_FAILED`, exit 3); that one is refused after 1.9 s.
+   Measured on 2026-10-17, OpenSesame's four patches spend 6,207
+   (`js-yaml@3.15.2`), 27,372 (`braces@3.0.3`), 67,200
+   (`@simple-git/argv-parser@2.0.1`) and 124,000 (`node-forge@1.4.0`), and the
+   37 oracle cases at most 1,880: the bound is 2,164 times the largest real
+   patch. A real patch changes a file in one section; by the count, one section
+   of 500 hunks spread over a file of 9 MB and 250,000 lines spends about 143
+   million, half the bound (computed, not run).
 
 ### Where the patched package lives
 
@@ -188,7 +205,8 @@ inside the bundle.
       not hold; a patch pnpm cannot read (`INVALID_PATCH`, exit 3); and, as a
       stale lock (exit 3, "pnpm install --frozen-lockfile would refuse too"), a
       key added or removed, a path moved, a file edited;
-    - when it is applied (exit 3): a patch that does not apply (`PATCH_FAILED`).
+    - when it is applied (exit 3): a patch that does not apply, or one too
+      costly to apply (point 9) (`PATCH_FAILED`).
 14. **What pnpm does that opm refuses, and why:**
     - a path in the patch that leaves the package, or a link in the package on
       the way to a path it names: pnpm follows both and writes outside the
