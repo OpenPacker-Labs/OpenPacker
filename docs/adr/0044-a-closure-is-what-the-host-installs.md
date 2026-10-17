@@ -334,9 +334,11 @@ independent review got the same two figures.
   would refuse both whenever an add needs their full document: a package
   modified within the release-age window, which for `@prisma/client`, with 525
   versions in a year, is a matter of days. The costs of the heaviest real
-  documents are 219 MiB (`renovate`, abbreviated) and 562 MiB
-  (`@wix/wix-code-types`, full), so each limit is 2.3 and 1.28 times the
-  heaviest real document it reads. Other documents keep the 200,000 value
+  documents are 259.5 MiB (`renovate`, abbreviated) and 598.0 MiB
+  (`@wix/wix-code-types`, full) since an object's member table is charged at its
+  size (219 and 562 before), so each limit is 1.97 and 1.20 times the heaviest
+  real document it reads, and a real packument may cost at most 85 percent of
+  its limit ("The member table charged"). Other documents keep the 200,000 value
   default. The parser enforces the limit as it builds the tree and refuses the
   first part past it; it never counts a finished tree.
 - **The bound is enforced while the body arrives.** A `Content-Length` over the
@@ -1466,7 +1468,9 @@ document of its composition at the 64 MiB byte bound would cost 415 MiB, so for
 a packument shaped like a real one the bytes are still what stops it. The full
 one nearest is `@wix/wix-code-types`, 1.28 times under, which is 93.6 MiB before
 the 96 MiB byte bound; `renovate`'s full document reaches 96 MiB first (at
-1.49).
+1.49). These are the costs before an object's member table was charged; with it,
+`renovate`'s abbreviated document is 1.97 times under and `@wix/wix-code-types`'
+full one 1.20 ("The member table charged").
 
 **The limits.** 512 MiB for the abbreviated packument and 720 MiB for the full
 one. The heap they leave is the other constraint: the worst document accepted is
@@ -1479,7 +1483,9 @@ document accepted takes 13.2 s of CPU, at the full limit. That arithmetic
 assumes the cost is at least the peak, which the objects of a few dozen members
 found since are not: their peak at the full limit was 862 MiB, and with their
 text and the process 1,043 MiB; since the parse stopped encoding the tree again,
-744 and 925 MiB.
+744 and 925 MiB. With their member tables charged they are again: the heaviest
+of that shape the limit lets through needs a heap of 496 MiB ("The member table
+charged").
 
 **Held against the worst a hostile registry can send.** For each shape, a
 document at 0.95 of the limit (or at the byte bound, if that comes first) must
@@ -1653,10 +1659,105 @@ wall.
   an object keeps would be under it for objects whose names are their own. What
   the two documents need is far below any of these costs: at the peak, 196 MiB
   for `@wix/wix-code-types` (a least heap of 385 MiB, less 146 MiB of two-byte
-  text and 43) and 150 MiB for `renovate`. The charge is therefore not made, and
-  the limits are as they were, until it is decided which credit is right or what
-  gives; the objects of 86 members stay the one shape whose peak is above its
-  cost, by 1.06 times, with 99 MiB of a 1 GiB heap to spare.
+  text and 43) and 150 MiB for `renovate`. The charge was made at a credit of
+  16, and the limits kept, with the headroom rule widened to 85 percent (next
+  section).
+
+**The member table charged (decided 2026-10-17).** The estimate may not be below
+the measured peak for any shape, and without the charge the objects of 86
+members need 1.06 times their cost, so the table is charged at the credit the
+model gives, 16 bytes a member.
+
+- **What is charged.** As each member is added, the parser charges what the
+  object's member table grows by beyond what the weights already pay
+  (`budget.ts`, `member-table.ts`). For `n` members the table has
+  `max(4, pow2ceil(n + floor(n / 2)))` entries of 24 bytes. The object's weight
+  pays for the 4 entries of an empty table, and each member's weight pays 16
+  bytes of it (61 past the 4,096th member, with the surcharge). An object
+  therefore costs `24 × (entries − 4) − 16 × n` more, when that is above 0. The
+  charge falls back between steps, as the members' own weights catch up with the
+  table. Measured with `Object.create(null)` on Node 22.22.0, 10,000 objects a
+  count (`member-tables.json`):
+
+  | members   | entries | bytes an object kept, at the first and last count |
+  | --------- | ------- | ------------------------------------------------- |
+  | 0 to 3    | 4       | 195 and 188.5                                     |
+  | 4 and 5   | 8       | 290.1 and 288.2                                   |
+  | 6 to 11   | 16      | 480 and 478.5                                     |
+  | 12 to 21  | 32      | 864.1 and 864.4                                   |
+  | 22 to 43  | 64      | 1,635.1 and 1,630.3                               |
+  | 44 to 85  | 128     | 3,169.9 and 3,166.5                               |
+  | 86 to 128 | 256     | 6,241.7 and 6,238.5                               |
+
+  Each step adds 24 bytes an entry, within 12: 96, 192, 384, 768, 1,536 and
+  3,072.
+
+- **The two shapes that needed more than their cost.** Each document is sized to
+  0.97 of the full limit (698.4 MiB of cost). The least heap comes from a
+  bisection, in ASCII and with one `€`:
+
+  | document                                      | objects | least heap MiB | peak / cost |
+  | --------------------------------------------- | ------- | -------------- | ----------- |
+  | 86 members, the parse encoding the tree again | 120,210 | 928 / 993      | 1.17 / 1.16 |
+  | 86 members, not encoding it                   | 120,210 | 850 / 925      | 1.06 / 1.06 |
+  | 86 members, the table charged                 | 68,034  | 457 / 496      | 0.54 / 0.54 |
+  | 22 members, the parse encoding the tree again | 405,945 | 840 / 906      | 1.05 / 1.06 |
+  | 22 members, not encoding it                   | 405,945 | 712 / 775      | 0.87 / 0.87 |
+  | 22 members, the table charged                 | 253,224 | 457 / 496      | 0.54 / 0.54 |
+
+  The charged parser refuses the documents of 120,210 and 405,945 objects, which
+  now cost 1,234 and 1,120 MiB (`CanonicalJsonLimitError`, ASCII and `€`). Every
+  one of the 38 calibration shapes needed at most 0.60 of its cost, and the
+  charge only adds to a cost. The cost is therefore at least the peak for every
+  shape measured.
+
+- **The real packuments.** Each cost is by composition, with the tables charged
+  from `packument-survey-objects.json`, in MiB and as a share of the limit:
+
+  | packument                    | document    | before | charged | share | limit / cost |
+  | ---------------------------- | ----------- | ------ | ------- | ----- | ------------ |
+  | @wix/wix-code-types          | full        | 561.6  | 598.0   | 83.1% | 1.20         |
+  | renovate                     | full        | 486.1  | 540.4   | 75.1% | 1.33         |
+  | @prisma/client               | full        | 426.1  | 472.1   | 65.6% | 1.52         |
+  | sanity                       | full        | 396.7  | 426.3   | 59.2% | 1.69         |
+  | renovate                     | abbreviated | 220.8  | 259.5   | 50.7% | 1.97         |
+  | public-unscoped-test-package | full        | 337.8  | 353.3   | 49.1% | 2.04         |
+  | @prisma/client               | abbreviated | 213.4  | 245.1   | 47.9% | 2.09         |
+
+  The other fifteen need at most 40.5 percent. Read by the parser,
+  `@wix/wix-code-types`' full packument costs 598.3 MiB. Other credits were
+  tried on that document and not chosen:
+
+  | credit a member | cost MiB | limit / cost | share |
+  | --------------- | -------- | ------------ | ----- |
+  | 0               | 617.8    | 1.17         | 85.8% |
+  | 24              | 588.7    | 1.22         | 81.8% |
+  | 36              | 574.5    | 1.25         | 79.8% |
+  | 40              | 569.8    | 1.26         | 79.1% |
+
+  A credit of 40 would put the estimate of what an object keeps below what it
+  kept, for objects whose names are their own.
+
+- **The limit or the rule.** Two options were weighed: raise the full limit to
+  768 MiB, if that kept the same margin, or keep 720 MiB and widen the headroom
+  rule.
+  - The full limit is what a heap of 1 GiB leaves after the worst document
+    accepted. That is the limit in cost, plus 192 MiB of two-byte text at the 96
+    MiB bound, plus 43 MiB for the process.
+  - At 720 MiB that leaves 69 MiB, 7 percent of the heap. At 768 MiB it would
+    leave 21 MiB, 2 percent. That is not the same margin, so the limit stays at
+    720 MiB.
+  - The headroom rule goes instead from four fifths of the limit to 85 percent
+    (`HEADROOM` in `packument-headroom.test.ts`).
+  - Why: the largest known real packument, `@wix/wix-code-types` in full,
+    estimates at 83.1 percent of its limit, while its parse needs 196 MiB at the
+    peak. The estimate is now at least the peak for every shape, and the rule
+    holds the estimate, not the real need.
+  - In the same shape, that document would reach 85 percent of the limit at 74.7
+    MiB and the limit at 87.8 MiB, both before the 96 MiB byte bound.
+  - The abbreviated limit is unchanged. `renovate`'s abbreviated packument is
+    1.97 times under it, and a document of its composition at the 64 MiB byte
+    bound would cost 487 MiB: the byte bound is still what stops a real one.
 
 **The shapes of the table above, end to end.** The same loopback server and the
 repository's own `BoundedFetchTransport` and `NpmRegistryProvider`, every body
@@ -1692,11 +1793,12 @@ bare pair, as an object, with long names, with a `€`) costs more and is refuse
 earlier. `adapter-core/src/parse-calibration.test.ts` re-measures twelve of the
 shapes on whatever Node runs the tests: the estimate must be within 10 percent
 below and 2.5 times above what the tree keeps.
-`adapter-npm/src/packument-headroom.test.ts` holds the real packuments to four
-fifths of their limit, from the compositions in `packument-survey.ts`, checks
-that the arithmetic it uses is the parser's, and reads every packument kept in
-the repository under both limits. `adapter-npm/src/packument-hostile.test.ts` is
-the stop at the limit for `{},` and `1,` at exactly 64 MiB and for the object of
+`adapter-npm/src/packument-headroom.test.ts` holds the real packuments to 85
+percent of their limit (four fifths before the member table was charged), from
+the compositions in `packument-survey.ts` and their member counts, checks that
+the arithmetic it uses is the parser's, and reads every packument kept in the
+repository under both limits. `adapter-npm/src/packument-hostile.test.ts` is the
+stop at the limit for `{},` and `1,` at exactly 64 MiB and for the object of
 members that used to be accepted. `apps/opm/test/hostile-packument.test.ts` runs
 that document and the heaviest accepted one in a child process started with
 `--max-old-space-size=1024`, through the lock step: the first is a refusal
@@ -1748,8 +1850,9 @@ retention budget, is a bound on the resolve.
    since, objects of 86 members needed up to 1.23 times the limit and were read
    in a heap of 1 GiB with nothing to spare ("Shapes found since"); since the
    parse stopped encoding the tree again they need 1.06 times, with 99 MiB to
-   spare ("Since: the re-encode taken out"). The parse is on the main thread, so
-   it is one at a time.
+   spare ("Since: the re-encode taken out"), and with their member tables
+   charged, about 0.54 of their cost ("The member table charged"). The parse is
+   on the main thread, so it is one at a time.
 3. **What a resolve keeps, and the budget on it.** Before, the provider kept
    every packument it had read, the body and the tree parsed from it, until the
    resolve ended, and nothing asked it to forget one: six different 12 MiB
@@ -1974,14 +2077,16 @@ archive's bound on what it expands to and is not touched here.
   `€` at the full limit, had nothing to spare: its least heap in a bisection was
   1,022 to 1,043 MiB, and it completed in every run at 1,024 ("Shapes found
   since"). Since the parse stopped encoding the tree again, its least heap is
-  925 MiB ("Since: the re-encode taken out"). The load was 4 to 17, so wall
-  seconds ran to 10.4 and 18.7 and were 12.6 at a load of 4. These are the
-  heaviest kinds tried and not a proven maximum: a kind that allocates more for
-  each unit of cost than any of them would exceed the figures, which is why
-  `parse-calibration.test.ts` measures twelve again on whatever Node runs the
-  tests. The heap leaves room for the text of the document, which is two bytes a
-  character if one is past U+00FF (128 MiB and 192 MiB), and for 43 MiB of the
-  process: 683 MiB and 955 MiB.
+  925 MiB ("Since: the re-encode taken out"), and with the member tables charged
+  the heaviest document of that shape the limit lets through needs 496 MiB ("The
+  member table charged"). The load was 4 to 17, so wall seconds ran to 10.4 and
+  18.7 and were 12.6 at a load of 4. These are the heaviest kinds tried and not
+  a proven maximum: a kind that allocates more for each unit of cost than any of
+  them would exceed the figures, which is why `parse-calibration.test.ts`
+  measures twelve again on whatever Node runs the tests. The heap leaves room
+  for the text of the document, which is two bytes a character if one is past
+  U+00FF (128 MiB and 192 MiB), and for 43 MiB of the process: 683 MiB and 955
+  MiB.
 - Before the cost limit the value limit allowed 2,169 to 2,683 MiB in 22.5 to
   30.4 s for an abbreviated packument and 3,149 to 3,956 MiB in 37.1 to 44.1 s
   for a full one (history, the tables above); 64 MiB of one object of
@@ -2063,28 +2168,32 @@ archive's bound on what it expands to and is not touched here.
   (`refetchable.test.ts`), the heap-number charge (`parse-costs.test.ts`), a
   parse that does not encode the tree again and still refuses what that encoding
   refused (`parse-once.test.ts`), the member-table model against what an object
-  of 0 to 128 members kept (`member-tables.test.ts` over `member-tables.json`),
-  and the member counts of every surveyed packument's objects, which must add up
-  to its row (`packument-headroom.test.ts` over
+  of 0 to 128 members kept and the charge for it, the estimate at or above what
+  an object kept at every count (`member-tables.test.ts` over
+  `member-tables.json`), and the member counts of every surveyed packument's
+  objects, which must add up to its row and are charged in its cost, at most 85
+  percent of its limit (`packument-headroom.test.ts` over
   `packument-survey-objects.json`). The weights' other shapes, the 96 MiB
   bodies, the time figures, the live-registry runs and the peak RSS of the
   resolve of `next` were measured by scripts run for this amendment, which are
   not in the repository, and no test fails if those figures change.
 - The full packument of `@wix/wix-code-types` is at three quarters of its byte
-  bound (72.96 of 96 MiB) and costs 561.6 of 720 MiB by its composition as read
-  again on 2026-10-17, and 561.9 by the parser: the limit is 1.28 times what it
-  needs, and it needs 78.0 percent of the limit, leaving 22.0 percent. The rule
-  the headroom test holds every real packument to is the same thing read either
-  way: the limit at least 1.25 times the need, which is the need at most 80
-  percent of the limit. So its cost would bind at about 93.5 MiB if it grew in
-  the same shape, though it grows only 0.35 MiB a year. `renovate`'s full
-  document is at 72 percent of its byte bound (69.14 MiB on 2026-10-17, 68.58
-  five days before) and costs 486.3 MiB; it reaches 96 MiB in about 1.3 years at
-  last year's pace, before its cost reaches the limit (at 1.48 times under), and
-  its abbreviated document reaches 64 MiB in about 2.9, costing 415 MiB of 512
-  by then; the bounds should be revisited before then. Raising the full
-  packument's byte bound means accepting a larger limit: the heap left for a
-  document of 96 MiB of two-byte text is already 7 percent.
+  bound (72.96 of 96 MiB) and costs 598.0 of 720 MiB by its composition as read
+  again on 2026-10-17 with its member tables charged, and 598.3 by the parser
+  (561.6 and 561.9 before the charge): the limit is 1.20 times what it needs,
+  and it needs 83.1 percent of the limit, leaving 16.9 percent, where its parse
+  needs 196 MiB at the peak. The headroom test holds every real packument to at
+  most 85 percent of its limit, which was four fifths before the charge ("The
+  member table charged"). So it would pass 85 percent at 74.7 MiB and its cost
+  would bind at 87.8 MiB if it grew in the same shape, though it grows only 0.35
+  MiB a year. `renovate`'s full document is at 72 percent of its byte bound
+  (69.14 MiB on 2026-10-17, 68.58 five days before) and costs 540.4 MiB with its
+  member tables charged; it reaches 96 MiB in about 1.3 years at last year's
+  pace, before its cost reaches the limit (at 1.33 times under), and its
+  abbreviated document reaches 64 MiB in about 2.9, costing 487 MiB of 512 by
+  then with its member tables charged; the bounds should be revisited before
+  then. Raising the full packument's byte bound means accepting a larger limit:
+  the heap left for a document of 96 MiB of two-byte text is already 7 percent.
 - The sample is 4,887 names and the full packument of 400 of them (above); it is
   not the registry, and it missed `renovate`, which a second look found. The
   composition of each of the 22 packuments in `packument-survey.ts` is of one

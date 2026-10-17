@@ -20,7 +20,7 @@
  *   needed more until its dictionary was charged: V8 gives it up to three
  *   slots a member, and such a document at the limit needed 1.06 times its
  *   cost. The parser now charges that dictionary at its size beyond these
- *   weights (`member-table.ts`), and such a document needs about 0.55 of its
+ *   weights (`member-table.ts`), and such a document needs about 0.54 of its
  *   cost (ADR 0044, "The member table charged").
  * - `retained` is what the finished tree keeps, for a holder that keeps trees
  *   (a resolve counts the packuments it holds by it). It is above what the

@@ -544,7 +544,8 @@ is refused as
 `The packument of x is not usable: Provider metadata exceeds 536870912 bytes of parsed size`,
 and the parser stops at the limit rather than after it. The cost is what the
 tree would allocate, not a count of values: an object weighs about 240 bytes, a
-member's name 3.5 a character, a number in an array 90. So `{},` repeated is
+member's name 3.5 a character, a number in an array 90, and an object's member
+table what it grows by past what its members' weights pay. So `{},` repeated is
 refused at 1.6 million objects, where `1,` is refused at 6 million, and a
 document of the densest shape the 64 MiB bound allows can no longer end opm: the
 heaviest one the limit lets through was read inside a 1 GiB heap
