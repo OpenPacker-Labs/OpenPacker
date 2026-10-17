@@ -1,5 +1,9 @@
 import type { JsonValue } from '@openpacker/contracts';
-import { WorkspaceError, type WorkspaceLimits } from '@openpacker/adapter-core';
+import {
+  quote,
+  WorkspaceError,
+  type WorkspaceLimits,
+} from '@openpacker/adapter-core';
 import { Lexer, Parser, isMap, isScalar, isSeq, parseDocument } from 'yaml';
 
 /** What `pnpm-workspace.yaml` says that the workspace model uses. */
@@ -42,7 +46,13 @@ function checkNesting(text: string): void {
   }
 }
 
-/** The first key a mapping repeats, anywhere in the tree, by its scalar value. */
+/**
+ * The first key a mapping repeats, anywhere in the tree, by its scalar value as
+ * text. The YAML spec tells `1` (an integer) from `"1"` (a string); pnpm does
+ * not, as its reader keys an object by text and refuses the second as a
+ * duplicated mapping key (pnpm 10.28 on `1: ^1` beside `"1": ^2`), so neither
+ * does this.
+ */
 function firstRepeatedKey(node: unknown): string | undefined {
   if (isSeq(node))
     for (const item of node.items) {
@@ -91,7 +101,7 @@ export function parsePnpmWorkspaceYaml(
   const repeated = firstRepeatedKey(document.contents);
   if (repeated !== undefined)
     throw invalid(
-      `is not valid YAML: the key ${JSON.stringify(repeated)} is written twice in one mapping`,
+      `has the duplicate key ${quote(repeated)} in one mapping (a key is compared as text, as pnpm compares it, so 1 and "1" are one key)`,
     );
   let value: JsonValue;
   try {
