@@ -116,6 +116,15 @@ export interface FrozenLockPackage {
    */
   scriptsFromArchive?: true;
   /**
+   * What the archive's own `package.json` must say, read with
+   * `scriptsFromArchive`, as the lock records it: the version, absent when the
+   * lock records none (a pnpm entry for a tarball may not, and its key's version
+   * is the URL), in which case only the name is compared; and the `name` the
+   * lock writes beside the key, when it writes one, which the archive must carry
+   * as well as `packageName`. Without it, `packageName` and `version`.
+   */
+  archiveIdentity?: { readonly name?: string; readonly version?: string };
+  /**
    * What the lock calls this package when several places hold it (a pnpm
    * snapshot key, `react-dom@18.2.0(react@18.2.0)`): one id may have several
    * paths, and two ids may share an archive.

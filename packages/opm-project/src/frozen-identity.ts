@@ -6,10 +6,12 @@
  * of `a` would install `a` where Node looks for `b`. After extraction, and
  * before `node_modules` is touched, the host reads each archive's own
  * `package.json` and refuses one whose name or version is not the lock's
- * (ADR 0055 §7). The version is compared as npm reads one: a leading `v` or `=`
- * and build metadata do not make another version. Neither pnpm nor npm checks
- * this; an npm lock is not checked here either, its archives being the ones npm
- * resolved by name.
+ * (ADR 0055 §7). The version is the one the lock records for the archive: a
+ * registry package's, or a tarball entry's own `version`, which may be absent,
+ * and then only the name is compared. It is compared as npm reads one: a
+ * leading `v` or `=` and build metadata do not make another version. Neither
+ * pnpm nor npm checks this; an npm lock is not checked here either, its
+ * archives being the ones npm resolved by name.
  */
 
 import type { FrozenLockPackage } from '@openpacker/adapter-core';
@@ -25,6 +27,26 @@ const comparable = (version: string): string =>
 /** A value from an archive, quoted, and cut to a length a line can hold. */
 const show = (text: string): string =>
   JSON.stringify(text.length > 200 ? `${text.slice(0, 200)}...` : text);
+
+/**
+ * The names the archive must carry and the version, if any: the lock's own
+ * record when it gives one (a tarball's may give no version), else the package's.
+ */
+function expectedOf(pkg: FrozenLockPackage): {
+  readonly names: readonly string[];
+  readonly version: string | undefined;
+} {
+  if (pkg.archiveIdentity === undefined)
+    return { names: [pkg.packageName], version: pkg.version };
+  const { name, version } = pkg.archiveIdentity;
+  return {
+    names:
+      name === undefined || name === pkg.packageName
+        ? [pkg.packageName]
+        : [pkg.packageName, name],
+    version,
+  };
+}
 
 /** Throw when an archive the host read for a pnpm lock is not the package the lock names. */
 export async function checkArchiveIdentities(
@@ -43,16 +65,22 @@ export async function checkArchiveIdentities(
       () => undefined,
     );
     const { name, version } = manifest ?? {};
-    if (typeof name !== 'string' || typeof version !== 'string')
+    const expected = expectedOf(pkg);
+    const compareVersion = expected.version !== undefined;
+    if (
+      typeof name !== 'string' ||
+      (compareVersion && typeof version !== 'string')
+    )
       problems.push(
         `${show(wanted)} (${pkg.path}): the archive's package.json has no ${typeof name !== 'string' ? 'name' : 'version'}`,
       );
     else if (
-      name !== pkg.packageName ||
-      comparable(version) !== comparable(pkg.version)
+      expected.names.some((each) => each !== name) ||
+      (compareVersion &&
+        comparable(version as string) !== comparable(expected.version!))
     )
       problems.push(
-        `${show(wanted)} (${pkg.path}): the archive's package.json is ${show(`${name}@${version}`)}`,
+        `${show(wanted)} (${pkg.path}): the archive's package.json is ${show(typeof version === 'string' ? `${name}@${version}` : name)}`,
       );
   }
   if (problems.length > 0)

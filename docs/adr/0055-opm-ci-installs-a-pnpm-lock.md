@@ -105,8 +105,11 @@ design:
    fact. The integrity proves the bytes and not what they hold, so after
    extraction the host reads each archive's own `package.json` and refuses one
    whose name or version (a leading `v` or `=` and build metadata aside) is not
-   the lock's (`DIGEST_MISMATCH`, before `node_modules` is touched); neither
-   pnpm nor npm makes that check.
+   the lock's (`DIGEST_MISMATCH`, before `node_modules` is touched). The version
+   is the one the lock records for the archive: a registry package's, or a
+   tarball entry's own `version` (its key holds the URL), and a tarball entry
+   with none has its name compared alone; a `name` the entry writes beside its
+   key must match as well. Neither pnpm nor npm makes that check.
 
 ### Where each instance goes
 

@@ -32,7 +32,8 @@ import {
 import { linkTargetBetween, placePath } from '../layout-links.js';
 import { npmPurl } from '../purl.js';
 import { readPnpmLock } from '../pnpm-lock/index.js';
-import { buildPnpmModel, type PnpmModel } from './model.js';
+import { isSemver } from '../pnpm-lock/source.js';
+import { buildPnpmModel, type PnpmInstance, type PnpmModel } from './model.js';
 import { planPlacement } from './place.js';
 import { placeInputOf } from './place-input.js';
 import { resolutionProblems } from './place-check.js';
@@ -180,6 +181,7 @@ export async function readFrozenPnpmLock(
       scope: selection.included.get(place.key)!,
       hasInstallScript: false,
       scriptsFromArchive: true,
+      archiveIdentity: archiveIdentityOf(instance),
       instance: place.key,
       ...(instance.pkg.deprecated !== undefined && {
         deprecated: instance.pkg.deprecated,
@@ -194,6 +196,28 @@ export async function readFrozenPnpmLock(
     skipped: [...selection.skipped],
     refused: [],
     ...(workspace !== undefined && { workspace }),
+  };
+}
+
+/**
+ * What the lock says an instance's archive holds, as pnpm reads it to check the
+ * archive (`nameVerFromPkgSnapshot`): the entry's `version`, else the key's when
+ * it is a version (a tarball's key has its URL there, and then no version is
+ * compared); and the entry's `name`, which pnpm no longer writes, when there is
+ * one.
+ */
+function archiveIdentityOf(instance: PnpmInstance): {
+  name?: string;
+  version?: string;
+} {
+  const version =
+    instance.pkg.manifestVersion ??
+    (isSemver(instance.version) ? instance.version : undefined);
+  return {
+    ...(instance.pkg.manifestName !== undefined && {
+      name: instance.pkg.manifestName,
+    }),
+    ...(version !== undefined && { version }),
   };
 }
 
