@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PARSE_COSTS, parseCanonicalJsonCosted } from '@openpacker/canonical';
@@ -37,7 +38,8 @@ function treeCost(row: Omit<SurveyedPackument, 'name' | 'document' | 'bytes'>) {
     row.bigMembers * peak.bigMember +
     row.keyChars * peak.nameCharacter +
     row.strings * peak.string +
-    (row.stringChars + row.wideChars) * peak.character
+    (row.stringChars + row.wideChars) * peak.character +
+    row.heapNumbers * peak.heapNumber
   );
 }
 
@@ -115,6 +117,31 @@ describe('the real packuments, surveyed 2026-10-12', () => {
   });
 });
 
+describe('the member counts of the surveyed packuments', () => {
+  const counts = JSON.parse(
+    readFileSync(
+      new URL('./packument-survey-objects.json', import.meta.url),
+      'utf8',
+    ),
+  ) as { documents: Record<string, { members: number[]; objects: number[] }> };
+
+  it.each(
+    SURVEYED_PACKUMENTS.map(
+      (row) => [`${row.name} ${row.document}`, row] as const,
+    ),
+  )('add up to the composition of %s', (key, row) => {
+    const { members, objects } = counts.documents[key]!;
+    expect(members).toHaveLength(objects.length);
+    const sum = (each: (count: number, index: number) => number) =>
+      objects.reduce((total, count, index) => total + each(count, index), 0);
+    expect(sum((count) => count)).toBe(row.objects);
+    expect(sum((count, index) => count * members[index]!)).toBe(row.members);
+    expect(
+      sum((count, index) => count * Math.max(0, members[index]! - 4096)),
+    ).toBe(row.bigMembers);
+  });
+});
+
 describe('the cost of a tree of a given composition', () => {
   /** Count a parsed tree as the survey counted the real ones. */
   function composition(root: unknown) {
@@ -129,11 +156,14 @@ describe('the cost of a tree of a given composition', () => {
       strings: 0,
       stringChars: 0,
       wideChars: 0,
+      heapNumbers: 0,
     };
     const pending: unknown[] = [root];
     while (pending.length > 0) {
       const value = pending.pop();
-      if (typeof value === 'string') {
+      if (typeof value === 'number') {
+        if (value < -(2 ** 30) || value >= 2 ** 30) row.heapNumbers += 1;
+      } else if (typeof value === 'string') {
         row.strings += 1;
         row.stringChars += value.length;
         if (/[\u{100}-\u{10ffff}]/u.test(value)) row.wideChars += value.length;
@@ -169,6 +199,7 @@ describe('the cost of a tree of a given composition', () => {
           Array.from({ length: 5000 }, (_, i) => [`k${i}`, i]),
         ),
         strings: ['', 'abc', 'défg', 'wide €uro', 'x'.repeat(1000)],
+        numbers: [1, 1073741823, 1073741824, -1073741825, 9007199254740991],
         nested: { x: { y: { z: {} } } },
       }),
     ];
