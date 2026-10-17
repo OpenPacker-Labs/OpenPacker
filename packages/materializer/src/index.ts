@@ -430,7 +430,17 @@ function parseTar(
   let count = 0;
   while (offset + 512 <= bytes.byteLength) {
     const header = bytes.subarray(offset, offset + 512);
-    if (header.every((byte) => byte === 0)) break;
+    if (header.every((byte) => byte === 0)) {
+      // node-tar's end: two zero blocks in a row, or the end of the data (an
+      // empty `next`, or the loop's own bound). A lone zero block is skipped
+      // and what follows is read as a header, so no entry npm extracts is
+      // dropped here unseen; each counts toward maximumFiles, and a block that
+      // is not a header is refused.
+      const next = bytes.subarray(offset + 512, offset + 1024);
+      if (next.every((byte) => byte === 0)) break;
+      offset += 512;
+      continue;
+    }
     count += 1;
     if (count > limits.maximumFiles)
       throw unsafe('FILE_COUNT_LIMIT', `${count}`);
