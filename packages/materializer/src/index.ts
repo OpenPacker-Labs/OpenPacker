@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, readdir, rmdir, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
+import { PACKAGE_TREE_LIMITS } from '@openpacker/adapter-core';
 import { collectStream, type ArtifactSource } from '@openpacker/artifact-model';
 import { compareCanonicalStrings, sha256 } from '@openpacker/canonical';
 import type { ArtifactDescriptor, Digest } from '@openpacker/contracts';
@@ -46,8 +47,9 @@ export const DEFAULT_MATERIALIZATION_LIMITS: MaterializationLimits = {
   maximumCompressedBytes: 64 * 1024 * 1024,
   maximumCompressionRatio: 32,
   maximumMemoryBytes: 192 * 1024 * 1024,
-  maximumPathBytes: 4096,
-  maximumDepth: 128,
+  // The bounds of a path in a package: one definition, with the store's.
+  maximumPathBytes: PACKAGE_TREE_LIMITS.maximumPathBytes,
+  maximumDepth: PACKAGE_TREE_LIMITS.maximumDepth,
 };
 
 export interface InspectedArchiveEntry {
