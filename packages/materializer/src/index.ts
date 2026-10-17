@@ -15,7 +15,11 @@ import {
   renameChild,
   supportsStableHandles,
 } from '@openpacker/project-io';
+import { MaterializationError, unsafe } from './errors.js';
+import { gunzipArchive } from './gzip.js';
 import { MAXIMUM_PAX_HEADER_BYTES, parsePaxRecords } from './pax.js';
+
+export { MaterializationError };
 
 export type ArchiveFormat = 'tar' | 'tar+gzip' | 'zip';
 
@@ -138,20 +142,21 @@ export async function inspectArchive(
     format === 'tar+gzip' ? gzipLimit : bytes.byteLength,
     limits,
   );
-  const expanded =
+  const gunzipped =
     format === 'tar+gzip'
-      ? await decompress(
+      ? await gunzipArchive(
           bytes,
-          'gzip',
           gzipLimit,
           signal,
           gzipLimit < limits.maximumExpandedBytes
             ? 'COMPRESSION_RATIO_LIMIT'
             : 'EXPANDED_SIZE_LIMIT',
         )
-      : bytes;
-  if (format === 'tar+gzip')
-    validateRatio(expanded.byteLength, bytes.byteLength, limits);
+      : undefined;
+  const expanded = gunzipped?.expanded ?? bytes;
+  // Measured against the gzip stream alone: zero padding buys no expansion.
+  if (gunzipped)
+    validateRatio(expanded.byteLength, gunzipped.streamEnd, limits);
   assertMemoryBudget(bytes.byteLength, expanded.byteLength, limits);
   const entries =
     format === 'zip'
@@ -695,7 +700,7 @@ function validateEntries(
 
 async function decompress(
   bytes: Uint8Array,
-  format: 'gzip' | 'deflate-raw',
+  format: 'deflate-raw',
   maximumBytes: number,
   signal?: AbortSignal,
   overflowCode = 'EXPANDED_SIZE_LIMIT',
@@ -823,22 +828,5 @@ async function exists(path: string): Promise<boolean> {
     )
       return false;
     throw error;
-  }
-}
-
-function unsafe(code: string, detail: string): MaterializationError {
-  return new MaterializationError(
-    code,
-    `Unsafe archive rejected (${code}): ${detail}`,
-  );
-}
-
-export class MaterializationError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'MaterializationError';
   }
 }
