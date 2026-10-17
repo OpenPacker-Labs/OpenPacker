@@ -76,6 +76,11 @@ const EXEMPT: ReadonlyArray<{
   },
   {
     file: 'commands/run-child.ts',
+    starts: 'const handedNoTerminal',
+    reason: 'compares the stdio choices made above; writes nothing',
+  },
+  {
+    file: 'commands/run-child.ts',
     starts: "child.stdout?.setEncoding('utf8')",
     reason: "reads the child's own stdout; writes nothing",
   },

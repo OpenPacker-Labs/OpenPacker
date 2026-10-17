@@ -22,6 +22,7 @@
 import {
   WorkspaceError,
   compileWorkspacePatterns,
+  echoed,
   nameFromDirectory,
   resolveWorkspaceLimits,
   workspaceNameProblem,
@@ -31,6 +32,7 @@ import type { JsonValue } from '@openpacker/contracts';
 import { posix } from 'node:path';
 import { memberLinkProblem } from '@openpacker/project-io';
 import { linkTargetBetween } from './layout-links.js';
+import { quoted } from './layout-names.js';
 import {
   chainOfLockPath,
   readEntry,
@@ -120,7 +122,7 @@ function normalizedBin(
   const out: Record<string, string> = {};
   for (const [key, path] of Object.entries(value)) {
     if (typeof path !== 'string')
-      throw invalid(`${where}.bin.${key} must be a string`);
+      throw invalid(`${where}.bin.${echoed(key)} must be a string`);
     out[key] = path;
   }
   return out;
@@ -218,7 +220,7 @@ export function readLockWorkspace(
   for (const [path, record] of [...input.foreign].sort(([a], [b]) =>
     a < b ? -1 : a > b ? 1 : 0,
   )) {
-    const where = `packages[${JSON.stringify(path)}]`;
+    const where = `packages[${quoted(path)}]`;
     if (path.includes('/node_modules/')) {
       nested.push([path, record]);
       continue;
@@ -245,7 +247,7 @@ export function readLockWorkspace(
 
   const entries: LockEntry[] = [];
   for (const [path, record] of nested) {
-    const where = `packages[${JSON.stringify(path)}]`;
+    const where = `packages[${quoted(path)}]`;
     const split = splitNestedLockPath(path)!;
     if (!byDir.has(split.directory)) {
       refused.push({

@@ -5,6 +5,7 @@
  * allowed; the policy that reads the model does that.
  */
 
+import { OverlongHostError, parseUntrustedUrl } from '@openpacker/canonical';
 import { unsafeNameProblem } from '../layout-plan.js';
 
 /** Where a `name@version` says the package comes from. */
@@ -125,9 +126,12 @@ export function tarballUrlProblem(value: string): string | undefined {
   const problem = urlProblem(value, 'http');
   if (problem !== undefined) return problem;
   try {
-    new URL(value);
-  } catch {
-    return 'is not a URL';
+    // The text is the lock's, so it is read through the guard (ADR 0044).
+    parseUntrustedUrl(value);
+  } catch (error) {
+    return error instanceof OverlongHostError
+      ? 'names a host longer than 253 characters'
+      : 'is not a URL';
   }
   return undefined;
 }

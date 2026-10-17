@@ -173,6 +173,8 @@ describe('paths and URLs', () => {
     ['https:///a.tgz', 'no host'],
     ['https://h/a b.tgz', 'whitespace'],
     ['', 'not an http'],
+    // Read through the guard, so a host no DNS name can be is refused by length.
+    [`https://${'a'.repeat(254)}/a.tgz`, 'longer than 253'],
   ])('tarballUrlProblem(%j)', (url, word) => {
     const problem = tarballUrlProblem(url);
     if (word === undefined) expect(problem).toBeUndefined();

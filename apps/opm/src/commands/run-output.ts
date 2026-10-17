@@ -17,6 +17,7 @@
  * prefix. What a member holds back is then its block (up to the group limit)
  * and at most one unfinished line per stream.
  */
+import { plainLine } from '@openpacker/canonical';
 import type { ChildIo } from './run-child.js';
 
 export const GROUP_LIMIT = 8 * 1024 * 1024;
@@ -110,7 +111,9 @@ export class MemberOutput {
   /** The streams for one step of the member (`build`, `prebuild`, `tsc`). */
   step(name: string): ChildIo {
     this.endLines();
-    this.prefix = `${this.label} ${name}: `;
+    // The member's name and the step's both came from its package.json, and
+    // the prefix is opm's own text before every line of it.
+    this.prefix = `${plainLine(this.label)} ${plainLine(name)}: `;
     return {
       stdout: { write: (chunk) => this.take('stdout', String(chunk)) },
       stderr: { write: (chunk) => this.take('stderr', String(chunk)) },
@@ -123,8 +126,7 @@ export class MemberOutput {
   }
 
   private endLines(): void {
-    this.lines.stdout.end();
-    this.lines.stderr.end();
+    for (const lines of Object.values(this.lines)) lines.end();
   }
 
   private write(stream: Stream, line: string): void {

@@ -108,15 +108,20 @@ const EXEMPT: ReadonlyArray<{
   },
   {
     file: 'commands/run.ts',
-    starts: 'describeEnd(`script "${event}"`',
+    starts: '`opm: ${result.failure}',
     reason:
-      "the name of a script in the person's own package.json and an exit status; the run path loads no workspace package (run-load.test.ts)",
+      "the name of a script in the person's own package.json, labelled with no member, and an exit status; the run path loads no workspace package (run-load.test.ts)",
   },
   {
     file: 'commands/run.ts',
-    starts: 'describeEnd(`"${request.bin}"`',
+    starts: '`opm: ${describeEnd(`"${request.bin}"`',
     reason:
       'the name the person typed and an exit status; the run path loads no workspace package (run-load.test.ts)',
+  },
+  {
+    file: 'commands/run-child.ts',
+    starts: 'const handedNoTerminal',
+    reason: 'compares the stdio choices made above; writes nothing',
   },
   {
     file: 'commands/run-child.ts',
@@ -207,6 +212,7 @@ describe('what opm writes to stderr', () => {
         'commands/ci.ts',
         'commands/packslip.ts',
         'commands/run-child.ts',
+        'commands/run-members.ts',
         'commands/run.ts',
         'openpacker-cli/index.ts',
         'openpackerd/cli.ts',
