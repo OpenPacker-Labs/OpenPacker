@@ -2,7 +2,11 @@ import {
   CanonicalJsonLimitError,
   type CanonicalParseLimits,
 } from './errors.js';
-import { BIG_OBJECT_MEMBERS, PARSE_COSTS } from './costs.js';
+import {
+  BIG_OBJECT_MEMBERS,
+  PARSE_COSTS,
+  SMALL_INTEGER_LIMIT,
+} from './costs.js';
 
 /**
  * What a parse may still spend. The parser charges it as each part of the tree
@@ -79,6 +83,16 @@ export class ParseBudget {
         (first ? PARSE_COSTS.retained.firstElement : 0),
       offset,
     );
+  }
+
+  /** The value that began is the integer `value`. */
+  number(value: number, offset: number): void {
+    if (value < -SMALL_INTEGER_LIMIT || value >= SMALL_INTEGER_LIMIT)
+      this.charge(
+        PARSE_COSTS.peak.heapNumber,
+        PARSE_COSTS.retained.heapNumber,
+        offset,
+      );
   }
 
   /**

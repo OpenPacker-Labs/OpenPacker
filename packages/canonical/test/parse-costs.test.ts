@@ -74,6 +74,21 @@ describe('what each part costs', () => {
     );
   });
 
+  it('charges an integer past what V8 keeps in a slot (2^30) as a heap number', () => {
+    // A small integer is a tagged value in its slot; past 2^30 (2^31 on a
+    // build without pointer compression) it is an object of its own.
+    for (const small of ['1073741823', '-1073741824'])
+      expect(costOf(`[${small}]`)).toBe(costOf('[1]'));
+    for (const big of ['1073741824', '-1073741825', '9007199254740991'])
+      expect(costOf(`[${big}]`)).toBe(costOf('[1]') + peak.heapNumber);
+    expect(costOf('{"a":9007199254740991}')).toBe(
+      costOf('{"a":1}') + peak.heapNumber,
+    );
+    expect(parseCanonicalJsonCosted('[9007199254740991]').retained).toBe(
+      parseCanonicalJsonCosted('[1]').retained + retained.heapNumber,
+    );
+  });
+
   it('keeps a second table for what the finished tree keeps, below the peak', () => {
     const { retained: kept, cost } = parseCanonicalJsonCosted(
       '{"a":[1,2,{"b":"cd"}],"e":{}}',

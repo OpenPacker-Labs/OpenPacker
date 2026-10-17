@@ -209,6 +209,7 @@ class JsonParser {
       this.fail(
         'PREX canonical numbers must be safe integers and not negative zero',
       );
+    this.budget.number(value, this.index);
     return value;
   }
 
