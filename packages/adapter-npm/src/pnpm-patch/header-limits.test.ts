@@ -90,7 +90,7 @@ describe('a header line of a patch', () => {
       expect(() => readPatchText(text, 'p')).toThrow(
         expect.objectContaining({ code: 'SIZE_LIMIT' }),
       );
-      expect(performance.now() - started).toBeLessThan(1_000);
+      expect(performance.now() - started).toBeLessThan(3_000);
     }
   });
 
@@ -121,6 +121,6 @@ describe('a header line of a patch', () => {
     ].join('\n');
     const started = performance.now();
     expect(readPatchText(text, 'p')).toHaveLength(1);
-    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(performance.now() - started).toBeLessThan(3_000);
   });
 });

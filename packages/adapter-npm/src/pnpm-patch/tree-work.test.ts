@@ -142,6 +142,16 @@ describe('what reading the tree from disk costs', () => {
     expect(budget.spent).toBe(4 * 2048 + (3 + 8 + 5 + 10) + (8 + 1));
   });
 
+  it('gives the tree it returns the same budget, which its lookups go on charging', async () => {
+    const root = await packageDir();
+    const budget = new PatchBudget();
+    const tree = await loadPatchTree(root, effects('lib/a.js'), budget);
+    const loaded = budget.spent;
+    expect(tree.exists('lib/a.js')).toBe(true);
+    // 'lib/a.js' (8 + 1) and 'lib' (3 + 1).
+    expect(budget.spent - loaded).toBe(13);
+  });
+
   it('refuses the patch as too costly when the lstats are what overrun the budget', async () => {
     const root = await packageDir();
     await expect(
@@ -169,6 +179,40 @@ describe('what reading the tree from disk costs', () => {
         new PatchBudget(2 * 2048 + 11 + 9),
       ),
     ).resolves.toBeInstanceOf(OverlayTree);
+  });
+});
+
+describe('one budget for a whole patch', () => {
+  it('is spent by the tree read and the patch run together, and by the reverse run if the patch fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pnpm-patch-one-'));
+    temps.push(root);
+    await writeFile(join(root, 'f.js'), 'a\nb\n');
+    const text = [
+      'diff --git a/f.js b/f.js',
+      '--- a/f.js',
+      '+++ b/f.js',
+      '@@ -1,2 +1,2 @@',
+      ' a',
+      '-b',
+      '+c',
+      '',
+    ].join('\n');
+    const patch = { key: 'x@1.0.0', file: 'p', hash: '', digest: '', text };
+    const whole = new PatchBudget();
+    await applyPnpmPatch(root, patch, 'x@1.0.0', whole);
+    // The read of f.js alone is one lstat (2048 + 4) and its 4 bytes and one.
+    expect(whole.spent).toBeGreaterThan(2048 + 4 + 5 + 20);
+    const short = new PatchBudget(whole.spent - 1);
+    await writeFile(join(root, 'f.js'), 'a\nb\n');
+    await expect(
+      applyPnpmPatch(root, patch, 'x@1.0.0', short),
+    ).rejects.toMatchObject({
+      code: 'PATCH_FAILED',
+      message: expect.stringContaining('too costly'),
+    });
+    const exact = new PatchBudget(whole.spent);
+    await applyPnpmPatch(root, patch, 'x@1.0.0', exact);
+    expect(exact.spent).toBe(whole.spent);
   });
 });
 

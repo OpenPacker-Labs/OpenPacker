@@ -92,10 +92,10 @@ export async function applyPnpmPatch(
   packageDir: string,
   patch: FrozenPatch,
   label: string,
+  /** One for the tree read, the patch run and, if it fails, its reverse. */
+  budget: PatchBudget = new PatchBudget(),
 ): Promise<void> {
   const effects = readPatchText(patch.text, patch.file);
-  // One budget for the tree read, the patch run and, if it fails, its reverse.
-  const budget = new PatchBudget();
   try {
     const tree = await loadPatchTree(packageDir, effects, budget);
     const before = new Map(tree.nodes);
