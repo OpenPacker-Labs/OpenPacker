@@ -72,4 +72,21 @@ describe('a patched entry in the shared store, collected', () => {
     expect((await collectSharedStore({ env })).removed).toEqual([stray, entry]);
     expect(await readdir(shared)).toEqual([]);
   });
+
+  it('keeps a new entry that has no record yet, and dates it by its directory', async () => {
+    const shared = await mkdtemp(join(tmpdir(), 'opm-shared-'));
+    temps.push(shared);
+    const entry = join(shared, patchedStoreKey(DIGEST, PATCH));
+    await mkdir(join(entry, 'package'), { recursive: true });
+    await writeFile(join(entry, 'package', 'index.js'), 'patched');
+    const env = { OPM_STORE_HOME: shared };
+    expect(await collectSharedStore({ env })).toMatchObject({
+      removed: [],
+      tooNew: 1,
+    });
+    const hourOn = () => Date.now() + 3_600_000;
+    expect((await collectSharedStore({ env, now: hourOn })).removed).toEqual([
+      entry,
+    ]);
+  });
 });

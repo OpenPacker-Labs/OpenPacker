@@ -100,8 +100,13 @@ export async function collectSharedStore(
       result.referenced += 1;
       continue;
     }
-    const published = await stat(`${entry}.tree`).catch(() => undefined);
-    if (published !== undefined && now - published.mtimeMs < minimumAge) {
+    // Dated by its record, or, while it has none, by the directory itself: a
+    // patched entry is renamed into place before its record is written.
+    const published = await stat(`${entry}.tree`).then(
+      (record) => record.mtimeMs,
+      async () => (await lstat(entry).catch(() => undefined))?.ctimeMs,
+    );
+    if (published !== undefined && now - published < minimumAge) {
       result.tooNew += 1;
       continue;
     }

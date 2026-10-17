@@ -18,6 +18,7 @@
  * a path outside its package, before anything is fetched.
  */
 
+import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, type FileHandle } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
@@ -25,11 +26,7 @@ import { ProviderError, type FrozenPatch } from '@openpacker/adapter-core';
 import { O_DIRECTORY, openChild } from '@openpacker/project-io';
 import { insidePathProblem } from '../pnpm-lock/source.js';
 import type { PnpmLock } from '../pnpm-lock/types.js';
-import {
-  patchHashLike,
-  pnpm10PatchHash,
-  readPatchText,
-} from '../pnpm-patch/index.js';
+import { patchHashLike, readPatchText } from '../pnpm-patch/index.js';
 import type { PnpmProjectConfig } from './config.js';
 import { quote } from './quote.js';
 
@@ -138,7 +135,9 @@ export async function readProjectPatches(
       key,
       file: path,
       hash: recorded.hash,
-      digest: pnpm10PatchHash(bytes),
+      // The bytes applied, not pnpm's hash of them with CRLF made LF: an LF
+      // and a CRLF checkout of one patch install different files.
+      digest: createHash('sha256').update(bytes).digest('hex'),
       text,
     });
   }

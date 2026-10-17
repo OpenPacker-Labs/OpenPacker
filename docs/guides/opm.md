@@ -479,16 +479,17 @@ whichever the lock has (a CRLF checkout hashes as LF). A hunk may sit up to 20
 lines from its header, trailing whitespace and `\r` do not stop it, and a patch
 the package already has counts as applied, as with pnpm; a patch is applied
 whole or not at all. The patched files are a store entry of their own
-(`sha256-<archive>-patch-<sha256 of the patch>`), so a project that installs the
-same version unpatched shares none of them, and `opm gc --shared` keeps each
-while a project links it. `--plan` reports `patched: N packages by M patches`
-and refuses, before anything is fetched: a patch file that is missing (exit 4),
-edited since the lock was written (stale, exit 3), outside the project or
-reached through a link (exit 7), one that names a path outside its package or
-past an archive's bounds (128 segments, 4,096 bytes, 100,000 files; exit 7) or
-that pnpm cannot read (exit 3). A patch that does not apply stops the install
-with nothing written (`PATCH_FAILED`, exit 3), where pnpm warns for a bare-name
-key and installs the package unpatched.
+(`sha256-<archive>-patch-<sha256 of the patch file's bytes>`, so an LF and a
+CRLF checkout of one patch, which pnpm hashes alike and applies differently, are
+two), a project that installs the same version unpatched shares none of them,
+and `opm gc --shared` keeps each while a project links it. `--plan` reports
+`patched: N packages by M patches` and refuses, before anything is fetched: a
+patch file that is missing (exit 4), edited since the lock was written (stale,
+exit 3), outside the project or reached through a link (exit 7), one that names
+a path outside its package or past an archive's bounds (128 segments, 4,096
+bytes, 100,000 files; exit 7) or that pnpm cannot read (exit 3). A patch that
+does not apply stops the install with nothing written (`PATCH_FAILED`, exit 3),
+where pnpm warns for a bare-name key and installs the package unpatched.
 
 `pnpm-workspace.yaml` is read as strictly as the lock: at most 1 MiB, not
 through a link, and without anchors or tags. Every value from these files

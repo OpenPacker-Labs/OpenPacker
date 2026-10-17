@@ -155,9 +155,11 @@ export interface FrozenPatch {
   /** The hash the lock records for it, checked against `text`. */
   readonly hash: string;
   /**
-   * sha256, hex, of the text as pnpm 10 hashes it, whatever form `hash` has:
-   * what names the patched package, so one patch is one package however the
-   * lock that asked for it spells its hash.
+   * sha256, hex, of the patch file's bytes as read, the bytes `text` is and
+   * the ones applied: what names the patched package. Not `hash`, which pnpm
+   * takes of the text with CRLF made LF: an LF and a CRLF checkout of one
+   * patch have one `hash`, and insert lines that end differently, so they are
+   * two packages.
    */
   readonly digest: string;
   /** The file's text, as read and hashed: what is applied. */

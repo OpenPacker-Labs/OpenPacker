@@ -6,27 +6,30 @@
  * (`name@1.0.0_patch_hash=...`), and keeps the unpatched files in its store
  * apart from it (the side-effects cache key holds `patchFileHash` too). opm
  * does the same with its shared store: the patched files are an entry of
- * their own, `sha256-<archive>-patch-<sha256 of the patch>`, so a project
- * that installs the package unpatched never links a patched file, one that
- * patches it never links an unpatched one, and two patches never share one.
+ * their own, `sha256-<archive>-patch-<sha256 of the patch file's bytes>`, so
+ * a project that installs the package unpatched never links a patched file,
+ * one that patches it never links an unpatched one, and two patches, or an LF
+ * and a CRLF checkout of one, never share one.
  *
  * The entry is made the way an archive's is: in a temporary directory beside
  * it (`.<key>.materialize-<uuid>`, which `opm gc --shared` clears when it is
  * left behind), from a copy of the unpatched entry (never its files: they are
  * every project's), patched there by the format (`applyFrozenPatch`), hashed,
- * sealed read-only, its tree digest recorded in `<key>.tree`, and only then
- * renamed into place. An entry that is there already is adopted after its
- * tree is hashed again against that record, as an archive's is. The
- * unpatched entry was proved to be the package the lock names before this
- * runs: the patch is applied to bytes that are known, and a patch that
- * changes `package.json` changes what is installed, not what was checked.
+ * sealed read-only, and renamed into place. Only the install whose rename
+ * won records the tree digest in `<key>.tree`, after the rename: an install
+ * that lost never writes a record for a tree that is not the one in place.
+ * An entry that is there already is adopted after its tree is hashed again
+ * against that record, as an archive's is, and one whose record its
+ * publisher has not written yet is waited for. The unpatched entry was proved
+ * to be the package the lock names before this runs: the patch is applied to
+ * bytes that are known, and a patch that changes `package.json` changes what
+ * is installed, not what was checked.
  */
 
 import { randomUUID } from 'node:crypto';
 import { chmod, copyFile, lstat, mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
-  FrozenLock,
   FrozenLockPackage,
   FrozenPatch,
   ProjectFormat,
@@ -55,6 +58,15 @@ export interface StoredEntry {
   fetchedBytes: number;
   fetched: boolean;
 }
+
+/** What of a lock's package patching reads. */
+type PatchedPackage = Pick<
+  FrozenLockPackage,
+  'path' | 'packageName' | 'version' | 'patch'
+>;
+
+/** What of a format patching calls. */
+type PatchFormat = Pick<ProjectFormat, 'applyFrozenPatch'>;
 
 /** The store key of `digest`'s files with the patch whose sha256 is `patch`. */
 export function patchedStoreKey(digest: string, patch: string): string {
@@ -87,6 +99,33 @@ async function copyTree(from: string, to: string): Promise<void> {
   }
 }
 
+/**
+ * How long an entry another install has renamed into place may be without its
+ * record before it is taken for one whose publisher died: that install writes
+ * the record right after the rename.
+ */
+const RECORD_WAIT_MS = 10_000;
+
+const isThere = (path: string): Promise<boolean> =>
+  lstat(path).then(
+    () => true,
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return false;
+      throw error;
+    },
+  );
+
+/** Wait while `path` is in place and its record is not, for up to `RECORD_WAIT_MS`. */
+async function recordedOrGone(path: string): Promise<void> {
+  const deadline = Date.now() + RECORD_WAIT_MS;
+  while (
+    Date.now() < deadline &&
+    !(await isThere(`${path}.tree`)) &&
+    (await isThere(path))
+  )
+    await new Promise((resolve) => setTimeout(resolve, 20));
+}
+
 /** Make, or adopt, the patched entry of one archive and one patch. */
 async function publishPatched(input: {
   storeRoot: string;
@@ -94,13 +133,15 @@ async function publishPatched(input: {
   unpatched: StoredEntry;
   patch: FrozenPatch;
   label: string;
-  format: ProjectFormat;
+  format: PatchFormat;
 }): Promise<string> {
   const key = patchedStoreKey(input.unpatched.digest, input.patch.digest);
   const path = join(input.storeRoot, key);
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (input.shared && (await adoptExistingEntry(path, key)) !== undefined)
-      return path;
+    if (input.shared) {
+      await recordedOrGone(path);
+      if ((await adoptExistingEntry(path, key)) !== undefined) return path;
+    }
     const tmp = join(input.storeRoot, `.${key}.materialize-${randomUUID()}`);
     try {
       await copyTree(input.unpatched.path, tmp);
@@ -115,16 +156,18 @@ async function publishPatched(input: {
       }
       const treeDigest = await stableStoreTreeDigest(tmp);
       if (input.shared) await sealTreeReadOnly(tmp);
-      await recordTreeDigest(path, treeDigest);
       try {
         await rename(tmp, path);
-        return path;
       } catch (error) {
         // SAFETY: Node file errors carry an optional string `code`.
         const code = (error as NodeJS.ErrnoException).code;
-        // Another install published the same entry first: adopt it.
+        // Another install published the same entry first: adopt its tree.
         if (code !== 'ENOTEMPTY' && code !== 'EEXIST') throw error;
+        continue;
       }
+      // This tree is the one in place, so this install says what it hashes to.
+      await recordTreeDigest(path, treeDigest);
+      return path;
     } finally {
       await removeStableTree(tmp).catch(() => undefined);
     }
@@ -141,11 +184,11 @@ async function publishPatched(input: {
  * proved to be the packages the lock names, and before anything is linked.
  */
 export async function patchArchives(input: {
-  lock: FrozenLock;
+  lock: { readonly packages: readonly PatchedPackage[] };
   byPath: ReadonlyMap<string, StoredEntry>;
   storeRoot: string;
   shared: boolean;
-  format: ProjectFormat;
+  format: PatchFormat;
 }): Promise<{
   byPath: Map<string, StoredEntry>;
   patched: { packages: number; patches: number };
@@ -153,7 +196,7 @@ export async function patchArchives(input: {
   const byPath = new Map(input.byPath);
   const made = new Map<string, Promise<string>>();
   const patched = input.lock.packages.filter(
-    (pkg): pkg is FrozenLockPackage & { patch: FrozenPatch } =>
+    (pkg): pkg is PatchedPackage & { patch: FrozenPatch } =>
       pkg.patch !== undefined,
   );
   if (patched.length > 0 && input.format.applyFrozenPatch === undefined)

@@ -128,25 +128,40 @@ inside the bundle.
 ### Where the patched package lives
 
 10. **A patched package is a store entry of its own**:
-    `sha256-<archive digest>-patch-<sha256 of the patch text>`, the second hash
-    pnpm 10's whatever form the lock has, so one patch is one entry however the
-    lock spells its hash. pnpm does the same in its own way: the patched files
-    are in a virtual-store directory whose name carries the hash
-    (`depPathToFilename`, `name@1.0.0_patch_hash=...`), apart from the store's
-    unpatched files, and its side-effects cache key carries `patchFileHash`
-    (`calcDepState` in `buildDependency`). A project that installs a package
-    unpatched never links a patched file, one that patches it never links an
-    unpatched one, and two patches never share an entry.
+    `sha256-<archive digest>-patch-<sha256 of the patch file's bytes>`. The
+    second hash is of the bytes as read, which are the bytes applied, and not
+    the lock's hash, which pnpm takes of the text with CRLF made LF (point 4).
+    An LF and a CRLF checkout of one patch have one lock hash and are two
+    entries: the CRLF one inserts lines that end in `\r` (pnpm reads the file
+    with `readFileSync(...).toString()` and applies it as it is), so a key named
+    by the lock's hash would hold whichever tree was published first, and a
+    project's install would depend on another project's checkout. pnpm does the
+    same in its own way: the patched files are in a virtual-store directory
+    whose name carries the hash (`depPathToFilename`,
+    `name@1.0.0_patch_hash=...`), apart from the store's unpatched files, and
+    its side-effects cache key carries `patchFileHash` (`calcDepState` in
+    `buildDependency`); pnpm's directory is per project and is not checked
+    against a recorded tree, so its normalized name does it no harm. A project
+    that installs a package unpatched never links a patched file, one that
+    patches it never links an unpatched one, and two patch files whose bytes
+    differ never share an entry.
 11. **The entry is made as an archive's is** (`frozen-patch.ts`): the unpatched
     entry is copied (its files are every project's and are never written) into
     `.<key>.materialize-<uuid>` beside it, patched there by the format
-    (`ProjectFormat.applyFrozenPatch`), hashed, sealed read-only, its tree
-    digest written to `<key>.tree`, and renamed into place. An entry already
-    there is adopted only after its tree is hashed again against that record.
-    `opm gc --shared` reads the key under ADR 0048 §8's rules unchanged: kept
-    while a project links any of its files, kept while its `.tree` is younger
-    than the age rule, removed with its record otherwise, and a leftover
-    `.<key>.materialize-` cleared once old.
+    (`ProjectFormat.applyFrozenPatch`), hashed, sealed read-only, and renamed
+    into place. **Only the install whose rename won writes `<key>.tree`**, and
+    after the rename: two installs that make the same entry at once never leave
+    a record of the tree that lost (an archive's record is written before its
+    rename, which is safe there because every publisher of a key extracts the
+    same tree; a patched tree is the output of opm's applier, and the record
+    follows the rename so that agreement does not rest on the applier alone). An
+    entry already there is adopted only after its tree is hashed again against
+    that record; one renamed into place whose record is not there yet is waited
+    for, up to ten seconds, and is then the error an unrecorded entry always
+    was. `opm gc --shared` reads the key under ADR 0048 §8's rules: kept while a
+    project links any of its files, kept while its `.tree`, or the directory
+    itself while it has no record, is younger than the age rule, removed with
+    its record otherwise, and a leftover `.<key>.materialize-` cleared once old.
 12. **Order.** The archive is fetched, proved against the lock's integrity,
     extracted, and proved to be the package the lock names (ADR 0055 §7)
     **before** it is patched: a patch that edits `package.json` changes what is

@@ -141,8 +141,10 @@ describe('opm ci over a pnpm lock with patchedDependencies', () => {
       const dirs = names.filter((name) => !name.includes('.'));
       expect(dirs).toHaveLength(3);
       const patchedEntry = dirs.find((name) => name.includes('-patch-'))!;
+      // Named by the bytes of the patch file, the ones applied.
+      const applied = createHash('sha256').update(PATCH).digest('hex');
       expect(patchedEntry).toMatch(
-        new RegExp(`^sha256-[0-9a-f]{64}-patch-${hashOf(PATCH)}$`, 'u'),
+        new RegExp(`^sha256-[0-9a-f]{64}-patch-${applied}$`, 'u'),
       );
 
       // Each entry is held while a project links it, and only then.
