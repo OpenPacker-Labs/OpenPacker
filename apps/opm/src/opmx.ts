@@ -432,9 +432,7 @@ async function spawnProcess(
           : message,
       ),
     );
-    return missing && missingHint
-      ? EXIT_CODES.unavailable
-      : EXIT_CODES.internal;
+    return hint ? EXIT_CODES.unavailable : EXIT_CODES.internal;
   }
 }
 

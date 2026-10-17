@@ -12,6 +12,7 @@ import { report } from '../error-report.js';
 import { runChild, startChild, type ChildIo } from './run-child.js';
 import type { RunContext } from './run-context.js';
 import type { ChildRunner } from './run-package.js';
+import { say } from '../error-report.js';
 import { MemberOutput } from './run-output.js';
 import { schedule, type Job, type JobResult } from './run-schedule.js';
 import type { PlannedMember, WorkspacePlan } from './run-select.js';

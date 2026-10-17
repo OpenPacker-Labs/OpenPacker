@@ -262,3 +262,16 @@ export function formatFailure(
   }
   return terminalSafe(`${lines.join('\n')}\n`);
 }
+
+/**
+ * Write one of opm's or opmx's own lines, made safe for a terminal first
+ * (`terminalSafe`): a line may carry text a repository, an archive, a plugin
+ * store, a package argument or the user's own path wrote. What a child process
+ * prints is the child's own and does not pass through here.
+ */
+export function say(
+  stream: Pick<NodeJS.WriteStream, 'write'>,
+  text: string,
+): void {
+  stream.write(terminalSafe(text));
+}

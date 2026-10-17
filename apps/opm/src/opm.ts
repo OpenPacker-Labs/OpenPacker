@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { terminalSafe } from '@openpacker/adapter-core';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import { out, outJson, outRaw, plainLine } from '@openpacker/canonical';
 import {
@@ -741,7 +740,7 @@ export async function runOpm(
 
 /** Report a failure and choose the exit code that tells a script what kind it was. */
 export function handleError(error: unknown, io: CliIo): number {
-  const report = (text: string) => io.stderr.write(terminalSafe(text));
+  const report = (text: string) => say(io.stderr, text);
   if (error instanceof UsageError) {
     io.stderr.write(report('', error.message));
     io.stderr.write(`\n${helpText()}\n`);

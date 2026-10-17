@@ -210,16 +210,18 @@ function leftOut(result: Pick<FrozenPlan, 'skipped'>): string | undefined {
  * nothing done. The same plan is the same text, so it carries no wall time.
  */
 function printPlan(plan: FrozenPlan, io: CommandIo, root: string): void {
-  io.stdout.write(
+  say(
+    io.stdout,
     `Plan for ${resolve(root)} (${plan.lockPath}): nothing was fetched or written\n` +
       `  ${plan.instances} package${plan.instances === 1 ? '' : 's'} in ${plan.places} place${plan.places === 1 ? '' : 's'} under node_modules, from ${plan.archives} archive${plan.archives === 1 ? '' : 's'}\n`,
   );
   const clause = leftOut(plan);
-  if (clause !== undefined) io.stdout.write(`  left out: ${clause}\n`);
+  if (clause !== undefined) say(io.stdout, `  left out: ${clause}\n`);
   if (plan.targets !== undefined)
-    io.stdout.write(`  platforms: ${describeTargets(plan.targets)}\n`);
+    say(io.stdout, `  platforms: ${describeTargets(plan.targets)}\n`);
   if (plan.workspace !== undefined)
-    io.stdout.write(
+    say(
+      io.stdout,
       `  workspace: ${plan.workspace.installed} of ${plan.workspace.members} member${plan.workspace.members === 1 ? '' : 's'} installed, ${plan.workspace.linked} linked at the project\n`,
     );
 }
