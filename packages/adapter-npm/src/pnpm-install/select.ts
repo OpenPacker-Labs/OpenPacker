@@ -31,6 +31,11 @@ export interface SelectInput {
   readonly targets: readonly NativeTarget[];
 }
 
+/** Counts the steps a selection takes, for the tests that hold it to linear time. */
+export interface SelectMeter {
+  visits: number;
+}
+
 export interface Selection {
   /** The instances installed, with the `scope` policy reads them by. */
   readonly included: ReadonlyMap<string, FrozenLockPackage['scope']>;
@@ -60,6 +65,7 @@ function reach(
   model: PnpmModel,
   roots: Iterable<string>,
   followOptional: boolean,
+  meter: SelectMeter,
   blocked: ReadonlySet<string> = new Set(),
 ): Set<string> {
   const seen = new Set<string>();
@@ -67,15 +73,76 @@ function reach(
   for (let key = pending.pop(); key !== undefined; key = pending.pop()) {
     if (seen.has(key)) continue;
     seen.add(key);
-    for (const edge of model.instances.get(key)?.edges ?? [])
+    for (const edge of model.instances.get(key)?.edges ?? []) {
+      meter.visits += 1;
       if (
         (followOptional || !edge.optional) &&
         !blocked.has(edge.to) &&
         !seen.has(edge.to)
       )
         pending.push(edge.to);
+    }
   }
   return seen;
+}
+
+/** What a dropped instance takes with it, and what it cannot take. */
+interface Dropped {
+  /** The failed instances and every optional one that needs one of them outright. */
+  readonly dropped: ReadonlySet<string>;
+  /** For each instance dropped because of another, the one it needs. */
+  readonly needs: ReadonlyMap<string, string>;
+  /** Instances that are not optional and need a dropped one outright, with the first such edge. */
+  readonly stuck: readonly { key: string; to: string }[];
+}
+
+/**
+ * The closure of `failed` under "needs outright" (arborist's `optionalSet`),
+ * within `among`: a worklist over the reverse edges, so each instance and each
+ * edge is looked at a bounded number of times however long the chain is.
+ */
+function dropClosure(
+  model: PnpmModel,
+  among: ReadonlySet<string>,
+  failed: ReadonlySet<string>,
+  meter: SelectMeter,
+): Dropped {
+  const neededBy = new Map<string, string[]>();
+  for (const key of among)
+    for (const edge of model.instances.get(key)!.edges) {
+      meter.visits += 1;
+      if (edge.optional || !among.has(edge.to)) continue;
+      const parents = neededBy.get(edge.to);
+      if (parents === undefined) neededBy.set(edge.to, [key]);
+      else parents.push(key);
+    }
+  const dropped = new Set(failed);
+  const needs = new Map<string, string>();
+  const pending = [...failed];
+  for (let next = 0; next < pending.length; next += 1) {
+    const child = pending[next]!;
+    for (const parent of neededBy.get(child) ?? []) {
+      meter.visits += 1;
+      if (dropped.has(parent) || !model.instances.get(parent)!.optional)
+        continue;
+      dropped.add(parent);
+      needs.set(parent, child);
+      pending.push(parent);
+    }
+  }
+  // An instance that is not optional and needs a dropped one is a lock whose
+  // flags do not match its graph; it is named once, by its first such edge.
+  const stuck: { key: string; to: string }[] = [];
+  for (const key of among) {
+    const instance = model.instances.get(key)!;
+    if (instance.optional) continue;
+    meter.visits += 1 + instance.edges.length;
+    const edge = instance.edges.find(
+      (candidate) => !candidate.optional && dropped.has(candidate.to),
+    );
+    if (edge !== undefined) stuck.push({ key, to: edge.to });
+  }
+  return { dropped, needs, stuck };
 }
 
 /** The instances a set of importer edges point at (a link points at none). */
@@ -85,7 +152,10 @@ function rootsOf(edges: Iterable<PnpmTopEdge>): string[] {
   return out;
 }
 
-export function selectInstances(input: SelectInput): Selection {
+export function selectInstances(
+  input: SelectInput,
+  meter: SelectMeter = { visits: 0 },
+): Selection {
   const { model, tops, omit, targets } = input;
   const followOptional = !omit.has('optional');
   const skipped: FrozenLockSkip[] = [];
@@ -115,12 +185,13 @@ export function selectInstances(input: SelectInput): Selection {
 
   // What the selected importers reach with nothing left out, to say why the
   // rest is not installed.
-  const wanted = reach(model, rootsOf(everyEdge), true);
-  const afterOmit = reach(model, rootsOf(keptEdges), followOptional);
+  const wanted = reach(model, rootsOf(everyEdge), true, meter);
+  const afterOmit = reach(model, rootsOf(keptEdges), followOptional, meter);
 
   // The platform, on what the omission left.
   const failed = new Set<string>();
   for (const key of afterOmit) {
+    meter.visits += 1;
     const instance = model.instances.get(key)!;
     if (targets.some((target) => npmPackageRuns(instance.pkg, target)))
       continue;
@@ -134,37 +205,25 @@ export function selectInstances(input: SelectInput): Selection {
   // What needs a dropped instance outright cannot work either (arborist's
   // optionalSet); an instance that is not optional doing so is a lock whose
   // flags do not match its graph.
-  const dropped = new Set(failed);
-  const needs = new Map<string, string>();
-  const reported = new Set<string>();
-  for (let changed = true; changed; ) {
-    changed = false;
-    for (const key of afterOmit) {
-      if (dropped.has(key)) continue;
-      const instance = model.instances.get(key)!;
-      const edge = instance.edges.find(
-        (candidate) => !candidate.optional && dropped.has(candidate.to),
-      );
-      if (edge === undefined) continue;
-      if (!instance.optional) {
-        if (reported.has(key)) continue;
-        reported.add(key);
-        refused.push({
-          path: key,
-          reason: `${instance.name}@${instance.version} needs ${edge.to}, which is for another platform, and is not optional`,
-        });
-        continue;
-      }
-      dropped.add(key);
-      needs.set(key, edge.to);
-      changed = true;
-    }
+  const { dropped, needs, stuck } = dropClosure(
+    model,
+    afterOmit,
+    failed,
+    meter,
+  );
+  for (const { key, to } of stuck) {
+    const instance = model.instances.get(key)!;
+    refused.push({
+      path: key,
+      reason: `${instance.name}@${instance.version} needs ${to}, which is for another platform, and is not optional`,
+    });
   }
   const roots = rootsOf(keptEdges).filter((key) => !dropped.has(key));
-  const final = reach(model, roots, followOptional, dropped);
+  const final = reach(model, roots, followOptional, meter, dropped);
 
   const unselected = tops.size < model.tops.size;
   for (const key of model.instances.keys()) {
+    meter.visits += 1;
     if (final.has(key)) continue;
     if (!wanted.has(key)) {
       if (unselected) skip(key, 'workspace', 'outside the importers selected');
@@ -193,6 +252,7 @@ export function selectInstances(input: SelectInput): Selection {
       (key) => !dropped.has(key),
     ),
     false,
+    meter,
     dropped,
   );
   const included = new Map<string, FrozenLockPackage['scope']>();
