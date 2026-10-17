@@ -49,7 +49,7 @@ export function readPatchText(text: string, file: string): PatchEffect[] {
     if (error instanceof HeaderLineTooLong)
       throw new ProviderError(
         'SIZE_LIMIT',
-        `the patch ${quote(file)} has a header line of ${error.length} characters, more than the ${MAXIMUM_HEADER_LINE} that two paths within the bounds of a path in an archive and the diff line around them come to, so a path in it is past those bounds or the line is no line of a git diff; opm reads no longer one, where pnpm reads whatever is there`,
+        `the patch ${quote(file)} has a header line (one that begins \`diff --git \`, \`index \`, \`--- \`, \`rename from \` or the like) of ${error.length} characters, more than the ${MAXIMUM_HEADER_LINE} that two paths within the bounds of a path below a package and the diff line around them come to; opm reads no longer one, where pnpm reads whatever is there`,
       );
     throw new ProviderError(
       'INVALID_PATCH',

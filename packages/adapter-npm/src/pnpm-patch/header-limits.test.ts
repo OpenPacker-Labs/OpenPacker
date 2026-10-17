@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { MAXIMUM_HEADER_LINE } from './header-lines.js';
+import { INTERPRETED_PREFIXES, MAXIMUM_HEADER_LINE } from './header-lines.js';
 import { readPatchText } from './index.js';
 import { pathOfBytes } from './tree-fixture.js';
 
@@ -63,7 +63,6 @@ describe('a header line of a patch', () => {
   it.each([
     ['an index line', (n: number) => `index ${'a'.repeat(n - 6)}`],
     ['a mode line', (n: number) => `old mode 100644${' '.repeat(n - 15)}`],
-    ['a line pnpm ignores', (n: number) => `# ${'a'.repeat(n - 2)}`],
   ])('is taken at the bound and refused one past it: %s', (_, make) => {
     expect(readPatchText(withHeader(make(MAXIMUM_HEADER_LINE)), 'p')).toEqual(
       expect.any(Array),
@@ -72,6 +71,58 @@ describe('a header line of a patch', () => {
       readPatchText(withHeader(make(MAXIMUM_HEADER_LINE + 1)), 'p'),
     ).toThrow(tooLong(MAXIMUM_HEADER_LINE + 1));
   });
+
+  it('is bounded by the prefixes the parser reads, which are these ten (readHeaderLine and the diff line)', () => {
+    expect([...INTERPRETED_PREFIXES].sort()).toEqual(
+      [
+        'deleted file mode ',
+        'diff --git ',
+        'index ',
+        'new file mode ',
+        'new mode ',
+        'old mode ',
+        'rename from ',
+        'rename to ',
+        '+++ ',
+        '--- ',
+      ].sort(),
+    );
+  });
+
+  it.each([...INTERPRETED_PREFIXES])(
+    'is refused past the bound, wherever it is in the patch, when it begins like a header line the parser reads: %j',
+    (prefix) => {
+      const long = `${prefix}${'a'.repeat(MAXIMUM_HEADER_LINE)}`;
+      // Before the first diff header, where a commit message sits, as well.
+      for (const text of [
+        withHeader(long),
+        `${long}\n${withHeader('index 1..2')}`,
+      ])
+        expect(() => readPatchText(text, 'p')).toThrow(
+          expect.objectContaining({ code: 'SIZE_LIMIT' }),
+        );
+    },
+  );
+
+  it.each([
+    ['a commit message line', 'Subject: [PATCH] ' + 'word '.repeat(40_000)],
+    ['a comment', `# ${'a'.repeat(200_000)}`],
+    ['a mail header', `From: ${'x'.repeat(100_000)}`],
+    ['a line pnpm reads as nothing', `similarity index ${'9'.repeat(100_000)}`],
+    [
+      'a binary notice',
+      `Binary files a/x and b/x differ${' '.repeat(100_000)}`,
+    ],
+  ])(
+    'is no bound on %s, which the parser does not read, before the diff or inside a file header',
+    (_, line) => {
+      const clean = readPatchText(withHeader('index 1..2'), 'p');
+      expect(
+        readPatchText(`${line}\n${withHeader('index 1..2')}`, 'p'),
+      ).toEqual(clean);
+      expect(readPatchText(withHeader(line), 'p')).toHaveLength(1);
+    },
+  );
 
   it('is refused as a diff line too, whatever follows the second path', () => {
     const spaces = ' '.repeat(MAXIMUM_HEADER_LINE);

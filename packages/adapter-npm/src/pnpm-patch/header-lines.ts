@@ -26,6 +26,30 @@ import { PACKAGE_TREE_LIMITS } from '@openpacker/adapter-core';
 export const MAXIMUM_HEADER_LINE =
   2 * PACKAGE_TREE_LIMITS.maximumPathBytes + 108;
 
+/**
+ * What a line begins with for the parser to read it: the `diff --git` line
+ * and the header lines of a file's patch (`readHeaderLine`). Any other line
+ * of the header part, a commit message or a mail header before the first
+ * diff, an `index`-less note, a comment, is read as nothing, in time that
+ * does not depend on its length (a few `startsWith`), and has no bound.
+ */
+export const INTERPRETED_PREFIXES = [
+  'diff --git ',
+  'old mode ',
+  'new mode ',
+  'deleted file mode ',
+  'new file mode ',
+  'rename from ',
+  'rename to ',
+  'index ',
+  '--- ',
+  '+++ ',
+] as const;
+
+/** True when the parser reads the line as a header line, and so bounds it. */
+export const isInterpreted = (line: string): boolean =>
+  INTERPRETED_PREFIXES.some((prefix) => line.startsWith(prefix));
+
 /** A header line past `MAXIMUM_HEADER_LINE`; `readPatchText` makes it a `SIZE_LIMIT`. */
 export class HeaderLineTooLong extends Error {
   constructor(readonly length: number) {

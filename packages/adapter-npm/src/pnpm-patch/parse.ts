@@ -19,15 +19,19 @@
  * case the tests compare.
  *
  * Two of pnpm's regexes backtrack (`index abc..def` and `diff --git a/x b/y`),
- * so they are read in one pass instead (`header-lines.ts`), and a header line
- * longer than that module's bound is refused: the other regexes here run over
- * a line only after a literal prefix and take it in one pass.
+ * so they are read in one pass instead (`header-lines.ts`), and a line the
+ * parser reads as a header line (it begins `diff --git `, `index `, `--- `...)
+ * is refused when longer than that module's bound. A line it reads as nothing,
+ * a commit message before the first diff, is taken at any length: it costs a
+ * few `startsWith`. The other regexes here run over a line only after a
+ * literal prefix and take it in one pass.
  */
 
 import {
   diffLinePaths,
   HeaderLineTooLong,
   indexHashes,
+  isInterpreted,
   MAXIMUM_HEADER_LINE,
 } from './header-lines.js';
 
@@ -206,7 +210,7 @@ function parsePatchLines(
         state = 'parsing hunks';
         current.hunks = [];
         i--;
-      } else if (line.length > MAXIMUM_HEADER_LINE) {
+      } else if (line.length > MAXIMUM_HEADER_LINE && isInterpreted(line)) {
         throw new HeaderLineTooLong(line.length);
       } else if (line.startsWith('diff --git ')) {
         if (current.diffLineFromPath) commitFilePatch();
