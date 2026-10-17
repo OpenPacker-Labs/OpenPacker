@@ -1,54 +1,66 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { readdir, rm } from 'node:fs/promises';
-import { hostname } from 'node:os';
 import { join } from 'node:path';
+import { currentOwner, isOwnerAlive, type RunOwner } from './run-owner.js';
 
 /**
  * Directories a run makes for itself and removes when it ends: the store views
  * a sandbox binds, and the `node_modules` an ephemeral tool runs from.
  *
- * A run stopped by a signal (Ctrl-C included) never reaches the code that
- * removes them, so each name says which process on which host made it, and the
- * next run that makes one in the same place removes those whose process has
- * ended. One whose process may still be running is never touched.
+ * A run killed outright (SIGKILL, a crash, the power) never reaches the code
+ * that removes them, so each name says which process made it (`run-owner.ts`),
+ * and the next run that makes one in the same place, or `opm gc` for views,
+ * removes those whose process has ended. One whose process may still be
+ * running, or that another machine, boot or PID namespace made, is never
+ * touched.
  */
-
-/** This host, short: a name from another host is never judged here. */
-const HOST = createHash('sha256').update(hostname()).digest('hex').slice(0, 8);
 
 /** A name under `prefix` that belongs to this process. */
 export function scratchName(prefix: string): string {
-  return `${prefix}${HOST}-${process.pid}-${randomUUID()}`;
+  return scratchNameFor(prefix, currentOwner());
 }
 
-/** Remove what processes on this host that have ended left under `prefix` in `dir`. */
+/** A name under `prefix` that says `owner` made it. */
+export function scratchNameFor(prefix: string, owner: RunOwner): string {
+  const { machine, boot, pidNamespace, pid, start } = owner;
+  return `${prefix}${[machine, boot, pidNamespace, pid, start].join('.')}-${randomUUID()}`;
+}
+
+/** Who made `name`, a name under `prefix`; undefined for any other name. */
+function ownerOf(prefix: string, name: string): RunOwner | undefined {
+  if (!name.startsWith(prefix)) return undefined;
+  const [machine, boot, pidNamespace, pid, start, ...rest] = name
+    .slice(prefix.length)
+    .split('-')[0]!
+    .split('.');
+  const owner = Number(pid);
+  if (
+    rest.length > 0 ||
+    start === undefined ||
+    !Number.isSafeInteger(owner) ||
+    owner <= 0
+  )
+    return undefined;
+  return {
+    machine: machine!,
+    boot: boot!,
+    pidNamespace: pidNamespace!,
+    pid: owner,
+    start,
+  };
+}
+
+/** Remove what processes that have ended left under `prefix` in `dir`. */
 export async function sweepAbandoned(
   dir: string,
   prefix: string,
 ): Promise<void> {
   const names = await readdir(dir).catch(() => []);
   for (const name of names) {
-    if (!name.startsWith(prefix)) continue;
-    const [host, pid] = name.slice(prefix.length).split('-');
-    const owner = Number(pid);
-    if (host !== HOST || !Number.isSafeInteger(owner) || owner <= 0) continue;
-    if (mayBeRunning(owner)) continue;
+    const owner = ownerOf(prefix, name);
+    if (owner === undefined || isOwnerAlive(owner)) continue;
     await rm(join(dir, name), { recursive: true, force: true }).catch(
       () => undefined,
     );
-  }
-}
-
-/**
- * Whether `pid` may still be running. A pid reused by another process keeps
- * the leftover until that process ends too, which only delays removing it.
- */
-function mayBeRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    // SAFETY: only the errno code of a failed signal is read.
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
   }
 }
