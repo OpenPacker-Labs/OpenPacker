@@ -32,7 +32,8 @@ interface TagSource {
   resolveTag(basePurl: string, tag: string): Promise<string | undefined>;
 }
 
-function canResolveTags(
+/** Whether the provider can say which version a dist-tag points at. */
+export function canResolveTags(
   provider: CatalogProvider,
 ): provider is CatalogProvider & TagSource {
   return (

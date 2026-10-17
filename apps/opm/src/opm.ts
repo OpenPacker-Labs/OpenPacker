@@ -444,8 +444,8 @@ export async function runOpm(
           io.stdout.write('(no published versions)\n');
           return EXIT_CODES.success;
         }
-        // Newest last, matching the order the registry reports and the one
-        // `opm add` picks from when no version is given.
+        // Newest last, the order the registry reports. Prereleases are listed;
+        // `opm add` with no version takes `latest` (`default-release.ts`).
         for (const version of versions) io.stdout.write(`${version}\n`);
         return EXIT_CODES.success;
       }

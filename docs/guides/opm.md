@@ -446,6 +446,13 @@ Resolution order is explicit `--source`, then a catalog entry, then the
 ecosystem's registry. A project that has pinned where a package comes from never
 starts reaching the network because a registry publishes the same name.
 
+With no version (`opm add pkg:npm/luxon`), the registry's `latest` dist-tag is
+locked when it has one, as npm and pnpm read a bare name; otherwise the newest
+release that is not a prerelease, and the newest prerelease only when nothing
+else was published. A `latest` inside the policy's minimum release age gives way
+to the newest older release that is not a prerelease. `opm update --latest` and
+`opmx` choose by the same rule.
+
 ---
 
 ## Registries

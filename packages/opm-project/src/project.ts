@@ -31,6 +31,7 @@ import { assertLabelIsFree } from './label-conflict.js';
 import { lockEdgeKeys } from './lock-edges.js';
 import { entriesNamed, explainEntry, installedAs } from './why.js';
 import { isExactVersion, registryTargetFor } from './registry-target.js';
+import { defaultRelease } from './default-release.js';
 import {
   emptyLockfile,
   readLockfile,
@@ -88,7 +89,6 @@ import {
   assertSupplyChainAllowed,
   captureFactsFromCatalog,
   captureFactsFromSourceUri,
-  insideReleaseAge,
   lockAttestationFrom,
   lockPackageSupplyChainFields,
   projectPolicyDocument,
@@ -989,31 +989,22 @@ async function resolveRequirement(input: {
             evaluationTime,
           })) ??
       (await (async () => {
-        // No exact version given, so ask the registry what exists and take the
-        // newest. `enumerate` returns oldest-first.
-        const versions = await listRegistryVersions(
+        // No version given: the registry's `latest`, else its newest release
+        // that is not a prerelease, passing over one the policy's minimum age
+        // rules out (`default-release.ts`).
+        const base = stripPurlVersion(requestedPurl);
+        const newest = await defaultRelease({
           ecosystem,
-          stripPurlVersion(requestedPurl),
-          registryOptions,
-        );
-        // Newest first, skipping a release the policy's minimum age rules out
-        // so that "add foo" lands on the previous release instead of failing
-        // on one published an hour ago. If every release is inside the window
-        // the newest is kept and the policy refuses it by name.
-        const provider = await providerFor(ecosystem, registryOptions);
-        let newest = versions[versions.length - 1];
-        for (let index = versions.length - 1; index >= 0; index -= 1)
-          if (
-            !(await insideReleaseAge(
-              policy,
-              provider,
-              versions[index]!,
-              evaluationTime,
-            ))
-          ) {
-            newest = versions[index];
-            break;
-          }
+          basePurl: base,
+          published: await listRegistryVersions(
+            ecosystem,
+            base,
+            registryOptions,
+          ),
+          provider: await providerFor(ecosystem, registryOptions),
+          policy,
+          evaluationTime,
+        });
         if (!newest)
           throw new OpmError(
             'UNRESOLVABLE',

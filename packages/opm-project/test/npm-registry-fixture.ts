@@ -151,8 +151,11 @@ export interface FixturePackage {
   time?: Record<string, string>;
   /** Last change to the packument; defaults to the same old date. */
   modified?: string;
-  /** Dist-tags besides `latest`, which is the last version listed. */
-  distTags?: Record<string, string>;
+  /**
+   * Dist-tags besides `latest`, which is the last version listed unless this
+   * names it; a tag given as `undefined` is left out of the document.
+   */
+  distTags?: Record<string, string | undefined>;
 }
 
 export const OLD = '2026-01-01T00:00:00.000Z';
@@ -218,12 +221,18 @@ export class NpmRegistryFixture implements HttpTransport {
   readonly #packages = new Map<string, FixturePackage>();
 
   readonly #serveFull: boolean;
+  readonly #abbreviatedTime: boolean;
 
+  /**
+   * `abbreviatedTime`: publish times in the abbreviated document too, which
+   * some registries send and registry.npmjs.org does not.
+   */
   constructor(
     packages: readonly FixturePackage[],
-    options: { serveFull?: boolean } = {},
+    options: { serveFull?: boolean; abbreviatedTime?: boolean } = {},
   ) {
     this.#serveFull = options.serveFull ?? true;
+    this.#abbreviatedTime = options.abbreviatedTime ?? false;
     for (const item of packages) this.#packages.set(item.name, item);
   }
 
@@ -304,7 +313,7 @@ export class NpmRegistryFixture implements HttpTransport {
       'dist-tags': { latest: newest, ...found.distTags },
       versions,
       modified,
-      ...(!abbreviated && {
+      ...((!abbreviated || this.#abbreviatedTime) && {
         time: {
           created: OLD,
           modified,

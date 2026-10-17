@@ -1,5 +1,4 @@
 import { join } from 'node:path';
-import { parsePurl } from '@openpacker/adapter-core';
 import type {
   OpmLockfile,
   OpmManifest,
@@ -7,8 +6,7 @@ import type {
   ProjectState,
 } from './types.js';
 import { OpmError } from './types.js';
-import { loadCatalogs, canonicalCatalogPurl } from './catalog.js';
-import { codecFor } from './codecs.js';
+import { loadCatalogs } from './catalog.js';
 import {
   digestOf,
   installFromLock,
@@ -28,14 +26,10 @@ import {
   resolveManifestToLock,
   writeManifestFile,
 } from './project.js';
-import {
-  listRegistryVersions,
-  providerFor,
-  registryOptionsForEcosystem,
-  type RegistryOptions,
-} from './registry.js';
-import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
+import type { RegistryOptions } from './registry.js';
+import { stripPurlVersion } from './spec.js';
 import { serializeManifest } from './toml.js';
+import { newestEligibleVersion } from './update-candidates.js';
 
 /** Exact pin test used by install's lock↔manifest binding. */
 const EXACT_VERSION = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u;
@@ -305,112 +299,4 @@ async function assertLockStillPresent(
   const current = await readLockfile(lockPath);
   if (current === undefined)
     throw new OpmError('INPUT_CHANGED', 'Lock file was removed during update');
-}
-
-async function newestEligibleVersion(input: {
-  req: PackageRequirement;
-  catalog: Map<string, { purl: string; version: string }>;
-  manifest: OpmManifest;
-  offline: boolean;
-  latest: boolean;
-  registryOptions?: RegistryOptions;
-  previousLock?: OpmLockfile | undefined;
-}): Promise<string | undefined> {
-  const ecosystem = ecosystemFromPurl(input.req.purl);
-  const codec = codecFor(ecosystem);
-  const candidates = new Map<string, string>();
-  const base = canonicalCatalogPurl(stripPurlVersion(input.req.purl));
-  for (const entry of input.catalog.values()) {
-    if (canonicalCatalogPurl(stripPurlVersion(entry.purl)) !== base) continue;
-    candidates.set(entry.version, entry.purl);
-  }
-
-  if (!input.offline) {
-    try {
-      const options = registryOptionsForEcosystem(
-        ecosystem,
-        input.manifest,
-        input.registryOptions ?? {},
-        input.previousLock,
-      );
-      const listed = await listRegistryVersions(
-        ecosystem,
-        stripPurlVersion(input.req.purl),
-        options,
-      );
-      for (const exact of listed) {
-        const version = parsePurl(exact).version;
-        if (version !== undefined) candidates.set(version, exact);
-      }
-    } catch (error) {
-      if (
-        !(error instanceof OpmError && error.code === 'OFFLINE') &&
-        candidates.size === 0
-      )
-        throw error;
-    }
-  }
-
-  if (candidates.size === 0) {
-    if (input.offline)
-      throw new OpmError(
-        'UNRESOLVABLE',
-        `Cannot update "${input.req.alias}" offline without catalog versions`,
-      );
-    return undefined;
-  }
-
-  const range = input.latest ? undefined : input.req.version;
-  const ranked = [...candidates.keys()].sort((left, right) =>
-    codec.compareNativeVersions(left, right),
-  );
-  for (let i = ranked.length - 1; i >= 0; i -= 1) {
-    const version = ranked[i]!;
-    if (range !== undefined && !versionSatisfies(codec, version, range))
-      continue;
-    const exact = candidates.get(version) ?? `${base}@${version}`;
-    if (await isYankedOrIneligible(ecosystem, exact, input)) continue;
-    return version;
-  }
-  return undefined;
-}
-
-function versionSatisfies(
-  codec: ReturnType<typeof codecFor>,
-  version: string,
-  range: string,
-): boolean {
-  try {
-    codec.parseNativeRange(range);
-    return codec.satisfies(version, range);
-  } catch {
-    return false;
-  }
-}
-
-async function isYankedOrIneligible(
-  ecosystem: string,
-  exactPurl: string,
-  input: {
-    manifest: OpmManifest;
-    offline: boolean;
-    registryOptions?: RegistryOptions;
-  },
-): Promise<boolean> {
-  if (input.offline) return false;
-  try {
-    const options = registryOptionsForEcosystem(
-      ecosystem,
-      input.manifest,
-      input.registryOptions ?? {},
-    );
-    const provider = await providerFor(ecosystem, options, [
-      'prex.registry.package-metadata/1',
-    ]);
-    const inspection = await provider.inspect(exactPurl);
-    const lifecycle = inspection.package.lifecycle;
-    return lifecycle.status === 'yanked' || lifecycle.eligible === false;
-  } catch {
-    return false;
-  }
 }
