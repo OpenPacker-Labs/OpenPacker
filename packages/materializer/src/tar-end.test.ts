@@ -1,13 +1,16 @@
 /**
  * For an archive the npm adapter materializes (`requireNpmReaderAgreement`),
- * opm refuses what npm's and pnpm's own readers install differently, and
- * installs what both install where they agree, with three stated exceptions:
- * OVER_REFUSED (they agree and opm refuses), PINNED (they agree and opm lays it
- * out differently). The readers are node-tar 6.2.1 (npm) and pnpm 10.28.0's
+ * opm refuses the archives the readers read differently and installs what they
+ * read alike, with two stated exceptions: OVER_REFUSED (they agree and opm
+ * refuses) and PINNED (they agree and opm lays it out differently). The readers
+ * are node-tar 6.2.1 (npm 10.9.4's) and 7.5.22 (npm 11's), each as `Parse` fed
+ * whole and in pieces and as `tar.x` with pacote's filter, and pnpm 10.28.0's
  * `parseTarball`, recorded over the same bytes in test/tar-oracle/oracle.json
- * by its generate.mjs; paths are compared as installed, the first component
- * stripped. Any other archive keeps the general end rule: two zero blocks, or
- * the end of the data, and a lone zero block with data after it refused.
+ * by its generate.mjs; a reading is the files installed, the first path
+ * component stripped, and which of them have an execute bit. Any other archive
+ * keeps the general end rule: two zero blocks, or the end of the data, and a
+ * lone zero block with data after it refused. What the expectations are, case
+ * by case, is in tar-end.expect.ts.
  */
 
 import { readFileSync } from 'node:fs';
@@ -19,17 +22,29 @@ import {
   MaterializationError,
   type MaterializationLimits,
 } from './index.js';
+import { OVER_REFUSED, PACOTE, PINNED, REFUSED } from './tar-end.expect.js';
 
 type Files = Array<[string, string]>;
+
+/** What a reader installed: the files, and the paths with an execute bit. */
+interface Reading {
+  entries: Files;
+  executable: string[];
+}
 
 interface OracleCase {
   name: string;
   bytes: string;
-  nodeTar: { entries: Files; warnings: string[] };
-  /** node-tar's entries for each piece size it reads differently from one buffer. */
-  fed: Record<string, Files>;
-  pnpm: { entries?: Files; error?: string };
-  pacote: { entries?: Files; error?: string };
+  /** node-tar 6.2.1's `Parse`, fed whole. */
+  nodeTar: Reading;
+  /** node-tar's reading for each piece size it reads differently from one buffer. */
+  fed: Record<string, Reading>;
+  nodeTar7: Reading;
+  fed7: Record<string, Reading>;
+  pnpm: Partial<Reading> & { error?: string };
+  /** `tar.x` with pacote's filter, or how it failed. */
+  pacote: Partial<Reading> & { error?: string };
+  pacote7: Partial<Reading> & { error?: string };
 }
 
 const oracle: { cases: OracleCase[] } = JSON.parse(
@@ -39,147 +54,48 @@ const oracle: { cases: OracleCase[] } = JSON.parse(
   ),
 );
 
-/** The code opm refuses each case with where npm and pnpm disagree. */
-const REFUSED: Record<string, string> = {
-  'the end of the data ends it': 'TAR_AMBIGUOUS_END',
-  'a lone zero block between entries': 'TAR_AMBIGUOUS_END',
-  'lone zero blocks between three entries': 'TAR_AMBIGUOUS_END',
-  'a lone zero block before the first entry': 'TAR_AMBIGUOUS_END',
-  'a lone zero block, a block that is not a header, then an entry':
-    'TAR_AMBIGUOUS_END',
-  'a node-tar null block between entries': 'TAR_AMBIGUOUS_END',
-  'an 8-digit checksum with no terminator, typeflag 0 after it':
-    'TAR_AMBIGUOUS_CHECKSUM',
-  'a prefix in a header without ustar magic': 'TAR_AMBIGUOUS_PREFIX',
-  'a prefix in a GNU header (magic "ustar  ")': 'TAR_AMBIGUOUS_PREFIX',
-  'a header whose name starts with NUL, its path in the prefix':
-    'TAR_AMBIGUOUS_END',
-  'a directory with a size hides the entries inside it':
-    'TAR_AMBIGUOUS_DIRECTORY',
-  'a file named like a directory, with a size, hides the entries inside it':
-    'TAR_AMBIGUOUS_DIRECTORY',
-  'a NUL-typed file named like a directory, with a size, hides the entries inside it':
-    'TAR_AMBIGUOUS_DIRECTORY',
-  'a directory with a size hides a header and leaves a payload that starts with NUL':
-    'TAR_AMBIGUOUS_DIRECTORY',
-  'a file named like a directory, with no size': 'TAR_AMBIGUOUS_DIRECTORY',
-  'a uid that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
-  'a gid that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
-  'an mtime that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
-  'a devmajor that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
-  'a devminor that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
-  'an atime that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
-  'a ctime that is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
-  'a uid that is a base-256 number too large to be safe':
-    'TAR_AMBIGUOUS_NUMBER',
-  'a size field that is a NUL, then digits': 'TAR_AMBIGUOUS_NUMBER',
-  'a size field that is a line feed, a space and digits':
-    'TAR_AMBIGUOUS_NUMBER',
-  'a size field that is a tab, a space and digits': 'TAR_AMBIGUOUS_NUMBER',
-  'a checksum field that is a line feed, a space and digits':
-    'TAR_AMBIGUOUS_CHECKSUM',
-  'an extended header with a path, a global header, then a file':
-    'TAR_AMBIGUOUS_PAX',
-  'a contiguous file (typeflag 7)': 'TAR_AMBIGUOUS_TYPE',
-  'a file with a link name': 'TAR_AMBIGUOUS_LINK',
-  'an extended header with a link name, then a file': 'TAR_AMBIGUOUS_LINK',
-  'a path record with a newline in its value': 'TAR_AMBIGUOUS_PAX',
-  'a path record smuggled in a comment record': 'TAR_AMBIGUOUS_PAX',
-  'a size record smuggled in a comment record': 'TAR_AMBIGUOUS_PAX',
-  'a path record that ends in a newline': 'TAR_AMBIGUOUS_PAX',
-  'a benign file, then the same name behind a path with a newline':
-    'TAR_AMBIGUOUS_PAX',
-  'a newline in the second of two records': 'TAR_AMBIGUOUS_PAX',
-  'a pax length with a leading zero': 'INVALID_PAX_HEADER',
-  'a pax record with no final newline': 'INVALID_PAX_HEADER',
-  'an extended header with a path, a directory with a link name, then a file':
-    'TAR_AMBIGUOUS_LINK',
-  'a file whose only path component has a backslash': 'TAR_AMBIGUOUS_PATH',
-  'a file with no directory above it': 'TAR_AMBIGUOUS_PATH',
-  'a name with a NUL and a line feed in it': 'TAR_AMBIGUOUS_TEXT',
-  'a name with a NUL and a carriage return in it': 'TAR_AMBIGUOUS_TEXT',
-  'a name with a NUL and a U+2028 in it': 'TAR_AMBIGUOUS_TEXT',
-  'a prefix with a NUL and a line feed in it': 'TAR_AMBIGUOUS_TEXT',
-  'a link name of a NUL and a line feed, on a file': 'TAR_AMBIGUOUS_TEXT',
-  'a link name of a NUL and a line feed hides a forged entry':
-    'TAR_AMBIGUOUS_TEXT',
-  'an extended header with a character across offset 512 of its body':
-    'TAR_AMBIGUOUS_PAX',
-  'an extended header with a character across offset 16,384':
-    'TAR_AMBIGUOUS_PAX',
-};
+/** On disk a later entry replaces an earlier one at its path, and a path that ends in a slash is written without it. */
+const written = (files: Files) =>
+  [
+    ...new Map(
+      files.map(([path, text]): [string, string] => [
+        path.replace(/\/$/u, ''),
+        text,
+      ]),
+    ),
+  ].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
 
 /**
- * Refused although npm and pnpm install the same files: opm cannot say that
- * its own reading of them is theirs, so it refuses rather than guess.
+ * `tar.x` wrote something other than `Parse` reads (its ignore-file renames
+ * aside, `PACOTE`), or failed: the reader npm runs is not the one the rest of
+ * the oracle reads.
  */
-const OVER_REFUSED: Record<string, string> = {
-  'an extended header with a size, a global header, then a file':
-    'TAR_AMBIGUOUS_PAX',
-  'a directory with a link name': 'TAR_AMBIGUOUS_LINK',
-  'a file with a backslash below the top-level directory': 'TAR_AMBIGUOUS_PATH',
-  'a name with data after a NUL and no line terminator': 'TAR_AMBIGUOUS_TEXT',
-  'a longer extended header with non-ASCII bytes no cut can split':
-    'TAR_AMBIGUOUS_PAX',
-  'a lone zero block, then a header with no path': 'TAR_AMBIGUOUS_END',
-  'a lone zero block, then a directory': 'TAR_AMBIGUOUS_END',
-  'a lone zero block, then a base-256 checksum': 'TAR_AMBIGUOUS_END',
-  'a directory whose checksum field node-tar reads as another number':
-    'TAR_AMBIGUOUS_CHECKSUM',
-  'a directory whose uid is an invalid base-256 number': 'TAR_AMBIGUOUS_NUMBER',
-  'a directory with a size whose span holds only zero blocks':
-    'TAR_AMBIGUOUS_DIRECTORY',
-  'an extended header with a path, a global header, then a directory':
-    'TAR_AMBIGUOUS_PAX',
-  'a prefix without ustar magic, under an extended header with a path':
-    'TAR_AMBIGUOUS_PREFIX',
-  'a comment record with a newline in its value': 'TAR_AMBIGUOUS_PAX',
-  'a record with a newline in its key': 'TAR_AMBIGUOUS_PAX',
-  'a global header with a link name': 'TAR_AMBIGUOUS_LINK',
-};
+const extractDiffers = (
+  item: OracleCase,
+  extracted: OracleCase['pacote'],
+  parsed: Reading,
+) =>
+  extracted.error !== undefined ||
+  !isDeepStrictEqual(
+    written(extracted.entries ?? []),
+    written(PACOTE[item.name] ?? parsed.entries),
+  ) ||
+  !isDeepStrictEqual(extracted.executable, parsed.executable);
 
-/**
- * Extracted although npm's set and opm's differ: the paths opm returns (the
- * first component stripped, as above) where `npm` is what node-tar installs.
- * A leading `./` is node-tar's first component, which it strips; opm drops the
- * `.` segment as npm's extractor does for any other (`acceptRedundantEntries`),
- * so `package/` is left for the layout to unwrap.
- */
-const PINNED: Record<string, Files> = {
-  'a file whose name starts with ./': [
-    ['a.js', 'a'],
-    ['dot.js', 'd'],
-  ],
-};
-
-/**
- * What npm writes (node-tar's `tar.x` with pacote 19.0.1's filter) differs from
- * what node-tar's `Parse` reads, which is what the rest of this file compares,
- * only for the ignore files pacote renames: `.gitignore` becomes `.npmignore`,
- * and is dropped if a `.npmignore` came first. The rename is a name map on an
- * inert file, applied to every tarball however it is read; opm and pnpm keep
- * the name, and neither is refused for it.
- */
-const PACOTE: Record<string, Files> = {
-  'a .gitignore file': [
-    ['.npmignore', 'G'],
-    ['a.js', 'a'],
-  ],
-  'a .npmignore, then a .gitignore': [
-    ['.npmignore', 'N'],
-    ['a.js', 'a'],
-  ],
-  'a .gitignore, then a .npmignore': [
-    ['.npmignore', 'N'],
-    ['a.js', 'a'],
-  ],
-};
-
-/** node-tar's answers (fed whole, and in each piece size that differs) are all pnpm's. */
+/** Every reading of node-tar (both lines, whole and in pieces, and `tar.x`) is pnpm's. */
 const disagree = (item: OracleCase) =>
-  [item.nodeTar.entries, ...Object.values(item.fed)].some(
-    (entries) => !isDeepStrictEqual(entries, item.pnpm.entries),
-  );
+  [
+    item.nodeTar,
+    ...Object.values(item.fed),
+    item.nodeTar7,
+    ...Object.values(item.fed7),
+  ].some(
+    (reading) =>
+      !isDeepStrictEqual(reading.entries, item.pnpm.entries) ||
+      !isDeepStrictEqual(reading.executable, item.pnpm.executable),
+  ) ||
+  extractDiffers(item, item.pacote, item.nodeTar) ||
+  extractDiffers(item, item.pacote7, item.nodeTar7);
 
 const NPM: MaterializationLimits = {
   ...DEFAULT_MATERIALIZATION_LIMITS,
@@ -197,17 +113,24 @@ const bytesOf = (name: string) =>
   );
 
 /** What opm installs from `bytes`, as the oracle records it, or its refusal. */
-async function opm(
+async function opmReading(
   bytes: Uint8Array,
   limits = NPM,
-): Promise<Files | { code?: string | undefined }> {
+): Promise<Reading | { code?: string | undefined }> {
   try {
-    return (await inspectArchive(bytes, 'tar', limits))
-      .filter(({ type }) => type === 'file')
-      .map(({ path, data }) => [
+    const files = (await inspectArchive(bytes, 'tar', limits)).filter(
+      ({ type }) => type === 'file',
+    );
+    return {
+      entries: files.map(({ path, data }) => [
         path.split('/').slice(1).join('/'),
         Buffer.from(data).toString(),
-      ]);
+      ]),
+      executable: files
+        .filter(({ mode }) => ((mode ?? 0) & 0o111) !== 0)
+        .map(({ path }) => path.split('/').slice(1).join('/'))
+        .sort(),
+    };
   } catch (error) {
     return {
       code: error instanceof MaterializationError ? error.code : undefined,
@@ -215,37 +138,28 @@ async function opm(
   }
 }
 
+/** The files only, for the tests of the general rule. */
+async function opm(
+  bytes: Uint8Array,
+  limits = NPM,
+): Promise<Files | { code?: string | undefined }> {
+  const reading = await opmReading(bytes, limits);
+  return 'entries' in reading ? reading.entries : reading;
+}
+
 describe('a tar archive npm and pnpm read', () => {
-  it('refuses exactly the cases where npm and pnpm disagree', () => {
+  it('refuses the archives the readers read differently, in the order of the oracle', () => {
     expect(oracle.cases.filter(disagree).map(({ name }) => name)).toEqual(
       Object.keys(REFUSED),
     );
   });
 
-  it('refuses nothing else where they agree than the cases it lists', () => {
+  it('refuses no other archive where they agree than the ones it lists', () => {
     expect(
       oracle.cases
         .filter((item) => !disagree(item) && item.name in OVER_REFUSED)
         .map(({ name }) => name),
     ).toEqual(Object.keys(OVER_REFUSED));
-  });
-
-  it('is what npm writes, but for the ignore files pacote renames', () => {
-    // On disk a later entry replaces an earlier one at its path, and a path
-    // that ends in a slash is written without it.
-    const written = (files: Files) =>
-      [
-        ...new Map(
-          files.map(([path, text]): [string, string] => [
-            path.replace(/\/$/u, ''),
-            text,
-          ]),
-        ),
-      ].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
-    for (const item of oracle.cases)
-      expect(written(item.pacote.entries ?? []), item.name).toEqual(
-        written(PACOTE[item.name] ?? item.nodeTar.entries),
-      );
   });
 
   it('pins only differences it can state', () => {
@@ -256,19 +170,36 @@ describe('a tar archive npm and pnpm read', () => {
     }
   });
 
+  it('lists the ignore files pacote renames only where tar.x writes them renamed', () => {
+    for (const name of Object.keys(PACOTE)) {
+      const item = oracle.cases.find((found) => found.name === name)!;
+      expect(item.pacote.error, name).toBeUndefined();
+      expect(written(item.pacote.entries ?? []), name).toEqual(
+        written(PACOTE[name]!),
+      );
+      expect(written(PACOTE[name]!), name).not.toEqual(
+        written(item.nodeTar.entries),
+      );
+    }
+  });
+
   it.each(oracle.cases.map((item) => [item.name, item] as const))(
     '%s',
     async (name, item) => {
-      const result = await opm(
+      const result = await opmReading(
         new Uint8Array(Buffer.from(item.bytes, 'base64')),
       );
-      expect(result).toEqual(
-        disagree(item)
-          ? { code: REFUSED[name] }
-          : OVER_REFUSED[name] === undefined
-            ? (PINNED[name] ?? item.nodeTar.entries)
-            : { code: OVER_REFUSED[name] },
-      );
+      if (disagree(item)) {
+        expect(result).toEqual({ code: REFUSED[name] });
+      } else if (OVER_REFUSED[name] !== undefined) {
+        expect(result).toEqual({ code: OVER_REFUSED[name] });
+      } else {
+        // The files node-tar reads (or the layout difference pinned), and its execute bits.
+        expect(result).toEqual({
+          entries: PINNED[name] ?? item.nodeTar.entries,
+          executable: item.nodeTar.executable,
+        });
+      }
     },
   );
 });

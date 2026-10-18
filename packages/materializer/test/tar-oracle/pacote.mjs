@@ -5,35 +5,57 @@
  * a file are skipped, the first path component is stripped, and a `.gitignore`
  * is renamed `.npmignore` unless one was already seen (then it is dropped). The
  * rest of the oracle reads node-tar's `Parse` directly; this is the same reader
- * as pacote runs it, so the oracle can say what the filter changes.
+ * as pacote runs it, so the oracle can say what the filter changes, and what
+ * `tar.x` does that `Parse` does not (node-tar 6.2.1 throws on a numeric pax
+ * `linkpath`, node-tar 7.5.22 drops a file whose `linkpath` leaves the
+ * directory). Execute bits are read from the files written.
+ *
+ * A crash is the answer, not a failure of the oracle: `tar.x` can throw from
+ * inside a stream, which is an uncaught exception in the process, so it is
+ * caught here and recorded as `error`, and a run that never ends as `timeout`.
  */
 
 import {
+  lstatSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
-  statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
+const TIMEOUT_MS = 5000;
+
 function filesUnder(directory, prefix = '') {
   return readdirSync(directory).flatMap((name) => {
     const path = join(directory, name);
-    return statSync(path).isDirectory()
+    const stat = lstatSync(path);
+    return stat.isDirectory()
       ? filesUnder(path, `${prefix}${name}/`)
-      : [[`${prefix}${name}`, readFileSync(path).toString()]];
+      : [
+          {
+            path: `${prefix}${name}`,
+            text: readFileSync(path).toString(),
+            executable: (stat.mode & 0o111) !== 0,
+          },
+        ];
   });
 }
 
 /** The files `tar.x` with pacote's filter extracts from `bytes`, sorted by path. */
-export async function pacoteInstalls(tar, bytes) {
+export async function pacoteInstalls(reader, bytes) {
   const cwd = mkdtempSync(join(tmpdir(), 'tar-oracle-'));
   const sawIgnores = new Set();
+  let onUncaught;
+  let timer;
   try {
-    await new Promise((resolve, reject) => {
-      const extract = tar.x({
+    const failure = await new Promise((resolve) => {
+      onUncaught = (error) =>
+        resolve(`uncaught ${error.code ?? error.message}`);
+      process.once('uncaughtException', onUncaught);
+      timer = setTimeout(() => resolve('timeout'), TIMEOUT_MS);
+      const extract = reader.module.x({
         cwd,
         noChmod: true,
         noMtime: true,
@@ -53,18 +75,28 @@ export async function pacoteInstalls(tar, bytes) {
           return true;
         },
       });
-      extract.on('close', resolve);
-      extract.on('error', reject);
-      extract.end(bytes);
+      extract.on('close', () => resolve(undefined));
+      extract.on('error', (error) => resolve(error.code ?? error.message));
+      try {
+        extract.end(bytes);
+      } catch (error) {
+        resolve(`throw ${error.code ?? error.message}`);
+      }
     });
-    return {
-      entries: filesUnder(cwd).sort(([left], [right]) =>
-        left < right ? -1 : left > right ? 1 : 0,
-      ),
+    const files = filesUnder(cwd).sort((left, right) =>
+      left.path < right.path ? -1 : 1,
+    );
+    const installed = {
+      entries: files.map(({ path, text }) => [path, text]),
+      executable: files
+        .filter((file) => file.executable)
+        .map(({ path }) => path),
     };
-  } catch (error) {
-    return { error: error.code ?? error.message };
+    if (failure !== undefined) installed.error = failure;
+    return installed;
   } finally {
+    clearTimeout(timer);
+    process.off('uncaughtException', onUncaught);
     rmSync(cwd, { recursive: true, force: true });
   }
 }

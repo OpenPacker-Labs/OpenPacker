@@ -1,8 +1,11 @@
 /**
- * The two readers the oracle and the fuzz compare opm with: node-tar 6.2.1's
- * `Parse` (npm), fed a buffer whole or in pieces, and pnpm 10.28.0's
- * `parseTarball`, both loaded from the release directories named on the command
- * line.
+ * The readers the oracle and the fuzz compare opm with, loaded from the release
+ * directories named on the command line: node-tar 6.2.1 (npm 10.9.4's) and
+ * node-tar 7.5.22 (npm 11's line), each as `Parse` fed a buffer whole or in
+ * pieces; pnpm 10.28.0's `parseTarball`. A read is the files installed, as
+ * `[path, text]` with the first path component stripped, and `executable`, the
+ * paths whose mode has an execute bit (pnpm's `modeIsExecutable`, `mode & 0o111`).
+ * Where each directory comes from is in ../tar-fuzz/README.md.
  */
 
 import { readFileSync } from 'node:fs';
@@ -42,14 +45,34 @@ export function loadParseTarball(directory) {
   return load().parseTarball;
 }
 
-/** node-tar 6.2.1 (as npm 10.9 bundles it), loaded from its package directory. */
-export function loadNodeTar(directory) {
+/** The node-tar releases the oracle and the fuzz are pinned to. */
+export const NODE_TAR_VERSIONS = ['6.2.1', '7.5.22'];
+
+/**
+ * node-tar, loaded from its package directory: 6.2.1 (as npm 10.9 bundles it)
+ * or 7.5.22 (npm 11's line, fetched by ../tar-fuzz/fetch-node-tar-7.mjs).
+ * `expected` names the one the caller wants, and anything else is an error.
+ */
+export function loadNodeTar(directory, expected) {
   const manifest = JSON.parse(
     readFileSync(join(directory, 'package.json'), 'utf8'),
   );
-  if (manifest.name !== 'tar' || manifest.version !== '6.2.1')
-    throw new Error(`${directory} is not tar 6.2.1`);
-  return createRequire(join(directory, 'package.json'))(directory);
+  if (
+    manifest.name !== 'tar' ||
+    !NODE_TAR_VERSIONS.includes(manifest.version) ||
+    (expected !== undefined && manifest.version !== expected)
+  )
+    throw new Error(
+      `${directory} is ${manifest.name} ${manifest.version}, not tar ${expected ?? NODE_TAR_VERSIONS.join(' or ')}`,
+    );
+  const module = createRequire(join(directory, 'package.json'))(directory);
+  // 7.x renamed the parser and its entry hook.
+  return {
+    version: manifest.version,
+    module,
+    Parse: module.Parse ?? module.Parser,
+    entryHook: module.Parse ? 'onentry' : 'onReadEntry',
+  };
 }
 
 /**
@@ -59,18 +82,32 @@ export function loadNodeTar(directory) {
  */
 export const FEEDS = [1, 1460, 16384, 65536];
 
+const REGULAR = /^(?:Old|Contiguous)?File$/u;
+const sorted = (list) => list.sort((left, right) => (left < right ? -1 : 1));
+
+/**
+ * The paths whose last entry has an execute bit: a later entry at a path
+ * replaces an earlier one, as on disk.
+ */
+export function executableOf(modes) {
+  return sorted([...modes].filter(([, mode]) => mode).map(([path]) => path));
+}
+
 /** The files node-tar reads, as pacote installs them: `strip: 1`, fed in pieces of `piece` bytes. */
-export async function nodeTar(Parse, bytes, piece = bytes.length) {
+export async function nodeTar(reader, bytes, piece = bytes.length) {
   const entries = [];
+  const modes = new Map();
   const warnings = [];
-  const parser = new Parse({
-    onentry: (entry) => {
+  const parser = new reader.Parse({
+    [reader.entryHook]: (entry) => {
       const chunks = [];
       entry.on('data', (chunk) => chunks.push(chunk));
       entry.on('end', () => {
         const installed = entry.path.split('/').slice(1).join('/');
-        if (/^(?:Old|Contiguous)?File$/u.test(entry.type) && installed !== '')
+        if (REGULAR.test(entry.type) && installed !== '') {
           entries.push([installed, Buffer.concat(chunks).toString()]);
+          modes.set(installed, ((entry.mode ?? 0) & 0o111) !== 0);
+        }
       });
     },
     onwarn: (code) => warnings.push(code),
@@ -82,7 +119,7 @@ export async function nodeTar(Parse, bytes, piece = bytes.length) {
       parser.write(bytes.subarray(at, at + piece));
     parser.end();
   });
-  return { entries, warnings };
+  return { entries, executable: executableOf(modes), warnings };
 }
 
 export function pnpm(parseTarball, bytes) {
@@ -93,6 +130,14 @@ export function pnpm(parseTarball, bytes) {
         path,
         bytes.subarray(offset, offset + size).toString(),
       ]),
+      executable: executableOf(
+        new Map(
+          [...files].map(([path, { mode }]) => [
+            path,
+            ((mode ?? 0) & 0o111) !== 0,
+          ]),
+        ),
+      ),
     };
   } catch (error) {
     return { error: error.message };

@@ -1,24 +1,26 @@
 #!/usr/bin/env node
 /**
  * Write oracle.json: what npm's and pnpm's own tar readers install from each
- * case in cases.mjs: archives the two read differently, and archives they
- * read alike. Paths are recorded as installed,
- * the first component stripped (pacote's `strip: 1`; pnpm strips it itself).
+ * case in cases.mjs: archives the readers read differently, and archives they
+ * read alike. Paths are recorded as installed, the first component stripped
+ * (pacote's `strip: 1`; pnpm strips it itself), with the paths that have an
+ * execute bit.
  *
- *   node generate.mjs <node-tar 6.2.1 package dir> <pnpm 10.28.0 package dir> [--check]
+ *   node generate.mjs <node-tar 6.2.1 dir> <pnpm 10.28.0 dir> <node-tar 7.5.22 dir> [--check]
  *
- * npm extracts with node-tar (`Parse`, here 6.2.1 as npm 10.9 bundles it);
- * pnpm with its own `parseTarball` (`../store/cafs/lib/parseTarball.js`, taken
- * from the 10.28.0 bundle by its source path, cut before the command line
- * starts, as test/pnpm-patch-oracle does). Each case's bytes are written into
- * the oracle, so the test reads the very bytes the readers were given.
+ * npm 10.9 extracts with node-tar 6.2.1 and npm 11 with node-tar 7.5.22 (`Parse`
+ * here; ../tar-fuzz/fetch-node-tar-7.mjs fetches the second); pnpm with its own
+ * `parseTarball` (`../store/cafs/lib/parseTarball.js`, taken from the 10.28.0
+ * bundle by its source path, cut before the command line starts, as
+ * test/pnpm-patch-oracle does). Each case's bytes are written into the oracle,
+ * so the test reads the very bytes the readers were given.
  *
- * node-tar is fed each case as one buffer (`nodeTar`) and in pieces of 1, 1,460,
- * 16,384 and 65,536 bytes; `fed` holds the entries for each piece size that
- * reads differently, so a case whose answer depends on how it was fed shows.
+ * node-tar is fed each case as one buffer (`nodeTar`, `nodeTar7`) and in pieces
+ * of 1, 1,460, 16,384 and 65,536 bytes; `fed` and `fed7` hold the answer for each
+ * piece size that differs, so a case whose answer depends on how it was fed shows.
  *
- * Each case also records `pacote`: the files `tar.x` writes with pacote's own
- * filter (pacote.mjs), which skips what is no file and renames `.gitignore`.
+ * Each case also records `pacote` and `pacote7`: what `tar.x` writes, with
+ * pacote's own filter (pacote.mjs), to a directory, or the way it failed.
  *
  * `--check` regenerates and compares with the committed file, exiting 1 on any
  * difference.
@@ -41,30 +43,47 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const OUTPUT = join(here, 'oracle.json');
 
-async function generate(nodeTarDirectory, pnpmDirectory) {
-  const tar = loadNodeTar(nodeTarDirectory);
-  const { Parse } = tar;
-  const parseTarball = loadParseTarball(pnpmDirectory);
+/** An uncaught exception from inside `tar.x` is an answer (pacote.mjs records it), not the end of the run. */
+process.on('uncaughtException', () => undefined);
+
+async function readFed(reader, bytes) {
+  const whole = await nodeTar(reader, bytes);
+  const fed = {};
+  for (const piece of FEEDS) {
+    const read = await nodeTar(reader, bytes, piece);
+    if (
+      !isDeepStrictEqual(
+        [read.entries, read.executable],
+        [whole.entries, whole.executable],
+      )
+    )
+      fed[piece] = { entries: read.entries, executable: read.executable };
+  }
+  return { whole, fed };
+}
+
+async function generate(directories) {
+  const six = loadNodeTar(directories.nodeTar, '6.2.1');
+  const seven = loadNodeTar(directories.nodeTar7, '7.5.22');
+  const parseTarball = loadParseTarball(directories.pnpm);
   const cases = [];
   for (const [name, parts] of Object.entries(CASES)) {
     const bytes = Buffer.concat(parts);
-    const nodeTarWhole = await nodeTar(Parse, bytes);
-    const fed = {};
-    for (const piece of FEEDS) {
-      const read = await nodeTar(Parse, bytes, piece);
-      if (!isDeepStrictEqual(read.entries, nodeTarWhole.entries))
-        fed[piece] = read.entries;
-    }
+    const sixRead = await readFed(six, bytes);
+    const sevenRead = await readFed(seven, bytes);
     cases.push({
       name,
       bytes: bytes.toString('base64'),
-      nodeTar: nodeTarWhole,
-      fed,
-      pacote: await pacoteInstalls(tar, bytes),
+      nodeTar: sixRead.whole,
+      fed: sixRead.fed,
+      nodeTar7: sevenRead.whole,
+      fed7: sevenRead.fed,
+      pacote: await pacoteInstalls(six, bytes),
+      pacote7: await pacoteInstalls(seven, bytes),
       pnpm: pnpm(parseTarball, bytes),
     });
   }
-  return { nodeTar: '6.2.1', pnpm: '10.28.0', cases };
+  return { nodeTar: '6.2.1', nodeTar7: '7.5.22', pnpm: '10.28.0', cases };
 }
 
 /** The file as the repository's prettier writes it, so format:check passes on it. */
@@ -74,14 +93,19 @@ async function formatted(text) {
   return prettier.format(text, { ...options, filepath: OUTPUT });
 }
 
-const [nodeTarDirectory, pnpmDirectory, flag] = process.argv.slice(2);
-if (!nodeTarDirectory || !pnpmDirectory) {
+const [nodeTarDirectory, pnpmDirectory, nodeTar7Directory, flag] =
+  process.argv.slice(2);
+if (!nodeTarDirectory || !pnpmDirectory || !nodeTar7Directory) {
   console.error(
-    'usage: node generate.mjs <node-tar 6.2.1 dir> <pnpm 10.28.0 dir> [--check]',
+    'usage: node generate.mjs <node-tar 6.2.1 dir> <pnpm 10.28.0 dir> <node-tar 7.5.22 dir> [--check]',
   );
   process.exit(2);
 }
-const oracle = await generate(nodeTarDirectory, pnpmDirectory);
+const oracle = await generate({
+  nodeTar: nodeTarDirectory,
+  pnpm: pnpmDirectory,
+  nodeTar7: nodeTar7Directory,
+});
 if (flag === '--check') {
   const committed = JSON.parse(readFileSync(OUTPUT, 'utf8'));
   if (!isDeepStrictEqual(committed, oracle)) {
