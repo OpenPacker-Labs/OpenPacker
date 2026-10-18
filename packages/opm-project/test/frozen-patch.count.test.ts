@@ -1,5 +1,6 @@
 import { readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { PACKAGE_TREE_LIMITS } from '@openpacker/adapter-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { patchedStoreKey } from '../src/frozen-patch.js';
 import {
@@ -25,8 +26,13 @@ afterEach(cleanStores);
 function changing(added: number, removed = 0) {
   return {
     async applyFrozenPatch(dir: string): Promise<void> {
-      for (let index = 0; index < added; index += 1)
-        await writeFile(join(dir, `added${index}.js`), 'new\n');
+      // In batches: 100,000 files one await at a time would take a minute.
+      for (let from = 0; from < added; from += 500)
+        await Promise.all(
+          Array.from({ length: Math.min(500, added - from) }, (_, offset) =>
+            writeFile(join(dir, `added${from + offset}.js`), 'new\n'),
+          ),
+        );
       if (removed > 0) await rm(join(dir, 'index.js'));
     },
   };
@@ -84,4 +90,26 @@ describe('the files of a patched entry', () => {
       message: expect.stringContaining('more than the 4 files'),
     });
   });
+
+  it('is held to the files an archive may hold when no limit is given: one past 100,000 is refused', async () => {
+    const limit = PACKAGE_TREE_LIMITS.maximumFiles;
+    expect(limit).toBe(100_000);
+    // The unpatched entry has two files; the 100,001st is the patch's. The
+    // other side (exactly 100,000 taken) is the injected-limit test above:
+    // hashing and sealing 100,000 files takes half a minute.
+    const root = await store();
+    const outcome = await publish(root, changing(limit - 1)).then(
+      () => 'published',
+      (error: unknown) => error,
+    );
+    expect(outcome).toMatchObject({
+      code: 'SIZE_LIMIT',
+      message: expect.stringContaining(
+        `would hold more than the ${limit} files a package may hold`,
+      ),
+    });
+    expect(
+      (await readdir(root)).filter((name) => name.includes('-patch-')),
+    ).toEqual([]);
+  }, 180_000);
 });

@@ -95,6 +95,65 @@ describe.each([
   });
 });
 
+describe('bytes, not characters', () => {
+  /** `bytes` bytes of path in segments of 80 three-byte characters, then `a`s. */
+  const multibytePath = (bytes: number): string => {
+    const parts: string[] = [];
+    let left = bytes;
+    while (left > 241) {
+      parts.push('日'.repeat(80));
+      left -= 241;
+    }
+    parts.push('a'.repeat(left));
+    return parts.join('/');
+  };
+
+  it('counts the directory the package is in by its bytes: 1,000 three-byte characters are 3,001', async () => {
+    // Nothing is touched before the arithmetic says no, so the directory need not exist.
+    const dir = `/${'日'.repeat(1_000)}`;
+    expect(Buffer.byteLength(dir)).toBe(3_001);
+    expect(dir.length).toBe(1_001);
+    const longest = 4_095 - 3_001 - 1;
+    const outcome = await applyPnpmPatch(
+      dir,
+      patchOf(create(pathOfBytes(longest + 1))),
+      'x@1.0.0',
+    ).then(
+      () => 'applied',
+      (error: unknown) => error,
+    );
+    expect(outcome).toMatchObject({
+      code: 'UNSAFE_PATH',
+      message: expect.stringContaining(
+        `is ${longest + 1} bytes long, and below the 3001-byte directory it is made in comes to 4096 bytes`,
+      ),
+    });
+  });
+
+  it('counts a path of three-byte characters by its bytes, in the directory it is made in', async () => {
+    const dir = await packageOfBytes(330);
+    const longest = 4_095 - 330 - 1;
+    const path = multibytePath(longest + 1);
+    expect(Buffer.byteLength(path)).toBe(longest + 1);
+    expect(path.length).toBeLessThan(longest);
+    const outcome = await applyPnpmPatch(
+      dir,
+      patchOf(create(path)),
+      'x@1.0.0',
+    ).then(
+      () => 'applied',
+      (error: unknown) => error,
+    );
+    expect(outcome).toMatchObject({
+      code: 'UNSAFE_PATH',
+      message: expect.stringContaining(
+        `is ${longest + 1} bytes long, and below the 330-byte directory`,
+      ),
+    });
+    expect(await readdir(dir)).toEqual([]);
+  });
+});
+
 describe('the longest path of a patch', () => {
   it('is the most bytes a path in any of its effects has, a rename and a deletion included', () => {
     const text = [
