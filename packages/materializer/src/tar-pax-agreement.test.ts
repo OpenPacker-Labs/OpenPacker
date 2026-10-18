@@ -31,6 +31,19 @@ const rawRecord = (key: string, value: string): string => {
   return `${length}${line}`;
 };
 /**
+ * One comment record of exactly `total` bytes whose first accent (two bytes) is
+ * at body offset `offset`: `<total> comment=` is 9 bytes and the digits, then
+ * padding, the accent, padding and the newline.
+ */
+const accentAt = (offset: number, total: number): Uint8Array => {
+  const digits = String(total).length;
+  const record = Buffer.from(
+    `${total} comment=${'x'.repeat(offset - digits - 9)}é${'y'.repeat(total - offset - 3)}\n`,
+  );
+  if (record.byteLength !== total) throw new Error(`${record.byteLength}`);
+  return record;
+};
+/**
  * A header body of exactly `size` bytes: a short comment, then one whose value
  * ends in `tail`. One record alone cannot reach every size, because the digits
  * of its length move with it, so the first record is tried at a few lengths.
@@ -55,9 +68,25 @@ describe('a pax header body', () => {
     expect(refused(body(4096, ''))).toBeUndefined();
   });
 
-  it('may hold bytes past 0x7f in one block, not in more than one', () => {
+  it('may hold bytes past 0x7f in one block', () => {
     expect(refused(body(100, 'é'))).toBeUndefined();
     expect(refused(body(512, 'é'))).toBeUndefined();
+    expect(refused(accentAt(509, 512))).toBeUndefined();
+  });
+
+  it('may hold a character before offset 511 of a longer one, which no piece boundary can split', () => {
+    // acorn-object-spread@1.0.0: bodies of 978 to 981 bytes, a character at 364.
+    expect(refused(accentAt(364, 980))).toBeUndefined();
+    expect(refused(accentAt(509, 900))).toBeUndefined();
+    expect(refused(accentAt(509, 4096))).toBeUndefined();
+  });
+
+  it('may not hold a byte past 0x7f from offset 511 of a longer one: a cut can fall inside the character', () => {
+    for (const offset of [510, 511, 512, 513, 4000, 16383])
+      expect(
+        refused(accentAt(offset, Math.max(offset + 500, 900))),
+        `${offset}`,
+      ).toBe('TAR_AMBIGUOUS_PAX');
     expect(refused(body(513, 'é'))).toBe('TAR_AMBIGUOUS_PAX');
     expect(refused(body(4096, 'é'))).toBe('TAR_AMBIGUOUS_PAX');
   });

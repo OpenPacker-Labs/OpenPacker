@@ -111,7 +111,7 @@ export const OVER_REFUSED: ExpectedCodes = {
   'a directory with a link name': 'TAR_AMBIGUOUS_LINK',
   'a file with a backslash below the top-level directory': 'TAR_AMBIGUOUS_PATH',
   'a name with data after a NUL and no line terminator': 'TAR_AMBIGUOUS_TEXT',
-  'a longer extended header with non-ASCII bytes no cut can split':
+  'a longer extended header with a character ending at offset 511':
     'TAR_AMBIGUOUS_PAX',
   'a lone zero block, then a header with no path': 'TAR_AMBIGUOUS_END',
   'a lone zero block, then a directory': 'TAR_AMBIGUOUS_END',

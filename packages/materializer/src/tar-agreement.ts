@@ -225,20 +225,26 @@ function assertPaxRecordsAgree(data: Uint8Array, at: number): void {
 
 /**
  * Refuse a pax header (`x` or `g`) the readers cannot read alike (ADR 0057 §8):
- * a record with a newline in it, or a header of more than one block with a byte
- * past 0x7f. node-tar decodes a header piece by piece as it is fed
- * (`this[META] += chunk`), pieces are 512 bytes or more, and a body of one
- * block is always delivered whole; a character cut in two by a piece boundary
- * becomes two U+FFFD and its record is ignored, so the same bytes give two
- * answers by how they were fed. `data` is the header's body, its framing
- * already checked by `parsePaxRecords`.
+ * a record with a newline in it, a linkpath record, or a header of more than one
+ * block with a byte past 0x7f from offset 511 on. node-tar decodes a header
+ * piece by piece as it is fed (`this[META] += chunk`); the first piece of a body
+ * is at least a block (512 bytes) and a body of one block is always delivered
+ * whole, so the first character a cut can split is one whose first byte is at
+ * offset 511, and a byte past 0x7f before that belongs to a character that no
+ * piece boundary reaches. A character cut in two becomes two U+FFFD and its
+ * record is ignored, so the same bytes give two answers by how they were fed.
+ * `data` is the header's body, its framing already checked by
+ * `parsePaxRecords`.
  */
 export function assertPaxAgrees(data: Uint8Array, at: number): void {
   assertPaxRecordsAgree(data, at);
-  if (data.byteLength > BLOCK && data.some((byte) => byte >= 0x80))
+  if (
+    data.byteLength > BLOCK &&
+    data.subarray(BLOCK - 1).some((byte) => byte >= 0x80)
+  )
     throw unsafe(
       'TAR_AMBIGUOUS_PAX',
-      `the extended header at offset ${at} is longer than a block and holds bytes past 0x7f: node-tar decodes it piece by piece, so a character cut by a piece boundary changes what it reads`,
+      `the extended header at offset ${at} is longer than a block and holds bytes past 0x7f from offset 511 on: node-tar decodes it piece by piece, so a character cut by a piece boundary changes what it reads`,
     );
 }
 
