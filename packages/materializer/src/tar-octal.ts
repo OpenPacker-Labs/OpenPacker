@@ -61,20 +61,38 @@ export function nodeTarOctal(field: Uint8Array): number | null {
   return Number.isNaN(value) ? null : value;
 }
 
+/** The octal fields a reader acts on: the mode (execute bit) and the size (where the next header is). */
+const OCTAL_FIELDS = {
+  mode: { from: 100, to: 108 },
+  size: { from: 124, to: 136 },
+} as const;
+
 /**
- * Refuse a size field that opm, pnpm and node-tar do not read as one number.
- * Not a number counts as 0 for node-tar, which then reads an entry with no data.
- * A base-256 size is `ADAPTER_REQUIRED` in `tarNumber`. `tarNumber` accepts
- * only what is octal digits once cut and trimmed, which node-tar reads as the
- * same number, so the node-tar comparison does not fire on its own for any
- * field found; it stays so that all three readers are named in one place.
+ * Refuse a mode or size field that opm, pnpm and node-tar do not read as one
+ * number. Not a number counts as 0 for node-tar (a size of 0 reads an entry with
+ * no data; a mode of 0 is no execute bit). pnpm installs a file executable when
+ * `mode & 0o111` is not 0 and NaN & 0o111 is 0. A base-256 field is
+ * `ADAPTER_REQUIRED` in `tarNumber`. `tarNumber` accepts only what is octal
+ * digits once cut and trimmed, which node-tar reads as the same number, so the
+ * node-tar comparison does not fire on its own for any field found; it stays so
+ * that all three readers are named in one place.
  */
-export function assertSizeAgrees(header: Uint8Array, at: number): void {
-  const field = header.subarray(124, 136);
+export function assertOctalAgrees(
+  header: Uint8Array,
+  at: number,
+  name: keyof typeof OCTAL_FIELDS,
+): void {
+  const { from, to } = OCTAL_FIELDS[name];
+  const field = header.subarray(from, to);
   const mine = tarNumber(field);
   if (pnpmOctal(field) !== mine || (nodeTarOctal(field) ?? 0) !== mine)
     throw unsafe(
       'TAR_AMBIGUOUS_NUMBER',
-      `the header at offset ${at} has a size field that pnpm, node-tar and opm read as different numbers`,
+      `the header at offset ${at} has a ${name} field that pnpm, node-tar and opm read as different numbers`,
     );
+}
+
+/** The size field, which says how long the entry's data is. */
+export function assertSizeAgrees(header: Uint8Array, at: number): void {
+  assertOctalAgrees(header, at, 'size');
 }

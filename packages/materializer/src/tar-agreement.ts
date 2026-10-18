@@ -20,7 +20,7 @@
 
 import { unsafe } from './errors.js';
 import { assertNumbersAgree } from './tar-numbers.js';
-import { assertSizeAgrees, pnpmOctal } from './tar-octal.js';
+import { assertOctalAgrees, pnpmOctal } from './tar-octal.js';
 import { assertTextAgrees } from './tar-text.js';
 
 const BLOCK = 512;
@@ -129,7 +129,8 @@ export function assertHeaderAgrees(header: Uint8Array, at: number): void {
   assertChecksumAgrees(header, at);
   assertPrefixAgrees(header, at);
   assertTextAgrees(header, at, ustar);
-  assertSizeAgrees(header, at);
+  assertOctalAgrees(header, at, 'size');
+  assertOctalAgrees(header, at, 'mode');
   assertNumbersAgree(header, at, ustar);
   assertLinkNameAgrees(header, at);
 }

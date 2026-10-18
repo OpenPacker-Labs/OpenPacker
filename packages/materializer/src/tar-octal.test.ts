@@ -6,17 +6,21 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { nodeTarOctal, assertSizeAgrees, pnpmOctal } from './tar-octal.js';
+import { assertOctalAgrees, nodeTarOctal, pnpmOctal } from './tar-octal.js';
 
 const latin1 = (text: string): Uint8Array => Buffer.from(text, 'latin1');
-const size = (text: string): Uint8Array => {
-  const header = new Uint8Array(512);
-  header.set(latin1(text), 124);
-  return header;
+/** A header with `text` written at the start of its size or mode field. */
+const header = (name: 'size' | 'mode', text: string): Uint8Array => {
+  const bytes = new Uint8Array(512);
+  bytes.set(latin1(text), name === 'size' ? 124 : 100);
+  return bytes;
 };
-const refused = (header: Uint8Array): string | undefined => {
+const refused = (
+  bytes: Uint8Array,
+  name: 'size' | 'mode',
+): string | undefined => {
   try {
-    assertSizeAgrees(header, 0);
+    assertOctalAgrees(bytes, 0, name);
     return undefined;
   } catch (error) {
     return (error as { code?: string }).code;
@@ -40,26 +44,47 @@ describe('pnpm and node-tar octal readers', () => {
   });
 });
 
-describe('a size field the readers read alike', () => {
-  it.each([
-    '00000000004\0',
-    '0000000004 \0',
-    '00000000004 ',
-    ' 0000000004\0',
-    '            ',
-    '00000000000\0',
-  ])('is accepted: %j', (text) => {
-    expect(refused(size(text))).toBeUndefined();
-  });
+describe.each(['size', 'mode'] as const)('a %s field', (name) => {
+  const width = name === 'size' ? 12 : 8;
+  const digits = (text: string) => text.padEnd(width, '\0').slice(0, width);
+
+  it.each(['4\0', '4 \0', ' 4\0', '0004\0', ' 004 ', '00000004', '', ' ', '0'])(
+    'the readers read alike is accepted: %j',
+    (text) => {
+      expect(refused(header(name, digits(text)), name)).toBeUndefined();
+    },
+  );
 
   it.each([
-    '\0' + '00000001001',
-    '\n 0000000004',
-    '\r 0000000004',
-    '\t 0000000004',
-    '\v 0000000004',
-    '\f 0000000004',
-  ])('is refused when pnpm reads it differently: %j', (text) => {
-    expect(refused(size(text))).toBe('TAR_AMBIGUOUS_NUMBER');
+    ['a NUL, then digits', '\0' + '04'],
+    ['a line feed, a space and digits', '\n 04'],
+    ['a carriage return, a space and digits', '\r 04'],
+    ['a tab, a space and digits', '\t 04'],
+    ['a vertical tab, a space and digits', '\v 04'],
+    ['a form feed, a space and digits', '\f 04'],
+  ])('with %s is refused when pnpm reads it differently', (_, text) => {
+    expect(refused(header(name, digits(text)), name)).toBe(
+      'TAR_AMBIGUOUS_NUMBER',
+    );
+  });
+});
+
+describe('a mode field, which decides whether a file is executable', () => {
+  it('reads a NUL then digits as 0o755 in pnpm and as 0 in node-tar and opm', () => {
+    const field = latin1('\0' + '000755' + '\0');
+    expect(pnpmOctal(field) & 0o111).not.toBe(0);
+    expect(nodeTarOctal(field)).toBeNull();
+    expect(refused(header('mode', '\0' + '000755' + '\0'), 'mode')).toBe(
+      'TAR_AMBIGUOUS_NUMBER',
+    );
+  });
+
+  it('reads a line feed, a space and digits as 0o755 in node-tar and opm and as no mode in pnpm', () => {
+    const field = latin1('\n 00755\0');
+    expect(pnpmOctal(field) & 0o111).toBe(0);
+    expect(nodeTarOctal(field)).toBe(0o755);
+    expect(refused(header('mode', '\n 00755\0'), 'mode')).toBe(
+      'TAR_AMBIGUOUS_NUMBER',
+    );
   });
 });

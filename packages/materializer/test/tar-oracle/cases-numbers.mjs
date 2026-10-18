@@ -2,8 +2,9 @@
  * Cases about numeric fields only node-tar reads: uid, gid, mtime, and under
  * `ustar\0` `00` magic devmajor, devminor and (byte 475 zero) atime and ctime.
  * A base-256 number it cannot decode makes it drop the entry. And the octal
- * size and checksum fields all three read, which pnpm cuts differently (a NUL
- * before the digits; a control whitespace before a space).
+ * size, mode and checksum fields all three read, which pnpm cuts differently (a
+ * NUL before the digits; a control whitespace before a space). The mode decides
+ * whether a file is installed executable.
  */
 
 import { Z, a, b, entry, file, invalidBase256 } from './blocks.mjs';
@@ -16,6 +17,15 @@ const sizeField = (text) => (header) => {
 /** A file of `AAAA` whose size field is spelled `text`. */
 const sized = (text) =>
   entry('package/s.js', 'AAAA', { edit: sizeField(text) });
+
+/** A file of `M` whose mode field is spelled `text` (Latin-1). */
+const moded = (name, text) =>
+  file(`package/${name}.js`, 'M', {
+    edit: (header) => {
+      header.fill(0, 100, 108);
+      Buffer.from(text, 'latin1').copy(header, 100);
+    },
+  });
 
 const invalid = (name, offset, length) => [
   a,
@@ -103,6 +113,37 @@ export const NUMBER_CASES = {
         Buffer.from(`\n ${sum.toString(8).padStart(5, '0')}\0`, 'latin1'),
     }),
     b,
+    Z,
+    Z,
+  ],
+  'a mode field that is a NUL, then digits': [
+    a,
+    moded('nulled', '\0' + '000755' + '\0'),
+    b,
+    Z,
+    Z,
+  ],
+  'a mode field that is a line feed, a space and digits': [
+    a,
+    moded('lf', '\n 00755\0'),
+    b,
+    Z,
+    Z,
+  ],
+  'a mode field that is a tab, a space and digits': [
+    a,
+    moded('tab', '\t 00755\0'),
+    b,
+    Z,
+    Z,
+  ],
+  'mode fields spelled as writers spell them': [
+    a,
+    moded('exec7', '0000755\0'),
+    moded('exec6', '000755 \0'),
+    moded('exec8', '00000755'),
+    moded('plain', '0000644\0'),
+    moded('setuid', '0004755\0'),
     Z,
     Z,
   ],
