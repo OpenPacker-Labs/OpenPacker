@@ -29,15 +29,21 @@
  * The answers depend on the order they are given in, so the layout is checked
  * and made again (`layOutUntilSound`): an edge whose dependency loads another
  * copy of a peer is pinned beside its dependent, and a name left without its
- * slot in the project is elected. At most `MAXIMUM_LAYOUTS` layouts are made
- * that way for each way of sharing: first every importer shares what it can,
- * then, where that leaves a split or no layout, the importers that reach
- * packages needing each other keep all they need in their own `node_modules`.
- * A lock for which no layout with peers in view can be written within the
- * bound is laid out once more without them, as it was before the peer rule,
- * rather than refused; and a split no layout cures is kept, in the layout that
- * has the fewest, rather than refused, and counted (`splits`) so that the
- * install can say so (`FrozenLock.peers`).
+ * slot in the project is elected. First every such edge is pinned at once.
+ * Where a split is left, the same is tried again pinning only the outermost
+ * splits, and, when an edge that is pinned already still splits, giving its
+ * dependency the project's slot, then writing it as high as its peers allow;
+ * the same two steps answer a package that would sit inside a copy of itself
+ * (past the depth or the size the layout is allowed), for the packages between
+ * the two. At most `MAXIMUM_LAYOUTS` layouts are made for each way of sharing
+ * under each way of pinning: first every importer shares what it can, then,
+ * where that leaves a split or no layout, the importers that reach packages
+ * needing each other keep all they need in their own `node_modules`. A lock
+ * for which no layout with peers in view can be written within the bound is
+ * laid out once more without them, as it was before the peer rule, rather than
+ * refused; and a split no layout cures is kept, in the layout that has the
+ * fewest, rather than refused, and counted (`splits`) so that the install can
+ * say so (`FrozenLock.peers`).
  *
  * Pure. `place-check.ts` resolves every edge on the result with Node's lookup
  * and is how a plan is proved.
@@ -50,14 +56,16 @@ import {
 } from '../layout-plan-types.js';
 import {
   knownOf,
+  LayoutOutgrown,
   layOut,
   pinId,
   type Known,
   type Laid,
+  type Loops,
 } from './place-layout.js';
 import { cyclicImporters } from './place-cycles.js';
 import { emptySlotChoices } from './place-order.js';
-import { findSplits, type PeerSplit } from './place-peers.js';
+import { findSplits, moves, outermost, type PeerSplit } from './place-peers.js';
 import type { PlaceInput, PlannedPlacement } from './place-types.js';
 
 export { enclosingDirs } from './place-order.js';
@@ -79,6 +87,12 @@ export type {
  * name elected; the count is what bounds the work, whatever the lock holds.
  */
 export const MAXIMUM_LAYOUTS = 8;
+
+/**
+ * The most layouts a plan makes: `MAXIMUM_LAYOUTS` for each of two ways of
+ * sharing under each of two ways of pinning, and the layout without peers.
+ */
+export const MAXIMUM_PLANNED_LAYOUTS = MAXIMUM_LAYOUTS * 4 + 1;
 
 /** A layout made with peers in view may take this many places for each instance and importer, and `PLACEMENTS_SPARE` more. */
 const PLACEMENTS_PER_PACKAGE = 8;
@@ -105,6 +119,9 @@ interface Checked {
   readonly splits: readonly PeerSplit[];
 }
 
+/** Which splits of a layout are pinned for the next: every one, or only those closest to the importers. */
+type Pinning = 'all' | 'outermost';
+
 /**
  * Layouts made with peers in view until one has no peer split, or the count
  * is spent. `best` is the layout with the fewest splits (the later of equals);
@@ -114,6 +131,7 @@ function layOutUntilSound(
   input: PlaceInput,
   known: Known,
   isolated: ReadonlySet<string>,
+  pinning: Pinning,
 ): { readonly best: Checked | undefined; readonly layouts: number } {
   const limit = Math.min(
     input.maximumPlacements ?? MAXIMUM_PLACEMENTS,
@@ -122,19 +140,43 @@ function layOutUntilSound(
         PLACEMENTS_SPARE,
   );
   let pinned: ReadonlySet<string> = new Set();
+  let lifted: ReadonlySet<string> = new Set();
   const elected = new Map<string, string>();
   let best: Checked | undefined;
   let layouts = 0;
   while (layouts < MAXIMUM_LAYOUTS) {
     layouts += 1;
-    let laid: Laid;
+    // A package that needs, below itself, a copy of itself, with something
+    // between that a copy nested there would be shadowed by, makes a tree
+    // that is too deep or too big. The packages between are given the
+    // project's slots, when that is allowed; where that is done or does not
+    // answer, each is written as high as its peers allow instead.
+    let loops: Loops | undefined;
+    let laid: Laid | undefined;
     try {
-      laid = layOut(input, known, { pinned, elected, isolated, limit });
+      laid = layOut(input, known, {
+        pinned,
+        elected,
+        isolated,
+        lifted,
+        limit,
+      });
+      if (laid.problems.length > 0) loops = laid.loops;
     } catch (error) {
-      if (error instanceof LayoutTooLargeError) break;
-      throw error;
+      if (!(error instanceof LayoutTooLargeError)) throw error;
+      if (error instanceof LayoutOutgrown) loops = error.loops;
+      laid = undefined;
     }
-    if (laid.problems.length > 0) break;
+    if (laid === undefined || laid.problems.length > 0) {
+      if (pinning !== 'outermost' || loops === undefined) break;
+      const names = [...loops.names].filter(([name]) => !elected.has(name));
+      const edges = [...loops.edges].filter((edge) => !lifted.has(edge));
+      if (names.length === 0 && edges.length === 0) break;
+      for (const [name, key] of names) elected.set(name, key);
+      if (names.length === 0) lifted = new Set([...lifted, ...edges]);
+      pinned = new Set();
+      continue;
+    }
     const splits = findSplits(
       dependentsOf(input, laid, known),
       known.peersOf,
@@ -142,13 +184,31 @@ function layOutUntilSound(
     );
     if (best === undefined || splits.length <= best.splits.length)
       best = { laid, splits };
-    const fresh = splits.filter((split) => !pinned.has(split.id));
+    const fresh = splits.filter(
+      (split) => !pinned.has(split.id) && !lifted.has(split.id),
+    );
     if (fresh.length > 0) {
       // Beside the dependent, the next time.
-      pinned = new Set([...pinned, ...fresh.map((split) => split.id)]);
+      const next = pinning === 'all' ? fresh : outermost(fresh);
+      pinned = new Set([...pinned, ...next.map((split) => split.id)]);
     } else if (splits.length > 0) {
       // Every edge that splits a peer is pinned already, and one still does.
-      break;
+      // The dependency of each is given the project's slot, to be written
+      // above its dependent; where that is done already, it is written as
+      // high as its peers allow below whatever answers the name. The pins are
+      // made again either way.
+      const above =
+        pinning === 'outermost'
+          ? moves(splits, elected)
+          : new Map<string, string>();
+      const higher =
+        pinning === 'outermost' && above.size === 0
+          ? splits.filter((split) => !lifted.has(split.id))
+          : [];
+      if (above.size === 0 && higher.length === 0) break;
+      for (const [name, key] of above) elected.set(name, key);
+      lifted = new Set([...lifted, ...higher.map((split) => split.id)]);
+      pinned = new Set();
     } else {
       const choices = [
         ...emptySlotChoices(laid, input.instances, isolated),
@@ -160,30 +220,57 @@ function layOutUntilSound(
   return { best, layouts };
 }
 
+/** What one way of pinning made of a lock: its best layout, the importers it isolated, and the layouts it took. */
+interface Attempt {
+  readonly best: Checked | undefined;
+  readonly isolated: ReadonlySet<string>;
+  readonly layouts: number;
+}
+
+/**
+ * First every importer shares what it can. Where that leaves a split, or no
+ * layout at all, the importers that reach packages needing each other keep all
+ * they need in their own `node_modules`, and the better layout is kept.
+ */
+function attemptWith(
+  input: PlaceInput,
+  known: Known,
+  pinning: Pinning,
+): Attempt {
+  const shared = layOutUntilSound(input, known, new Set(), pinning);
+  if (shared.best !== undefined && shared.best.splits.length === 0)
+    return { best: shared.best, isolated: new Set(), layouts: shared.layouts };
+  const keep = cyclicImporters(input);
+  if (keep.size === 0)
+    return { best: shared.best, isolated: new Set(), layouts: shared.layouts };
+  const alone = layOutUntilSound(input, known, keep, pinning);
+  const layouts = shared.layouts + alone.layouts;
+  return alone.best !== undefined &&
+    (shared.best === undefined ||
+      alone.best.splits.length < shared.best.splits.length)
+    ? { best: alone.best, isolated: keep, layouts }
+    : { best: shared.best, isolated: new Set(), layouts };
+}
+
 export function planPlacement(input: PlaceInput): PlannedPlacement {
   const known = knownOf(input);
-  // First every importer shares what it can. Where that leaves a split, or no
-  // layout at all, the importers that reach packages needing each other keep
-  // all they need in their own `node_modules`, and the better layout is kept.
-  const shared = layOutUntilSound(input, known, new Set());
-  let attempt = shared;
-  let isolated: ReadonlySet<string> = new Set();
-  let layouts = shared.layouts;
-  if (shared.best === undefined || shared.best.splits.length > 0) {
-    const keep = cyclicImporters(input);
-    if (keep.size > 0) {
-      const alone = layOutUntilSound(input, known, keep);
-      layouts += alone.layouts;
-      if (
-        alone.best !== undefined &&
-        (shared.best === undefined ||
-          alone.best.splits.length < shared.best.splits.length)
-      ) {
-        attempt = alone;
-        isolated = keep;
-      }
-    }
+  // Every split pinned at once is the quick way, and cures nearly every lock.
+  // Where a split is left, or no layout fits, the same is tried again pinning
+  // the outermost splits only: a pin made for a split that an outer pin would
+  // have cured can itself leave one.
+  let attempt = attemptWith(input, known, 'all');
+  let layouts = attempt.layouts;
+  if (attempt.best === undefined || attempt.best.splits.length > 0) {
+    const again = attemptWith(input, known, 'outermost');
+    layouts += again.layouts;
+    if (
+      again.best !== undefined &&
+      (attempt.best === undefined ||
+        again.best.splits.length < attempt.best.splits.length)
+    )
+      attempt = again;
   }
+  const isolated = attempt.isolated;
   let laid = attempt.best?.laid;
   let fallback = false;
   if (laid === undefined) {
@@ -198,6 +285,7 @@ export function planPlacement(input: PlaceInput): PlannedPlacement {
         pinned: new Set(),
         elected: new Map(),
         isolated: new Set(),
+        lifted: new Set(),
         limit: input.maximumPlacements ?? MAXIMUM_PLACEMENTS,
       },
     );

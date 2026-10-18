@@ -32,6 +32,33 @@ export interface Laid {
   readonly links: ReadonlyMap<string, string>;
   readonly preferred: ReadonlyMap<string, string>;
   readonly problems: readonly string[];
+  readonly loops: Loops;
+}
+
+/**
+ * What a copy of a package nested below a copy of itself is shadowed by: the
+ * packages between the two, as the install name and instance each was written
+ * under (which the project's slots could be given to) and as the edge each was
+ * written for (`pinId`, which could be written higher up).
+ */
+export interface Loops {
+  readonly names: ReadonlyMap<string, string>;
+  readonly edges: ReadonlySet<string>;
+}
+
+/**
+ * A layout that took more places than it was given, with the packages that
+ * sit inside a copy of themselves in it (`Laid.loops`): the
+ * tree of a lock whose copies are each shadowed by the one above grows past
+ * the bound before it is deep enough to be refused.
+ */
+export class LayoutOutgrown extends LayoutTooLargeError {
+  constructor(
+    limit: number,
+    readonly loops: Loops,
+  ) {
+    super(limit);
+  }
 }
 
 /** What a plan reads of the instances, worked out once. */
@@ -60,6 +87,8 @@ export interface Strategy {
   readonly pinned: ReadonlySet<string>;
   /** Names whose slot in the project goes to the instance given. */
   readonly elected: ReadonlyMap<string, string>;
+  /** Edges (`pinId`) whose copy, where another instance answers the name, goes as high as its peers allow and not beside the dependent. */
+  readonly lifted: ReadonlySet<string>;
   /** Importers (by directory) whose packages stay in their own `node_modules`, never in the project's. */
   readonly isolated: ReadonlySet<string>;
   /** The most places the layout may take: past it, `LayoutTooLargeError`. */
@@ -93,7 +122,7 @@ export function layOut(
   strategy: Strategy,
 ): Laid {
   const { instances } = input;
-  const { pinned, elected, isolated } = strategy;
+  const { pinned, elected, isolated, lifted } = strategy;
   const maximum = strategy.limit;
   const problems: string[] = [];
   const preferred = rootChoice(instances, input.tops);
@@ -122,13 +151,34 @@ export function layOut(
     }
 
   const tooDeep = new Set<string>();
+  const loops = {
+    names: new Map<string, string>(),
+    edges: new Set<string>(),
+  };
+  /** The packages between `parent` and the nearest copy of `key` above it, if one is. */
+  const betweenCopies = (parent: Node, key: string): void => {
+    const between: Node[] = [];
+    let at: Node | undefined = parent;
+    for (; at !== undefined && at.key !== key; at = at.parent)
+      if (at.key !== undefined) between.push(at);
+    if (at === undefined) return;
+    for (const node of between) {
+      if (!loops.names.has(node.installName))
+        loops.names.set(node.installName, node.key!);
+      loops.edges.add(pinId(node.parent!, node.installName));
+    }
+  };
   const place = (
     parent: Node,
     instance: PlaceInstance,
     name: string,
     direct: boolean,
   ): void => {
-    if (placed.length >= maximum) throw new LayoutTooLargeError(maximum);
+    if (placed.length >= maximum) {
+      for (const node of placed) betweenCopies(node.parent!, node.key!);
+      betweenCopies(parent, instance.key);
+      throw new LayoutOutgrown(maximum, loops);
+    }
     // Two versions of two packages that need each other have no finite tree:
     // each copy nested beside its dependent is shadowed by the one above it.
     // pnpm writes that with symlinks, which a node_modules without them cannot.
@@ -138,6 +188,7 @@ export function layOut(
           `${quote(instance.key)} would sit more than ${MAXIMUM_DEPTH} directories deep: packages that need each other at different versions cannot be laid out as a tree without symlinks`,
         );
       tooDeep.add(instance.key);
+      betweenCopies(parent, instance.key);
       return;
     }
     const node: Node = {
@@ -193,6 +244,7 @@ export function layOut(
       ceiling,
       shared: sharedPeers(from, mine, known.peersOf(to)),
       fits: (at) => caseVariant(at, as) === undefined,
+      climb: lifted.has(pinId(from, as)),
     });
   };
 
@@ -293,5 +345,5 @@ export function layOut(
     }
   }
 
-  return { project, tops, placed, links, preferred, problems };
+  return { project, tops, placed, links, preferred, problems, loops };
 }

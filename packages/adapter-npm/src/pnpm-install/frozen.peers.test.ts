@@ -1,9 +1,10 @@
 /**
  * What a frozen read of a pnpm lock says about the peers the places keep to
  * one copy (ADR 0055 §9): nothing when they all are, and how many are not, and
- * which first, when no layout can keep them. The lock is the review's world of
+ * which first, when no layout can keep them. The lock is the round-8 world of
  * a package that depends on an older version of itself and hosts a plugin that
- * peers it.
+ * peers it, beside a project that needs the plugin's other dependency by the
+ * name the host's copy would have to take.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -15,13 +16,19 @@ const HOST = 'p1@3.0.0(p4@1.0.0(p1@3.0.0))';
 const PLUGIN = 'p4@1.0.0(p1@3.0.0)';
 const NEEDS_BOTH = 'p2@1.0.0(p1@3.0.0)(p4@1.0.0(p1@3.0.0))';
 
-/** `p1@3` depends on `p1@1`, on `p2@1` and on a plugin `p4` that peers `p1`; `p2@1` peers `p4` and `p1`. */
+/**
+ * `p1@3` depends on `p1@1`, on `p2@1` and on a plugin `p4` that peers `p1`;
+ * `p2@1` peers `p4` and `p1`. The project needs `p2@1` too, with neither peer,
+ * so that no copy of the one `p1@3` needs can take the project's `p2`.
+ */
 const KEPT_SPLIT = `lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 importers:
-  '.': {}
+  '.':
+    dependencies:
+      p2: {specifier: '*', version: '1.0.0'}
   packages/m2:
     dependencies:
       p1: {specifier: '*', version: '3.0.0(p4@1.0.0(p1@3.0.0))'}
@@ -30,11 +37,12 @@ importers:
 packages:
   p1@1.0.0: {resolution: {integrity: ${INTEGRITY}}}
   p1@3.0.0: {resolution: {integrity: ${INTEGRITY}}}
-  p2@1.0.0: {resolution: {integrity: ${INTEGRITY}}, peerDependencies: {p1: '*', p4: '*'}}
+  p2@1.0.0: {resolution: {integrity: ${INTEGRITY}}, peerDependencies: {p1: '*', p4: '*'}, peerDependenciesMeta: {p1: {optional: true}, p4: {optional: true}}}
   p2@3.0.0: {resolution: {integrity: ${INTEGRITY}}}
   p4@1.0.0: {resolution: {integrity: ${INTEGRITY}}, peerDependencies: {p1: '*'}}
 snapshots:
   p1@1.0.0: {}
+  p2@1.0.0: {}
   ${HOST}:
     dependencies:
       p1: 1.0.0
@@ -54,7 +62,7 @@ describe('a lock whose peers no layout can keep to one copy', () => {
   it('is read, every place resolved, and says how many dependencies load their own copy and which first', async () => {
     const lock = await (await worldOf(KEPT_SPLIT)).read();
     expect(lock.refused).toEqual([]);
-    expect(lock.packages).toHaveLength(8);
+    expect(lock.packages).toHaveLength(9);
     expect(lock.peers).toEqual({
       splits: 1,
       withoutPeers: false,

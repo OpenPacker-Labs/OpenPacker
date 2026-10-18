@@ -87,8 +87,8 @@ export interface SplitEdge {
 export interface PlannedPlacement extends Placement {
   /**
    * Layouts made, the one returned included: at most `MAXIMUM_LAYOUTS` for
-   * each way of sharing (two), and one more when the layout was made without
-   * peers in view.
+   * each way of sharing (two) under each way of pinning (two), and one more
+   * when the layout was made without peers in view.
    */
   readonly layouts: number;
   /** Whether the layout was made without peers in view, because none with them could be written. */

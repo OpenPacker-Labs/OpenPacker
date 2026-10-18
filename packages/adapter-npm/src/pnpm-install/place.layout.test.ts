@@ -17,6 +17,7 @@ const PLAIN: Strategy = {
   pinned: new Set(),
   elected: new Map(),
   isolated: new Set(),
+  lifted: new Set(),
   limit: 100,
 };
 

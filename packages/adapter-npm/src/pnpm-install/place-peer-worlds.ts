@@ -5,7 +5,7 @@
 
 import { readFileSync } from 'node:fs';
 import { expect } from 'vitest';
-import { MAXIMUM_LAYOUTS, planPlacement } from './place.js';
+import { MAXIMUM_PLANNED_LAYOUTS, planPlacement } from './place.js';
 import { peerSplitProblems, resolutionProblems } from './place-check.js';
 import type {
   PlaceInput,
@@ -33,8 +33,7 @@ export function peerWorld(name: string): PlaceInput {
 /**
  * Plan, and require the plan to prove itself: every edge resolved, no peer
  * split the planner counts or the independent check finds, no fallback, and
- * no more layouts than the two ways of sharing may make (`MAXIMUM_LAYOUTS`
- * each).
+ * no more layouts than a plan may make (`MAXIMUM_PLANNED_LAYOUTS`).
  */
 export function soundPlan(input: PlaceInput): PlannedPlacement {
   const placement = planPlacement(input);
@@ -43,6 +42,6 @@ export function soundPlan(input: PlaceInput): PlannedPlacement {
   expect(peerSplitProblems(input, placement)).toEqual([]);
   expect(placement.splits).toBe(0);
   expect(placement.fallback).toBe(false);
-  expect(placement.layouts).toBeLessThanOrEqual(MAXIMUM_LAYOUTS * 2);
+  expect(placement.layouts).toBeLessThanOrEqual(MAXIMUM_PLANNED_LAYOUTS);
   return placement;
 }
