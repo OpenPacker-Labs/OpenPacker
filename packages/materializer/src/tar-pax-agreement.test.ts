@@ -23,6 +23,13 @@ const comment = (value: string): Uint8Array => {
   const length = bytes + String(bytes + String(bytes).length).length;
   return Buffer.from(`${length}${line}`);
 };
+/** One record, `<length> <key>=<value>\n`, the length counting itself. */
+const rawRecord = (key: string, value: string): string => {
+  const line = ` ${key}=${value}\n`;
+  const bytes = Buffer.byteLength(line);
+  const length = bytes + String(bytes + String(bytes).length).length;
+  return `${length}${line}`;
+};
 /**
  * A header body of exactly `size` bytes: a short comment, then one whose value
  * ends in `tail`. One record alone cannot reach every size, because the digits
@@ -53,6 +60,34 @@ describe('a pax header body', () => {
     expect(refused(body(512, 'é'))).toBeUndefined();
     expect(refused(body(513, 'é'))).toBe('TAR_AMBIGUOUS_PAX');
     expect(refused(body(4096, 'é'))).toBe('TAR_AMBIGUOUS_PAX');
+  });
+
+  it('may not hold a linkpath record, in any of its records', () => {
+    expect(refused(Buffer.from(rawRecord('linkpath', '1234')))).toBe(
+      'TAR_AMBIGUOUS_PAX',
+    );
+    expect(refused(Buffer.from(rawRecord('linkpath', '..')))).toBe(
+      'TAR_AMBIGUOUS_PAX',
+    );
+    expect(
+      refused(
+        Buffer.concat([
+          comment('fine'),
+          Buffer.from(rawRecord('linkpath', '')),
+        ]),
+      ),
+    ).toBe('TAR_AMBIGUOUS_PAX');
+  });
+
+  it('may hold records that only look like a linkpath', () => {
+    for (const record of [
+      rawRecord('linkpathx', '1'),
+      rawRecord('xlinkpath', '1'),
+      rawRecord('comment', 'linkpath=1'),
+      rawRecord('LINKPATH', '1'),
+      rawRecord('SCHILY.linkpath', '1'),
+    ])
+      expect(refused(Buffer.from(record)), record).toBeUndefined();
   });
 
   it('may not hold a newline inside a record, in any of its records', () => {

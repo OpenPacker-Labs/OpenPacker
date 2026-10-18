@@ -30,6 +30,8 @@ export const REFUSED: ExpectedCodes = {
     'TAR_AMBIGUOUS_CHECKSUM',
   'a prefix in a header without ustar magic': 'TAR_AMBIGUOUS_PREFIX',
   'a prefix in a GNU header (magic "ustar  ")': 'TAR_AMBIGUOUS_PREFIX',
+  'a prefix under magic "ustar" and a version that is not "00"':
+    'TAR_AMBIGUOUS_PREFIX',
   'a header whose name starts with NUL, its path in the prefix':
     'TAR_AMBIGUOUS_END',
   'a directory with a size hides the entries inside it':
@@ -51,6 +53,8 @@ export const REFUSED: ExpectedCodes = {
   'a uid that is a base-256 number too large to be safe':
     'TAR_AMBIGUOUS_NUMBER',
   'a size field that is a NUL, then digits': 'TAR_AMBIGUOUS_NUMBER',
+  'a size field that is a NUL, ten zeros and a last digit':
+    'TAR_AMBIGUOUS_NUMBER',
   'a size field that is a line feed, a space and digits':
     'TAR_AMBIGUOUS_NUMBER',
   'a size field that is a tab, a space and digits': 'TAR_AMBIGUOUS_NUMBER',
@@ -76,6 +80,12 @@ export const REFUSED: ExpectedCodes = {
   'a pax record with no final newline': 'INVALID_PAX_HEADER',
   'an extended header with a path, a directory with a link name, then a file':
     'TAR_AMBIGUOUS_LINK',
+  'a one-character link name on a file hides a forged entry':
+    'TAR_AMBIGUOUS_LINK',
+  'a pax record whose key starts with a line feed': 'TAR_AMBIGUOUS_PAX',
+  'a linkpath record that is a number, then a file': 'TAR_AMBIGUOUS_PAX',
+  'a linkpath record that leaves the directory, then a file':
+    'TAR_AMBIGUOUS_PAX',
   'a file whose only path component has a backslash': 'TAR_AMBIGUOUS_PATH',
   'a file with no directory above it': 'TAR_AMBIGUOUS_PATH',
   'a name with a NUL and a line feed in it': 'TAR_AMBIGUOUS_TEXT',

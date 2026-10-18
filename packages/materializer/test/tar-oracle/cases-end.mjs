@@ -62,6 +62,19 @@ export const END_CASES = {
     Z,
     Z,
   ],
+  'a prefix under magic "ustar" and a version that is not "00"': [
+    a,
+    file('a.js', 'A', {
+      prefix: 'package/sub',
+      edit: (header) => {
+        header.write('ustar\0', 257);
+        header.fill(0, 263, 265);
+      },
+    }),
+    file('package/z.js', 'Z'),
+    Z,
+    Z,
+  ],
   'a long path split into a ustar prefix': [
     a,
     file('file.js', 'l', { prefix: `package/${'d'.repeat(60)}` }),

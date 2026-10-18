@@ -18,6 +18,19 @@ import {
 const decoy = file('package/decoy.js', 'D');
 const global = pax({ comment: 'c' }, 'g');
 
+/**
+ * One pax record whose key starts with a line feed and whose value is `inner`,
+ * a whole record: node-tar splits the header at the line feed and reads `inner`
+ * on its own; pnpm and opm read one record by its length.
+ */
+function startsWithLineFeed(inner) {
+  const text = ` \n${inner}`;
+  const bytes = Buffer.byteLength(text);
+  let length = bytes + String(bytes).length;
+  length = bytes + String(length).length;
+  return `${length}${text}`;
+}
+
 export const META_CASES = {
   'an extended header with a path, then a file': [
     a,
@@ -145,6 +158,35 @@ export const META_CASES = {
     pax({ path: 'package/X.js' }),
     entry('package/d/', '', { type: '5' }),
     decoy,
+    Z,
+    Z,
+  ],
+  'a one-character link name on a file hides a forged entry': [
+    file('package/index.js', 'BENIGN'),
+    entry('package/a.js', file('package/index.js', 'PAYLOAD'), {
+      linkname: 'x',
+    }),
+    Z,
+    Z,
+  ],
+  'a pax record whose key starts with a line feed': [
+    a,
+    paxBody(startsWithLineFeed(paxRecord('path', 'package/X.js'))),
+    b,
+    Z,
+    Z,
+  ],
+  'a linkpath record that is a number, then a file': [
+    a,
+    pax({ linkpath: '1234' }),
+    b,
+    Z,
+    Z,
+  ],
+  'a linkpath record that leaves the directory, then a file': [
+    a,
+    pax({ linkpath: '..' }),
+    b,
     Z,
     Z,
   ],

@@ -184,13 +184,23 @@ function assertLinkNameAgrees(header: Uint8Array, at: number): void {
   );
 }
 
+/** `linkpath=` as the bytes a record's key and equals sign are. */
+const LINKPATH = Buffer.from('linkpath=');
+
 /**
- * Refuse a pax header with a newline inside a record, once `parsePaxRecords`
- * has checked its framing. node-tar splits an extended header at newlines and
- * keeps a line only if its length prefix counts exactly that line: a record with
- * a newline in its value is ignored, and one smuggled inside another record's
- * value is applied. pnpm and opm cut by the length prefix and read the outer
- * record whole, so they install different files.
+ * Refuse a pax header with a `linkpath` record, or a newline inside a record,
+ * once `parsePaxRecords` has checked its framing.
+ *
+ * node-tar splits an extended header at newlines and keeps a line only if its
+ * length prefix counts exactly that line: a record with a newline in its value
+ * is ignored, and one smuggled inside another record's value is applied. pnpm
+ * and opm cut by the length prefix and read the outer record whole, so they
+ * install different files.
+ *
+ * A `linkpath` record reaches no file opm or pnpm installs, and `tar.x` acts on
+ * it for every entry: node-tar 6.2.1 turns an all-digit value into a number and
+ * throws `s.normalize is not a function`, and node-tar 7.5 drops the file when
+ * the value resolves outside the directory.
  */
 function assertPaxRecordsAgree(data: Uint8Array, at: number): void {
   let from = 0;
@@ -198,7 +208,13 @@ function assertPaxRecordsAgree(data: Uint8Array, at: number): void {
     const space = data.indexOf(0x20, from);
     const length = Number(Buffer.from(data.subarray(from, space)).toString());
     const end = from + length;
-    if (data.subarray(space + 1, end - 1).includes(0x0a))
+    const record = data.subarray(space + 1, end - 1);
+    if (Buffer.from(record.subarray(0, LINKPATH.length)).equals(LINKPATH))
+      throw unsafe(
+        'TAR_AMBIGUOUS_PAX',
+        `the extended header at offset ${at} has a linkpath record: tar.x throws on a numeric one in node-tar 6 and drops the file when it leaves the directory in node-tar 7.5, where pnpm and opm install it`,
+      );
+    if (record.includes(0x0a))
       throw unsafe(
         'TAR_AMBIGUOUS_PAX',
         `the extended header at offset ${at} has a record with a newline in it: npm splits the header there and ignores the record or reads one inside it, pnpm reads the record whole`,

@@ -92,6 +92,16 @@ export const NUMBER_CASES = {
     Z,
     Z,
   ],
+  'a size field that is a NUL, ten zeros and a last digit': [
+    a,
+    entry('package/a.js', '', {
+      edit: sizeField('\0' + '0'.repeat(10) + '7'),
+    }),
+    file('package/evil.js', 'EVIL'),
+    file('package/tail.js', 'T'),
+    Z,
+    Z,
+  ],
   'a size field that is a line feed, a space and digits': [
     a,
     sized('\n 0000000004'),
