@@ -56,11 +56,12 @@ function archives(packages: readonly string[]) {
   return { bytesOf, integrity };
 }
 
-/** A workspace with one member `m2` that needs `needs`, the lock `lock(integrity)` writes, and a fetch that serves the archives. */
+/** A workspace with one member `m2` that needs `needs` and a project that needs `rootNeeds`, the lock `lock(integrity)` writes, and a fetch that serves the archives. */
 async function project(
   packages: readonly string[],
   needs: readonly string[],
   lock: (integrity: ReadonlyMap<string, string>) => string,
+  rootNeeds: readonly string[] = [],
 ) {
   const dir = await mkdtemp(join(tmpdir(), 'opm-ci-peers-'));
   const store = await mkdtemp(join(tmpdir(), 'opm-ci-peers-store-'));
@@ -70,7 +71,12 @@ async function project(
   await mkdir(join(dir, 'packages/m2'), { recursive: true });
   await writeFile(
     join(dir, 'package.json'),
-    JSON.stringify({ name: 'root', version: '1.0.0', private: true }),
+    JSON.stringify({
+      name: 'root',
+      version: '1.0.0',
+      private: true,
+      dependencies: Object.fromEntries(rootNeeds.map((name) => [name, '*'])),
+    }),
   );
   await writeFile(
     join(dir, 'pnpm-workspace.yaml'),
@@ -99,13 +105,20 @@ const PLUGIN = 'p4@1.0.0(p1@3.0.0)';
 const NEEDS_BOTH = 'p2@1.0.0(p1@3.0.0)(p4@1.0.0(p1@3.0.0))';
 const afterAt = (key: string) => key.slice(key.indexOf('@') + 1);
 
-/** The review's world: `p1@3` depends on `p1@1`, on `p2@1` and on a plugin `p4` that peers `p1`; `p2@1` peers `p4` and `p1`. */
+/**
+ * The round-8 world: `p1@3` depends on `p1@1`, on `p2@1` and on a plugin `p4`
+ * that peers `p1`; `p2@1` peers `p4` and `p1`. The project needs `p2@1` too,
+ * with neither peer, so that no copy of the one `p1@3` needs can take the
+ * project's `p2`.
+ */
 const KEPT = (integrity: ReadonlyMap<string, string>) => `lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 importers:
-  '.': {}
+  '.':
+    dependencies:
+      p2: {specifier: '*', version: '1.0.0'}
   packages/m2:
     dependencies:
       p1: {specifier: '*', version: '${afterAt(HOST)}'}
@@ -114,11 +127,12 @@ importers:
 packages:
   p1@1.0.0: {resolution: {integrity: ${integrity.get('p1@1.0.0')}}}
   p1@3.0.0: {resolution: {integrity: ${integrity.get('p1@3.0.0')}}}
-  p2@1.0.0: {resolution: {integrity: ${integrity.get('p2@1.0.0')}}, peerDependencies: {p1: '*', p4: '*'}}
+  p2@1.0.0: {resolution: {integrity: ${integrity.get('p2@1.0.0')}}, peerDependencies: {p1: '*', p4: '*'}, peerDependenciesMeta: {p1: {optional: true}, p4: {optional: true}}}
   p2@3.0.0: {resolution: {integrity: ${integrity.get('p2@3.0.0')}}}
   p4@1.0.0: {resolution: {integrity: ${integrity.get('p4@1.0.0')}}, peerDependencies: {p1: '*'}}
 snapshots:
   p1@1.0.0: {}
+  p2@1.0.0: {}
   ${HOST}:
     dependencies:
       p1: 1.0.0
@@ -166,6 +180,7 @@ describe('a lock whose peers no layout can keep to one copy', () => {
       KEPT_PACKAGES,
       ['p1', 'p2', 'p4'],
       KEPT,
+      ['p2'],
     );
     const c = capture();
     const code = await runOpm(['ci', '--plan', '--path', dir], c.io, '/', {
@@ -174,7 +189,7 @@ describe('a lock whose peers no layout can keep to one copy', () => {
     expect(code, c.err).toBe(EXIT_CODES.success);
     expect(c.out.split('\n')).toEqual([
       expect.stringMatching(/^Plan for .*: nothing was fetched or written$/u),
-      '  5 packages in 8 places under node_modules, from 5 archives',
+      '  6 packages in 9 places under node_modules, from 5 archives',
       '  workspace: 1 of 1 member installed, 0 linked at the project',
       '',
     ]);
@@ -188,11 +203,12 @@ describe('a lock whose peers no layout can keep to one copy', () => {
       KEPT_PACKAGES,
       ['p1', 'p2', 'p4'],
       KEPT,
+      ['p2'],
     );
     const c = capture();
     const code = await runOpm(['ci', '--path', dir], c.io, '/', { fetch });
     expect(code, c.err).toBe(EXIT_CODES.success);
-    expect(c.out).toContain('Installed 8 packages');
+    expect(c.out).toContain('Installed 9 packages');
     expect(c.err.trimEnd().split('\n')).toEqual([
       expect.stringMatching(NOTICE),
     ]);

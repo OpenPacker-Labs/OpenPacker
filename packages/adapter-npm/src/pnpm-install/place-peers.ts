@@ -102,6 +102,8 @@ export interface HomeQuestion {
   readonly shared: readonly SharedPeer[];
   /** Whether a directory may take `as` (no name there differs from it only by case). */
   readonly fits: (at: Node) => boolean;
+  /** Another instance found under the name does not keep the new copy beside `from`: it goes as high as the peers allow. */
+  readonly climb?: boolean;
 }
 
 /**
@@ -115,8 +117,9 @@ export interface HomeQuestion {
  */
 export function homeOf(question: HomeQuestion): Node | 'shared' {
   const { from, as, to, found, plain, ceiling, shared } = question;
-  if (found !== undefined && found.key !== to) return from;
-  if (found !== undefined && agrees(found, shared)) {
+  if (found !== undefined && found.key !== to && question.climb !== true)
+    return from;
+  if (found?.key === to && agrees(found, shared)) {
     for (const peer of shared) settle(found, peer.name, peer.at.parent!);
     settle(from, as, found.parent!);
     return 'shared';
@@ -143,6 +146,39 @@ export function homeOf(question: HomeQuestion): Node | 'shared' {
 export interface PeerSplit extends SplitEdge {
   /** `pinId` of the edge. */
   readonly id: string;
+  /** How many directories down the dependent sits: 0 for an importer. */
+  readonly depth: number;
+  /** The name the edge finds its dependency by. */
+  readonly as: string;
+}
+
+/**
+ * The instances to give the project's slots to when splits persist although
+ * their edges are pinned beside the dependent: the dependency of each, under
+ * the name the edge finds it by, so that it can be written above the
+ * dependent instead of beside it (a dependent that shadows a peer its
+ * dependency needs cannot be cured from inside). One for each name, and none
+ * for a name already given.
+ */
+export function moves(
+  splits: readonly PeerSplit[],
+  elected: ReadonlyMap<string, string>,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const split of splits)
+    if (!elected.has(split.as) && !out.has(split.as))
+      out.set(split.as, split.dependency);
+  return out;
+}
+
+/**
+ * The splits whose dependent sits the fewest directories down. What a copy
+ * written for an outer edge changes can cure a split further in, so the outer
+ * ones are pinned first.
+ */
+export function outermost(splits: readonly PeerSplit[]): PeerSplit[] {
+  const shallowest = Math.min(...splits.map((split) => split.depth));
+  return splits.filter((split) => split.depth === shallowest);
 }
 
 /**
@@ -170,6 +206,8 @@ export function findSplits(
       if (!agrees(found, shared))
         splits.push({
           id: edgeId(node, edge.as),
+          depth: node.chain.length,
+          as: edge.as,
           importer: node.base,
           ...(node.key !== undefined && { dependent: node.key }),
           dependency: edge.to,

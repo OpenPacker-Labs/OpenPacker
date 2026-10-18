@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { planPlacement } from './place.js';
-import { peerSplitProblems, resolutionProblems } from './place-check.js';
+import { resolutionProblems } from './place-check.js';
 import { peerWorld, soundPlan } from './place-peer-worlds.js';
 
 describe('an edge whose dependency sits beside its dependent', () => {
@@ -51,29 +51,12 @@ describe('pins', () => {
   });
 });
 
-describe('a split no layout avoids', () => {
-  it('is kept in the layout with the fewest, still resolves every edge, and is counted', () => {
-    // `p1@3` depends on an older `p1` and hosts a plugin `p4` that peers
-    // `p1`; `p2` peers both. A tree cannot give `p2` the host `p1@3` and the
-    // `p1@1` under one name, so one copy of the host and the plugin is loaded
-    // twice (pnpm's symlinks make it one).
-    const input = peerWorld('kept-split.json');
-    const placement = planPlacement(input);
-    expect(placement.problems).toEqual([]);
-    expect(resolutionProblems(input, placement)).toEqual([]);
-    expect(placement.fallback).toBe(false);
-    expect(placement.splits).toBe(1);
-    expect(placement.firstSplit).toEqual({
-      importer: expect.any(String),
-      dependent: expect.stringMatching(/^p\d@/u),
-      dependency: expect.stringMatching(/^p\d@/u),
-    });
-    // The independent check finds the same second copy.
-    expect(peerSplitProblems(input, placement)).not.toEqual([]);
-  });
-
-  it('is laid out without peers in view when no layout with them fits, and the splits of that layout are counted', () => {
-    const input = peerWorld('fallback.json');
+describe('a lock no layout with peers in view fits', () => {
+  it('is laid out without peers in view, and the splits of that layout are counted', () => {
+    // Two places for a layout with peers in view: not enough for seven
+    // instances, however the splits are cured; `place.refine.test.ts` lays out
+    // the same world with all the room it needs.
+    const input = { ...peerWorld('too-deep.json'), peerPlacements: 2 };
     const placement = planPlacement(input);
     expect(placement.problems).toEqual([]);
     expect(resolutionProblems(input, placement)).toEqual([]);

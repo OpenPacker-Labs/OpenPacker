@@ -46,9 +46,10 @@ describe('a lock no layout with peers in view can be written for', () => {
       expect(placement.fallback).toBe(true);
       expect(resolutionProblems(input, placement)).toEqual([]);
       expect(placement.placed.length).toBeGreaterThanOrEqual(6);
-      // Sharing gave up, the members that reach the cycle gave up, and then
-      // the layout without peers.
-      expect(placement.layouts).toBe(3);
+      // Sharing gave up, the members that reach the cycle gave up, the same
+      // two again pinning the outermost splits only, and then the layout
+      // without peers.
+      expect(placement.layouts).toBe(5);
     },
   );
 
