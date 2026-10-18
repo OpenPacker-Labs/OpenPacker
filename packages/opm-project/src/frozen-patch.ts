@@ -39,6 +39,7 @@ import {
   type ProjectFormat,
 } from '@openpacker/adapter-core';
 import { adapterFailure } from './frozen-prepare.js';
+import { assertBaseFits, longestForm } from './frozen-patch-fit.js';
 import { packageDirectory } from './frozen-scripts.js';
 import { stableStoreTreeDigest } from './generations.js';
 import {
@@ -166,27 +167,45 @@ async function countFiles(path: string, limit: number): Promise<number> {
   }
 }
 
+/** An ENAMETOOLONG from the file system, as the refusal it is; any other error as it is. */
+function refusedAsTooLong(error: unknown, input: PublishInput): Error {
+  if (!(error instanceof Error)) return new Error(String(error));
+  if ((error as NodeJS.ErrnoException).code !== 'ENAMETOOLONG') return error;
+  return new OpmError(
+    'UNSAFE_PATH',
+    `${input.label} patched by ${input.patch.file}: the file system refused a path in the patched copy as too long (ENAMETOOLONG), which the paths counted before did not show; the copy is made below the store, so keep the store (OPM_STORE_HOME) at a shorter path`,
+    { cause: error },
+  );
+}
+
 /** The unpatched entry copied to `tmp` and patched there; the tree's digest. */
 async function buildPatched(input: PublishInput, tmp: string): Promise<string> {
-  await copyTree(input.unpatched.path, tmp);
   try {
-    await input.format.applyFrozenPatch!(
-      await packageDirectory(tmp),
-      input.patch,
-      input.label,
-    );
+    // The path the system sees: a symlink in the store's ancestors may make it longer.
+    const where = await longestForm(tmp);
+    await assertBaseFits(input.label, input.unpatched.path, where);
+    await copyTree(input.unpatched.path, tmp);
+    try {
+      await input.format.applyFrozenPatch!(
+        await packageDirectory(where),
+        input.patch,
+        input.label,
+      );
+    } catch (error) {
+      throw adapterFailure(error);
+    }
+    // The patch may have added to a package already at the limit.
+    const limit = input.maximumFiles ?? PACKAGE_TREE_LIMITS.maximumFiles;
+    const files = await countFiles(tmp, limit);
+    if (files > limit)
+      throw new OpmError(
+        'SIZE_LIMIT',
+        `${input.label} patched by ${input.patch.file} would hold more than the ${limit} files a package may hold`,
+      );
+    return await stableStoreTreeDigest(tmp);
   } catch (error) {
-    throw adapterFailure(error);
+    throw refusedAsTooLong(error, input);
   }
-  // The patch may have added to a package already at the limit.
-  const limit = input.maximumFiles ?? PACKAGE_TREE_LIMITS.maximumFiles;
-  const files = await countFiles(tmp, limit);
-  if (files > limit)
-    throw new OpmError(
-      'SIZE_LIMIT',
-      `${input.label} patched by ${input.patch.file} would hold more than the ${limit} files a package may hold`,
-    );
-  return stableStoreTreeDigest(tmp);
 }
 
 /**

@@ -1,5 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { patchedStoreKey } from '../src/frozen-patch.js';
@@ -12,14 +11,20 @@ import {
   patchedWorld,
 } from './frozen-patch-fixture.js';
 import { cleanup, pnpmWorld } from './frozen-pnpm-fixture.js';
+import {
+  cleanLong,
+  createPatch as create,
+  directoryOfBytes,
+  pathOfBytes,
+  shortcutStore,
+  symlinkedStore,
+} from './frozen-patch-long-fixture.js';
 import { onPosix } from './frozen-workspace-fixture.js';
 
 afterEach(async () => {
   await cleanup();
   await cleanStores();
-  await Promise.all(
-    temps.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
+  await cleanLong();
 });
 
 /**
@@ -32,60 +37,56 @@ afterEach(async () => {
  * directory it really has.
  */
 
-const temps: string[] = [];
-
-/** A directory whose path is `bytes` bytes long, to stand for a store under a deep home. */
-async function directoryOfBytes(bytes: number): Promise<string> {
-  const base = await mkdtemp(join(tmpdir(), 'opm-fit-'));
-  temps.push(base);
-  let dir = base;
-  while (Buffer.byteLength(dir) < bytes) {
-    const room = bytes - Buffer.byteLength(dir) - 1;
-    dir = join(dir, 'd'.repeat(Math.max(Math.min(room, 99), 1)));
-  }
-  await mkdir(dir, { recursive: true });
-  return dir;
-}
-
-/** A path of exactly `bytes` bytes in segments of at most 50. */
-function pathOfBytes(bytes: number): string {
-  let path = '';
-  while (path.length < bytes) {
-    const room = bytes - path.length;
-    path +=
-      (path === '' ? '' : '/') +
-      's'.repeat(Math.min(room - (path === '' ? 0 : 1), 50));
-  }
-  return path;
-}
-
-const create = (path: string) =>
-  [
-    `diff --git a/${path} b/${path}`,
-    'new file mode 100644',
-    '--- /dev/null',
-    `+++ b/${path}`,
-    '@@ -0,0 +1 @@',
-    '+x',
-    '',
-  ].join('\n');
-
 /** The directory a patched package is made in, for a store at `storeBytes` bytes. */
 const madeIn = (storeBytes: number) => storeBytes + 201;
 const longest = (storeBytes: number) => 4_095 - madeIn(storeBytes) - 1;
 
 describe('the directory a patched package is made in', () => {
-  it('is the store, the temporary entry named by both digests and a uuid, and package/', () => {
+  it('is the store, the temporary entry named by both digests and a uuid, and package/', async () => {
     const key = patchedStoreKey(DIGEST, PATCH.digest);
     expect(key).toHaveLength(142);
     const dir = join('/s', `.${key}.materialize-${'0'.repeat(36)}`, 'package');
     expect(Buffer.byteLength(dir)).toBe(madeIn(2));
     expect(
-      patchedPackageDirectoryBytes('/home/u/project', {
+      await patchedPackageDirectoryBytes('/home/u/project', {
         OPM_STORE_HOME: '/s',
       }),
     ).toBeGreaterThanOrEqual(madeIn(2));
   });
+
+  it('counts a store directory in bytes: 100 three-byte characters are 300', async () => {
+    const store = `/x/${'日'.repeat(100)}`;
+    expect(Buffer.byteLength(store)).toBe(303);
+    expect(
+      await patchedPackageDirectoryBytes('/p', { OPM_STORE_HOME: store }),
+    ).toBe(madeIn(303));
+  });
+
+  it.runIf(onPosix)(
+    'is the canonical path of a store behind a symlink when that is the longer, which is the path the host works on',
+    async () => {
+      const { store, canonical } = await symlinkedStore(408);
+      expect(Buffer.byteLength(canonical)).toBeGreaterThan(
+        Buffer.byteLength(store) + 400,
+      );
+      expect(
+        await patchedPackageDirectoryBytes('/p', { OPM_STORE_HOME: store }),
+      ).toBe(madeIn(Buffer.byteLength(canonical)));
+    },
+  );
+
+  it.runIf(onPosix)(
+    'is the path as written when that is the longer: a link to a shorter directory is not a shortcut',
+    async () => {
+      const { store, canonical } = await shortcutStore(200);
+      expect(Buffer.byteLength(canonical)).toBeLessThan(
+        Buffer.byteLength(store) - 150,
+      );
+      expect(
+        await patchedPackageDirectoryBytes('/p', { OPM_STORE_HOME: store }),
+      ).toBe(madeIn(Buffer.byteLength(store)));
+    },
+  );
 });
 
 describe.runIf(onPosix)('opm ci over a patch whose path is long', () => {
@@ -189,4 +190,46 @@ describe.runIf(onPosix)('opm ci --plan and the store setting', () => {
       ),
     });
   });
+});
+
+describe.runIf(onPosix)('opm ci over a store behind a symlink', () => {
+  const target = { os: 'linux', architecture: 'x64', libc: 'glibc' } as const;
+
+  async function inputs() {
+    const { store, canonical } = await symlinkedStore(408);
+    // 3,700 bytes of a path: 4,095 with the 227-byte store as written, over with the 635 it is.
+    const path = pathOfBytes(longest(Buffer.byteLength(canonical)) + 1);
+    expect(
+      Buffer.byteLength(store) + 201 + 1 + Buffer.byteLength(path),
+    ).toBeLessThan(4_096);
+    const w = await patchedWorld(create(path));
+    return { w, store, canonical, env: { OPM_STORE_HOME: store } };
+  }
+
+  it('refuses at --plan a path that is within 4,095 bytes below the store as written and not below the canonical store', async () => {
+    const { w, canonical, env } = await inputs();
+    const outcome = await planFrozen({ root: w.dir, env, target }).then(
+      () => 'planned',
+      (error: unknown) => error,
+    );
+    expect(outcome).toMatchObject({
+      code: 'UNSAFE_PATH',
+      message: expect.stringContaining(
+        `below the ${madeIn(Buffer.byteLength(canonical))}-byte directory it is made in comes to 4096 bytes`,
+      ),
+    });
+  });
+
+  it('refuses it at install as UNSAFE_PATH and not as the ENAMETOOLONG of a realpath, leaving no patched entry', async () => {
+    const { w, canonical, env } = await inputs();
+    const outcome = await w.install({ env }).then(
+      () => 'installed',
+      (error: unknown) => error,
+    );
+    expect(outcome).toMatchObject({ code: 'UNSAFE_PATH' });
+    expect(String((outcome as Error).message)).not.toMatch(/^ENAMETOOLONG/u);
+    expect(
+      (await readdir(canonical)).filter((name) => name.includes('-patch-')),
+    ).toEqual([]);
+  }, 120_000);
 });
