@@ -11,7 +11,7 @@ import {
   PATCH,
   patchedWorld,
 } from './frozen-patch-fixture.js';
-import { cleanup } from './frozen-pnpm-fixture.js';
+import { cleanup, pnpmWorld } from './frozen-pnpm-fixture.js';
 import { onPosix } from './frozen-workspace-fixture.js';
 
 afterEach(async () => {
@@ -153,4 +153,40 @@ describe.runIf(onPosix)('opm ci over a patch whose path is long', () => {
       (await readdir(home)).filter((name) => name.includes('-patch-')),
     ).toEqual([]);
   }, 120_000);
+});
+
+describe.runIf(onPosix)('opm ci --plan and the store setting', () => {
+  const target = { os: 'linux', architecture: 'x64', libc: 'glibc' } as const;
+
+  it("does not read it for a lock that patches nothing: a relative OPM_STORE_HOME is the install's to refuse, as before patches", async () => {
+    const w = await pnpmWorld();
+    w.pkg({ name: 'a', version: '1.0.0' });
+    w.importer('.', { dependencies: { a: ['^1.0.0', '1.0.0'] } });
+    await w.write();
+    const plan = await planFrozen({
+      root: w.dir,
+      transport: w.registry,
+      env: { OPM_STORE_HOME: 'relative/store' },
+      target,
+    });
+    expect(plan).toMatchObject({ instances: 1, archives: 1 });
+  });
+
+  it('reads it for a lock that patches a package, because the answer depends on where the store is', async () => {
+    const w = await patchedWorld(create('lib/new.js'));
+    const outcome = await planFrozen({
+      root: w.dir,
+      env: { OPM_STORE_HOME: 'relative/store' },
+      target,
+    }).then(
+      () => 'planned',
+      (error: unknown) => error,
+    );
+    expect(outcome).toMatchObject({
+      code: 'UNSAFE_PATH',
+      message: expect.stringContaining(
+        'OPM_STORE_HOME must be an absolute path',
+      ),
+    });
+  });
 });

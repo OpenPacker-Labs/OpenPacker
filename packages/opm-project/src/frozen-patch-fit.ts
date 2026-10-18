@@ -50,7 +50,13 @@ export function assertPatchesFit(
   root: string,
   env: NodeJS.ProcessEnv,
 ): void {
-  if (format.frozenPatchPathBytes === undefined) return;
+  // A lock that patches nothing has no store directory to fit: the setting is
+  // the install's to read (and refuse), as it was before patches.
+  if (
+    format.frozenPatchPathBytes === undefined ||
+    !packages.some(({ patch }) => patch !== undefined)
+  )
+    return;
   const directory = patchedPackageDirectoryBytes(root, env);
   const seen = new Set<string>();
   for (const { patch } of packages) {
