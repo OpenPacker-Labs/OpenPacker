@@ -34,5 +34,6 @@ export function installArchiveLimits(
     maximumCompressionRatio: 128,
     maximumMemoryBytes: 3 * 1024 * 1024 * 1024,
     acceptRedundantEntries: true,
+    requireNpmReaderAgreement: true,
   };
 }

@@ -36,10 +36,13 @@ export interface FrozenPatchFormat {
     patch: FrozenPatch,
     label: string,
   ): Promise<void>;
+<<<<<<< ours
   /**
    * The most bytes in a path the patch names, relative to the package: what
    * the host holds, with the directories it keeps the package in, to what the
    * system takes in a path before anything is fetched (`wholePathProblem`).
    */
   frozenPatchPathBytes?(patch: FrozenPatch): number;
+=======
+>>>>>>> theirs
 }

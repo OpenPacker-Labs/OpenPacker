@@ -6,9 +6,14 @@
  * (react's hooks, a registry, `instanceof`) does not survive.
  *
  * What the writer then does with a shared dependency: its executable is shimmed
+<<<<<<< ours
  * in its importer's own `.bin`, it is left out with its importer's list, and a
  * member installed alone still finds it. And a package below a member that has a peer
  * its dependent requires too is written where it finds that same copy.
+=======
+ * where it was written, it is left out with its importer's list, and a member
+ * installed alone still finds it.
+>>>>>>> theirs
  */
 
 import { realpathSync } from 'node:fs';
@@ -84,6 +89,7 @@ describe('a dependency the project and its members share', () => {
   });
 
   onPosix(
+<<<<<<< ours
     "shims a member's dependency's executable in the member's own .bin, wherever the package was written",
     async () => {
       const w = await fixture();
@@ -95,6 +101,13 @@ describe('a dependency the project and its members share', () => {
       expect(await w.read('packages/ui/node_modules/.bin/lint')).toContain(
         '../../../../node_modules/lint/index.js',
       );
+=======
+    "shims a member's executable where its package was written, which the member's PATH reaches",
+    async () => {
+      const w = await fixture();
+      await w.install();
+      expect(await w.list('node_modules/.bin')).toContain('lint');
+>>>>>>> theirs
       expect(w.load('lint', 'packages/ui').id).toBe('lint@1.0.0');
     },
   );
@@ -123,6 +136,7 @@ describe('a dependency the project and its members share', () => {
     expect(await exists(join(w.dir, 'node_modules/left'))).toBe(true);
   });
 });
+<<<<<<< ours
 
 /**
  * A stand-in for React's hooks: the renderer sets the dispatcher on the copy
@@ -198,3 +212,5 @@ describe('a peer shared below a member', () => {
     ).toBe(1);
   });
 });
+=======
+>>>>>>> theirs

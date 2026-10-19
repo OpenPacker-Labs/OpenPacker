@@ -11,6 +11,7 @@
  * A path is a `/`-separated path below the package: no `..`, `.` or empty
  * segment, not absolute, no `\` (a name the store refuses) or NUL, and within
  * the bounds of a path in an archive (`PACKAGE_TREE_LIMITS`: 128 segments,
+<<<<<<< ours
  * 4,096 UTF-8 bytes, and no segment an archive refuses: a Windows device name,
  * a `:`, a trailing dot or space; none past 255 bytes). pnpm takes whatever
  * path the patch gives, `../../x` and a path 40,000 directories deep included;
@@ -23,11 +24,16 @@
  * of them, is refused as too costly instead of run for minutes. The paths a
  * patch names and the directories above them are also held to the number of
  * files an archive may hold.
+=======
+ * 4,096 UTF-8 bytes). pnpm takes whatever path the patch gives, `../../x` and
+ * a path 40,000 directories deep included; opm refuses the patch.
+>>>>>>> theirs
  */
 
 import { constants } from 'node:fs';
 import { chmod, lstat, mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+<<<<<<< ours
 import {
   PACKAGE_ROOT,
   PACKAGE_TREE_LIMITS,
@@ -35,6 +41,10 @@ import {
   segmentProblem,
 } from '@openpacker/adapter-core';
 import { PatchBudget, PatchRefusal, type PatchTree } from './apply.js';
+=======
+import { PACKAGE_TREE_LIMITS, quote } from '@openpacker/adapter-core';
+import { PatchRefusal, type PatchTree } from './apply.js';
+>>>>>>> theirs
 import type { PatchEffect } from './parse.js';
 
 /** A path below the package as a patch names it. */
@@ -42,14 +52,18 @@ export type PatchNode =
   | { readonly kind: 'file'; readonly bytes: Buffer; readonly mode: number }
   | { readonly kind: 'dir' };
 
+<<<<<<< ours
 /** The longest name a file system takes for a file or a directory. */
 export const MAXIMUM_SEGMENT_BYTES = 255;
 
+=======
+>>>>>>> theirs
 /** What is wrong with a path a patch names, or undefined. */
 export function patchPathProblem(path: string): string | undefined {
   if (path.includes('\0')) return 'holds a NUL character';
   if (path.includes('\\')) return 'holds a backslash';
   if (path.startsWith('/')) return 'is absolute';
+<<<<<<< ours
   // The archive counts the directory its paths begin with, `package/`, as a
   // segment and as bytes; a path below the package is held with it in front.
   const { maximumDepth, maximumPathBytes } = PACKAGE_TREE_LIMITS;
@@ -91,6 +105,22 @@ export function longestPath(effects: readonly PatchEffect[]): {
   return longest;
 }
 
+=======
+  const { maximumDepth, maximumPathBytes } = PACKAGE_TREE_LIMITS;
+  // Measured before the path is split: a long one is never taken apart.
+  const bytes = Buffer.byteLength(path, 'utf8');
+  if (bytes > maximumPathBytes)
+    return `is ${bytes} bytes long, more than the ${maximumPathBytes} a path in an archive may be`;
+  const segments = path.split('/');
+  if (segments.length > maximumDepth)
+    return `is ${segments.length} segments deep, more than the ${maximumDepth} a path in an archive may be`;
+  if (segments.includes('..')) return 'leaves the package (a ".." segment)';
+  if (segments.some((segment) => segment === '' || segment === '.'))
+    return 'is not a plain path below the package (an empty or "." segment)';
+  return undefined;
+}
+
+>>>>>>> theirs
 /** Every path a patch names. */
 export function pathsOf(effects: readonly PatchEffect[]): string[] {
   return effects.flatMap((effect) =>
@@ -100,6 +130,7 @@ export function pathsOf(effects: readonly PatchEffect[]): string[] {
 
 /**
  * Each path and every directory above it, shortest first, and in the order
+<<<<<<< ours
  * they are first named within one depth. A prefix is a slice of the path,
  * never a join of its segments again. The prefixes of a path that were seen
  * are its shortest ones (every prefix of a path seen is seen with it), so the
@@ -150,6 +181,27 @@ export const entriesOf = (paths: Iterable<string>): string[] =>
 export const shownPath = (path: string): string =>
   path.length > 160 ? `${path.slice(0, 120)}...${path.slice(-30)}` : path;
 
+=======
+ * they are first named within one depth. One pass over each path's segments:
+ * a prefix is a slice of the path, never a join of its segments again.
+ */
+export function withAncestors(paths: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const byDepth: string[][] = [];
+  for (const path of paths)
+    for (let depth = 0, end = path.indexOf('/'); ; depth += 1) {
+      const prefix = end === -1 ? path : path.slice(0, end);
+      if (!seen.has(prefix)) {
+        seen.add(prefix);
+        (byDepth[depth] ??= []).push(prefix);
+      }
+      if (end === -1) break;
+      end = path.indexOf('/', end + 1);
+    }
+  return byDepth.flat();
+}
+
+>>>>>>> theirs
 const parentOf = (path: string): string | undefined => {
   const at = path.lastIndexOf('/');
   return at === -1 ? undefined : path.slice(0, at);
@@ -164,6 +216,7 @@ const errno = (code: string, message: string): Error =>
  */
 export class OverlayTree implements PatchTree {
   readonly #nodes: Map<string, PatchNode | undefined>;
+<<<<<<< ours
   readonly #budget: PatchBudget;
 
   /**
@@ -177,6 +230,11 @@ export class OverlayTree implements PatchTree {
   ) {
     this.#nodes = new Map(base);
     this.#budget = budget;
+=======
+
+  constructor(base: ReadonlyMap<string, PatchNode | undefined>) {
+    this.#nodes = new Map(base);
+>>>>>>> theirs
   }
 
   /** Where each path ends: a file, a directory, or nothing. */
@@ -185,6 +243,7 @@ export class OverlayTree implements PatchTree {
   }
 
   #get(path: string): PatchNode | undefined {
+<<<<<<< ours
     this.#budget.charge(path.length + 1);
     if (!this.#nodes.has(path))
       throw new Error(`the patch tree does not hold ${path}`);
@@ -193,6 +252,13 @@ export class OverlayTree implements PatchTree {
       this.#budget.charge(up.length + 1);
       if (this.#nodes.get(up)?.kind === 'file') return undefined;
     }
+=======
+    if (!this.#nodes.has(path))
+      throw new Error(`the patch tree does not hold ${path}`);
+    // A path below a file is not there.
+    for (let up = parentOf(path); up !== undefined; up = parentOf(up))
+      if (this.#nodes.get(up)?.kind === 'file') return undefined;
+>>>>>>> theirs
     return this.#nodes.get(path);
   }
 
@@ -208,7 +274,10 @@ export class OverlayTree implements PatchTree {
   #ensureParent(path: string): void {
     const parent = parentOf(path);
     if (parent === undefined) return;
+<<<<<<< ours
     this.#budget.charge(parent.length + 1);
+=======
+>>>>>>> theirs
     this.#ensureParent(parent);
     const node = this.#get(parent);
     if (node?.kind === 'file')
@@ -280,6 +349,7 @@ export class OverlayTree implements PatchTree {
   }
 }
 
+<<<<<<< ours
 /**
  * What an `lstat` of a path costs the budget, before the path's own length:
  * a system call, and the path joined and walked by the system.
@@ -299,10 +369,21 @@ export async function loadPatchTree(
   // Shortest first, so a link is found before anything below it is looked at.
   for (const path of entriesOf(pathsOf(effects))) {
     budget.charge(LSTAT_UNITS + path.length);
+=======
+/** Read every path the patch names below `root`, and each directory above it. */
+export async function loadPatchTree(
+  root: string,
+  effects: readonly PatchEffect[],
+): Promise<OverlayTree> {
+  const base = new Map<string, PatchNode | undefined>();
+  // Shortest first, so a link is found before anything below it is looked at.
+  for (const path of withAncestors(pathsOf(effects))) {
+>>>>>>> theirs
     const where = join(root, ...path.split('/'));
     const info = await lstat(where).catch((error: NodeJS.ErrnoException) => {
       // Below a file or a missing directory, nothing is there.
       if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return undefined;
+<<<<<<< ours
       // The net under `patchPathProblem` and the whole-path check: a name or
       // a path this file system does not take is a refusal that names it.
       if (error.code === 'ENAMETOOLONG')
@@ -310,6 +391,8 @@ export async function loadPatchTree(
           'UNSAFE_PATH',
           `${quote(shownPath(path))} in the patch is longer than the file system takes`,
         );
+=======
+>>>>>>> theirs
       throw error;
     });
     if (info === undefined) {
@@ -325,6 +408,7 @@ export async function loadPatchTree(
         'UNSAFE_PATH',
         `${quote(path)} in the package is a link or not a regular file`,
       );
+<<<<<<< ours
     const bytes = await readFile(where, {
       flag: constants.O_RDONLY | constants.O_NOFOLLOW,
     });
@@ -332,6 +416,17 @@ export async function loadPatchTree(
     base.set(path, { kind: 'file', bytes, mode: info.mode & 0o7777 });
   }
   return new OverlayTree(base, budget);
+=======
+    base.set(path, {
+      kind: 'file',
+      bytes: await readFile(where, {
+        flag: constants.O_RDONLY | constants.O_NOFOLLOW,
+      }),
+      mode: info.mode & 0o7777,
+    });
+  }
+  return new OverlayTree(base);
+>>>>>>> theirs
 }
 
 const sameFile = (

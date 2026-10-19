@@ -3,9 +3,13 @@
  * bounds of a path in an archive, 128 segments and 4,096 UTF-8 bytes, and it
  * names at most the 100,000 files a package's archive may hold. pnpm has none
  * of them; a path past them is refused when the patch is read, so `opm ci
+<<<<<<< ours
  * --plan` refuses it before anything is fetched. A path much past them
  * makes a header line past `MAXIMUM_HEADER_LINE`, and that is the bound that
  * refuses it (`header-limits.test.ts`).
+=======
+ * --plan` refuses it before anything is fetched.
+>>>>>>> theirs
  */
 
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -14,7 +18,10 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PATCH_WORK_BUDGET } from './apply.js';
 import { applyPnpmPatch, readPatchText } from './index.js';
+<<<<<<< ours
 import { pathOfBytes } from './tree-fixture.js';
+=======
+>>>>>>> theirs
 import { withAncestors } from './tree.js';
 
 const temps: string[] = [];
@@ -49,7 +56,11 @@ describe('the bounds of a patch', () => {
     const text = create(deep(40_000));
     let started = performance.now();
     expect(() => readPatchText(text, 'p.patch')).toThrow(
+<<<<<<< ours
       refusal('SIZE_LIMIT', 'characters, more than the 8300'),
+=======
+      refusal('UNSAFE_PATH', 'bytes long'),
+>>>>>>> theirs
     );
     expect(performance.now() - started).toBeLessThan(1_000);
 
@@ -64,12 +75,17 @@ describe('the bounds of a patch', () => {
         { key: 'a@1.0.0', file: 'p.patch', hash: '', digest: '', text },
         'a@1.0.0',
       ),
+<<<<<<< ours
     ).rejects.toMatchObject({ code: 'SIZE_LIMIT' });
+=======
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+>>>>>>> theirs
     expect(performance.now() - started).toBeLessThan(1_000);
     expect(process.memoryUsage().heapUsed - heap).toBeLessThan(64 << 20);
     expect(await readdir(dir)).toEqual(['package.json']);
   });
 
+<<<<<<< ours
   it('refuses a path 2,000 segments deep, which a header line takes, as a path', () => {
     expect(() => readPatchText(create(deep(2_000)), 'p')).toThrow(
       refusal('UNSAFE_PATH', 'is 2001 segments deep, more than the 127'),
@@ -80,10 +96,17 @@ describe('the bounds of a patch', () => {
     expect(readPatchText(create(deep(126)), 'p')).toHaveLength(1);
     expect(() => readPatchText(create(deep(127)), 'p')).toThrow(
       refusal('UNSAFE_PATH', 'is 128 segments deep, more than the 127'),
+=======
+  it('takes a path 128 segments deep and refuses one 129 deep, as an archive', () => {
+    expect(readPatchText(create(deep(127)), 'p')).toHaveLength(1);
+    expect(() => readPatchText(create(deep(128)), 'p')).toThrow(
+      refusal('UNSAFE_PATH', 'is 129 segments deep, more than the 128'),
+>>>>>>> theirs
     );
   });
 
   it('takes a path of 4,096 UTF-8 bytes and refuses one of 4,097, counting bytes and not characters', () => {
+<<<<<<< ours
     // 4,096 bytes with the package/ the archive counts in front of it.
     expect(pathOfBytes(4_088)).toHaveLength(4_088);
     expect(readPatchText(create(pathOfBytes(4_088)), 'p')).toHaveLength(1);
@@ -96,16 +119,30 @@ describe('the bounds of a patch', () => {
     expect(accented.length).toBeLessThan(4_090 - 1_000);
     expect(() => readPatchText(create(accented), 'p')).toThrow(
       refusal('UNSAFE_PATH', 'is 4090 bytes long'),
+=======
+    expect(readPatchText(create('a'.repeat(4_096)), 'p')).toHaveLength(1);
+    expect(() => readPatchText(create('a'.repeat(4_097)), 'p')).toThrow(
+      refusal('UNSAFE_PATH', 'is 4097 bytes long, more than the 4096'),
+    );
+    // 2,049 characters, two bytes each.
+    expect(() => readPatchText(create('é'.repeat(2_049)), 'p')).toThrow(
+      refusal('UNSAFE_PATH', 'is 4098 bytes long'),
+>>>>>>> theirs
     );
   });
 
   it('shows a refused path cut short, not whole', () => {
+<<<<<<< ours
     // A rename line holds one path, so one of 8,000 characters is under the
     // header line bound and over the path bound.
     const text = `diff --git a/x b/y\nrename from ${'d'.repeat(8_000)}\nrename to y\n`;
     expect(() => readPatchText(text, 'p')).toThrow(
       expect.objectContaining({
         code: 'UNSAFE_PATH',
+=======
+    expect(() => readPatchText(create(deep(40_000)), 'p')).toThrow(
+      expect.objectContaining({
+>>>>>>> theirs
         message: expect.stringMatching(/^.{1,400}$/su),
       }),
     );

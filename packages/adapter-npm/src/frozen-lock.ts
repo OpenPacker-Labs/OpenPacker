@@ -123,8 +123,12 @@ export async function readFrozenPackageLock(
     lockDigest: createHash('sha256').update(lockText).digest('hex'),
     lockfileVersion: tree.lockfileVersion,
     // npm's own extractor takes `./` segments and a repeated identical file
-    // as they come, and agent-base@7.1.4 is published with both.
-    extraction: { acceptRedundantEntries: true },
+    // as they come, and agent-base@7.1.4 is published with both. npm and pnpm
+    // are the readers of its archives: what they read differently is refused.
+    extraction: {
+      acceptRedundantEntries: true,
+      requireNpmReaderAgreement: true,
+    },
   };
   const refused = tree.workspace?.refused ?? [];
   if (refused.length > 0)

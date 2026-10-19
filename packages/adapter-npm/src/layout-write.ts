@@ -7,13 +7,14 @@
  * script shims. Nothing here runs a package script.
  */
 
+import type { Dirent } from 'node:fs';
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
   NativeLayoutMember,
-  NativeLayoutWorkspace,
   NativeLockEntry,
 } from '@openpacker/adapter-core';
-import { materialiseTree, tarballWrapper } from '@openpacker/project-io';
+import { materialiseTree } from '@openpacker/project-io';
 import { directoryOf, modulesOf } from './layout-dirs.js';
 import type { LayoutLink } from './layout-links.js';
 import { placePath } from './layout-links.js';
@@ -74,8 +75,6 @@ export interface LayoutWriteOptions {
    * are shimmed in the project's `.bin`.
    */
   members?: readonly NativeLayoutMember[];
-  /** Each importer's direct dependencies, shimmed in its own `.bin` (pnpm's rule). */
-  importers?: NativeLayoutWorkspace['importers'];
 }
 
 /** Packages written at the same time within one depth of the tree. */
@@ -174,7 +173,7 @@ export async function writeNodeModules(
   const shims = await writeShims(
     projectRoot,
     plan.placements,
-    { members, importers: options.importers },
+    members,
     skipped,
   );
   outcome.bins = shims.total;
@@ -282,8 +281,36 @@ function planFor(
   return planLayoutFromPaths(placed, { links, members });
 }
 
-/** What node_modules wants of a store tree: inside its tarball's wrapper. */
+/**
+ * npm tarballs wrap their contents in one directory, `package/` by
+ * convention; node_modules wants what is inside it. npm strips the first path
+ * component whatever it is called, so a tarball that wraps in another name
+ * (older packages do) is read the same way here. A directory entry with no
+ * file in it installs nothing under npm's strip, so it does not count as a
+ * second wrapper.
+ */
 async function treeToInstall(storePath: string): Promise<string> {
-  const wrapper = await tarballWrapper(storePath);
-  return wrapper === undefined ? storePath : join(storePath, wrapper);
+  try {
+    const children = await readdir(storePath, { withFileTypes: true });
+    const kept: Dirent[] = [];
+    for (const child of children)
+      if (
+        !child.isDirectory() ||
+        (await holdsFile(join(storePath, child.name)))
+      )
+        kept.push(child);
+    const only = kept.length === 1 ? kept[0] : undefined;
+    if (only?.isDirectory() === true) return join(storePath, only.name);
+    return storePath;
+  } catch {
+    return storePath;
+  }
+}
+
+/** Whether a file, or anything that is not a directory, is somewhere under `dir`. */
+async function holdsFile(dir: string): Promise<boolean> {
+  for (const child of await readdir(dir, { withFileTypes: true }))
+    if (!child.isDirectory() || (await holdsFile(join(dir, child.name))))
+      return true;
+  return false;
 }

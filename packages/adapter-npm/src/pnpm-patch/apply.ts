@@ -53,6 +53,7 @@ export interface PatchTree {
 /** The tree is not one opm patches; never read as "the patch did not apply". */
 export class PatchRefusal extends Error {
   constructor(
+<<<<<<< ours
     /**
      * `UNSAFE_PATH` for a link or a special file, `SIZE_LIMIT` for a tree
      * past the files an archive may hold, `CASE_COLLISION` for two files an
@@ -63,6 +64,10 @@ export class PatchRefusal extends Error {
       | 'SIZE_LIMIT'
       | 'CASE_COLLISION'
       | 'PATCH_FAILED',
+=======
+    /** `UNSAFE_PATH` for a link or a special file, `PATCH_FAILED` otherwise. */
+    readonly code: 'UNSAFE_PATH' | 'PATCH_FAILED',
+>>>>>>> theirs
     message: string,
   ) {
     super(message);
@@ -82,8 +87,12 @@ type Modification =
 
 /**
  * The work one patch may do, in characters of the package's files read,
+<<<<<<< ours
  * compared and written, lines moved, and paths looked up (`tree.ts`: the
  * ancestors a lookup walks and the `lstat` of each path named). pnpm decodes, splits, joins and
+=======
+ * compared and written, and lines moved. pnpm decodes, splits, joins and
+>>>>>>> theirs
  * writes a whole file for each section that patches it, so K sections that
  * each change one line of one large file cost K times that file: a 146 KB
  * patch of 2,000 such sections ran for a minute, and a 16 MiB one would run
@@ -108,7 +117,11 @@ export class PatchBudget {
     if (this.#spent > this.limit)
       throw new PatchRefusal(
         'PATCH_FAILED',
+<<<<<<< ours
         `it is too costly to apply: it would read, compare and write more than ${this.limit} characters of the package's files and of the paths it names, which no real patch comes near (a file patched again in section after section, a path a hundred directories deep made again and again), and opm stops there instead of running on as pnpm would`,
+=======
+        `it is too costly to apply: it would read, compare and write more than ${this.limit} characters of the package's files, which no real patch comes near (a file patched again in section after section), and opm stops there instead of running on as pnpm would`,
+>>>>>>> theirs
       );
   }
 }

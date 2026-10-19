@@ -11,9 +11,13 @@
  * else.
  */
 
+<<<<<<< ours
 import { enclosingDirs } from './place-order.js';
 import { peerEdgesOf } from './place-peers.js';
 import type { PlaceInput, Placement } from './place-types.js';
+=======
+import { enclosingDirs, type PlaceInput, type Placement } from './place.js';
+>>>>>>> theirs
 import { quote } from './quote.js';
 
 /** What is at one place. */
@@ -21,22 +25,30 @@ type Occupant =
   | { readonly kind: 'instance'; readonly key: string }
   | { readonly kind: 'link'; readonly memberDir: string };
 
+<<<<<<< ours
 /** A place: the member whose `node_modules` the chain starts in, and the chain. */
 interface Place {
   readonly base: string;
   readonly chain: readonly string[];
 }
 
+=======
+>>>>>>> theirs
 function placeKey(base: string, chain: readonly string[]): string {
   return `${base}\u0001${chain.join('\0')}`;
 }
 
+<<<<<<< ours
 /** Every place Node looks at for `as` from a directory, nearest first. */
+=======
+/** Every `node_modules` Node looks in from a directory, nearest first, as (base, chain) of the directory that holds the name. */
+>>>>>>> theirs
 function lookups(
   base: string,
   chain: readonly string[],
   as: string,
   members: ReadonlySet<string>,
+<<<<<<< ours
 ): Place[] {
   const out: Place[] = [];
   for (let depth = chain.length; depth >= 0; depth -= 1)
@@ -54,6 +66,26 @@ type Find = (
 
 /** Node's lookup over a placement: what a package at a place finds for a name, and where. */
 function finder(input: PlaceInput, placement: Placement): Find {
+=======
+): string[] {
+  const out: string[] = [];
+  for (let depth = chain.length; depth >= 0; depth -= 1)
+    out.push(placeKey(base, [...chain.slice(0, depth), as]));
+  for (const outer of enclosingDirs(base, members))
+    out.push(placeKey(outer, [as]));
+  if (base !== '') out.push(placeKey('', [as]));
+  return out;
+}
+
+/**
+ * The edges of `input` that `placement` does not resolve, each as a sentence.
+ * Empty when every instance, every top and every link finds what it needs.
+ */
+export function resolutionProblems(
+  input: PlaceInput,
+  placement: Placement,
+): string[] {
+>>>>>>> theirs
   const at = new Map<string, Occupant>();
   for (const item of placement.placed)
     at.set(placeKey(item.base, item.chain), {
@@ -69,6 +101,7 @@ function finder(input: PlaceInput, placement: Placement): Find {
   const members = new Set(
     input.tops.map((top) => top.dir).filter((dir) => dir !== ''),
   );
+<<<<<<< ours
   return (from, as) => {
     for (const place of lookups(from.base, from.chain, as, members)) {
       const occupant = at.get(placeKey(place.base, place.chain));
@@ -87,11 +120,23 @@ export function resolutionProblems(
   placement: Placement,
 ): string[] {
   const find = finder(input, placement);
+=======
+>>>>>>> theirs
   const found = (
     base: string,
     chain: readonly string[],
     as: string,
+<<<<<<< ours
   ): Occupant | undefined => find({ base, chain }, as)?.occupant;
+=======
+  ): Occupant | undefined => {
+    for (const key of lookups(base, chain, as, members)) {
+      const hit = at.get(key);
+      if (hit !== undefined) return hit;
+    }
+    return undefined;
+  };
+>>>>>>> theirs
   const describe = (hit: Occupant | undefined): string =>
     hit === undefined
       ? 'nothing'
@@ -131,6 +176,7 @@ export function resolutionProblems(
       problems.push(`${quote(key)} is in the plan and was given no place`);
   return problems;
 }
+<<<<<<< ours
 
 const pathOf = (place: Place): string =>
   `${place.base === '' ? '' : `${place.base}/`}node_modules/${place.chain.join('/node_modules/')}`;
@@ -211,3 +257,5 @@ export function directPlaces(
     );
   return out;
 }
+=======
+>>>>>>> theirs

@@ -17,6 +17,7 @@
  * applies whole or not at all. pnpm's own code is kept as the oracle instead:
  * `test/pnpm-patch-oracle/` drives it, from the pnpm 10.28 bundle, over every
  * case the tests compare.
+<<<<<<< ours
  *
  * Two of pnpm's regexes backtrack (`index abc..def` and `diff --git a/x b/y`),
  * so they are read in one pass instead (`header-lines.ts`), and a line the
@@ -35,6 +36,10 @@ import {
   MAXIMUM_HEADER_LINE,
 } from './header-lines.js';
 
+=======
+ */
+
+>>>>>>> theirs
 /** A run of one kind of line in a hunk. */
 export interface PatchPart {
   readonly type: 'context' | 'insertion' | 'deletion';
@@ -170,9 +175,16 @@ function readHeaderLine(file: FilePatch, line: string): void {
   else if (line.startsWith('rename to '))
     file.renameTo = line.slice('rename to '.length).trim();
   else if (line.startsWith('index ')) {
+<<<<<<< ours
     const hashes = indexHashes(line);
     if (hashes === null) return;
     [file.beforeHash, file.afterHash] = hashes;
+=======
+    const match = /(\w+)\.\.(\w+)/u.exec(line);
+    if (match === null) return;
+    file.beforeHash = match[1]!;
+    file.afterHash = match[2]!;
+>>>>>>> theirs
   } else if (line.startsWith('--- '))
     file.fromPath = line.slice('--- a/'.length).trim();
   else if (line.startsWith('+++ '))
@@ -210,6 +222,7 @@ function parsePatchLines(
         state = 'parsing hunks';
         current.hunks = [];
         i--;
+<<<<<<< ours
       } else if (line.length > MAXIMUM_HEADER_LINE && isInterpreted(line)) {
         throw new HeaderLineTooLong(line.length);
       } else if (line.startsWith('diff --git ')) {
@@ -217,6 +230,14 @@ function parsePatchLines(
         const paths = diffLinePaths(line);
         if (paths === null) throw new Error(`Bad diff line: ${line}`);
         [current.diffLineFromPath, current.diffLineToPath] = paths;
+=======
+      } else if (line.startsWith('diff --git ')) {
+        if (current.diffLineFromPath) commitFilePatch();
+        const match = /^diff --git a\/(.*?) b\/(.*?)\s*$/u.exec(line);
+        if (match === null) throw new Error(`Bad diff line: ${line}`);
+        current.diffLineFromPath = match[1]!;
+        current.diffLineToPath = match[2]!;
+>>>>>>> theirs
       } else readHeaderLine(current, line);
       continue;
     }

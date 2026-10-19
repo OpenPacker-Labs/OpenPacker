@@ -3,7 +3,6 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { BigIntStats } from 'node:fs';
 import { link, lstat, readdir, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -21,18 +20,6 @@ import {
 function isMissing(error: unknown): boolean {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return (error as NodeJS.ErrnoException).code === 'ENOENT';
-}
-
-/**
- * Where something else may happen between gc's steps on an old orphan
- * `<key>.tree` record: a publish writing the record of that key. Only the
- * tests of that race give one; gc does nothing in between.
- */
-export interface OrphanSteps {
-  /** After the record was judged old, before it is moved aside. */
-  judged?(record: string): Promise<void>;
-  /** After it was moved aside, before it is looked at again. */
-  movedAside?(record: string): Promise<void>;
 }
 
 export interface SharedStoreCollection {
@@ -65,7 +52,6 @@ export async function collectSharedStore(
     minimumAgeMs?: number;
     env?: NodeJS.ProcessEnv;
     now?: () => number;
-    steps?: OrphanSteps;
   } = {},
 ): Promise<SharedStoreCollection> {
   const requested = requestedSharedStore(input.env ?? process.env);
@@ -154,31 +140,8 @@ export async function collectSharedStore(
     await removeStableFile(`${entry}.tree`).catch(() => undefined);
     await removeStableFile(`${entry}.artifact`).catch(() => undefined);
   }
-  await collectOrphanRecords(
-    root,
-    now - minimumAge,
-    input.dryRun,
-    result,
-    input.steps,
-  );
+  await collectOrphanRecords(root, now - minimumAge, input.dryRun, result);
   return result;
-}
-
-/**
- * True when `moved` is the file `judged` was: the same device and inode, and
- * not written since (modified time to the nanosecond, and size). An inode
- * number can be reused, so the pair alone is not the file.
- */
-export function sameRecord(
-  judged: Pick<BigIntStats, 'dev' | 'ino' | 'mtimeNs' | 'size'>,
-  moved: Pick<BigIntStats, 'dev' | 'ino' | 'mtimeNs' | 'size'>,
-): boolean {
-  return (
-    judged.dev === moved.dev &&
-    judged.ino === moved.ino &&
-    judged.mtimeNs === moved.mtimeNs &&
-    judged.size === moved.size
-  );
 }
 
 /**
@@ -194,7 +157,6 @@ async function collectOrphanRecords(
   before: number,
   dryRun: boolean | undefined,
   result: SharedStoreCollection,
-  steps: OrphanSteps = {},
 ): Promise<void> {
   const names = new Set(await readdir(root));
   for (const name of [...names].sort()) {
@@ -203,14 +165,11 @@ async function collectOrphanRecords(
     )?.[1];
     if (key === undefined || names.has(key)) continue;
     const path = join(root, name);
-    const judged = await lstat(path, { bigint: true }).catch(() => undefined);
-    if (judged?.isFile() !== true || Number(judged.mtimeMs) >= before) continue;
-    if (dryRun === true) {
-      result.removed.push(path);
-      continue;
-    }
+    const judged = await lstat(path).catch(() => undefined);
+    if (judged?.isFile() !== true || judged.mtimeMs >= before) continue;
+    result.removed.push(path);
+    if (dryRun === true) continue;
     const doomed = join(root, `.${key}.collect-${randomUUID()}`);
-    await steps.judged?.(path);
     if (
       !(await rename(path, doomed).then(
         () => true,
@@ -218,17 +177,10 @@ async function collectOrphanRecords(
       ))
     )
       continue;
-    await steps.movedAside?.(path);
-    const moved = await lstat(doomed, { bigint: true });
-    // Removed only if it is the record that was judged; a record written
-    // since goes back, and was never removed. (For the instant between the
-    // move and the link a reader finds no record: an archive's adopter is told
-    // its entry has none and can run again, a patched entry's is made again
-    // and compared, `frozen-patch.ts`.)
-    if (!sameRecord(judged, moved))
+    const moved = await lstat(doomed);
+    if (moved.ino !== judged.ino || moved.dev !== judged.dev)
       // Never over a record written since.
       await link(doomed, path).catch(() => undefined);
-    else result.removed.push(path);
     await removeStableFile(doomed).catch(() => undefined);
   }
 }

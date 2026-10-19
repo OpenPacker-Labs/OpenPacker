@@ -5,6 +5,7 @@ import {
   type FixtureName,
 } from '../pnpm-lock/fixture-support.js';
 import { readPnpmLock } from '../pnpm-lock/index.js';
+<<<<<<< ours
 import { LINUX, worldOf } from './frozen-support.js';
 import { buildPnpmModel } from './model.js';
 import { planPlacement } from './place.js';
@@ -12,6 +13,10 @@ import { peerSplitProblems, resolutionProblems } from './place-check.js';
 import { placeInputOf } from './place-input.js';
 import { selectTops } from './scope.js';
 import { selectInstances } from './select.js';
+=======
+import { worldOf } from './frozen-support.js';
+import { buildPnpmModel } from './model.js';
+>>>>>>> theirs
 
 async function read(
   fixture: FixtureName,
@@ -28,6 +33,14 @@ describe.each([
   it('installs every instance the independent walk installs, each at one place or more', async () => {
     const lock = await read(name);
     expect(lock.refused).toEqual([]);
+<<<<<<< ours
+=======
+    // npm and pnpm are this lock's tar readers (ADR 0057 §8).
+    expect(lock.extraction).toEqual({
+      acceptRedundantEntries: true,
+      requireNpmReaderAgreement: true,
+    });
+>>>>>>> theirs
     const model = buildPnpmModel(readPnpmLock(fixtureBytes(name)).lock);
     const instances = new Set(lock.packages.map((pkg) => pkg.instance));
     expect(instances.size).toBeGreaterThan(250);
@@ -184,6 +197,7 @@ describe.each([
       expect(pkg.path.match(/node_modules/gu)).toHaveLength(1);
   });
 });
+<<<<<<< ours
 
 describe.each([
   ['ai-bdd.pnpm-lock.yaml', 354],
@@ -207,3 +221,5 @@ describe.each([
     if (places !== undefined) expect(placement.placed).toHaveLength(places);
   });
 });
+=======
+>>>>>>> theirs

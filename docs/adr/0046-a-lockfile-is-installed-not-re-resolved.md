@@ -136,7 +136,10 @@ tool but not a dependency tree, where a native build alone is 287 MB unpacked.
    also extracts under larger bounds than the defaults (1 GiB expanded, 100,000
    files, 256 MiB compressed, a compression ratio of 128) and holds the memory
    extraction needs in one shared budget, so several large archives are not
-   unpacked at once.
+   unpacked at once. Zero bytes after an archive's gzip stream are padding, as
+   npm and pnpm read them; any other trailing byte is refused by its offset; and
+   a tar that npm's and pnpm's extractors would read differently is refused
+   ([ADR 0057](0057-a-gzip-stream-may-end-in-zero-padding.md)).
 
 8. **What cannot be honoured is refused, by name, whole.** An entry with no
    `resolved` or no `integrity`, an entry whose `resolved` names a host longer

@@ -46,11 +46,7 @@ import { directPlaces, resolutionProblems } from './place-check.js';
 =======
 import { planPlacement } from './place.js';
 import { placeInputOf } from './place-input.js';
-import {
-  directPlaces,
-  peerSplitProblems,
-  resolutionProblems,
-} from './place-check.js';
+import { resolutionProblems } from './place-check.js';
 >>>>>>> theirs
 import {
   importerRefusals,
@@ -99,8 +95,17 @@ export async function readFrozenPnpmLock(
     lockPath,
     lockDigest: createHash('sha256').update(bytes).digest('hex'),
     lockfileVersion: 9,
+<<<<<<< ours
     // pnpm extracts with the same tolerance npm does.
     extraction: { acceptRedundantEntries: true },
+=======
+    // pnpm extracts with the same tolerance npm does, and an archive the two
+    // would read differently is refused.
+    extraction: {
+      acceptRedundantEntries: true,
+      requireNpmReaderAgreement: true,
+    },
+>>>>>>> theirs
   };
   const refuse = (refused: FrozenLockRefusal[]): FrozenLock => ({
     ...common,
@@ -193,22 +198,11 @@ export async function readFrozenPnpmLock(
     return refuse(
       placement.problems.map((reason) => ({ path: 'node_modules', reason })),
     );
-<<<<<<< ours
   const unresolved = resolutionProblems(input, placement);
   if (unresolved.length > 0)
     throw new ProviderError(
       'INVALID_LOCKFILE',
       `the layout opm planned for ${project.root} does not resolve every dependency, which is a defect in the planner and not in the lock; nothing was installed: ${unresolved.slice(0, 5).join('; ')}${unresolved.length > 5 ? `; and ${unresolved.length - 5} more` : ''}`,
-=======
-  const unresolved = [
-    ...resolutionProblems(input, placement),
-    ...peerSplitProblems(input, placement),
-  ];
-  if (unresolved.length > 0)
-    throw new ProviderError(
-      'INVALID_LOCKFILE',
-      `the layout opm planned for ${project.root} does not resolve every dependency to the instance the lock names, one copy of each peer a package shares with its dependent, which is a defect in the planner and not in the lock; nothing was installed: ${unresolved.slice(0, 5).join('; ')}${unresolved.length > 5 ? `; and ${unresolved.length - 5} more` : ''}`,
->>>>>>> theirs
     );
 
   const packages = placement.placed.map((place): FrozenLockPackage => {
@@ -249,21 +243,15 @@ export async function readFrozenPnpmLock(
         placePath(place.chain, place.base),
       ),
       members: top.links.map((link) => link.memberDir),
+    })),
+  });
 =======
       // Every key of the lock is the project's once the lock is fresh.
       ...(patch !== undefined && { patch: declared.patches.get(patch)! }),
     };
   });
-  const workspace = workspaceOf(model, tops, present, disk, {
-    links: placement.links,
-    importers: [...directPlaces(input, placement)].map(([dir, places]) => ({
-      dir,
-      dependencies: places.map(({ place }) =>
-        placePath(place.chain, place.base),
-      ),
+  const workspace = workspaceOf(model, tops, present, placement.links, disk);
 >>>>>>> theirs
-    })),
-  });
   return {
     ...common,
     ...(targets.length > 1 && { targets }),
@@ -332,20 +320,29 @@ function archiveIdentityOf(instance: PnpmInstance): {
   };
 }
 
+<<<<<<< ours
 /**
  * What the layout links and shims: the installed members, the project's link
  * to each, and every installed importer's direct dependencies, whose
  * executables pnpm gives that importer.
  */
+=======
+/** What the layout links and shims: the installed members, and the project's link to each. */
+>>>>>>> theirs
 function workspaceOf(
   model: PnpmModel,
   tops: ReadonlySet<string>,
   present: ReadonlySet<string>,
+<<<<<<< ours
   disk: readonly WorkspaceMember[],
   planned: {
     links: readonly { name: string; memberDir: string }[];
     importers: NonNullable<FrozenLockWorkspace['layout']['importers']>;
   },
+=======
+  links: readonly { name: string; memberDir: string }[],
+  disk: readonly WorkspaceMember[],
+>>>>>>> theirs
 ): FrozenLockWorkspace | undefined {
   // Only the members the project has: a directory the lock remembers and the
   // workspace no longer declares is not the install's to clear.
@@ -370,11 +367,18 @@ function workspaceOf(
             bin: member?.manifest.bin ?? {},
           };
         }),
+<<<<<<< ours
       links: planned.links.map((link) => {
         const path = `node_modules/${link.name}`;
         return { path, target: linkTargetBetween(path, link.memberDir) };
       }),
       importers: planned.importers,
+=======
+      links: links.map((link) => {
+        const path = `node_modules/${link.name}`;
+        return { path, target: linkTargetBetween(path, link.memberDir) };
+      }),
+>>>>>>> theirs
     },
   };
 }
