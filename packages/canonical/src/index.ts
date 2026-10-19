@@ -6,12 +6,12 @@ import type {
 import { ParseBudget } from './budget.js';
 import { safeEcho } from './echo.js';
 import { CanonicalJsonError, type CanonicalParseLimits } from './errors.js';
-import { isArrayIndex } from './member-table.js';
-import { scanString, validString } from './string-token.js';
 
-export * from './errors.js';
-export * from './costs.js';
-export * from './member-table.js';
+export {
+  CanonicalJsonError,
+  CanonicalJsonLimitError,
+  type CanonicalParseLimits,
+} from './errors.js';
 export {
   ECHO_LIMIT,
   plainLine,
@@ -31,7 +31,11 @@ export {
   type TextSink,
 } from './output.js';
 export { OverlongHostError, parseUntrustedUrl } from './untrusted-url.js';
-export * from './url-host.js';
+export {
+  hasOverlongHost,
+  LONGEST_HOST_LENGTH,
+  writtenHostLength,
+} from './url-host.js';
 
 export interface CanonicalDigestProjection {
   readonly id: DigestProjection['id'];
@@ -43,9 +47,17 @@ export interface CanonicalDigestProjection {
 }
 
 const DIGEST = /^sha256:([0-9a-f]{64})$/;
+const LONE_SURROGATE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/u;
 
 export function compareCanonicalStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function validString(value: string): string {
+  if (LONE_SURROGATE.test(value))
+    throw new CanonicalJsonError('Lone Unicode surrogate is not valid I-JSON');
+  return value;
 }
 
 function encode(value: unknown, active: Set<object>): string {
@@ -103,7 +115,7 @@ export function canonicalBytes(value: JsonValue): Uint8Array {
 
 class JsonParser {
   private index = 0;
-  readonly budget: ParseBudget;
+  private readonly budget: ParseBudget;
   constructor(
     private readonly input: string,
     limits: CanonicalParseLimits,
@@ -115,8 +127,7 @@ class JsonParser {
     const value = this.value(0);
     this.space();
     if (this.index !== this.input.length) this.fail('Unexpected trailing data');
-    // Each part was checked as it was built; encoding the tree again would
-    // check nothing more and hold a second copy of the text at the peak.
+    canonicalize(value);
     return value;
   }
 
@@ -126,7 +137,7 @@ class JsonParser {
     const character = this.input[this.index];
     if (character === '{') return this.object(depth);
     if (character === '[') return this.array(depth);
-    if (character === '"') return this.string(undefined);
+    if (character === '"') return this.string();
     if (character === 't') return this.literal('true', true);
     if (character === 'f') return this.literal('false', false);
     if (character === 'n') return this.literal('null', null);
@@ -134,24 +145,21 @@ class JsonParser {
   }
 
   private object(depth: number): { [key: string]: JsonValue } {
-    this.budget.object(this.index);
     this.index += 1;
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const result: { [key: string]: JsonValue } = Object.create(null) as {
       [key: string]: JsonValue;
     };
     const keys = new Set<string>();
-    let indexed = 0;
     this.space();
     if (this.take('}')) return result;
     while (true) {
       this.space();
       if (this.input[this.index] !== '"')
         this.fail('Object member name must be a string');
-      const key = this.string(keys.size);
+      const key = this.string();
       if (keys.has(key)) this.fail(`Duplicate object member: ${safeEcho(key)}`);
       keys.add(key);
-      if (isArrayIndex(key)) this.budget.indexMember(!indexed++, this.index);
       this.space();
       if (!this.take(':')) this.fail('Expected colon after object member name');
       result[key] = this.value(depth + 1);
@@ -162,13 +170,11 @@ class JsonParser {
   }
 
   private array(depth: number): JsonValue[] {
-    this.budget.array(this.index);
     this.index += 1;
     const result: JsonValue[] = [];
     this.space();
     if (this.take(']')) return result;
     while (true) {
-      this.budget.element(result.length, this.index);
       result.push(this.value(depth + 1));
       this.space();
       if (this.take(']')) return result;
@@ -176,23 +182,30 @@ class JsonParser {
     }
   }
 
-  /** A string: the name of the `member`th member of an object, or a value. */
-  private string(member: number | undefined): string {
+  private string(): string {
     const start = this.index;
-    const token = scanString(this.input, start);
-    this.index = 'at' in token ? token.at : token.end;
-    if ('error' in token) return this.fail(token.error);
-    // Charged before it is decoded: a string it cannot afford is never built.
-    this.budget.text(member, token.end - start - 2, token.wide, this.index);
-    try {
-      return validString(
-        // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        JSON.parse(this.input.slice(start, this.index)) as string,
-      );
-    } catch (error) {
-      if (error instanceof CanonicalJsonError) throw error;
-      return this.fail('Invalid JSON string');
+    this.index += 1;
+    let escaped = false;
+    while (this.index < this.input.length) {
+      const character = this.input[this.index];
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') {
+        this.index += 1;
+        try {
+          return validString(
+            // SAFETY: The surrounding boundary establishes the asserted domain contract.
+            JSON.parse(this.input.slice(start, this.index)) as string,
+          );
+        } catch (error) {
+          if (error instanceof CanonicalJsonError) throw error;
+          this.fail('Invalid JSON string');
+        }
+      } else if (character !== undefined && character.charCodeAt(0) < 0x20)
+        this.fail('Unescaped control character in string');
+      this.index += 1;
     }
+    return this.fail('Unterminated JSON string');
   }
 
   private number(): number {
@@ -206,7 +219,6 @@ class JsonParser {
       this.fail(
         'PREX canonical numbers must be safe integers and not negative zero',
       );
-    this.budget.number(value, this.index);
     return value;
   }
 
@@ -240,18 +252,6 @@ export function parseCanonicalJson<T = JsonValue>(
 ): T {
   // SAFETY: The canonical parser has validated the complete JSON document at this boundary.
   return new JsonParser(text, limits).parse() as T;
-}
-
-/** The same parse, with what the tree cost to build and what it keeps. */
-export function parseCanonicalJsonCosted<T = JsonValue>(
-  text: string,
-  limits: CanonicalParseLimits = {},
-): { value: T; cost: number; retained: number } {
-  const parser = new JsonParser(text, limits);
-  // SAFETY: The canonical parser has validated the complete JSON document at this boundary.
-  const value = parser.parse() as T;
-  const { cost, retained } = parser.budget;
-  return { value, cost, retained };
 }
 
 export async function sha256(bytes: Uint8Array): Promise<Digest> {

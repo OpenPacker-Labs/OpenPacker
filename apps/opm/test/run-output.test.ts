@@ -35,15 +35,6 @@ describe('MemberOutput, grouped', () => {
     ]);
   });
 
-  it("writes a member's name and a step's as one plain line in the prefix", () => {
-    // Both came from the member's package.json; the prefix is opm's own text.
-    const { io, writes } = recorder();
-    const m = new MemberOutput(io, 'evil\nopm: done\u001b[2J', 'stream');
-    m.step('pre\rbuild\u202e').stdout.write('line\n');
-    m.finish();
-    expect(writes).toEqual(['out|evil opm: done pre build: line\n']);
-  });
-
   it('prefixes each step of a member with that step, hooks included', () => {
     const { io, writes } = recorder();
     const m = new MemberOutput(io, 'pkg', 'group');

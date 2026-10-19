@@ -12,7 +12,6 @@
  * ```
  */
 
-import { quote } from '@openpacker/adapter-core';
 import { PnpmLockError } from './errors.js';
 import { parseDepPath } from './dep-path.js';
 import { checkLimit } from './limits.js';
@@ -115,7 +114,7 @@ function readPackage(
   if (manifestVersion !== undefined && !isSemver(manifestVersion))
     throw new PnpmLockError(
       'shape',
-      `must be a semantic version, not ${quote(manifestVersion)}`,
+      `must be a semantic version, not ${JSON.stringify(manifestVersion)}`,
       field(where, 'version'),
     );
   const cpu = record.get('cpu');

@@ -1,14 +1,11 @@
 import {
-  inheritedHandleCount,
-  MAX_INHERITED_HANDLES,
   runInSandbox,
   type SandboxBackend,
   type SandboxOutcome,
   type SandboxPolicy,
 } from '@openpacker/sandbox';
 import type { PolicyInput } from '@openpacker/contracts';
-import { sandboxPolicyFromProject } from './lifecycle.js';
-import { storeViews } from './store-view.js';
+import { platformNote, sandboxPolicyFromProject } from './lifecycle.js';
 import { OpmError } from './types.js';
 
 /**
@@ -26,10 +23,6 @@ export async function runSandboxedPackageProcess(input: {
   policy?: PolicyInput;
   network?: boolean;
   env?: Readonly<Record<string, string>>;
-  /** Ends the process tree when aborted; the run's views are still removed. */
-  signal?: AbortSignal;
-  /** Directories put first on the process's PATH (a layout's `.bin`). */
-  pathPrefix?: readonly string[];
   /** Test seam: inject a backend. Production callers omit this. */
   backend?: SandboxBackend;
 }): Promise<SandboxOutcome> {
@@ -42,44 +35,26 @@ export async function runSandboxedPackageProcess(input: {
   const projectRoot = input.projectRoot;
   const storePaths = input.storePaths ?? [];
 
-  const projectRo = projectRoot && !projectWrite ? [projectRoot] : [];
+  const readonlyPaths = [
+    ...(projectRoot && !projectWrite ? [projectRoot] : []),
+    ...storePaths,
+  ];
   const readwritePaths = projectRoot && projectWrite ? [projectRoot] : [];
-  // The store entries get the handles the rest of the run leaves; past that,
-  // one handle per store however many of its entries the tool needs.
-  const besides = inheritedHandleCount({
-    policy,
-    ...(!(input.packageId === undefined) && { packageId: input.packageId }),
-    readwritePaths,
-    readonlyPaths: projectRo,
-    cwd: input.cwd,
-  });
-  const view = await storeViews(storePaths, MAX_INHERITED_HANDLES - besides);
-  const readonlyPaths = [...projectRo, ...view.readonlyPaths];
 
   // If cwd is the project and project is RO, cwd is still chdir'd RO by backend.
   // If tools need a scratch dir, they use $TMPDIR (jail home).
-  let outcome: SandboxOutcome;
-  try {
-    outcome = await runInSandbox({
-      argv: input.argv,
-      cwd: input.cwd,
-      ...(!(input.env === undefined) && { env: input.env }),
-      policy,
-      profile: 'package-exec',
-      ...(!(input.packageId === undefined) && { packageId: input.packageId }),
-      readwritePaths,
-      readonlyPaths,
-      directoryAuthorities: view.authorities,
-      ...(!(input.network === undefined) && { network: input.network }),
-      ...(!(input.signal === undefined) && { signal: input.signal }),
-      ...(!(input.pathPrefix === undefined) && {
-        pathPrefix: input.pathPrefix,
-      }),
-      ...(!(input.backend === undefined) && { backend: input.backend }),
-    });
-  } finally {
-    await view.dispose();
-  }
+  const outcome = await runInSandbox({
+    argv: input.argv,
+    cwd: input.cwd,
+    ...(!(input.env === undefined) && { env: input.env }),
+    policy,
+    profile: 'package-exec',
+    ...(!(input.packageId === undefined) && { packageId: input.packageId }),
+    readwritePaths,
+    readonlyPaths,
+    ...(!(input.network === undefined) && { network: input.network }),
+    ...(!(input.backend === undefined) && { backend: input.backend }),
+  });
 
   const mode = policy.mode ?? 'fail-closed';
   if (
@@ -88,7 +63,7 @@ export async function runSandboxedPackageProcess(input: {
   ) {
     throw new OpmError(
       'SANDBOX_UNAVAILABLE',
-      `Cannot run package process: sandbox was not enforced (backend=${outcome.backend})`,
+      `Cannot run package process: sandbox was not enforced (backend=${outcome.backend})${platformNote()}`,
     );
   }
   return outcome;

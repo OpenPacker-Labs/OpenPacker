@@ -31,7 +31,6 @@ import {
   runInSandbox,
   scrubEnvironment,
 } from './index.js';
-import { scratch } from './test-scratch.js';
 
 function hasBwrap(): boolean {
   const pathEnv = process.env.PATH ?? '';
@@ -65,14 +64,19 @@ describe('jail path validation', () => {
   });
 
   it('rejects a package-local alias to the user home', () => {
-    const linked = join(scratch('op-grant-link-'), 'package');
+    const root = mkdtempSync(join(tmpdir(), 'op-grant-link-'));
+    const linked = join(root, 'package');
     symlinkSync(homedir(), linked, 'dir');
-    expect(() => normalizeJailPaths([linked], 'write')).toThrow(
-      /symbolic links/u,
-    );
-    expect(() => normalizeJailPaths([join(linked, 'new')], 'write')).toThrow(
-      /symbolic links/u,
-    );
+    try {
+      expect(() => normalizeJailPaths([linked], 'write')).toThrow(
+        /symbolic links/u,
+      );
+      expect(() => normalizeJailPaths([join(linked, 'new')], 'write')).toThrow(
+        /symbolic links/u,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('retains the approved directory when its pathname is swapped', async () => {
@@ -386,7 +390,7 @@ describe.skipIf(!bwrapReady)('native bwrap package-exec suite', () => {
   });
 
   it('denies reading arbitrary home files', async () => {
-    const pkg = scratch('op-escape-home-');
+    const pkg = mkdtempSync(join(tmpdir(), 'op-escape-home-'));
     const secret = join(homedir(), `openpacker-audit-${Date.now()}`);
     writeFileSync(secret, 'TOPSECRET\n', { mode: 0o600 });
     try {
@@ -415,7 +419,7 @@ describe.skipIf(!bwrapReady)('native bwrap package-exec suite', () => {
   });
 
   it('denies project source writes when project is RO', async () => {
-    const project = scratch('op-escape-proj-');
+    const project = mkdtempSync(join(tmpdir(), 'op-escape-proj-'));
     const victim = join(project, 'src.js');
     writeFileSync(victim, 'good\n');
     const outcome = await runInSandbox({
@@ -437,7 +441,7 @@ describe.skipIf(!bwrapReady)('native bwrap package-exec suite', () => {
   });
 
   it('allows project source writes only when projectWrite is granted', async () => {
-    const project = scratch('op-escape-projw-');
+    const project = mkdtempSync(join(tmpdir(), 'op-escape-projw-'));
     const victim = join(project, 'src.js');
     writeFileSync(victim, 'good\n');
     const outcome = await runInSandbox({
@@ -458,7 +462,7 @@ describe.skipIf(!bwrapReady)('native bwrap package-exec suite', () => {
   });
 
   it('allows package-local writes', async () => {
-    const pkg = scratch('op-escape-ok-');
+    const pkg = mkdtempSync(join(tmpdir(), 'op-escape-ok-'));
     const target = join(pkg, 'built.bin');
     const outcome = await runInSandbox({
       argv: [
@@ -478,7 +482,7 @@ describe.skipIf(!bwrapReady)('native bwrap package-exec suite', () => {
   });
 
   it('denies outbound network by default', async () => {
-    const pkg = scratch('op-escape-net-');
+    const pkg = mkdtempSync(join(tmpdir(), 'op-escape-net-'));
     const outcome = await runInSandbox({
       argv: [
         process.execPath,

@@ -11,7 +11,6 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { DEFAULT_MATERIALIZATION_LIMITS } from '@openpacker/materializer';
 import { packTarGzip } from '@openpacker/project-io';
 import { storeKeyFromDigest } from '../src/index.js';
 import {
@@ -61,7 +60,6 @@ describe('shared store chaos', () => {
 
     await expect(
       materializeThroughSharedStore({
-        limits: DEFAULT_MATERIALIZATION_LIMITS,
         digest,
         projectStorePath,
         bytes: load,
@@ -82,7 +80,6 @@ describe('shared store chaos', () => {
       storeKeyFromDigest(digest),
     );
     const retried = await materializeThroughSharedStore({
-      limits: DEFAULT_MATERIALIZATION_LIMITS,
       digest,
       projectStorePath: retryPath,
       bytes: load,
@@ -108,7 +105,6 @@ describe('shared store chaos', () => {
 
       await expect(
         materializeThroughSharedStore({
-          limits: DEFAULT_MATERIALIZATION_LIMITS,
           digest,
           projectStorePath,
           bytes,
@@ -136,7 +132,6 @@ describe('shared store chaos', () => {
     const projectStorePath = join(await tempDir('opm-proj-link-'), storeKey);
     await expect(
       materializeThroughSharedStore({
-        limits: DEFAULT_MATERIALIZATION_LIMITS,
         digest,
         projectStorePath,
         bytes: async () => {
@@ -156,7 +151,6 @@ describe('shared store chaos', () => {
     const env = { OPM_STORE_HOME: sharedHome };
 
     await materializeThroughSharedStore({
-      limits: DEFAULT_MATERIALIZATION_LIMITS,
       digest,
       projectStorePath: join(projectRoot, storeKeyFromDigest(digest)),
       bytes,
@@ -169,7 +163,6 @@ describe('shared store chaos', () => {
 
     await expect(
       materializeThroughSharedStore({
-        limits: DEFAULT_MATERIALIZATION_LIMITS,
         digest,
         projectStorePath: join(
           await tempDir('opm-proj-inner-link2-'),
@@ -191,7 +184,6 @@ describe('shared store chaos', () => {
 
     await expect(
       materializeThroughSharedStore({
-        limits: DEFAULT_MATERIALIZATION_LIMITS,
         digest,
         projectStorePath: join(
           await tempDir('opm-proj-fail-'),

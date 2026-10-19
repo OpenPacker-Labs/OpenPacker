@@ -158,7 +158,10 @@ export async function solveGraph(input: {
     } catch (error) {
       // The engine's refusal is a JSON document naming the project's own
       // requirement ids; what a person needs is which edge nothing satisfies.
-      if (!/^UNSATISFIABLE\b/u.test(thrownText(error))) throw error;
+      if (
+        !/^UNSATISFIABLE\b/u.test(error instanceof Error ? error.message : '')
+      )
+        throw error;
       const causes = explainUnsatisfiable({
         dropped: viable.dropped,
         kept: viable.kept,
@@ -263,13 +266,3 @@ export async function solveGraph(input: {
 
 /** Enough for a closure of ordinary shape; a loop here is a bug, not a graph. */
 const MAXIMUM_SOLVE_ROUNDS = 32;
-
-/**
- * What a solver refusal says. The wasm build throws the message as a string
- * (`JsValue::from_str` in `crates/openpacker-wasm`), the Node-API addon throws
- * an `Error`, and the two are the same engine, so a refusal is read from either.
- */
-function thrownText(error: unknown): string {
-  if (typeof error === 'string') return error;
-  return error instanceof Error ? error.message : '';
-}

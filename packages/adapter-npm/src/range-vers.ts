@@ -12,11 +12,10 @@ import type { RangeAst } from '@openpacker/adapter-core';
  * conjunctions of comparisons, which is what this dialect of VERS says with
  * `|` (and) and `||` (or). `*` constrains nothing.
  *
- * It is a superset, not an equal: a comparison form admits a prerelease inside
- * the range (`2.10.0-beta`) that npm's `^2.9.0` excludes; the upper bound is
- * node-semver's `<3.0.0-0`, so 3.0.0's own prereleases are out. The solve's
- * answer is therefore re-checked edge by edge against the native range, and an
- * edge it leaves unmet is narrowed and solved again (see `solveGraph`).
+ * It is a superset, not an equal: a comparison form admits a prerelease of a
+ * higher version that npm's `^2.9.0` excludes. The solve's answer is therefore
+ * re-checked edge by edge against the native range, and an edge it leaves unmet
+ * is narrowed and solved again (see `solveGraph`).
  */
 export function npmRangeVers(ast: RangeAst): string | undefined {
   const alternatives = ast.type === 'or' ? ast.items : [ast];

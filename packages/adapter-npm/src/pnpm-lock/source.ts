@@ -5,7 +5,11 @@
  * allowed; the policy that reads the model does that.
  */
 
-import { OverlongHostError, parseUntrustedUrl } from '@openpacker/canonical';
+import {
+  hasOverlongHost,
+  LONGEST_HOST_LENGTH,
+  parseUntrustedUrl,
+} from '@openpacker/adapter-core';
 import { unsafeNameProblem } from '../layout-plan.js';
 
 /** Where a `name@version` says the package comes from. */
@@ -125,13 +129,14 @@ export function tarballUrlProblem(value: string): string | undefined {
   if (!/^https?:\/\//iu.test(value)) return 'is not an http or https URL';
   const problem = urlProblem(value, 'http');
   if (problem !== undefined) return problem;
+  // Before any parser reads it: Node's takes the square of the length of a host
+  // of many non-ASCII labels, and no DNS name is longer than 253 characters.
+  if (hasOverlongHost(value))
+    return `names a host longer than ${LONGEST_HOST_LENGTH} characters, which no DNS name can be`;
   try {
-    // The text is the lock's, so it is read through the guard (ADR 0044).
     parseUntrustedUrl(value);
-  } catch (error) {
-    return error instanceof OverlongHostError
-      ? 'names a host longer than 253 characters'
-      : 'is not a URL';
+  } catch {
+    return 'is not a URL';
   }
   return undefined;
 }

@@ -108,19 +108,6 @@ describe('manifest reading', () => {
     expect([...manifest.optionalPeers]).toEqual(['c']);
     expect(manifest.workspaces).toEqual(['packages/*']);
     expect('scripts' in manifest).toBe(false);
-    expect('publishDirectory' in manifest).toBe(false);
-  });
-
-  it('keeps publishConfig.directory, which pnpm links a member from', () => {
-    expect(
-      read({ publishConfig: { directory: 'dist' } }).publishDirectory,
-    ).toBe('dist');
-    for (const publishConfig of [
-      { access: 'public' },
-      { directory: 1 },
-      'dist',
-    ])
-      expect('publishDirectory' in read({ publishConfig })).toBe(false);
   });
 
   it.each([

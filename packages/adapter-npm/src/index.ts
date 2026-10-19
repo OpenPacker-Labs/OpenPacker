@@ -1,12 +1,10 @@
 import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
-import * as dependencyText from './dependency-spec.js';
-import { HeldPackuments, type PackumentRecord } from './held-packuments.js';
-import { PublishTimes } from './publish-time.js';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
 import { isNpmAlias, parseNpmAlias } from './alias.js';
 import { aliasRequirement } from './alias-requirement.js';
 import {
   identityFromPurl,
+  isTimestamp,
   npmName,
   npmNamespace,
   sriSha256,
@@ -15,11 +13,6 @@ import { npmRangeVers } from './range-vers.js';
 import { unsafeNameProblem } from './layout-plan.js';
 import { asBundled, bundledDependencyNames } from './bundled.js';
 import { npmTargetPredicate } from './platform.js';
-import {
-  MAXIMUM_PACKUMENT_BYTES,
-  PACKUMENT_LIMITS,
-  aboutPackument,
-} from './packument-limits.js';
 import {
   compareNpmVersions,
   npmSatisfies,
@@ -42,7 +35,6 @@ import {
   formatPurl,
   header,
   json,
-  jsonWithCost,
   packageNodeId,
   parsePurl,
   ProviderError,
@@ -54,7 +46,6 @@ import {
   type CatalogProvider,
   type Clock,
   type EcosystemCodec,
-  type HttpResponse,
   type HttpTransport,
   type LockCapture,
   type NativeCoordinate,
@@ -144,6 +135,7 @@ export {
   type NpmDependencySpecKind,
 } from './dependency-spec.js';
 import { classifyDependencySpec } from './dependency-spec.js';
+import { nonRangeRequirement } from './spec-requirement.js';
 
 function npmPackagePurl(name: string): string {
   const coordinate = new NpmCodec().parseNativeCoordinate(name);
@@ -200,46 +192,23 @@ function npmRequirement(
           ? new NpmCodec().parseNativeRange(alias.spec)
           : undefined,
     });
-  if (specKind !== 'range') {
-    // An install walks into `dependencies` and required peers. Reading
-    // "github:user/repo" as "any version of the registry package with that
-    // name" would be a dependency-confusion door, so those fail here, by name.
-    // The fields an install does not walk (development, optional peers) are
-    // kept as what they say, with no version constraint attached, so inspecting
-    // a package never depends on its dev-time tooling.
-    if (enforced)
-      throw new ProviderError(
-        'UNSUPPORTED_DEPENDENCY_SPEC',
-        dependencyText.unsupportedSpec(owner, name, range, specKind) +
-          (aliasProblem === undefined
-            ? ''
-            : ` (${dependencyText.echoedReason(aliasProblem)})`),
-      );
-    return {
-      id: `${dependerNodeId}:${kind}:${name}`,
+  if (specKind !== 'range')
+    return nonRangeRequirement({
       dependerNodeId,
-      expression: { type: 'package', purl: npmPackagePurl(name) },
+      name,
+      spec: range,
+      specKind,
       kind,
-      optional: true,
-      source: sourceRef('npm', endpoint),
-      authority: 'native',
-      raw: { path, range },
-      nativeSemantics: {
-        version: 'npm-v1',
-        data: { dependencyField, range, specKind },
-      },
-      semanticLoss: [
-        semanticLoss(
-          'npm',
-          'NPM_DEPENDENCY_SPEC_NOT_A_RANGE',
-          path,
-          dependencyText.specifierNotARange(specKind, range),
-          'The package is named without a version constraint and the specifier is retained verbatim',
-          'info',
-        ),
-      ],
-    };
-  }
+      optional,
+      endpoint,
+      path,
+      dependencyField,
+      owner,
+      enforced,
+      followed,
+      purl: () => npmPackagePurl(name),
+      aliasProblem,
+    });
   const parsed = new NpmCodec().parseNativeRange(range);
   const vers = parsed.vers ?? npmRangeVers(parsed.ast);
   return {
@@ -281,7 +250,7 @@ export class NpmCodec
     if (!match)
       throw new ProviderError(
         'INVALID_NATIVE_COORDINATE',
-        `Invalid npm coordinate: ${dependencyText.echoedName(value)}`,
+        `Invalid npm coordinate: ${value}`,
       );
     const result: NativeCoordinate = {
       ecosystem: 'npm',
@@ -418,7 +387,6 @@ export class NpmCodec
           );
         } catch (error) {
           if (enforced) throw error;
-          const reason = error instanceof Error ? error.message : String(error);
           // A dev-time or optional entry this codec cannot read must not stop
           // the package from being inspected. It is recorded, not dropped.
           losses.push(
@@ -426,7 +394,7 @@ export class NpmCodec
               'npm',
               'NPM_DEPENDENCY_NOT_REPRESENTABLE',
               `/${field}/${name}`,
-              dependencyText.entryNotRepresentable(field, name, range, reason),
+              `The ${field} entry "${name}": "${range}" cannot be represented: ${error instanceof Error ? error.message : String(error)}`,
               undefined,
               'info',
             ),
@@ -691,6 +659,9 @@ export interface PublishTimeEvidence {
   source: 'packument-time' | 'packument-modified' | 'full-packument';
 }
 
+/** A response this big is a mirror misbehaving; the largest real one is 39 MB. */
+const FULL_PACKUMENT_LIMIT = 96 * 1024 * 1024;
+
 export class NpmRegistryProvider implements CatalogProvider {
   readonly providerId = 'npm-registry';
   readonly capabilities: ProviderCapabilities = {
@@ -701,8 +672,11 @@ export class NpmRegistryProvider implements CatalogProvider {
     offlineReplay: true,
     extensions: { 'openpacker.dev/packument': 'abbreviated-install-v1' },
   };
-  readonly #records: HeldPackuments;
-  readonly #times: PublishTimes;
+  readonly #records = new Map<string, ProviderRecord<NpmPackument>>();
+  readonly #times = new Map<
+    string,
+    Promise<Record<string, string> | undefined>
+  >();
   readonly #libc = new Map<
     string,
     Promise<{ libc?: string[]; reason: string }>
@@ -713,12 +687,7 @@ export class NpmRegistryProvider implements CatalogProvider {
     private readonly clock: Clock,
     private readonly endpoint = 'https://registry.npmjs.org',
     private readonly codec = new NpmCodec(),
-  ) {
-    this.#records = new HeldPackuments(transport, endpoint);
-    this.#times = new PublishTimes(transport, endpoint, (base, signal) =>
-      this.packument(base, signal),
-    );
-  }
+  ) {}
 
   async identify(query: string): Promise<readonly PackageIdentity[]> {
     const coordinate = query.startsWith('pkg:')
@@ -729,10 +698,10 @@ export class NpmRegistryProvider implements CatalogProvider {
   }
 
   invalidate(purl?: string): void {
-    if (purl === undefined) this.#records.invalidate();
+    if (purl === undefined) this.#records.clear();
     else {
       const parsed = parsePurl(this.codec.canonicalizePurl(purl));
-      this.#records.invalidate(formatPurl({ ...parsed, version: undefined }));
+      this.#records.delete(formatPurl({ ...parsed, version: undefined }));
     }
   }
 
@@ -834,9 +803,7 @@ export class NpmRegistryProvider implements CatalogProvider {
    * request at all. Otherwise the full packument's `time` for this version,
    * which is the only exact source the registry offers and the expensive one,
    * paid only for a package that changed recently. A package whose time cannot
-   * be had yields `undefined`, and the policy then says it was not provided. A
-   * full packument the client refuses (too large, too many values, not JSON)
-   * throws that refusal instead, so the caller can say why the time is missing.
+   * be had yields `undefined`, and the policy then says it was not provided.
    */
   async publishTime(
     exactPurl: string,
@@ -845,13 +812,46 @@ export class NpmRegistryProvider implements CatalogProvider {
   ): Promise<PublishTimeEvidence | undefined> {
     const parsed = parsePurl(this.codec.canonicalizePurl(exactPurl));
     if (!parsed.version) return undefined;
-    return this.#times.of(
-      formatPurl({ ...parsed, version: undefined }),
-      npmName(parsed.namespace, parsed.name),
-      parsed.version,
-      needed,
-      signal,
-    );
+    const base = formatPurl({ ...parsed, version: undefined });
+    const record = await this.packument(base, signal);
+    const listed = record.body.time?.[parsed.version];
+    if (isTimestamp(listed))
+      return { publishedAt: listed, source: 'packument-time' };
+    const modified = record.body.modified;
+    if (
+      needed.settledBefore !== undefined &&
+      isTimestamp(modified) &&
+      Date.parse(modified) <= Date.parse(needed.settledBefore)
+    )
+      return { publishedNoLaterThan: modified, source: 'packument-modified' };
+    let pending = this.#times.get(base);
+    if (pending === undefined) {
+      pending = this.fetchFullTimes(parsed, signal);
+      this.#times.set(base, pending);
+    }
+    const times = await pending;
+    const exact = times?.[parsed.version];
+    return isTimestamp(exact)
+      ? { publishedAt: exact, source: 'full-packument' }
+      : undefined;
+  }
+
+  private async fetchFullTimes(
+    parsed: ReturnType<typeof parsePurl>,
+    signal?: AbortSignal,
+  ): Promise<Record<string, string> | undefined> {
+    try {
+      const response = await this.transport.request({
+        url: `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(npmName(parsed.namespace, parsed.name))}`,
+        signal,
+        maximumBytes: FULL_PACKUMENT_LIMIT,
+        headers: { accept: 'application/json' },
+      });
+      return json<{ time?: Record<string, string> }>(response).time;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return undefined;
+    }
   }
 
   async fetchArtifactRecord(
@@ -942,7 +942,7 @@ export class NpmRegistryProvider implements CatalogProvider {
         .map(async (record) => ({
           key: record.key,
           ...(!(record.etag === undefined) && { etag: record.etag }),
-          digest: await this.#records.digest(record),
+          digest: formatDigest(await sha256(record.rawBody)),
         })),
     );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -1067,43 +1067,27 @@ export class NpmRegistryProvider implements CatalogProvider {
     );
   }
 
-  private packument(
+  private async packument(
     purl: string,
     signal?: AbortSignal,
-  ): Promise<PackumentRecord> {
-    const parsed = parsePurl(this.codec.canonicalizePurl(purl));
+  ): Promise<ProviderRecord<NpmPackument>> {
+    const canonical = this.codec.canonicalizePurl(purl);
+    const parsed = parsePurl(canonical);
     const key = formatPurl({ ...parsed, version: undefined });
-    return this.#records.once(key, () => this.read(parsed, key, signal));
-  }
-
-  private async read(
-    parsed: ReturnType<typeof parsePurl>,
-    key: string,
-    signal?: AbortSignal,
-  ): Promise<PackumentRecord> {
-    // A packument let go to stay within the resolve's budget is asked for
-    // afresh, with no validator: there is nothing here to revalidate.
-    const existing = this.#records.record(key);
+    const existing = this.#records.get(key);
     const name = npmName(parsed.namespace, parsed.name);
     const url = `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(name)}`;
-    let response: HttpResponse;
-    try {
-      response = await this.transport.request({
-        url,
-        signal,
-        maximumBytes: MAXIMUM_PACKUMENT_BYTES,
-        headers: {
-          accept: 'application/vnd.npm.install-v1+json',
-          ...(!(existing?.etag === undefined) && {
-            'if-none-match': existing.etag,
-          }),
-        },
-      });
-    } catch (error) {
-      throw error instanceof ProviderError
-        ? aboutPackument(name, error)
-        : error;
-    }
+    const response = await this.transport.request({
+      url,
+      signal,
+      maximumBytes: 8 * 1024 * 1024,
+      headers: {
+        accept: 'application/vnd.npm.install-v1+json',
+        ...(!(existing?.etag === undefined) && {
+          'if-none-match': existing.etag,
+        }),
+      },
+    });
     if (response.status === 304) {
       if (!existing)
         throw new ProviderError(
@@ -1111,44 +1095,27 @@ export class NpmRegistryProvider implements CatalogProvider {
           `Received 304 without cached metadata for ${key}`,
           304,
         );
-      return this.#records.revalidated(existing, this.clock.now());
+      const revalidated = { ...existing, retrievedAt: this.clock.now() };
+      this.#records.set(key, revalidated);
+      return revalidated;
     }
-    let body: NpmPackument;
-    let retained: number;
-    try {
-      ({ value: body, retained } = jsonWithCost<NpmPackument>(
-        response,
-        PACKUMENT_LIMITS,
-      ));
-    } catch (error) {
-      throw error instanceof ProviderError
-        ? aboutPackument(name, error)
-        : error;
-    }
-    const record: PackumentRecord = {
+    const record: ProviderRecord<NpmPackument> = {
       key,
       endpoint: response.url,
       ...(!(header(response, 'etag') === undefined) && {
         etag: header(response, 'etag'),
       }),
-      body,
+      body: json<NpmPackument>(response),
       rawBody: response.body,
       retrievedAt: this.clock.now(),
     };
-    return this.#records.admit(name, record, retained);
+    this.#records.set(record.key, record);
+    return record;
   }
 }
 
 export { NpmProjectFormat, npmPublishPaths } from './project.js';
 export { npmPackageRuns, npmTargetPredicate } from './platform.js';
-export {
-  FULL_PACKUMENT_LIMITS,
-  FULL_PACKUMENT_PARSE_COST,
-  MAXIMUM_FULL_PACKUMENT_BYTES,
-  MAXIMUM_PACKUMENT_BYTES,
-  PACKUMENT_LIMITS,
-  PACKUMENT_PARSE_COST,
-} from './packument-limits.js';
 export {
   chainOfLockPath,
   findDuplicateJsonKey,

@@ -3,15 +3,10 @@ import {
   BoundedFetchTransport,
   FixtureHttpTransport,
   MAXIMUM_METADATA_BYTES,
-<<<<<<< ours
   MINIMUM_BYTES_PER_METADATA_VALUE,
   ResponseTooLargeError,
   json,
   metadataValueLimit,
-=======
-  ResponseTooLargeError,
-  json,
->>>>>>> theirs
 } from './index.js';
 
 /**
@@ -226,15 +221,12 @@ describe('what a parsed metadata document may hold', () => {
     );
   });
 
-<<<<<<< ours
   it('derives the value limit from the byte limit, never a number of its own', () => {
     expect(metadataValueLimit(64 * 1024 * 1024)).toBe(4_194_304);
     expect(metadataValueLimit(96 * 1024 * 1024)).toBe(6_291_456);
     expect(MINIMUM_BYTES_PER_METADATA_VALUE).toBe(16);
   });
 
-=======
->>>>>>> theirs
   it('sits above the 8 MiB first used and below what an artifact may weigh', () => {
     expect(MAXIMUM_METADATA_BYTES).toBeGreaterThan(8 * 1024 * 1024);
     expect(MAXIMUM_METADATA_BYTES).toBeLessThan(128 * 1024 * 1024);

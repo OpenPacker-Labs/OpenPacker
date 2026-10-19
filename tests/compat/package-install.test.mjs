@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {
-  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -9,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative, resolve, sep } from 'node:path';
+import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
@@ -59,34 +58,6 @@ function run(command, arguments_, cwd, environment = {}) {
   );
 }
 
-/**
- * Pack an installed dependency as the tarball its files make, without running
- * anything it declares. `npm pack <directory>` runs the directory's `prepare`
- * even under `--ignore-scripts` (npm 10.9), and an installed package's `prepare`
- * is its author's build step, which needs their dev tools (`tshy` for
- * minimatch) and was never meant to run from `node_modules`. So the files are
- * packed from a copy whose manifest has no scripts.
- */
-function packInstalled(directory, tarballs, scratch, index, environment) {
-  const copy = join(scratch, String(index));
-  cpSync(directory, copy, {
-    recursive: true,
-    filter: (source) =>
-      !relative(directory, source).split(sep).includes('node_modules'),
-  });
-  const manifestPath = join(copy, 'package.json');
-  const { scripts: _scripts, ...manifest } = JSON.parse(
-    readFileSync(manifestPath, 'utf8'),
-  );
-  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-  run(
-    npm,
-    ['pack', '--silent', '--pack-destination', tarballs, copy],
-    root,
-    environment,
-  );
-}
-
 test('packed public packages install and run in a clean CommonJS TypeScript consumer', () => {
   const fixture = mkdtempSync(join(tmpdir(), 'openpacker-sdk-consumer-'));
   const tarballs = join(fixture, 'tarballs');
@@ -107,11 +78,13 @@ test('packed public packages install and run in a clean CommonJS TypeScript cons
         root,
         npmEnvironment,
       );
-    const scratch = join(fixture, 'installed');
-    mkdirSync(scratch);
-    [...externalPackages.values()].forEach((directory, index) =>
-      packInstalled(directory, tarballs, scratch, index, npmEnvironment),
-    );
+    for (const directory of externalPackages.values())
+      run(
+        npm,
+        ['pack', '--silent', '--pack-destination', tarballs, directory],
+        root,
+        npmEnvironment,
+      );
 
     writeFileSync(
       join(fixture, 'package.json'),

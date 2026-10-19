@@ -2,10 +2,12 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, readdir, rmdir, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { PACKAGE_TREE_LIMITS, segmentProblem } from '@openpacker/adapter-core';
-import { collisionKey } from '@openpacker/adapter-core';
 import { collectStream, type ArtifactSource } from '@openpacker/artifact-model';
-import { compareCanonicalStrings, sha256 } from '@openpacker/canonical';
+import {
+  compareCanonicalStrings,
+  safeEcho,
+  sha256,
+} from '@openpacker/canonical';
 import type { ArtifactDescriptor, Digest } from '@openpacker/contracts';
 import {
   mkdirChild,
@@ -17,14 +19,7 @@ import {
   renameChild,
   supportsStableHandles,
 } from '@openpacker/project-io';
-import { MaterializationError, unsafe } from './errors.js';
-import { gunzipArchive } from './gzip.js';
 import { MAXIMUM_PAX_HEADER_BYTES, parsePaxRecords } from './pax.js';
-import { tarNumber, tarText, verifyTarChecksum } from './tar-fields.js';
-import * as agree from './tar-agreement.js';
-import { zipName } from './zip-name.js';
-
-export { MaterializationError };
 
 export type ArchiveFormat = 'tar' | 'tar+gzip' | 'zip';
 
@@ -47,14 +42,6 @@ export interface MaterializationLimits {
    * either way.
    */
   acceptRedundantEntries?: boolean;
-  /**
-   * Refuse a tar that npm's node-tar and pnpm's `parseTarball` would read
-   * differently (ADR 0057 §8): where it ends, its headers, entry types and
-   * paths. The npm adapter asks for it, for the archives those two read. Off
-   * by default: any other archive ends at two zero blocks in a row or the end
-   * of the data, and a lone zero block with data after it is refused.
-   */
-  requireNpmReaderAgreement?: boolean;
 }
 
 export const DEFAULT_MATERIALIZATION_LIMITS: MaterializationLimits = {
@@ -63,9 +50,8 @@ export const DEFAULT_MATERIALIZATION_LIMITS: MaterializationLimits = {
   maximumCompressedBytes: 64 * 1024 * 1024,
   maximumCompressionRatio: 32,
   maximumMemoryBytes: 192 * 1024 * 1024,
-  // The bounds of a path in a package: one definition, with the store's.
-  maximumPathBytes: PACKAGE_TREE_LIMITS.maximumPathBytes,
-  maximumDepth: PACKAGE_TREE_LIMITS.maximumDepth,
+  maximumPathBytes: 4096,
+  maximumDepth: 128,
 };
 
 export interface InspectedArchiveEntry {
@@ -92,6 +78,7 @@ export interface MaterializationManifest {
   lifecycleScriptsExecuted: false;
 }
 
+const utf8 = new TextDecoder('utf-8', { fatal: true });
 const utf8Bytes = new TextEncoder();
 
 export function validateArchivePath(
@@ -116,10 +103,19 @@ export function validateArchivePath(
     parts.some((part) => part === '' || part === '.' || part === '..')
   )
     throw unsafe('PATH_TRAVERSAL', input);
-  // The names an archive refuses: one rule, the one a patch's paths meet.
+  // Windows device names are reserved at every directory level and stay
+  // reserved with an extension, so extracting an entry called `CON` or
+  // `aux.txt` there writes to a device rather than a file. Trailing dots and
+  // spaces are stripped on resolution, so `a.` and `a` would name one file on
+  // Windows and two here — which defeats the duplicate and case-collision
+  // checks below. Both are refused on every platform, because an archive that
+  // only extracts safely on Linux is not safely extractable.
   for (const part of parts) {
-    const problem = segmentProblem(part);
-    if (problem !== undefined) throw unsafe(problem.code, input);
+    if (part.includes(':'))
+      throw unsafe('WINDOWS_ALTERNATE_DATA_STREAM', input);
+    if (/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(part))
+      throw unsafe('WINDOWS_RESERVED_NAME', input);
+    if (/[ .]$/u.test(part)) throw unsafe('WINDOWS_TRAILING_CHARACTER', input);
   }
   if (parts.length > limits.maximumDepth)
     throw unsafe('PATH_DEPTH_LIMIT', input);
@@ -146,21 +142,20 @@ export async function inspectArchive(
     format === 'tar+gzip' ? gzipLimit : bytes.byteLength,
     limits,
   );
-  const gunzipped =
+  const expanded =
     format === 'tar+gzip'
-      ? await gunzipArchive(
+      ? await decompress(
           bytes,
+          'gzip',
           gzipLimit,
           signal,
           gzipLimit < limits.maximumExpandedBytes
             ? 'COMPRESSION_RATIO_LIMIT'
             : 'EXPANDED_SIZE_LIMIT',
         )
-      : undefined;
-  const expanded = gunzipped?.expanded ?? bytes;
-  // Measured against the gzip stream alone: zero padding buys no acceptance.
-  if (gunzipped)
-    validateRatio(expanded.byteLength, gunzipped.streamEnd, limits);
+      : bytes;
+  if (format === 'tar+gzip')
+    validateRatio(expanded.byteLength, bytes.byteLength, limits);
   assertMemoryBudget(bytes.byteLength, expanded.byteLength, limits);
   const entries =
     format === 'zip'
@@ -432,17 +427,13 @@ function parseTar(
   let pending: Map<string, string> | undefined;
   let offset = 0;
   let count = 0;
-  const npmReaders = limits.requireNpmReaderAgreement === true;
-  for (;;) {
-    const at = agree.nextHeader(bytes, offset, npmReaders);
-    if (at === undefined) break;
-    offset = at;
+  while (offset + 512 <= bytes.byteLength) {
     const header = bytes.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) break;
     count += 1;
     if (count > limits.maximumFiles)
       throw unsafe('FILE_COUNT_LIMIT', `${count}`);
     verifyTarChecksum(header);
-    if (npmReaders) agree.assertHeaderAgrees(header, offset);
     const name = tarText(header.subarray(0, 100));
     const prefix = tarText(header.subarray(345, 500));
     const size = tarNumber(header.subarray(124, 136));
@@ -463,12 +454,9 @@ function parseTar(
         throw unsafe('PAX_HEADER_LIMIT', `${size}`);
       const records = parsePaxRecords(bytes.subarray(dataStart, dataEnd));
       if (records === undefined) throw unsafe('INVALID_PAX_HEADER', name);
-      if (npmReaders)
-        agree.assertPaxAgrees(bytes.subarray(dataStart, dataEnd), offset);
       if (type === 'g') {
         if (records.has('path') || records.has('size'))
           throw unsafe('PAX_GLOBAL_REJECTED', name);
-        if (npmReaders) agree.assertGlobalAgrees(pending, offset);
       } else {
         if (pending !== undefined) throw unsafe('INVALID_PAX_HEADER', name);
         pending = records;
@@ -478,10 +466,10 @@ function parseTar(
     }
     if (pending?.has('size') && pending.get('size') !== String(size))
       throw unsafe('PAX_SIZE_REJECTED', name);
-    const spelled =
-      pending?.get('path') ?? (prefix ? `${prefix}/${name}` : name);
-    if (npmReaders) agree.assertEntryAgrees(type, size, spelled);
-    const path = validateArchivePath(spelled, limits);
+    const path = validateArchivePath(
+      pending?.get('path') ?? (prefix ? `${prefix}/${name}` : name),
+      limits,
+    );
     pending = undefined;
     if (type === '\0' || type === '0' || type === '7') {
       const file: InspectedArchiveEntry = {
@@ -519,7 +507,7 @@ function parseTar(
     } else {
       throw new MaterializationError(
         'ADAPTER_REQUIRED',
-        `Unsupported tar entry type ${JSON.stringify(type)} at ${path}`,
+        `Unsupported tar entry type ${JSON.stringify(type)} at ${safeEcho(path, 256)}`,
       );
     }
     offset = dataStart + Math.ceil(size / 512) * 512;
@@ -598,7 +586,7 @@ async function parseZip(
         'ADAPTER_REQUIRED',
         'Non-UTF-8 ZIP names require an ecosystem adapter',
       );
-    const rawName = zipName(nameBytes);
+    const rawName = utf8.decode(nameBytes);
     const path = validateArchivePath(rawName, limits);
     if (paths.has(path)) throw unsafe('DUPLICATE_PATH', path);
     const foldedPath = path.toLowerCase();
@@ -687,7 +675,7 @@ function validateEntries(
   let expanded = 0;
   for (const entry of entries) {
     if (paths.has(entry.path)) throw unsafe('DUPLICATE_PATH', entry.path);
-    const fold = collisionKey(entry.path);
+    const fold = entry.path.toLowerCase();
     if (folded.has(fold)) throw unsafe('CASE_COLLISION', entry.path);
     paths.add(entry.path);
     types.set(entry.path, entry.type);
@@ -711,7 +699,7 @@ function validateEntries(
 
 async function decompress(
   bytes: Uint8Array,
-  format: 'deflate-raw',
+  format: 'gzip' | 'deflate-raw',
   maximumBytes: number,
   signal?: AbortSignal,
   overflowCode = 'EXPANDED_SIZE_LIMIT',
@@ -764,10 +752,7 @@ function assertMemoryBudget(
 
 function validateLimits(limits: MaterializationLimits): void {
   for (const [key, value] of Object.entries(limits)) {
-    if (
-      key === 'acceptRedundantEntries' ||
-      key === 'requireNpmReaderAgreement'
-    ) {
+    if (key === 'acceptRedundantEntries') {
       if (typeof value !== 'boolean')
         throw new RangeError(`${key} must be true or false`);
       continue;
@@ -775,6 +760,33 @@ function validateLimits(limits: MaterializationLimits): void {
     if (!Number.isSafeInteger(value) || value <= 0)
       throw new RangeError(`${key} must be a positive safe integer`);
   }
+}
+
+function tarText(bytes: Uint8Array): string {
+  const end = bytes.indexOf(0);
+  return utf8.decode(end < 0 ? bytes : bytes.subarray(0, end));
+}
+
+function tarNumber(bytes: Uint8Array): number {
+  if ((bytes[0] ?? 0) >= 0x80)
+    throw new MaterializationError(
+      'ADAPTER_REQUIRED',
+      'Base-256 tar numbers require an ecosystem adapter',
+    );
+  const text = tarText(bytes).trim();
+  if (!/^[0-7]*$/u.test(text)) throw unsafe('INVALID_TAR_NUMBER', text);
+  const value = Number.parseInt(text || '0', 8);
+  if (!Number.isSafeInteger(value) || value < 0)
+    throw unsafe('INVALID_TAR_NUMBER', text);
+  return value;
+}
+
+function verifyTarChecksum(header: Uint8Array): void {
+  const expected = tarNumber(header.subarray(148, 156));
+  let sum = 0;
+  for (let index = 0; index < header.length; index += 1)
+    sum += index >= 148 && index < 156 ? 32 : (header[index] ?? 0);
+  if (sum !== expected) throw unsafe('TAR_CHECKSUM_MISMATCH', `${sum}`);
 }
 
 function findEndOfCentralDirectory(view: DataView): number {
@@ -815,5 +827,26 @@ async function exists(path: string): Promise<boolean> {
     )
       return false;
     throw error;
+  }
+}
+
+/**
+ * An archive was refused. The detail is usually a name from the archive, which
+ * is a registry's to choose: one line, with no escape sequence in it, and cut.
+ */
+function unsafe(code: string, detail: string): MaterializationError {
+  return new MaterializationError(
+    code,
+    `Unsafe archive rejected (${code}): ${safeEcho(detail, 256)}`,
+  );
+}
+
+export class MaterializationError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'MaterializationError';
   }
 }

@@ -20,7 +20,6 @@
  * differently.
  */
 
-import { quote } from '@openpacker/adapter-core';
 import { PnpmLockError } from './errors.js';
 import { checkLimit, type PnpmLockLimits } from './limits.js';
 import { redactAddresses } from './redact.js';
@@ -60,7 +59,7 @@ function refuse(budget: Budget, text: string, message: string): PnpmLockError {
   const shown = redactAddresses(text);
   return new PnpmLockError(
     'dep-path',
-    `${quote(shown.length > 120 ? `${shown.slice(0, 117)}...` : shown)} ${message}`,
+    `${JSON.stringify(shown.length > 120 ? `${shown.slice(0, 117)}...` : shown)} ${message}`,
     budget.where,
   );
 }
@@ -128,7 +127,7 @@ function parseAt(budget: Budget, text: string, nesting: number): DepPath {
   if (nameProblem !== undefined)
     throw new PnpmLockError(
       'name',
-      `${nameProblem} in ${quote(text)}`,
+      `${nameProblem} in ${JSON.stringify(text)}`,
       budget.where,
     );
   const rest = text.slice(separator + 1);
@@ -137,14 +136,6 @@ function parseAt(budget: Budget, text: string, nesting: number): DepPath {
   if (version === '') throw refuse(budget, text, 'has no version');
   if (version.includes('(') || version.includes(')'))
     throw refuse(budget, text, 'has a parenthesis that is not a peer suffix');
-  // A peer a workspace sibling satisfies (`plug@1.0.0(ui@link:../ui)`): said
-  // as what it is, where the general message would call `link:../ui` no version.
-  if (nesting > 0 && version.startsWith('link:'))
-    throw refuse(
-      budget,
-      text,
-      `is the peer ${quote(name)} satisfied by the workspace member at ${quote(version.slice(5))}: opm ci does not lay out an instance of a package keyed by a workspace member, so a package whose peer is a workspace member is refused`,
-    );
   const kind = classifyVersion(version);
   if ('problem' in kind)
     throw refuse(budget, text, `has a version that ${kind.problem}`);

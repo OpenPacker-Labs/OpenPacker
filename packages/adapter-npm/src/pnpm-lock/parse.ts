@@ -7,7 +7,7 @@
  * two sections agree) is `validate.ts`.
  */
 
-import { PnpmLockError, shown } from './errors.js';
+import { PnpmLockError } from './errors.js';
 import {
   DEFAULT_PNPM_LOCK_LIMITS,
   resolvePnpmLockLimits,
@@ -61,7 +61,7 @@ function checkVersion(root: ReadonlyMap<string, YamlValue>): void {
   if (version !== PNPM_LOCKFILE_VERSION)
     throw new PnpmLockError(
       'version',
-      `has lockfileVersion ${shown(version)}, and this reads only '9.0' (pnpm 9 and 10); run pnpm install with pnpm 9 or later to rewrite it`,
+      `has lockfileVersion ${JSON.stringify(version)}, and this reads only '9.0' (pnpm 9 and 10); run pnpm install with pnpm 9 or later to rewrite it`,
     );
 }
 

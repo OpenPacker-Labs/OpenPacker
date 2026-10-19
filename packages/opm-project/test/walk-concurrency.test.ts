@@ -150,9 +150,7 @@ describe('MemoizingTransport', () => {
       'https://r.test/past',
     ]);
     expect(MemoizingTransport.ENTRY_LIMIT).toBe(MAXIMUM_METADATA_BYTES);
-    // What the memo may keep is a budget now (it was a total that stopped it
-    // keeping anything more once reached): room for two of the largest.
-    expect(MemoizingTransport.DEFAULT_RETAINED_BYTES).toBeGreaterThanOrEqual(
+    expect(MemoizingTransport.TOTAL_LIMIT).toBeGreaterThanOrEqual(
       2 * MemoizingTransport.ENTRY_LIMIT,
     );
   });

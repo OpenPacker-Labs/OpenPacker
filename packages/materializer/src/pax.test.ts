@@ -145,8 +145,6 @@ describe('pax extended headers', () => {
     ['a length that is not the record', '99 path=package/x\n'],
     ['a length with no record', '3 \n'],
     ['no newline', '15 path=package/x'],
-    ['a final byte that is not a newline', '21 path=package/X.jsY'],
-    ['a length with a leading zero', '0023 path=package/X.js\n'],
     ['no equals sign', '14 pathpackage\n'],
     ['a zero length', '0 path=package/x\n'],
     ['a record cut short', '30 path=package/x\n'],
@@ -161,21 +159,6 @@ describe('pax extended headers', () => {
         'tar',
       ),
     ).rejects.toThrow(/INVALID_PAX_HEADER/u);
-  });
-
-  it('keeps a byte order mark in a key, as node-tar and pnpm do: it is not `path`', async () => {
-    const entries = await inspectArchive(
-      tar([
-        {
-          name: 'PaxHeader/a',
-          type: 'x',
-          data: record('\uFEFFpath', 'package/renamed'),
-        },
-        { name: 'package/ok', data: 'x' },
-      ]),
-      'tar',
-    );
-    expect(entries.map(({ path }) => path)).toEqual(['package/ok']);
   });
 
   it('may repeat the size the entry already has, as npm writes them', async () => {

@@ -76,14 +76,6 @@ const EXEMPT: ReadonlyArray<{
   },
   {
     file: 'commands/run-child.ts',
-<<<<<<< ours
-=======
-    starts: 'const handedNoTerminal',
-    reason: 'compares the stdio choices made above; writes nothing',
-  },
-  {
-    file: 'commands/run-child.ts',
->>>>>>> theirs
     starts: "child.stdout?.setEncoding('utf8')",
     reason: "reads the child's own stdout; writes nothing",
   },
@@ -100,7 +92,6 @@ const EXEMPT: ReadonlyArray<{
       "the script's own stdout, passed through as it wrote it, which is the point of `opm run`",
   },
   {
-<<<<<<< ours
     file: 'commands/run-child.ts',
     starts: 'const handedNoTerminal',
     reason:
@@ -119,8 +110,6 @@ const EXEMPT: ReadonlyArray<{
       "a line of a member's own stdout in a run over members: the prefix is opm's and one plain line (`memberLabel`, `step`), the rest is what the child wrote, passed through as a single run passes it",
   },
   {
-=======
->>>>>>> theirs
     file: 'opm.ts',
     starts: 'if (outcome.stdout) outRaw(io, outcome.stdout)',
     reason:
@@ -158,16 +147,12 @@ const matches = (place: Place, entry: (typeof EXEMPT)[number]) =>
 describe('what the command lines write to stdout', () => {
   it('finds the places it is about', () => {
     expect(new Set(places.map((place) => place.file))).toEqual(
-<<<<<<< ours
       new Set([
         'commands/run-child.ts',
         'commands/run-output.ts',
         'opm.ts',
         'opmx.ts',
       ]),
-=======
-      new Set(['commands/run-child.ts', 'opm.ts', 'opmx.ts']),
->>>>>>> theirs
     );
   });
 
@@ -188,10 +173,7 @@ describe('what the command lines write to stdout', () => {
   it('lists every call of outRaw', () => {
     const calls = places.filter((place) => place.how === 'outRaw');
     expect(calls.map((place) => place.file).sort()).toEqual([
-<<<<<<< ours
       'commands/run-output.ts',
-=======
->>>>>>> theirs
       'opm.ts',
       'opmx.ts',
     ]);

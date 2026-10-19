@@ -7,7 +7,6 @@
  * script shims. Nothing here runs a package script.
  */
 
-import type { Dirent } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
@@ -285,32 +284,15 @@ function planFor(
  * npm tarballs wrap their contents in one directory, `package/` by
  * convention; node_modules wants what is inside it. npm strips the first path
  * component whatever it is called, so a tarball that wraps in another name
- * (older packages do) is read the same way here. A directory entry with no
- * file in it installs nothing under npm's strip, so it does not count as a
- * second wrapper.
+ * (older packages do) is read the same way here.
  */
 async function treeToInstall(storePath: string): Promise<string> {
   try {
     const children = await readdir(storePath, { withFileTypes: true });
-    const kept: Dirent[] = [];
-    for (const child of children)
-      if (
-        !child.isDirectory() ||
-        (await holdsFile(join(storePath, child.name)))
-      )
-        kept.push(child);
-    const only = kept.length === 1 ? kept[0] : undefined;
+    const only = children.length === 1 ? children[0] : undefined;
     if (only?.isDirectory() === true) return join(storePath, only.name);
     return storePath;
   } catch {
     return storePath;
   }
-}
-
-/** Whether a file, or anything that is not a directory, is somewhere under `dir`. */
-async function holdsFile(dir: string): Promise<boolean> {
-  for (const child of await readdir(dir, { withFileTypes: true }))
-    if (!child.isDirectory() || (await holdsFile(join(dir, child.name))))
-      return true;
-  return false;
 }

@@ -1,10 +1,14 @@
 import { mkdir, mkdtemp, rm, type FileHandle } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { createMxcBackend, probeMxc } from './backends/mxc.js';
-import { createMockBackend, SandboxBackendError } from './backends/mock.js';
+import {
+  createMockBackend,
+  assertSnapshot,
+  SandboxBackendError,
+} from './backends/mock.js';
 import { createNativeBackend, probeNativeBackends } from './backends/native.js';
 import { defaultJailHomeRoot, scrubEnvironment } from './env.js';
-import { boundPaths, pathsToOpen } from './handles.js';
+import { containmentWithdrawnNote } from './platform.js';
 import {
   assertSafeJailPath,
   normalizeJailPaths,
@@ -56,6 +60,12 @@ export async function resolveBackend(
   }
 }
 
+/** `message`, followed on a host without containment by why and what to do. */
+function withNote(message: string): string {
+  const note = containmentWithdrawnNote();
+  return note === undefined ? message : `${message}. ${note}`;
+}
+
 function outcomeEnforced(
   profile: SandboxProfile,
   backendId: SandboxBackendId,
@@ -71,6 +81,10 @@ function outcomeEnforced(
 export async function runInSandbox(
   input: RunInSandboxInput,
 ): Promise<SandboxOutcome> {
+  // An executable snapshot is run from its descriptor, which only Linux can
+  // do. Refuse before a backend is resolved or a handle opened, with the
+  // platform and what to do, rather than after a path that never resolved.
+  if (input.executableAuthority !== undefined) assertSnapshot();
   const profile: SandboxProfile = input.profile ?? 'package-exec';
   const resolved = resolvePolicy(input.policy);
   const policyDigest = await digestSandboxPolicy(input.policy);
@@ -133,8 +147,7 @@ export async function runInSandbox(
       return {
         exitCode: 78,
         stdout: '',
-        stderr:
-          'openpacker sandbox: no containment backend available (fail-closed)\n',
+        stderr: `openpacker sandbox: no containment backend available (fail-closed)${withNote('')}\n`,
         backend: 'none',
         profile,
         enforced: false,
@@ -149,7 +162,7 @@ export async function runInSandbox(
     // process tree.
     throw new SandboxBackendError(
       'TREE_CONTAINMENT_UNAVAILABLE',
-      'No containment backend is available, and ambient execution is refused: no OS-owned tree containment is available to bound the process tree',
+      `No containment backend is available, and ambient execution is refused: no OS-owned tree containment is available to bound the process tree${withNote('')}`,
     );
   }
 
@@ -168,19 +181,27 @@ export async function runInSandbox(
       jailHome,
       minimalPath: profile === 'package-exec' && resolved.minimalPath,
       ...(!(interpreter === undefined) && { interpreter }),
-      pathPrefix: normalizeJailPaths(input.pathPrefix, 'PATH directory'),
     });
     const hostEnv = scrubEnvironment({
       jailHome,
       minimalPath: true,
     });
-    // What `inheritedHandleCount` counts, so a caller can tell in advance.
-    const { readwrite, readonly } = boundPaths(input, jailHome);
+    const readwrite = normalizeJailPaths(
+      [...input.readwritePaths, jailHome, ...grantedWrite],
+      'readwrite path',
+    );
+    const readonly = normalizeJailPaths(
+      [...input.readonlyPaths, ...grantedRead],
+      'readonly path',
+    );
     const authorities = [...(input.directoryAuthorities ?? [])];
-    for (const path of pathsToOpen(input, { readwrite, readonly })) {
+    const authorized = new Set(authorities.map(({ path }) => resolve(path)));
+    for (const path of [...readwrite, ...readonly, resolve(input.cwd)]) {
+      if (authorized.has(path)) continue;
       const handle = await openStableJailPath(path, 'sandbox bind');
       ownedAuthorities.push(handle);
       authorities.push({ fd: handle.fd, path });
+      authorized.add(path);
     }
 
     const timeoutMs =
@@ -282,7 +303,7 @@ export async function runInSandbox(
           return {
             exitCode: 78,
             stdout: '',
-            stderr: `openpacker sandbox: ${error.message}\n`,
+            stderr: `openpacker sandbox: ${withNote(error.message)}\n`,
             backend: 'none',
             profile,
             enforced: false,
@@ -297,7 +318,7 @@ export async function runInSandbox(
         // process tree.
         throw new SandboxBackendError(
           'TREE_CONTAINMENT_UNAVAILABLE',
-          `${error.message}; ambient execution is refused: no OS-owned tree containment is available to bound the process tree`,
+          `${error.message}; ambient execution is refused: no OS-owned tree containment is available to bound the process tree${withNote('')}`,
         );
       }
       throw error;

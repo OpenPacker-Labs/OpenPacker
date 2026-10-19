@@ -84,7 +84,7 @@ describe('an alias in a dependency entry', () => {
       expression: {
         type: 'package',
         purl: 'pkg:npm/string-width',
-        vers: 'vers:npm/>=4.2.0|<5.0.0-0',
+        vers: 'vers:npm/>=4.2.0|<5.0.0',
       },
       nativeSemantics: {
         data: {

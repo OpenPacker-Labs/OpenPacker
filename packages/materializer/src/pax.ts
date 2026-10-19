@@ -7,7 +7,7 @@
  * result is undefined), not something to read generously.
  */
 
-const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+const utf8 = new TextDecoder('utf-8', { fatal: true });
 
 /** Most bytes an extended header may carry; a long path is a few hundred. */
 export const MAXIMUM_PAX_HEADER_BYTES = 64 * 1024;

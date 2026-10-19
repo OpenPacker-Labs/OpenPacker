@@ -1,9 +1,9 @@
-import { plainLine } from '@openpacker/canonical';
+import { canonicalPurlOrSelf } from './catalog.js';
 import { lockEdges } from './lock-edges.js';
 import { LOCK_NAME, MANIFEST_NAME } from './paths.js';
-import { shownSource } from './shown-source.js';
 import { purlPackageName, stripPurlVersion } from './spec.js';
 import type { LockPackage, OpmLockfile, OpmManifest } from './types.js';
+import { OpmError } from './types.js';
 
 /**
  * Why a package is in the project, answered from the manifest and the lock.
@@ -50,6 +50,55 @@ function packageName(pkg: LockPackage): string {
   return purlPackageName(stripPurlVersion(pkg.purl));
 }
 
+/**
+ * A PURL as the lock spells it, whichever way the npm scope was typed
+ * (`@vercel/sdk` or `%40vercel/sdk`); with `base`, without its version.
+ */
+function canonical(purl: string, base = false): string {
+  return canonicalPurlOrSelf(base ? stripPurlVersion(purl) : purl);
+}
+
+/** The lock keys (and unlocked manifest aliases) a PURL names. */
+function entriesForPurl(
+  manifest: OpmManifest,
+  lock: OpmLockfile | undefined,
+  purl: string,
+): string[] {
+  const versioned = stripPurlVersion(purl) !== purl;
+  const wanted = canonical(purl, !versioned);
+  const keys = new Set<string>();
+  for (const [key, pkg] of Object.entries(lock?.packages ?? {}))
+    if (canonical(pkg.purl, !versioned) === wanted) keys.add(key);
+  if (!versioned)
+    for (const [alias, requirement] of Object.entries(manifest.packages))
+      if (canonical(requirement.purl, true) === wanted) keys.add(alias);
+  return [...keys].sort();
+}
+
+/**
+ * The manifest alias `name` means: the alias itself, or the one direct
+ * requirement a PURL names. Two requirements on one package (a plain one and
+ * an `npm:` alias of it) cannot be told apart by the PURL, so that is refused.
+ */
+export function manifestAliasNamed(
+  manifest: OpmManifest,
+  name: string,
+): string | undefined {
+  if (manifest.packages[name] !== undefined) return name;
+  if (!name.startsWith('pkg:')) return undefined;
+  const wanted = canonical(name, true);
+  const aliases = Object.entries(manifest.packages)
+    .filter(([, requirement]) => canonical(requirement.purl, true) === wanted)
+    .map(([alias]) => alias)
+    .sort();
+  if (aliases.length > 1)
+    throw new OpmError(
+      'AMBIGUOUS_SPEC',
+      `${name} is ${aliases.length} requirements in ${MANIFEST_NAME} (${aliases.join(', ')}); name one by its alias`,
+    );
+  return aliases[0];
+}
+
 /** The lock keys a question about `name` is about. */
 export function entriesNamed(
   manifest: OpmManifest,
@@ -57,6 +106,7 @@ export function entriesNamed(
   name: string,
 ): string[] {
   if (manifest.packages[name] !== undefined) return [name];
+  if (name.startsWith('pkg:')) return entriesForPurl(manifest, lock, name);
   if (lock === undefined) return [];
   if (lock.packages[name] !== undefined) return [name];
   return Object.entries(lock.packages)
@@ -68,11 +118,7 @@ export function entriesNamed(
     .sort();
 }
 
-/**
- * One entry's explanation, in the words `opm why` has always used. What it
- * quotes came from opm.toml and the lock, so each value is one plain line, and
- * a source is named as every address is named.
- */
+/** One entry's explanation, in the words `opm why` has always used. */
 export function explainEntry(
   manifest: OpmManifest,
   lock: OpmLockfile | undefined,
@@ -83,34 +129,33 @@ export function explainEntry(
   const lines: string[] = [];
   if (requirement !== undefined) {
     lines.push(
-      `"${plainLine(key)}" is a direct dependency in ${MANIFEST_NAME}`,
-      `  purl: ${plainLine(requirement.purl)}`,
+      `"${key}" is a direct dependency in ${MANIFEST_NAME}`,
+      `  purl: ${requirement.purl}`,
     );
     if (requirement.installName !== undefined)
-      lines.push(`  installed as: ${plainLine(requirement.installName)}`);
+      lines.push(`  installed as: ${requirement.installName}`);
     if (requirement.version)
-      lines.push(`  version constraint: ${plainLine(requirement.version)}`);
-    if (requirement.source)
-      lines.push(`  source: ${shownSource(requirement.source)}`);
+      lines.push(`  version constraint: ${requirement.version}`);
+    if (requirement.source) lines.push(`  source: ${requirement.source}`);
     lines.push(
       locked
-        ? `  locked: ${plainLine(locked.purl)} (${plainLine(locked.digest)})`
+        ? `  locked: ${locked.purl} (${locked.digest})`
         : '  locked: (none)',
     );
   } else if (locked !== undefined) {
     lines.push(
-      `"${plainLine(key)}" is in ${LOCK_NAME} as ${plainLine(locked.reason)} dependency`,
-      `  ${plainLine(locked.purl)}`,
+      `"${key}" is in ${LOCK_NAME} as ${locked.reason} dependency`,
+      `  ${locked.purl}`,
     );
   }
   if (lock !== undefined && locked !== undefined) {
     for (const requirer of requirersOf(lock, key)) {
       const by = lock.packages[requirer.key];
       lines.push(
-        `  required by ${plainLine(requirer.key)}${by === undefined ? '' : ` (${plainLine(by.purl)})`}` +
+        `  required by ${requirer.key}${by === undefined ? '' : ` (${by.purl})`}` +
           (requirer.installName === undefined
             ? ''
-            : ` as ${plainLine(requirer.installName)}`),
+            : ` as ${requirer.installName}`),
       );
     }
   }

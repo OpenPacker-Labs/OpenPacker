@@ -90,7 +90,6 @@ describe('a dependency the package cannot resolve', () => {
     });
   });
 
-<<<<<<< ours
   it('says why an npm: alias is not one npm installs, in plain text', async () => {
     const error = await refusal({
       dependencies: {
@@ -104,8 +103,6 @@ describe('a dependency the package cannot resolve', () => {
     expect(holdsControl(error.message)).toBe(false);
   });
 
-=======
->>>>>>> theirs
   it('names the package in plain text too', async () => {
     const error = await refusal({
       name: `de${ESC}[31mmo`,

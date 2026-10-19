@@ -4,7 +4,6 @@
  * here knows what a lock is.
  */
 
-import { quote } from '@openpacker/adapter-core';
 import { PnpmLockError, at, field } from './errors.js';
 import { compareKeys } from './order.js';
 import { checkLimit, type PnpmLockLimits } from './limits.js';
@@ -136,7 +135,7 @@ export function rejectUnknown(
     if (!allowed.includes(key))
       throw new PnpmLockError(
         'unknown-key',
-        `has the key ${quote(key)}, which pnpm 9 and 10 do not write here (they write ${allowed.join(', ')})`,
+        `has the key ${JSON.stringify(key)}, which pnpm 9 and 10 do not write here (they write ${allowed.join(', ')})`,
         where,
       );
 }

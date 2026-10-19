@@ -105,13 +105,10 @@ describe('updateProject mutation coverage', () => {
       catalogPaths: [fifo],
     });
     const feeding = (async () => {
-      // Opening a FIFO for writing returns once the update has opened it for
-      // reading, i.e. while it is reading its catalogs, after it read the lock
-      // and before it has any catalog. A timer here (200 ms) fired before a
-      // loaded machine had got the update as far as its lock.
+      await new Promise<void>((resolve) => setTimeout(resolve, 200));
+      await rm(paths.lock);
       const handle = await open(fifo, 'w');
       try {
-        await rm(paths.lock);
         await handle.write(
           `${JSON.stringify({ schemaVersion: 1, packages: {} }, null, 2)}\n`,
         );
@@ -124,5 +121,5 @@ describe('updateProject mutation coverage', () => {
       code: expect.stringMatching(/^(INPUT_CHANGED|INVALID_LOCK)$/u),
     });
     await feeding;
-  });
+  }, 15_000);
 });

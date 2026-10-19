@@ -9,7 +9,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createNativeBackend,
   findTrustedSandboxHelper,
@@ -539,17 +539,14 @@ describe('opmx --plugin', () => {
     );
     let fetches = 0;
     const serve = acmeToolFetch();
-    // The fixture registry is handed to the run as its network: a run that
-    // reaches for the machine's resolver would need `acme.fixture.test` to
-    // resolve, which it never does.
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const network = (async (input: URL | Request | string) => {
+    vi.stubGlobal('fetch', (async (input: URL | Request | string) => {
       if (
         String(input) === 'https://acme.fixture.test/artifacts/demo-1.0.0.tar'
       )
         fetches += 1;
       return serve(input);
-    }) as typeof fetch;
+    }) as typeof fetch);
     try {
       await seedPluginStore(home);
       let cap = capture();
@@ -561,9 +558,7 @@ describe('opmx --plugin', () => {
       // protocol; the host fetched the published bytes, digest-verified them,
       // materialized the tool, and ran it.
       cap = capture();
-      const exit = await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home, {
-        fetch: network,
-      });
+      const exit = await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home);
       expect(exit, cap.err).toBe(0);
       expect(cap.err).toMatch(/pkg:acme\/demo@1\.0\.0/);
       expect(cap.err).not.toMatch(/\(cached\)/);
@@ -576,15 +571,14 @@ describe('opmx --plugin', () => {
       // run reports the cache hit.
       cap = capture();
       expect(
-        await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home, {
-          fetch: network,
-        }),
+        await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home),
         cap.err,
       ).toBe(0);
       expect(cap.err).toMatch(/pkg:acme\/demo@1\.0\.0 \(cached\)/);
       expect(cap.out).toBe('acme-demo-ran\n');
       expect(fetches).toBe(1);
     } finally {
+      vi.unstubAllGlobals();
       restore();
       if (previousCache === undefined) delete process.env.OPM_TOOL_CACHE;
       else process.env.OPM_TOOL_CACHE = previousCache;
@@ -608,17 +602,16 @@ describe('opmx --plugin', () => {
     const tampered = new Uint8Array(ACME_TOOL_TAR);
     tampered[512] = tampered[512]! ^ 0xff;
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const network = acmeToolFetch(tampered) as typeof fetch;
+    vi.stubGlobal('fetch', acmeToolFetch(tampered) as typeof fetch);
     try {
       await seedPluginStore(home);
       const cap = capture();
-      const exit = await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home, {
-        fetch: network,
-      });
+      const exit = await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home);
       expect(exit, cap.err).toBe(7);
       expect(cap.err).toMatch(/digest mismatch/i);
       expect(cap.out).toBe('');
     } finally {
+      vi.unstubAllGlobals();
       restore();
       if (previousCache === undefined) delete process.env.OPM_TOOL_CACHE;
       else process.env.OPM_TOOL_CACHE = previousCache;
@@ -932,7 +925,7 @@ describe('project plugin bindings', () => {
       './plugin-fixture.js'
     );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const network = acmeToolFetch() as typeof fetch;
+    vi.stubGlobal('fetch', acmeToolFetch() as typeof fetch);
     try {
       const seeded = await seedPluginStore(home);
       const root = await boundProject(seeded.storeDigest);
@@ -948,9 +941,7 @@ describe('project plugin bindings', () => {
 
       const cap = capture();
       expect(
-        await runOpm(['add', 'pkg:acme/demo@1.0.0'], cap.io, root, {
-          fetch: network,
-        }),
+        await runOpm(['add', 'pkg:acme/demo@1.0.0'], cap.io, root),
         cap.err,
       ).toBe(0);
       expect(cap.out).toMatch(/Added demo → pkg:acme\/demo@1\.0\.0/);
@@ -998,6 +989,7 @@ describe('project plugin bindings', () => {
       ).toBe(0);
       expect(run.out).toBe('acme-demo-ran\n');
     } finally {
+      vi.unstubAllGlobals();
       restore();
     }
   }, 30_000);

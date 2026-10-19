@@ -62,18 +62,20 @@ import { asksForHelp } from './commands/run-args.js';
 import { COMMANDS } from './commands/command-names.js';
 import { routeRun, unknownCommandHint } from './commands/run-route.js';
 import { RunError } from './commands/run-error.js';
-import { CI_HELP } from './commands/ci-help.js';
-import { isBooleanFlag, shortToLong } from './cli-flags.js';
 import { RUN_HELP } from './commands/run-help.js';
-import { formatFailure, parseFailure, say } from './error-report.js';
-import { EXIT_CODES, opmErrorExitCode } from './exit-codes.js';
-import {
-  writeInstalled,
-  writeLines,
-  writeNativeProjection,
-} from './terminal-lines.js';
+import { formatFailure, parseFailure } from './error-report.js';
 
-export { EXIT_CODES } from './exit-codes.js';
+export const EXIT_CODES = {
+  success: 0,
+  usage: 2,
+  invalidInput: 3,
+  notFound: 4,
+  unsatisfiable: 5,
+  policyDenied: 6,
+  verificationFailed: 7,
+  unavailable: 8,
+  internal: 9,
+} as const;
 
 export interface CliIo {
   stdout: Pick<NodeJS.WriteStream, 'write'>;
@@ -96,7 +98,7 @@ const OPM_VERSION = '0.1.0';
 
 /** Seams a caller of {@link runOpm} may replace; the process entry passes none. */
 export interface RunOpmOptions {
-  /** Network used by `plugin add` and `add`; production resolves and pins real addresses. */
+  /** Network used by `plugin add`; production resolves and pins real addresses. */
   fetch?: typeof fetch;
 }
 
@@ -158,16 +160,14 @@ export async function runOpm(
         registry: adapterRegistry,
       });
       for (const refused of pluginRegistration.refused)
-        say(
-          io.stderr,
+        io.stderr.write(
           `opm: plugin ${refused.name} was not loaded: ${refused.message}\n`,
         );
     } catch (error) {
       // A store-level failure (corrupt index, unsafe root) leaves every
       // plugin unregistered; their purl types stay unsupported, which is
       // the fail-closed answer, and `opm plugin` can still repair the store.
-      say(
-        io.stderr,
+      io.stderr.write(
         `opm: plugin store unavailable (${error instanceof Error ? error.message : String(error)}); continuing without plugins\n`,
       );
     }
@@ -266,9 +266,6 @@ export async function runOpm(
           ...(source !== undefined && { source }),
           ...(alias !== undefined && { alias }),
           ...(!(offline === undefined) && { offline }),
-          ...(!(options.fetch === undefined) && {
-            registryOptions: { fetch: options.fetch },
-          }),
         });
         if (result.hostInstall) {
           return writeHostInstallResult(result.hostInstall, args, io);
@@ -394,14 +391,27 @@ export async function runOpm(
           io.stdout.write('(no packages)\n');
           return EXIT_CODES.success;
         }
-        writeInstalled(rows, io);
+        for (const row of rows) {
+          const digest =
+            row.digest.length > 15 ? `${row.digest.slice(0, 15)}…` : row.digest;
+          const status = row.installed ? 'installed' : 'not-installed';
+          const bins =
+            row.bins.length > 0 ? ` bins=[${row.bins.join(',')}]` : '';
+          const names =
+            row.installedAs.length > 0
+              ? ` as=[${row.installedAs.join(',')}]`
+              : '';
+          io.stdout.write(
+            `${row.alias}\t${row.purl}\t${digest}\t${status}${bins}${names}\n`,
+          );
+        }
         return EXIT_CODES.success;
       }
       case 'why': {
         const root = await requireOpmRoot(cwd);
         const alias = args.positionals[0];
         if (!alias) throw usage('opm why requires a package alias');
-        writeLines([await whyPackage(root, alias)], io);
+        io.stdout.write(`${await whyPackage(root, alias)}\n`);
         return EXIT_CODES.success;
       }
       // Browsing does not need a project: looking up what a registry has is
@@ -417,10 +427,7 @@ export async function runOpm(
           io.stdout.write('(no matches)\n');
           return EXIT_CODES.success;
         }
-        writeLines(
-          found.map((item) => item.canonicalPurl),
-          io,
-        );
+        for (const item of found) io.stdout.write(`${item.canonicalPurl}\n`);
         return EXIT_CODES.success;
       }
       case 'versions': {
@@ -439,7 +446,7 @@ export async function runOpm(
         }
         // Newest last, matching the order the registry reports and the one
         // `opm add` picks from when no version is given.
-        writeLines(versions, io);
+        for (const version of versions) io.stdout.write(`${version}\n`);
         return EXIT_CODES.success;
       }
       case 'resolve': {
@@ -465,7 +472,7 @@ export async function runOpm(
               `a solve over a truncated universe can report unsatisfiable for a solvable problem\n`,
           );
         for (const item of graph.unresolved)
-          say(io.stderr, `opm: ${item.purl}: ${item.reason}\n`);
+          io.stderr.write(`opm: ${item.purl}: ${item.reason}\n`);
         const solved = await solveGraph({
           graph,
           rootRequirements: [{ purl: target }],
@@ -474,7 +481,7 @@ export async function runOpm(
           `${solved.selected.length} package(s), proof ${solved.proofValid ? 'checked' : 'INVALID'}\n`,
         );
         for (const instance of solved.selected)
-          say(io.stdout, `  ${instance.identity.exactPurl}\n`);
+          io.stdout.write(`  ${instance.identity.exactPurl}\n`);
         return EXIT_CODES.success;
       }
       case 'info': {
@@ -668,7 +675,7 @@ export async function runOpm(
           const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
           io.stdout.write(
             `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'} from ${result.root}; ` +
-              `${result.referenced} still used by a project, ${result.tooNew} too new to judge\n`,
+              `${result.referenced} still used by a project, ${result.held} in use by an install in progress, ${result.tooNew} too new to judge\n`,
           );
           for (const path of result.removed) io.stdout.write(`  ${path}\n`);
           return EXIT_CODES.success;
@@ -718,20 +725,14 @@ async function rollbackToPrevious(root: string): Promise<Generation> {
   return switchGeneration({ root, target: target.generationDigest });
 }
 
-/**
- * Report a failure and choose the exit code that tells a script what kind it
- * was. Every failure `opm` reports is printed here, so this is where a message
- * is made safe for the terminal (`say`): a message may carry text a repository
- * wrote (V8's JSON.parse quotes the bad bytes of a `package.json`).
- */
+/** Report a failure and choose the exit code that tells a script what kind it was. */
 export function handleError(error: unknown, io: CliIo): number {
-  const report = (text: string) => say(io.stderr, text);
   if (error instanceof UsageError) {
-    report(`${error.message}\n`);
+    io.stderr.write(`${error.message}\n`);
     return EXIT_CODES.usage;
   }
   if (error instanceof RunError) {
-    report(`opm: ${error.message}\n`);
+    io.stderr.write(`opm: ${error.message}\n`);
     switch (error.code) {
       case 'USAGE':
         return EXIT_CODES.usage;
@@ -745,8 +746,51 @@ export function handleError(error: unknown, io: CliIo): number {
     }
   }
   if (error instanceof OpmError) {
-    report(`opm: ${error.message}\n`);
-    return opmErrorExitCode(error.code);
+    io.stderr.write(`opm: ${error.message}\n`);
+    switch (error.code) {
+      case 'NOT_FOUND':
+      case 'NO_PROJECT':
+      case 'PLUGIN_NOT_INSTALLED':
+        return EXIT_CODES.notFound;
+      case 'AMBIGUOUS_SPEC':
+      case 'INVALID_SPEC':
+      case 'INVALID_MANIFEST':
+      case 'INVALID_LOCK':
+      case 'UNSUPPORTED_LOCK':
+      case 'INVALID_CATALOG':
+      case 'INVALID_PLUGIN_SPEC':
+      case 'INVALID_PLUGIN_MANIFEST':
+      case 'INVALID_PLUGIN_ARTIFACT':
+      case 'PLUGIN_ALREADY_INSTALLED':
+      case 'PLUGIN_ID_CONFLICT':
+        return EXIT_CODES.invalidInput;
+      case 'UNRESOLVABLE':
+        return EXIT_CODES.unsatisfiable;
+      case 'DIGEST_MISMATCH':
+      case 'PLUGIN_DIGEST_MISMATCH':
+      case 'SIZE_MISMATCH':
+      case 'UNSAFE_PATH':
+      case 'UNSAFE_BIN':
+      case 'UNSAFE_SOURCE':
+      case 'SIZE_LIMIT':
+      case 'INVALID_DIGEST':
+        return EXIT_CODES.verificationFailed;
+      case 'OFFLINE':
+      case 'FETCH_FAILED':
+      case 'UNAVAILABLE':
+      case 'STORE_ENTRY_VANISHED':
+      case 'PLUGIN_ERROR':
+      case 'PLUGIN_FAILED':
+      case 'PLUGIN_REGISTRY_UNCONFIGURED':
+        return EXIT_CODES.unavailable;
+      case 'ECOSYSTEM_DENIED':
+      case 'POLICY':
+      case 'POLICY_DENIED':
+      case 'POLICY_INDETERMINATE':
+        return EXIT_CODES.policyDenied;
+      default:
+        return EXIT_CODES.internal;
+    }
   }
   // Delegated plugin operations surface ProviderError, which is not an
   // OpmError but carries the same string codes; map them instead of reporting
@@ -755,7 +799,7 @@ export function handleError(error: unknown, io: CliIo): number {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const code = (error as { code: unknown }).code;
     if (typeof code === 'string') {
-      report(`opm: ${error.message}\n`);
+      io.stderr.write(`opm: ${error.message}\n`);
       switch (code) {
         case 'OFFLINE':
         case 'UPSTREAM_UNAVAILABLE':
@@ -796,7 +840,7 @@ export function handleError(error: unknown, io: CliIo): number {
       }
     }
   }
-  report(
+  io.stderr.write(
     formatFailure(parseFailure(error), { tool: 'opm', internalError: true }),
   );
   return EXIT_CODES.internal;
@@ -875,6 +919,44 @@ function parseArgs(argv: string[]): Parsed {
     head: commandIndex === -1 ? [...argv] : argv.slice(0, commandIndex),
     rest: commandIndex === -1 ? [] : argv.slice(commandIndex + 1),
   };
+}
+
+function shortToLong(short: string): string {
+  switch (short) {
+    case 'e':
+      return 'ecosystem';
+    case 'h':
+      return 'help';
+    case 'w':
+      return 'workspace';
+    default:
+      return short;
+  }
+}
+
+function isBooleanFlag(key: string): boolean {
+  return (
+    key === 'help' ||
+    key === 'force' ||
+    key === 'offline' ||
+    key === 'online' ||
+    key === 'json' ||
+    key === 'dry-run' ||
+    key === 'delegate' ||
+    key === 'allow-build' ||
+    key === 'allow-network' ||
+    key === 'allow-elevation' ||
+    key === 'latest' ||
+    key === 'if-present' ||
+    key === 'native' ||
+    key === 'shared' ||
+    key === 'production' ||
+    key === 'frozen' ||
+    key === 'workspaces' ||
+    key === 'no-workspaces' ||
+    key === 'include-workspace-root' ||
+    key === 'write'
+  );
 }
 
 /**
@@ -968,6 +1050,40 @@ async function runSystemCommand(
   throw usage(
     `Unknown system subcommand: ${sub}. Use available | plan | install.`,
   );
+}
+
+/**
+ * Report the ecosystem project files opm maintained, and anything it could not
+ * promise about them. Silence here would hide edits to files the user tracks
+ * in version control.
+ */
+function writeNativeProjection(
+  report:
+    | {
+        projections: readonly {
+          ecosystem: string;
+          written: readonly string[];
+          skipped?: readonly { path: string; reason: string }[];
+          semanticLoss: readonly {
+            code: string;
+            representedMeaning?: string;
+          }[];
+        }[];
+      }
+    | undefined,
+  io: CliIo,
+): void {
+  if (!report) return;
+  for (const projection of report.projections) {
+    for (const path of projection.written)
+      io.stdout.write(`  updated ${path}\n`);
+    for (const entry of projection.skipped ?? [])
+      io.stderr.write(`opm: skipped ${entry.path}: ${entry.reason}\n`);
+    for (const loss of projection.semanticLoss)
+      io.stderr.write(
+        `opm: ${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}\n`,
+      );
+  }
 }
 
 async function runHostInstall(
@@ -1123,7 +1239,17 @@ Usage:
   opm add <spec> [--ecosystem|-e <eco>] [--source <file|url>] [--alias <name>] [--offline|--online]
   opm remove <alias>
   opm install [--offline|--online]
-${CI_HELP}
+  opm ci [--path <dir>] [--production] [--omit <dev|optional|peer>] [--offline|--online]
+         [--workspace|-w <name|dir>]... [--include-workspace-root] [--workspaces[=false]|--no-workspaces]
+                                      install exactly what package-lock.json says;
+                                      resolves nothing, runs no install script
+                                      (opm install --frozen is the same).
+                                      A workspace lock links each member to its
+                                      directory and gives it its own node_modules;
+                                      -w installs only those members and what they
+                                      need (--include-workspace-root adds the root's
+                                      own dependencies), --workspaces=false only
+                                      the root's
   opm uninstall [alias]
   opm sync [--offline|--online]
   opm update [alias...] [--latest] [--offline|--online]

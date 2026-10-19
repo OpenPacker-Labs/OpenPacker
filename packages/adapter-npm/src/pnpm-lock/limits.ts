@@ -89,8 +89,7 @@ export function checkLimit(
   if (actual > limit)
     throw new PnpmLockError(
       'limit',
-      `has ${actual} ${what}, more than the limit of ${limit}`,
+      `has ${actual} ${what}, more than the limit of ${limit} (${name})`,
       where,
-      name,
     );
 }
