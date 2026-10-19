@@ -11,7 +11,8 @@ name: CD promotion
 # gates environment protection rules, so the harsh gates are encoded here:
 # dispatch must be armed with the exact phrase "promote", the commit must be
 # on main, the version must match @openpacker/cli at that commit, and the CI
-# build run for that exact sha must be green with all six matrix artifacts.
+# build run for that exact sha must be green with both Ubuntu matrix artifacts
+# (Node 22.19.0 and 24 on ubuntu-24.04; see ci-build.yml).
 # Production additionally runs on tag push ONLY — dispatch can stage but can
 # never promote — so a full release requires a `v*` tag, which only repo
 # writers can push. The staging/production GitHub Environments record each
@@ -101,7 +102,8 @@ jobs:
           set -euo pipefail
           EXPECTED="$(git show "$SHA:apps/openpacker-cli/package.json" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d).version))")"
           test "$EXPECTED" = "$VERSION"
-      - name: CI build for this commit must be green with all six artifact legs
+      - name:
+          CI build for this commit must be green with both Ubuntu artifact legs
         id: ci
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -111,7 +113,7 @@ jobs:
           RUN_ID="$(gh run list --workflow ci-build.yml --commit "$SHA" --json databaseId,conclusion --jq '[.[] | select(.conclusion == "success")][0].databaseId // empty')"
           test -n "$RUN_ID"
           COUNT="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '[.artifacts[] | select(.name | startswith("openpacker-build-"))] | length')"
-          test "$COUNT" -eq 6
+          test "$COUNT" -eq 2
           echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
   staging:
@@ -155,7 +157,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
-          cp promotion/openpacker-build-ubuntu-latest-node24/*.tgz release/
+          cp promotion/openpacker-build-ubuntu-24.04-node24/*.tgz release/
           (cd release && sha256sum *.tgz > SHA256SUMS)
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             # Never clobber the assets of a release already promoted to
