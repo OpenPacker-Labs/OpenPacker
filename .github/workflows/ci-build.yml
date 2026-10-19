@@ -34,32 +34,38 @@ env:
   SOURCE_DATE_EPOCH: '1785628800'
 
 jobs:
+  matrix-prep:
+    name: Resolve build matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        env:
+          EVENT: ${{ github.event_name }}
+          INCLUDE_EXTRA: ${{ inputs.include_windows_macos }}
+        run: |
+          set -euo pipefail
+          BASE='[{"os":"ubuntu-24.04","node":"22.19.0"},{"os":"ubuntu-24.04","node":"24"}]'
+          EXTRA='[{"os":"windows-latest","node":"22.19.0"},{"os":"windows-latest","node":"24"},{"os":"macos-latest","node":"22.19.0"},{"os":"macos-latest","node":"24"}]'
+          if [ "$EVENT" = 'workflow_dispatch' ] && [ "$INCLUDE_EXTRA" = 'true' ]; then
+            JSON="$(BASE="$BASE" EXTRA="$EXTRA" node -e 'const b=JSON.parse(process.env.BASE); const e=JSON.parse(process.env.EXTRA); console.log(JSON.stringify({include:[...b,...e]}))')"
+          else
+            JSON="$(BASE="$BASE" node -e 'console.log(JSON.stringify({include:JSON.parse(process.env.BASE)}))')"
+          fi
+          {
+            echo 'matrix<<MATRIX_EOF'
+            echo "$JSON"
+            echo MATRIX_EOF
+          } >> "$GITHUB_OUTPUT"
+
   build:
     name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    needs: matrix-prep
     runs-on: ${{ matrix.os }}
-    if: >-
-      matrix.optional != true || (github.event_name == 'workflow_dispatch' &&
-      inputs.include_windows_macos == true)
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            node: 22.19.0
-          - os: ubuntu-24.04
-            node: 24
-          - os: windows-latest
-            node: 22.19.0
-            optional: true
-          - os: windows-latest
-            node: 24
-            optional: true
-          - os: macos-latest
-            node: 22.19.0
-            optional: true
-          - os: macos-latest
-            node: 24
-            optional: true
+      matrix: ${{ fromJSON(needs.matrix-prep.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: actions/setup-node@v6.4.0
