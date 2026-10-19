@@ -35,7 +35,11 @@ import {
   integrityKey,
   type IntegrityClaim,
 } from './integrity.js';
-import { ensureStableDirectory, removeStableTree } from './paths.js';
+import {
+  ensureStableDirectory,
+  removeStableTree,
+  storeKeyFromDigest,
+} from './paths.js';
 import {
   adoptSharedEntry,
   publishSharedEntry,
@@ -45,7 +49,34 @@ import {
   lookupArchiveDigest,
   recordArchiveDigest,
 } from './shared-store-index.js';
+import type { StoreHold } from './shared-store-lease.js';
 import { OpmError } from './types.js';
+
+/**
+ * What the machine can refuse an extraction, whatever the archive holds: a
+ * full or read-only disk, a store this user may not write, a failing device,
+ * a process out of descriptors or memory. Any other failed system call is the
+ * archive's doing (a name a file system will not hold, a path that is both a
+ * file and a directory) and is an unsafe path.
+ */
+const ENVIRONMENTAL = new Set([
+  'ENOSPC',
+  'EDQUOT',
+  'EROFS',
+  'EACCES',
+  'EPERM',
+  'EIO',
+  'EMFILE',
+  'ENFILE',
+  'ENOMEM',
+]);
+
+/** A failed system call that says something about the machine, not the archive. */
+export function isEnvironmentalError(error: unknown): boolean {
+  // SAFETY: only the two fields Node puts on a failed syscall are read.
+  const { code, syscall } = (error ?? {}) as NodeJS.ErrnoException;
+  return typeof syscall === 'string' && ENVIRONMENTAL.has(code ?? '');
+}
 
 /** An archive in a store, and where it came from this time. */
 interface Stored {
@@ -139,6 +170,8 @@ export async function storeArchives(input: {
   offline: boolean;
   ecosystem: string;
   options: FrozenFetchOptions & { concurrency?: number; signal?: AbortSignal };
+  /** The install's hold on the shared store: each entry is claimed before use. */
+  hold?: StoreHold;
 }) {
   const { lock, claims, storeRoot } = input;
   const memory = new MemoryBudget(EXTRACTION_MEMORY);
@@ -161,6 +194,8 @@ export async function storeArchives(input: {
     async ([key, pkg]): Promise<Stored | undefined> => {
       if (input.shared) {
         const known = await lookupArchiveDigest(storeRoot, key);
+        if (known !== undefined)
+          await input.hold?.claim(storeKeyFromDigest(known));
         const entry =
           known === undefined
             ? undefined
@@ -190,6 +225,7 @@ export async function storeArchives(input: {
           `${labelOf(pkg)} does not match the integrity the lock pins: the lock says ${echoed(pkg.integrity ?? '')}, ${echoed(redactSource(pkg.source))} served ${checked.actual}. Nothing was installed from it`,
         );
       const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+      await input.hold?.claim(storeKeyFromDigest(digest));
       const entry = await memory
         .hold(bytes.byteLength * EXTRACTION_FOOTPRINT, async () =>
           publishSharedEntry({
@@ -202,8 +238,10 @@ export async function storeArchives(input: {
           }),
         )
         .catch((error: unknown) => {
-          // The materializer refuses an unsafe archive in its own words; say whose.
-          throw error instanceof OpmError
+          // The materializer refuses an unsafe archive in its own words; say
+          // whose. The machine refusing the write (a read-only store, a full
+          // disk) says so itself, and is not an unsafe archive.
+          throw error instanceof OpmError || isEnvironmentalError(error)
             ? error
             : new OpmError(
                 'UNSAFE_PATH',

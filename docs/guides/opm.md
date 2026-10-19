@@ -775,8 +775,25 @@ opm gc --shared
 
 A project's store entry and its `node_modules` are hard links to an entry's
 files, so an entry in which every file has a link count of one is linked by no
-project and is removed. Entries younger than ten minutes are left alone (an
-install may be about to link them), as are entries any project still uses.
+project and is removed. Entries any project still uses are left alone, and so
+are entries an install in progress is using: `opm ci`, `install`, `add` and
+`update` claim each entry before they look it up and keep the claim until their
+links hold it, so a collection that runs at the same time never takes an entry
+from under them. A claim stops counting when the process that made it ends,
+where that can be told: a claim from another machine sharing the store, or from
+another container, counts until it is removed from `<store>/.leases/` (ADR 0048,
+amendment 2026-10-17). An install waits for a collection that is deciding on an
+entry it wants, for 45 seconds at most; it then warns, naming the collection's
+lease, and goes on. Entries younger than ten minutes are left alone too, for an
+older opm that does not claim.
+
+An install that has to make its claim in a store with no room left fails with
+the disk error (`ENOSPC`, `EDQUOT`); a store it may only read is adopted from
+without claims. A shared store belongs on a local filesystem: several machines
+that share one over a network filesystem are not supported, and two that share a
+machine id and a host name (an image cloned as it was) read each other's live
+claims as left by an ended boot. If an entry is reported as "missing its tree
+digest", remove the entry the message names and run the command again.
 
 ### Shell environment
 
