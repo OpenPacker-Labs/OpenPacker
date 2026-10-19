@@ -323,6 +323,7 @@ snapshots:
     );
   });
 });
+<<<<<<< ours
 
 describe('a registry package whose file name keeps its build metadata', () => {
   // pnpm writes `tarball:` only when the URL is not `@pnpm/tarball-url`'s,
@@ -369,3 +370,5 @@ snapshots:
     ).toMatchObject({ kind: 'tarball' });
   });
 });
+=======
+>>>>>>> theirs

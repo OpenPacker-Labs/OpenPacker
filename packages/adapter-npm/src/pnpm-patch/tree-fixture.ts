@@ -24,6 +24,7 @@ export async function readTree(
   await walk(root);
   return Object.fromEntries(out.sort(([a], [b]) => (a < b ? -1 : 1)));
 }
+<<<<<<< ours
 
 /**
  * A path of exactly `bytes` UTF-8 bytes whose segments are `unit` repeated
@@ -46,3 +47,5 @@ export function pathOfBytes(bytes: number, unit = 'a'): string {
   }
   return path;
 }
+=======
+>>>>>>> theirs

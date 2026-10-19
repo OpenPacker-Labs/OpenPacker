@@ -143,13 +143,17 @@ export function sourceOfInstance(
   // pnpm's own address (`@pnpm/tarball-url`): the version without its build
   // metadata, which the registry's file name does not carry; it is classified
   // by that version too, or the registry's own path reads as a tarball's.
+<<<<<<< ours
   // pnpm writes `tarball:` when the registry's file name differs from that,
   // as one that keeps the metadata does: such a path is the registry's too.
+=======
+>>>>>>> theirs
   const version = instance.version.split('+', 1)[0]!;
   const url =
     resolution.kind === 'tarball'
       ? resolution.tarball
       : `${registry.replace(/\/+$/u, '')}/${instance.name}/-/${instance.name.split('/').at(-1)}-${version}.tgz`;
+<<<<<<< ours
   const spellings = [
     version,
     instance.version,
@@ -165,6 +169,13 @@ export function sourceOfInstance(
   const source =
     sources.find((each) => 'kind' in each && each.kind === 'registry') ??
     sources[0]!;
+=======
+  const source = classifyResolved({
+    packageName: instance.name,
+    version,
+    resolved: url,
+  });
+>>>>>>> theirs
   if ('problem' in source) return { problem: `${label} ${source.problem}` };
   return { url, kind: source.kind, integrity };
 }

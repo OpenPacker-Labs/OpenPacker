@@ -144,6 +144,7 @@ design:
    edges, from the importer's directory. The planner (`pnpm-install/place*.ts`)
    chooses; it is the job arborist does when npm writes a lock, and it ends in
    the same `PlacedEntry` list the npm lock gives `planLayoutFromPaths`.
+<<<<<<< ours
 9. **One lock instance has one real path** unless another instance of its name
    (another version, or the same package resolved against other peers) is found
    first on the way up from one of its dependents, or a peer it shares with its
@@ -182,7 +183,6 @@ design:
    holds its own react 18.2, it is nested in that package). It is never written
    in a `node_modules` an answered edge already looked through, which would
    change what that edge finds. A dependent's own edges to its peers are
-<<<<<<< ours
    answered before the edges that share them. A peer is what the package
    declares in `peerDependencies` or an instance its key carries in the peer
    suffix. An optional peer that nothing provided is no edge in a pnpm snapshot,
@@ -245,14 +245,6 @@ design:
    keeps and counts, and a layout made without peers in view. Each planner line
    a review changed one at a time (14 mutants, `place.attempts.test.ts`,
    `place.layout.test.ts`, `place.cycles.test.ts`) fails a test.
-=======
-   answered before the edges that share them. Where a cycle of peers defeats
-   that order, the check after the plan finds the split and the edge is answered
-   beside its dependent on the next plan. A peer is what the package declares in
-   `peerDependencies` or an instance its key carries in the peer suffix. The
-   proof (point 12) holds every plan to this, and the install refuses a plan
-   that splits a peer as a defect in the planner.
->>>>>>> theirs
 
    **Executables.** pnpm links each importer's direct dependencies' executables
    into that importer's own `node_modules/.bin`, wherever the package is. So
@@ -266,14 +258,37 @@ design:
    member's dependency shared at the project is still a direct one for the
    policy's depth; a member installed alone (`-w`, `--filter`) finds it at the
    project, as `npm ci -w` places it; and it is left out with its importer's
-<<<<<<< ours
    list (`--omit`). The executables a member declares itself go to the `.bin` of
    each importer that links the member and to no other, so a member never takes
    a name in the project's `.bin` from the project's own dependency; an npm lock
    names no importers, and its members' executables stay in the project's
    `.bin`, where npm links them.
 =======
-   list (`--omit`).
+9. **One lock instance has one real path wherever no other version holds its
+   name**, as pnpm (one `node_modules/.pnpm` directory per instance, linked to
+   from each importer) and npm (arborist hoists a member's dependency to the
+   root unless it conflicts) lay it out. Node keys its module cache by real
+   path, so each copy of one instance is a separate module, and state held at
+   module level does not survive it (two members and the project depending on
+   `react@18.3.1`, written three times, render "Invalid hook call"). The
+   project's direct dependencies live in its `node_modules`. A member's are
+   placed as everything else is (point 10), from the member's directory: nothing
+   is written when Node already finds that instance from the member, at the
+   project or an enclosing member; it goes to the project's `node_modules` when
+   nothing answers there and it is the instance of its name the most packages
+   and importers want; otherwise it is the member's own
+   (`packages/web/node_modules/x` when the project holds another `x`). One case
+   keeps a copy in the member although the project's would do: when the shared
+   copy would find, under a name the member requires itself, another copy of the
+   instance the member requires (a peer: `dom@1.0.0(react@18.2.0)` shared at the
+   project beside the project's react 18.3 needs its own react 18.2 beside it, a
+   second copy of the one the member loads), the member gets the dependency in
+   its own `node_modules`, beside its peer. A shared dependency is still a
+   direct one (the policy's depth, the precedence of its executable); its shim
+   is in the `.bin` beside it, which `opm run` and `opm exec` put on a member's
+   `PATH` (ADR 0047, every ancestor's `node_modules/.bin`); a member installed
+   alone (`-w`, `--filter`) finds it at the project, as `npm ci -w` places it;
+   and it is left out with its importer's list (`--omit`).
 >>>>>>> theirs
 
    Amended 2026-10-17. The rule was "always in the importer's own
@@ -284,6 +299,7 @@ design:
    tests on those locks and HoBo's cut now hold that no instance is placed both
    in a member's own `node_modules` and anywhere else.
 
+<<<<<<< ours
    Amended again on 2026-10-17, after review. Sharing a member's dependency at
    the project had moved its executable into the project's `.bin`, where it lost
    or took a name by package-name order (a member's script ran the project's
@@ -293,7 +309,6 @@ design:
    a UI kit's hook dependency rendered "Invalid hook call"). Both are as stated
    above now.
 
-<<<<<<< ours
    Amended a third time on 2026-10-17, after the sixth review. The peer rule's
    pins fed on themselves in a cycle of peers across members: a pin names an
    instance and an edge, so it applied to the copies it wrote, and the copies
@@ -334,9 +349,14 @@ design:
     when it is the instance of that name the most packages and importers want
     (an importer's edge counts, so two members that share an instance elect it),
     and beside its dependent otherwise. A tie is broken by the newer version,
+<<<<<<< ours
     then by key. An instance with a peer its dependent shares goes no higher
     than point 9 allows. A name that differs only by case from one already in
     the directory is nested instead (ADR 0054 §17 refuses what cannot be).
+=======
+    then by key. A name that differs only by case from one already in the
+    directory is nested instead (ADR 0054 §17 refuses what cannot be).
+>>>>>>> theirs
 11. **A member link** is a link at `node_modules/<name>` in the project, where
     the name is the one the importer gives the dependency: the member's own
     name, or an alias (`"e": "workspace:b@*"` is a link at `node_modules/e`), as
@@ -357,10 +377,16 @@ design:
     tests use the same function. The acceptance runs check a plan a second time
     with a walk that shares none of its structure (the real ancestor directories
     of the planned tree, and, on a tree on disk, Node's own
+=======
+    named. The tests use the same function. The acceptance runs check a plan a
+    second time with a walk that shares none of its structure (the real ancestor
+    directories of the planned tree, and, on a tree on disk, Node's own
+>>>>>>> theirs
     `require.resolve.paths`), against the lock read by PyYAML:
     `packages/adapter-npm/test/pnpm-install-oracle`.
 
     One shape has no plan: packages that need each other at different versions
+<<<<<<< ours
     in one importer's closure (`a@1` needs `b@1`, which needs `a@2`, which needs
     `b@2`, which needs `a@1`), because each copy nested beside its dependent is
     shadowed by the one above it, for ever. pnpm writes that with symlinks,
@@ -370,14 +396,6 @@ design:
     importers that each need one version of such packages do have a plan, in
     each importer's own `node_modules` (point 9).
 =======
-    named. So is a package whose dependency finds another copy of a peer the
-    package requires too (point 9). The tests use the same function. The
-    acceptance runs check a plan a second time with a walk that shares none of
-    its structure (the real ancestor directories of the planned tree, and, on a
-    tree on disk, Node's own `require.resolve.paths`), against the lock read by
-    PyYAML: `packages/adapter-npm/test/pnpm-install-oracle`.
-
-    One shape has no plan: packages that need each other at different versions
     (`a@1` needs `b@1`, which needs `a@2`, which needs `b@2`, which needs
     `a@1`), because each copy nested beside its dependent is shadowed by the one
     above it, for ever. pnpm writes that with symlinks, which this layout does
@@ -391,9 +409,14 @@ design:
 13. **Each is a separate instance of one registry package.** It is placed where
     its dependents resolve their peers: because placement is by what Node finds
     from the dependent, `react-dom@18.2.0(react@18.2.0)` and
+<<<<<<< ours
     `react-dom@18.2.0(react@18.3.0)` end up in places whose ancestors find the
     right `react` and nothing wrong, and, by point 9, the very copy of it their
     dependents load.
+=======
+    `react-dom@18.2.0(react@18.3.0)` end up in the nearest places whose
+    ancestors find the right `react` and nothing wrong.
+>>>>>>> theirs
 14. **Two instances of one tarball cost one extraction.** The archive is
     fetched, proved and extracted once however many places the plan gives it
     (the store is found by the integrity, ADR 0046 §5; `storeArchives` already
@@ -711,6 +734,7 @@ installs 354, 352 from the store; `vitest` and `zod` resolve from the project,
 places (the table's 2,564); 156 places are in a member's own `node_modules`,
 none of them an instance the member would find above it: each is there because
 the project holds another instance of the name (`vitest@4.1.9` against
+<<<<<<< ours
 `@types/node@22.20.0`, in 57 members beside the project's against 24.13.2: a
 peer variant, which npm does not have; arborist would place one `vitest@4.1.9`
 at the root and resolve its optional peer from there).
@@ -730,7 +754,6 @@ executables (`packages/verify`: `vitest`); `opm exec tsc -- --version` prints
 5.9.3; after `opm run build` in `packages/verify`, the reporters test of
 `packages/sdk` passes 22 of 22.
 
-<<<<<<< ours
 **After §9's third amendment (2026-10-17)**, measured with the sixth review's
 generators (`adv.mjs`, `adv2.mjs`; a judge that shares nothing with the planner,
 and Node's own resolver over a real tree on disk for every 25th world):
@@ -770,9 +793,11 @@ The kept-split lock of the review (`p1@3` depends on `p1@1`, `p2@1` and a plugin
 instances, exit 0, and `opm ci --plan` now says on stderr that 1 dependency
 loads another copy of a peer it shares with its dependent. Planner mutants: 14
 of 14 fail a test (8 did not). Bin mutants: 6 of 6.
-
 =======
+`@types/node@22.20.0`, in 57 members beside the project's against 24.13.2, as
+npm would place it too).
 >>>>>>> theirs
+
 **HoBo's `allowBuilds`**, which this install does not run (`esbuild`,
 `@ast-grep/cli`, `@bufbuild/buf`, `protobufjs`): each was installed by `opm ci`
 and its bin run without the script. `esbuild --version` prints 0.28.1 (its

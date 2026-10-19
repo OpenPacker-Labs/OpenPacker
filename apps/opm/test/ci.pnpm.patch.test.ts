@@ -169,7 +169,11 @@ describe('opm ci with a pnpm lock that patches a package', () => {
     );
     expect(c.seen.out).toBe('');
     expect(c.seen.err).toContain(
+<<<<<<< ours
       'is 2001 segments deep, more than the 127 a path below a package may be (the 128 of a path in an archive, less package)',
+=======
+      'is 2001 segments deep, more than the 128 a path in an archive may be',
+>>>>>>> theirs
     );
   });
 

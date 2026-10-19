@@ -120,6 +120,7 @@ inside the bundle.
      its path, a deleted file's text is not compared, a rename never overwrites,
      a mode change sets 644 or 755; any other mode (a symlink's `120000`) makes
      the patch unreadable, `ERR_PNPM_INVALID_PATCH`;
+<<<<<<< ours
      - pnpm reads an `index abc..def` line with `/(\w+)\.\.(\w+)/` and a
        `diff --git a/x b/y` line with `/^diff --git a\/(.*?) b\/(.*?)\s*$/`, and
        both backtrack: one header line of 40,000 characters held `--plan` for
@@ -129,6 +130,8 @@ inside the bundle.
        over 60,000 and 120,000 generated lines, line terminators and Unicode
        whitespace included), and refuses a header line over 8,300 characters
        (point 13);
+=======
+>>>>>>> theirs
    - a binary diff is read as nothing, as pnpm reads it;
    - when the patch fails, it counts as applied if its reverse would apply: the
      package already has the change;
@@ -161,6 +164,7 @@ inside the bundle.
    sections that each change one line of one large file costs K times that file:
    2,000 such sections, 146 KB, against a 2 MB file ran for a minute, and a 16
    MiB patch would run for an hour. opm counts the characters it reads, compares
+<<<<<<< ours
    and writes, the lines a splice moves, and the paths it looks up: a lookup in
    the patch's tree costs its path and each ancestor it visits (a character
    each, and one), making sure of a directory costs the parent at each level,
@@ -197,6 +201,17 @@ inside the bundle.
    section of 500 hunks spread over a file of 9,138,889 bytes and 250,000 lines
    spends 153,019,895, 57% of the bound
    (`reports/review-184-r3.scripts/19-adr-claim-500-hunks.mjs`).
+=======
+   and writes, and the lines a splice moves, and refuses a patch past 256 MiB of
+   them as too costly (`PATCH_FAILED`, exit 3); that one is refused after 1.9 s.
+   Measured on 2026-10-17, OpenSesame's four patches spend 6,207
+   (`js-yaml@3.15.2`), 27,372 (`braces@3.0.3`), 67,200
+   (`@simple-git/argv-parser@2.0.1`) and 124,000 (`node-forge@1.4.0`), and the
+   37 oracle cases at most 1,880: the bound is 2,164 times the largest real
+   patch. A real patch changes a file in one section; by the count, one section
+   of 500 hunks spread over a file of 9 MB and 250,000 lines spends about 143
+   million, half the bound (computed, not run).
+>>>>>>> theirs
 
 ### Where the patched package lives
 
@@ -230,6 +245,7 @@ inside the bundle.
     follows the rename so that agreement does not rest on the applier alone). An
     entry already there is adopted only after its tree is hashed again against
     that record; one renamed into place whose record is not there yet is waited
+<<<<<<< ours
     for, up to ten seconds. After that the install makes the tree again from the
     unpatched entry it has proved (point 12), in a temporary directory, and
     records the entry in place only if its files are that tree: a publisher
@@ -253,6 +269,19 @@ inside the bundle.
     was made from, although no project links that one: an install proves the
     archive to be the package the lock names before it adopts the copy (point
     12), and an offline install has nowhere else to find it.
+=======
+    for, up to ten seconds, and is then the error an unrecorded entry always
+    was. `opm gc --shared` reads the key under ADR 0048 §8's rules: kept while a
+    project links any of its files, kept while its `.tree`, or the directory
+    itself while it has no record, is younger than the age rule, removed with
+    its record otherwise, and a leftover `.<key>.materialize-` cleared once old,
+    as is a `<key>.tree` whose entry is gone (an install or a collection that
+    stopped between the two leaves one; this holds for an archive's record too).
+    While a patched copy is kept, so is the archive's entry it was made from,
+    although no project links that one: an install proves the archive to be the
+    package the lock names before it adopts the copy (point 12), and an offline
+    install has nowhere else to find it.
+>>>>>>> theirs
 12. **Order.** The archive is fetched, proved against the lock's integrity,
     extracted, and proved to be the package the lock names (ADR 0055 §7)
     **before** it is patched: a patch that edits `package.json` changes what is
@@ -267,6 +296,7 @@ inside the bundle.
       two ranges one version satisfies; a key that is neither version nor range;
       a snapshot that does not carry the hash of its patch, or carries one no
       patch gives; a hash of neither pnpm's form;
+<<<<<<< ours
     - by the project's files (`--plan`, before anything is fetched): a patch
       file that is not there (`NOT_FOUND`, exit 4, as pnpm's `ENOENT`); a patch
       file larger than 16 MiB, or patch files that come to more than 64 MiB
@@ -346,10 +376,31 @@ inside the bundle.
     most its own size (16 MiB) to an entry that was held to 64 MiB when it was
     extracted.
 
+=======
+    - by the project's files: a patch file that is not there (`NOT_FOUND`, exit
+      4, as pnpm's `ENOENT`); a patch file larger than 16 MiB, or patch files
+      that come to more than 64 MiB together, sized before any is read
+      (`SIZE_LIMIT`, exit 7: each is held whole, as bytes and as text, while the
+      lock is read, and pnpm reads whatever is there); a path that leaves the
+      project through `..` or an absolute path, or that is reached through a
+      link (`UNSAFE_PATH`, exit 7); a patch that names a path outside its
+      package or with an empty, `.` or `..` segment, a backslash or NUL, or one
+      past the bounds of a path in an archive, 128 segments or 4,096 UTF-8 bytes
+      (`UNSAFE_PATH`); a patch that names more than the 100,000 files an archive
+      may hold (`SIZE_LIMIT`, exit 7); the three bounds are
+      `PACKAGE_TREE_LIMITS`, the ones `opm ci` extracts an archive under, so no
+      path of a patched entry is one an archive could not hold; a patch pnpm
+      cannot read (`INVALID_PATCH`, exit 3); and, as a stale lock (exit 3, "pnpm
+      install --frozen-lockfile would refuse too"), a key added or removed, a
+      path moved, a file edited;
+    - when it is applied (exit 3): a patch that does not apply, or one too
+      costly to apply (point 9) (`PATCH_FAILED`).
+>>>>>>> theirs
 14. **What pnpm does that opm refuses, and why:**
     - a path in the patch that leaves the package, or a link in the package on
       the way to a path it names: pnpm follows both and writes outside the
       package; opm writes only below it;
+<<<<<<< ours
     - a path past an archive's bounds, or with a name an archive refuses: pnpm
       makes the directories whatever their depth (a 12 KB patch names a path
       2,000 deep) and creates `lib/CON` or `a:b`, and opm refuses them as it
@@ -364,6 +415,11 @@ inside the bundle.
     - a path that is under every bound of its own and too long with the store's
       directory in front of it: pnpm's `lstat` would be `ENAMETOOLONG` as well,
       and opm says so first (point 13);
+=======
+    - a path past an archive's bounds: pnpm makes the directories whatever their
+      depth (a 12 KB patch names a path 2,000 deep), and opm refuses it as it
+      refuses that path in an archive;
+>>>>>>> theirs
     - a patch that fails for a bare-name key, or with `ignorePatchFailures`:
       pnpm warns and installs the package unpatched; opm refuses, because a lock
       that says a package is patched and an install where it is not are two
@@ -384,6 +440,7 @@ sandbox proxy, with a fresh store on tmpfs (the disk had 1.6 GB free).
 OpenSesame was copied with `git archive origin/main` (b788faadc) for its 81
 `package.json` files, `pnpm-workspace.yaml`, `pnpm-lock.yaml` and `patches/`.
 
+<<<<<<< ours
 | Measured                                                                     | Result                                                                                                                                                                                                                                                                                                   |
 | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `opm ci --plan`, the whole lock                                              | exit 0 (was exit 3): 1,758 packages in 2,847 places from 1,739 archives, 4 packages patched by 4 patches, 71 of 71 members; the four pnpm 9 hashes match their files (again on 2026-10-17 at 6d4cdc795, after the review's fixes and #179's placement: 2,120 places, 47 members linked, 10 s)            |
@@ -391,6 +448,15 @@ OpenSesame was copied with `git archive origin/main` (b788faadc) for its 81
 | `opm ci --filter '!./tests/redteam'` (the one member that needs `sylvester`) | exit 0 in 219 s: 2,054 places of 1,305 packages, 377 archives fetched (78.4 MB) and 911 from the store, 3 packages patched by 3 patches, 47 of 71 members linked                                                                                                                                         |
 | each patched package against GNU `patch -p1` 2.7.6                           | `braces@3.0.3` (4 of 10 files changed), `js-yaml@3.15.2` (1 of 36), `node-forge@1.4.0` (1 of 59): the installed directory equals the unpatched entry patched by GNU patch, file for file and executable bit for executable bit; Node resolves `braces` to the patched copy                               |
 | `@simple-git/argv-parser@2.0.1`, not installed above                         | its archive from the registry, checked against the lock's sha512, patched by opm's applier and by GNU patch: the 42 files are the same, and its pnpm 9 hash is the lock's `wbmb7dwhiv66et2i6bbymnlkhi`                                                                                                   |
+=======
+| Measured                                                                     | Result                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `opm ci --plan`, the whole lock                                              | exit 0 (was exit 3): 1,758 packages in 2,847 places from 1,739 archives, 4 packages patched by 4 patches, 71 of 71 members; the four pnpm 9 hashes match their files                                                                                                                                                                                                     |
+| `opm ci`, the whole lock                                                     | exit 7 after 244 s, not for a patch: `sylvester@0.0.21`'s archive is a gzip stream padded with zero bytes to 30,720, which the materializer's `DecompressionStream` refuses ("Trailing junk found after the end of the compressed stream") and Node's zlib, and so npm and pnpm, accepts. Not fixed here; [ADR 0057](0057-a-gzip-stream-may-end-in-zero-padding.md) does |
+| `opm ci --filter '!./tests/redteam'` (the one member that needs `sylvester`) | exit 0 in 219 s: 2,054 places of 1,305 packages, 377 archives fetched (78.4 MB) and 911 from the store, 3 packages patched by 3 patches, 47 of 71 members linked                                                                                                                                                                                                         |
+| each patched package against GNU `patch -p1` 2.7.6                           | `braces@3.0.3` (4 of 10 files changed), `js-yaml@3.15.2` (1 of 36), `node-forge@1.4.0` (1 of 59): the installed directory equals the unpatched entry patched by GNU patch, file for file and executable bit for executable bit; Node resolves `braces` to the patched copy                                                                                               |
+| `@simple-git/argv-parser@2.0.1`, not installed above                         | its archive from the registry, checked against the lock's sha512, patched by opm's applier and by GNU patch: the 42 files are the same, and its pnpm 9 hash is the lock's `wbmb7dwhiv66et2i6bbymnlkhi`                                                                                                                                                                   |
+>>>>>>> theirs
 
 Costs and limits:
 

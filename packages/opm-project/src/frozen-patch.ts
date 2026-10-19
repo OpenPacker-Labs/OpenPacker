@@ -20,10 +20,14 @@
  * that lost never writes a record for a tree that is not the one in place.
  * An entry that is there already is adopted after its tree is hashed again
  * against that record, as an archive's is, and one whose record its
+<<<<<<< ours
  * publisher has not written yet is waited for. A publisher that died between
  * the rename and the record leaves an entry with no record for good, so after
  * the wait the install makes the tree again from the unpatched entry it has
  * proved, and records the entry in place only if it is that tree. The unpatched entry was proved
+=======
+ * publisher has not written yet is waited for. The unpatched entry was proved
+>>>>>>> theirs
  * to be the package the lock names before this runs: the patch is applied to
  * bytes that are known, and a patch that changes `package.json` changes what
  * is installed, not what was checked.
@@ -32,11 +36,18 @@
 import { randomUUID } from 'node:crypto';
 import { chmod, copyFile, lstat, mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
+<<<<<<< ours
 import {
   PACKAGE_TREE_LIMITS,
   type FrozenLockPackage,
   type FrozenPatch,
   type ProjectFormat,
+=======
+import type {
+  FrozenLockPackage,
+  FrozenPatch,
+  ProjectFormat,
+>>>>>>> theirs
 } from '@openpacker/adapter-core';
 import { adapterFailure } from './frozen-prepare.js';
 import { packageDirectory } from './frozen-scripts.js';
@@ -105,9 +116,14 @@ async function copyTree(from: string, to: string): Promise<void> {
 
 /**
  * How long an entry another install has renamed into place may be without its
+<<<<<<< ours
  * record before it is taken for one whose publisher died, and checked by
  * making its tree again: that install writes the record right after the
  * rename.
+=======
+ * record before it is taken for one whose publisher died: that install writes
+ * the record right after the rename.
+>>>>>>> theirs
  */
 const RECORD_WAIT_MS = 10_000;
 
@@ -120,9 +136,15 @@ const isThere = (path: string): Promise<boolean> =>
     },
   );
 
+<<<<<<< ours
 /** Wait while `path` is in place and its record is not, for up to `waitMs`. */
 async function recordedOrGone(path: string, waitMs: number): Promise<void> {
   const deadline = Date.now() + waitMs;
+=======
+/** Wait while `path` is in place and its record is not, for up to `RECORD_WAIT_MS`. */
+async function recordedOrGone(path: string): Promise<void> {
+  const deadline = Date.now() + RECORD_WAIT_MS;
+>>>>>>> theirs
   while (
     Date.now() < deadline &&
     !(await isThere(`${path}.tree`)) &&
@@ -131,14 +153,20 @@ async function recordedOrGone(path: string, waitMs: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 20));
 }
 
+<<<<<<< ours
 /** What making the patched entry takes. */
 interface PublishInput {
+=======
+/** Make, or adopt, the patched entry of one archive and one patch. */
+async function publishPatched(input: {
+>>>>>>> theirs
   storeRoot: string;
   shared: boolean;
   unpatched: StoredEntry;
   patch: FrozenPatch;
   label: string;
   format: PatchFormat;
+<<<<<<< ours
   /** How long to wait for another install's record; `RECORD_WAIT_MS` if absent. */
   recordWaitMs?: number;
   /** The most files the patched entry may hold; an archive's, if absent. */
@@ -228,18 +256,39 @@ async function recordUnrecorded(
 
 /** Make, or adopt, the patched entry of one archive and one patch. */
 async function publishPatched(input: PublishInput): Promise<string> {
+=======
+}): Promise<string> {
+>>>>>>> theirs
   const key = patchedStoreKey(input.unpatched.digest, input.patch.digest);
   const path = join(input.storeRoot, key);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (input.shared) {
+<<<<<<< ours
       await recordedOrGone(path, input.recordWaitMs ?? RECORD_WAIT_MS);
       if ((await isThere(path)) && !(await isThere(`${path}.tree`)))
         await recordUnrecorded(input, key, path);
+=======
+      await recordedOrGone(path);
+>>>>>>> theirs
       if ((await adoptExistingEntry(path, key)) !== undefined) return path;
     }
     const tmp = join(input.storeRoot, `.${key}.materialize-${randomUUID()}`);
     try {
+<<<<<<< ours
       const treeDigest = await buildPatched(input, tmp);
+=======
+      await copyTree(input.unpatched.path, tmp);
+      try {
+        await input.format.applyFrozenPatch!(
+          await packageDirectory(tmp),
+          input.patch,
+          input.label,
+        );
+      } catch (error) {
+        throw adapterFailure(error);
+      }
+      const treeDigest = await stableStoreTreeDigest(tmp);
+>>>>>>> theirs
       if (input.shared) await sealTreeReadOnly(tmp);
       try {
         await rename(tmp, path);
@@ -274,8 +323,11 @@ export async function patchArchives(input: {
   storeRoot: string;
   shared: boolean;
   format: PatchFormat;
+<<<<<<< ours
   recordWaitMs?: number;
   maximumFiles?: number;
+=======
+>>>>>>> theirs
 }): Promise<{
   byPath: Map<string, StoredEntry>;
   patched: { packages: number; patches: number };
@@ -304,12 +356,15 @@ export async function patchArchives(input: {
         patch: pkg.patch,
         label: `${pkg.packageName}@${pkg.version}`,
         format: input.format,
+<<<<<<< ours
         ...(input.recordWaitMs !== undefined && {
           recordWaitMs: input.recordWaitMs,
         }),
         ...(input.maximumFiles !== undefined && {
           maximumFiles: input.maximumFiles,
         }),
+=======
+>>>>>>> theirs
       });
       made.set(id, entry);
     }

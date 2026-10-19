@@ -8,6 +8,7 @@ import {
   PACKAGE_TREE_LIMITS,
   ProviderError,
   quote,
+<<<<<<< ours
   wholePathProblem,
   type FrozenPatch,
 } from '@openpacker/adapter-core';
@@ -23,6 +24,17 @@ import {
   patchPathProblem,
   pathsOf,
   shownPath,
+=======
+  type FrozenPatch,
+} from '@openpacker/adapter-core';
+import { applyEffects, PatchRefusal } from './apply.js';
+import { parsePatchFile, type PatchEffect } from './parse.js';
+import {
+  commitPatchTree,
+  loadPatchTree,
+  patchPathProblem,
+  pathsOf,
+>>>>>>> theirs
 } from './tree.js';
 
 export {
@@ -46,11 +58,14 @@ export function readPatchText(text: string, file: string): PatchEffect[] {
   try {
     effects = parsePatchFile(text);
   } catch (error) {
+<<<<<<< ours
     if (error instanceof HeaderLineTooLong)
       throw new ProviderError(
         'SIZE_LIMIT',
         `the patch ${quote(file)} has a header line (one that begins \`diff --git \`, \`index \`, \`--- \`, \`rename from \` or the like) of ${error.length} characters, more than the ${MAXIMUM_HEADER_LINE} that two paths within the bounds of a path below a package and the diff line around them come to; opm reads no longer one, where pnpm reads whatever is there`,
       );
+=======
+>>>>>>> theirs
     throw new ProviderError(
       'INVALID_PATCH',
       `the patch ${quote(file)} cannot be read, as pnpm cannot read it (ERR_PNPM_INVALID_PATCH): ${error instanceof Error ? error.message : String(error)}`,
@@ -62,7 +77,11 @@ export function readPatchText(text: string, file: string): PatchEffect[] {
     if (problem !== undefined)
       throw new ProviderError(
         'UNSAFE_PATH',
+<<<<<<< ours
         `the patch ${quote(file)} names the path ${quote(shownPath(path))}, which ${problem}; opm applies a patch only below the package it patches`,
+=======
+        `the patch ${quote(file)} names the path ${quote(shown(path))}, which ${problem}; opm applies a patch only below the package it patches`,
+>>>>>>> theirs
       );
   }
   const { maximumFiles } = PACKAGE_TREE_LIMITS;
@@ -71,6 +90,7 @@ export function readPatchText(text: string, file: string): PatchEffect[] {
       'SIZE_LIMIT',
       `the patch ${quote(file)} names ${paths.size} paths, more than the ${maximumFiles} files a package's archive may hold`,
     );
+<<<<<<< ours
   try {
     entriesOf(paths);
   } catch (error) {
@@ -87,6 +107,14 @@ export function readPatchText(text: string, file: string): PatchEffect[] {
 export function patchPathBytes(patch: FrozenPatch): number {
   return longestPath(readPatchText(patch.text, patch.file)).bytes;
 }
+=======
+  return effects;
+}
+
+/** A path as a message shows it: whole when short, its two ends otherwise. */
+const shown = (path: string): string =>
+  path.length > 160 ? `${path.slice(0, 120)}...${path.slice(-30)}` : path;
+>>>>>>> theirs
 
 /**
  * Apply `patch` to the package whose files are in `packageDir`, whole or not
@@ -97,6 +125,7 @@ export async function applyPnpmPatch(
   packageDir: string,
   patch: FrozenPatch,
   label: string,
+<<<<<<< ours
   /** One for the tree read, the patch run and, if it fails, its reverse. */
   budget: PatchBudget = new PatchBudget(),
 ): Promise<void> {
@@ -116,16 +145,27 @@ export async function applyPnpmPatch(
     const tree = await loadPatchTree(packageDir, effects, budget);
     const before = new Map(tree.nodes);
     if (!applyEffects(effects, tree, budget))
+=======
+): Promise<void> {
+  const effects = readPatchText(patch.text, patch.file);
+  try {
+    const tree = await loadPatchTree(packageDir, effects);
+    const before = new Map(tree.nodes);
+    if (!applyEffects(effects, tree))
+>>>>>>> theirs
       throw new ProviderError(
         'PATCH_FAILED',
         `the patch ${quote(patch.file)} (patchedDependencies ${quote(patch.key)}) does not apply to ${quote(label)}, and pnpm would refuse it too (ERR_PNPM_PATCH_FAILED); nothing was installed`,
       );
+<<<<<<< ours
     const twins = await caseCollision(packageDir, before, tree.nodes, budget);
     if (twins !== undefined)
       throw new PatchRefusal(
         'CASE_COLLISION',
         `it would leave ${quote(shownPath(twins.path))} beside ${quote(shownPath(twins.other))}, two files that differ only in case, which one case-insensitive file system makes one and an archive refuses (CASE_COLLISION)`,
       );
+=======
+>>>>>>> theirs
     await commitPatchTree(packageDir, before, tree);
   } catch (error) {
     if (error instanceof PatchRefusal)

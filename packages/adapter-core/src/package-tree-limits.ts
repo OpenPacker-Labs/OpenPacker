@@ -14,6 +14,7 @@ export const PACKAGE_TREE_LIMITS = {
   /** Segments in one path below the package. */
   maximumDepth: 128,
 } as const;
+<<<<<<< ours
 
 /** A path segment an archive refuses, and why. */
 export interface SegmentProblem {
@@ -98,3 +99,5 @@ export function wholePathProblem(
     ? undefined
     : `is ${pathBytes} bytes long, and below the ${directoryBytes}-byte directory it is made in comes to ${total} bytes, more than the ${SYSTEM_PATH_MAX - 1} a system call takes in a path`;
 }
+=======
+>>>>>>> theirs

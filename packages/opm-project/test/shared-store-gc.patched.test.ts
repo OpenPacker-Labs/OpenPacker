@@ -90,6 +90,7 @@ describe('a patched entry in the shared store, collected', () => {
     ]);
   });
 
+<<<<<<< ours
   it('keeps the unpatched entry of a patched copy that is too new to judge, though the entry itself is old', async () => {
     const shared = await mkdtemp(join(tmpdir(), 'opm-shared-'));
     temps.push(shared);
@@ -113,6 +114,8 @@ describe('a patched entry in the shared store, collected', () => {
     expect(await readdir(shared)).toContain(`sha256-${'a'.repeat(64)}`);
   });
 
+=======
+>>>>>>> theirs
   it('keeps the unpatched entry while a patched copy of it is kept, and removes both together', async () => {
     const shared = await mkdtemp(join(tmpdir(), 'opm-shared-'));
     const project = await mkdtemp(join(tmpdir(), 'opm-linker-'));

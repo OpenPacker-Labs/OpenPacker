@@ -72,21 +72,6 @@ import {
   writeLines,
   writeNativeProjection,
 } from './terminal-lines.js';
-import {
-  writeAdded,
-  writeArtifactInfo,
-  writeDocument,
-  writeHostInstalled,
-  writeHostPlan,
-  writeImported,
-  writeLosses,
-  writePackArtifacts,
-  writePackCommands,
-  writePluginInstalled,
-  writePluginList,
-  writePluginRemoved,
-  writeUpdated,
-} from './terminal-records.js';
 
 export { EXIT_CODES } from './exit-codes.js';
 
@@ -228,7 +213,15 @@ export async function runOpm(
           root,
           force: args.options.has('force'),
         });
-        writeImported(result, io);
+        io.stdout.write(
+          `Imported ${result.imported.length} requirement(s) from native project files into ${result.manifestPath}\n`,
+        );
+        for (const item of result.imported) {
+          const range = item.range !== undefined ? `@${item.range}` : '';
+          io.stdout.write(
+            `  ${item.alias}\t${item.purl}${range}\t${item.ecosystem}\n`,
+          );
+        }
         io.stdout.write(
           'opm.toml is authoritative; later sync does not re-read native manifests.\n',
         );
@@ -277,8 +270,14 @@ export async function runOpm(
         if (result.hostInstall) {
           return writeHostInstallResult(result.hostInstall, args, io);
         }
-        const pinned = result.lock.packages[result.alias];
-        writeAdded(result.alias, pinned?.purl, pinned?.installName, io);
+        const installName = result.lock.packages[result.alias]?.installName;
+        io.stdout.write(
+          `Added ${result.alias} → ${result.lock.packages[result.alias]?.purl ?? result.alias}` +
+            (installName === undefined
+              ? ''
+              : ` (installed as ${installName})`) +
+            '\n',
+        );
         writeNativeProjection(result.native, io);
         io.stdout.write(`Installed into ${projectPaths(root).store}\n`);
         return EXIT_CODES.success;
@@ -365,7 +364,11 @@ export async function runOpm(
           latest: args.options.has('latest'),
           ...(!(offline === undefined) && { offline }),
         });
-        writeUpdated(result.updated, io);
+        io.stdout.write(
+          result.updated.length === 0
+            ? 'Already up to date\n'
+            : `Updated ${result.updated.length} package(s): ${result.updated.join(', ')}\n`,
+        );
         writeNativeProjection(result.native, io);
         return EXIT_CODES.success;
       }
@@ -478,7 +481,14 @@ export async function runOpm(
         const artifact = await resolveRegistryArtifact(ecosystem, target, {
           offline: args.options.has('offline'),
         });
-        writeArtifactInfo(artifact, io);
+        io.stdout.write(
+          `${artifact.exactPurl}\n` +
+            `  version   ${artifact.version}\n` +
+            `  digest    ${artifact.digest}\n` +
+            `  size      ${artifact.size} bytes\n` +
+            `  mediaType ${artifact.mediaType}\n` +
+            `  source    ${artifact.uri}\n`,
+        );
         return EXIT_CODES.success;
       }
       // Host installers change the machine through a native tool. They are
@@ -514,9 +524,10 @@ export async function runOpm(
             `  sha256:${built.digest.value}  ${built.bytes.byteLength} bytes\n`,
           );
         } else {
-          writeDocument(new TextDecoder().decode(built.bytes), io);
+          io.stdout.write(`${new TextDecoder().decode(built.bytes)}\n`);
         }
-        writeLosses(built.manifest.semanticLoss ?? [], io);
+        for (const loss of built.manifest.semanticLoss ?? [])
+          io.stderr.write(`opm: ${loss.code}: ${loss.omittedMeaning ?? ''}\n`);
         return EXIT_CODES.success;
       }
       case 'pack': {
@@ -579,12 +590,11 @@ export async function runOpm(
         if (!result.performed) {
           const commands =
             result.commands ?? (result.command ? [result.command] : []);
-          writePackCommands(
-            ecosystem,
-            commands,
-            result.cleanupCommands ?? [],
-            io,
-          );
+          if (commands.length === 0) io.stdout.write(`standard ${ecosystem}\n`);
+          for (const command of commands)
+            io.stdout.write(`${command.join(' ')}\n`);
+          for (const command of result.cleanupCommands ?? [])
+            io.stdout.write(`cleanup: ${command.join(' ')}\n`);
           return EXIT_CODES.success;
         }
         if (result.exitCode !== 0)
@@ -592,8 +602,14 @@ export async function runOpm(
             'PACK_FAILED',
             result.stderr || `Pack exited ${result.exitCode}`,
           );
-        writePackArtifacts(result.artifacts, io);
-        writeLosses(result.semanticLoss, io);
+        for (const artifact of result.artifacts) {
+          io.stdout.write(`${artifact.path}\n`);
+          io.stdout.write(
+            `  ${artifact.digest}  ${artifact.size} bytes  ${artifact.nativeRole}\n`,
+          );
+        }
+        for (const loss of result.semanticLoss)
+          io.stderr.write(`opm: ${loss.code}: ${loss.omittedMeaning ?? ''}\n`);
         return EXIT_CODES.success;
       }
       case 'system': {
@@ -881,18 +897,37 @@ async function runPluginCommand(
       ...(!(offline === undefined) && { offline }),
       ...(!(options.fetch === undefined) && { fetch: options.fetch }),
     });
-    writePluginInstalled(installed, io);
+    io.stdout.write(
+      installed.alreadyInstalled
+        ? `Plugin ${installed.name} is already installed at ${installed.exactPurl}\n`
+        : `Installed plugin ${installed.exactPurl}\n`,
+    );
+    io.stdout.write(
+      `  id:     ${installed.id}\n` +
+        `  digest: ${installed.storeDigest}\n` +
+        `  store:  ${installed.storePath}\n`,
+    );
     return EXIT_CODES.success;
   }
   if (sub === 'remove') {
     const name = args.positionals[1];
     if (!name) throw usage('opm plugin remove requires a plugin name');
     const removed = await removePlugin(name);
-    writePluginRemoved(removed, io);
+    io.stdout.write(`Removed plugin ${removed.name} (${removed.exactPurl})\n`);
     return EXIT_CODES.success;
   }
   if (sub === 'list') {
-    writePluginList(await listPlugins(), io);
+    const plugins = await listPlugins();
+    if (plugins.length === 0) {
+      io.stdout.write('(no plugins installed)\n');
+      return EXIT_CODES.success;
+    }
+    for (const plugin of plugins) {
+      const missing = plugin.present ? '' : '  (store entry missing)';
+      io.stdout.write(
+        `${plugin.name}\t${plugin.exactPurl}\t${plugin.storeDigest}\t${plugin.installedAt}${missing}\n`,
+      );
+    }
     return EXIT_CODES.success;
   }
   throw usage(
@@ -974,7 +1009,13 @@ function writeHostInstallResult(
   io: CliIo,
 ): number {
   const { plan, outcome } = result;
-  writeHostPlan(plan, args.options.has('allow-elevation'), io);
+  io.stdout.write(`${plan.command.join(' ')}\n`);
+  for (const loss of plan.semanticLoss)
+    io.stderr.write(`opm: ${loss.code}: ${loss.representedMeaning}\n`);
+  if (plan.requiresElevation && !args.options.has('allow-elevation'))
+    io.stderr.write(
+      'opm: host install needs elevation; pass --allow-elevation to consent\n',
+    );
   if (!outcome) return EXIT_CODES.success;
   if (outcome.stdout) io.stdout.write(outcome.stdout);
   if (outcome.stderr) io.stderr.write(outcome.stderr);
@@ -982,7 +1023,9 @@ function writeHostInstallResult(
     io.stderr.write(`opm: host install exited ${outcome.exitCode}\n`);
     return EXIT_CODES.internal;
   }
-  writeHostInstalled(outcome, io);
+  io.stdout.write(
+    `Host-installed ${outcome.exactPurl}${outcome.installedVersion ? ` @ ${outcome.installedVersion}` : ''}\n`,
+  );
   return EXIT_CODES.success;
 }
 
