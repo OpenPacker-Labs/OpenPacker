@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { platform } from 'node:os';
 import { promisify } from 'node:util';
 import {
+  echoed,
   ProviderError,
   formatPurl,
   parsePurl,
@@ -88,14 +89,14 @@ function aptName(exactPurl: string) {
   if (parsed.type !== 'deb')
     throw new ProviderError(
       'INVALID_PURL',
-      `Not a Debian PURL: ${exactPurl} (expected pkg:deb/...)`,
+      `Not a Debian PURL: ${echoed(exactPurl)} (expected pkg:deb/...)`,
     );
   // Debian binary package names are tightly constrained; anything else is not
   // a package name and must not reach a shell argument list.
   if (!/^[a-z0-9][a-z0-9+.-]+$/u.test(parsed.name))
     throw new ProviderError(
       'INVALID_PURL',
-      `Not a valid Debian package name: ${parsed.name}`,
+      `Not a valid Debian package name: ${echoed(parsed.name)}`,
     );
   // Debian policy requires a version to begin with a digit (after an optional
   // numeric epoch). Anchoring on that is what keeps a version from ever
@@ -106,7 +107,7 @@ function aptName(exactPurl: string) {
   )
     throw new ProviderError(
       'INVALID_PURL',
-      `Not a valid Debian version: ${parsed.version}`,
+      `Not a valid Debian version: ${echoed(parsed.version)}`,
     );
   return {
     name: parsed.name,
@@ -217,7 +218,7 @@ export class AptSystemProvider implements InstallerProvider {
     if (plan.requiresElevation && !options.allowElevation)
       throw new ProviderError(
         'POLICY_DENIED',
-        `Installing ${exactPurl} needs root. Re-run with elevation allowed; ` +
+        `Installing ${echoed(exactPurl)} needs root. Re-run with elevation allowed; ` +
           `the command would be: ${plan.command.join(' ')}`,
       );
     const availability = await this.available(options.signal);

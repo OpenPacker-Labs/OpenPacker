@@ -6,7 +6,7 @@
  * refused, not read generously.
  */
 
-import { ProviderError } from '@openpacker/adapter-core';
+import { echoed, ProviderError } from '@openpacker/adapter-core';
 
 export type StringMap = Readonly<Record<string, string>>;
 
@@ -79,7 +79,7 @@ export function stringMap(value: unknown, where: string): StringMap {
   const out: Record<string, string> = {};
   for (const [key, entry] of Object.entries(value)) {
     if (typeof entry !== 'string')
-      throw invalid(`${where}.${key} must be a string`);
+      throw invalid(`${where}.${echoed(key)} must be a string`);
     out[key] = entry;
   }
   return out;

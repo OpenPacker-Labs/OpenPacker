@@ -1,3 +1,9 @@
+import {
+  LONGEST_HOST_LENGTH,
+  OverlongHostError,
+  parseUntrustedUrl,
+  safeEcho,
+} from '@openpacker/canonical';
 import { PackslipError } from './errors.js';
 
 export interface FetchRequest {
@@ -35,6 +41,24 @@ export interface BoundedFetcherOptions {
 
 const MAX_REDIRECTS = 5;
 const GITHUB_HOSTS = new Set(['api.github.com', 'github.com']);
+
+/**
+ * An address a project name, a signed document or a redirect gave, read through
+ * the guard. The text is not repeated when its host is one no DNS name could be;
+ * any other text is, as `safeEcho` shows it.
+ */
+function readAddress(text: string, base?: URL): URL {
+  try {
+    return parseUntrustedUrl(text, base);
+  } catch (error) {
+    throw new PackslipError(
+      'UNAVAILABLE',
+      error instanceof OverlongHostError
+        ? `Refusing an address whose host is longer than ${LONGEST_HOST_LENGTH} characters`
+        : `Not a URL: ${safeEcho(text, 256)}`,
+    );
+  }
+}
 
 function loopback(url: URL): boolean {
   return (
@@ -118,7 +142,7 @@ export function createBoundedFetcher(
   const doFetch = options.fetch ?? globalThis.fetch;
   return {
     async get(url, request) {
-      let current = new URL(url);
+      let current = readAddress(url);
       for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
         assertAllowed(current, options);
         const headers: Record<string, string> = {
@@ -150,7 +174,7 @@ export function createBoundedFetcher(
               `${current.href} redirected without a location`,
             );
           await response.body?.cancel();
-          current = new URL(location, current);
+          current = readAddress(location, current);
           continue;
         }
         const bytes =
@@ -163,7 +187,7 @@ export function createBoundedFetcher(
       }
       throw new PackslipError(
         'UNAVAILABLE',
-        `${url} redirected more than ${MAX_REDIRECTS} times`,
+        `${safeEcho(url, 256)} redirected more than ${MAX_REDIRECTS} times`,
       );
     },
   };

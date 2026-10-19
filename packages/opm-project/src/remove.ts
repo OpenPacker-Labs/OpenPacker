@@ -1,3 +1,4 @@
+import { echoed } from '@openpacker/adapter-core';
 import { digestOf, uninstallPackages } from './install.js';
 import { reachableKeys } from './lock-edges.js';
 import { applyKeys, rekeyTransitive } from './lock-rekey.js';
@@ -36,7 +37,7 @@ export async function removePackage(input: {
   if (!manifest.packages[input.alias]) {
     throw new OpmError(
       'NOT_FOUND',
-      `Package "${input.alias}" is not in ${MANIFEST_NAME}`,
+      `Package "${echoed(input.alias)}" is not in ${MANIFEST_NAME}`,
     );
   }
   delete manifest.packages[input.alias];

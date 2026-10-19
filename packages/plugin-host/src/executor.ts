@@ -10,6 +10,7 @@ import {
   assertExecutableIdentity,
   inspectDelegatedExecutable,
   openDelegatedExecutable,
+  UNSUPPORTED_PLATFORM,
   type InspectDelegatedExecutable,
   type OpenDelegatedExecutableAuthority,
 } from '@openpacker/pack-provider';
@@ -178,6 +179,13 @@ export class DelegatedPluginExecutor {
     const authority = await this.#openExecutableAuthority(
       this.executablePath,
     ).catch((error: unknown) => {
+      // A host that cannot snapshot an executable at all (anything but Linux)
+      // has not found a bad file; say what it lacks, not that the file is bad.
+      if (error instanceof ProviderError && error.code === UNSUPPORTED_PLATFORM)
+        throw new ProviderError(
+          UNSUPPORTED_PLATFORM,
+          `Plugin ${manifest.id} cannot run here: ${error.message}`,
+        );
       throw new ProviderError(
         'AUTHORITY_NOT_DECLARED',
         `Plugin ${manifest.id} executable is not a stable approved file: ${

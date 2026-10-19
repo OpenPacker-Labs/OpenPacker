@@ -2,6 +2,7 @@ import type { JsonValue } from '@openpacker/contracts';
 import { ObjectReader } from './json.js';
 import type { Evidence, Identity, SignatureScheme, Subject } from './types.js';
 import { STATEMENT_TYPE } from './types.js';
+import { shown } from './shown.js';
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const SHA512 = /^[0-9a-f]{128}$/u;
@@ -47,7 +48,10 @@ export function decodeSubjects(root: ObjectReader): Subject[] {
     const reader = root.element('subject', index, values);
     const name = reader.string('name');
     if (seen.has(name))
-      throw reader.fail(`${reader.path}.name`, `"${name}" appears twice`);
+      throw reader.fail(
+        `${reader.path}.name`,
+        `"${shown(name)}" appears twice`,
+      );
     seen.add(name);
     const digest = reader.object('digest');
     const sha256 = digest.string('sha256');

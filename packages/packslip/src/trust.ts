@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { AttestedBy, SignatureScheme } from './types.js';
+import { shown } from './shown.js';
 
 /** The signer of a release as a consumer remembers it between installs. */
 export interface SignerRecord {
@@ -72,8 +73,8 @@ const SCHEME_RANK: Record<SignatureScheme, number> = {
 
 function describeSigner(signer: SignerRecord): string {
   return signer.scheme === 'sigstore-key'
-    ? `key ${signer.identity}${signer.keyHint === undefined ? '' : ` (sha256 ${signer.keyHint.slice(0, 12)}…)`}`
-    : `${signer.identity} (repository ${signer.repositoryId ?? 'unknown'})`;
+    ? `key ${shown(signer.identity)}${signer.keyHint === undefined ? '' : ` (sha256 ${shown(signer.keyHint.slice(0, 12))}…)`}`
+    : `${shown(signer.identity)} (repository ${shown(signer.repositoryId ?? 'unknown')})`;
 }
 
 function signerChanges(

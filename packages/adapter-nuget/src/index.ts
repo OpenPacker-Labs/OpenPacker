@@ -13,12 +13,14 @@ import {
   assertPackageIdentityMatchesRequest,
   evaluateRange,
   compareCodePoints,
+  echoed,
   encodeUrlPathComponent,
   formatPurl,
   header,
   json,
   packageNodeId,
   parsePurl,
+  parseUntrustedUrl,
   ProviderError,
   providerErrorForStatus,
   rangeToConstraint,
@@ -124,7 +126,7 @@ export function parseNugetVersion(value: string): ParsedVersion {
   if (!match)
     throw new ProviderError(
       'INVALID_NATIVE_VERSION',
-      `Invalid NuGet version: ${value}`,
+      `Invalid NuGet version: ${echoed(value)}`,
     );
   const release = [
     Number(match[1]),
@@ -249,7 +251,7 @@ export class NugetCodec
     if (!match)
       throw new ProviderError(
         'INVALID_NATIVE_COORDINATE',
-        `Invalid NuGet coordinate: ${value}`,
+        `Invalid NuGet coordinate: ${echoed(value)}`,
       );
     return {
       ecosystem: 'nuget',
@@ -341,14 +343,14 @@ export class NugetCodec
       if (release.some(Number.isNaN))
         throw new ProviderError(
           'INVALID_NATIVE_RANGE',
-          `Invalid NuGet floating range: ${value}`,
+          `Invalid NuGet floating range: ${echoed(value)}`,
         );
       if (release.length === 0) ast = { type: 'any' };
       else {
         if (release.length > 4)
           throw new ProviderError(
             'INVALID_NATIVE_RANGE',
-            `Invalid NuGet floating range: ${value}`,
+            `Invalid NuGet floating range: ${echoed(value)}`,
           );
         const specifiedParts = release.length;
         while (release.length < 4) release.push(0);
@@ -647,7 +649,7 @@ export class NugetCodec
           if (split <= 0)
             throw new ProviderError(
               'INVALID_LOCKFILE',
-              `Invalid project.assets coordinate: ${coordinate}`,
+              `Invalid project.assets coordinate: ${echoed(coordinate)}`,
             );
           const id = coordinate.slice(0, split);
           const version = coordinate.slice(split + 1);
@@ -700,7 +702,7 @@ export function parseNugetServiceIndex(bytes: Uint8Array): NugetServiceIndex {
   } catch (error) {
     throw new ProviderError(
       'INVALID_PROVIDER_RESPONSE',
-      `NuGet service index is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `NuGet service index is not valid JSON: ${echoed(error instanceof Error ? error.message : String(error))}`,
     );
   }
   assertServiceIndexComplexity(value);
@@ -718,7 +720,7 @@ export function parseNugetServiceIndex(bytes: Uint8Array): NugetServiceIndex {
       invalidServiceIndex(`resources[${index}].@id is invalid`);
     let url: URL;
     try {
-      url = new URL(id);
+      url = parseUntrustedUrl(id);
     } catch {
       invalidServiceIndex(`resources[${index}].@id is not a URL`);
     }
@@ -882,7 +884,7 @@ export class NugetV3Provider implements CatalogProvider {
     if (!leaf)
       throw new ProviderError(
         'VERSION_NOT_FOUND',
-        `${canonical} is absent from registration metadata`,
+        `${echoed(canonical)} is absent from registration metadata`,
       );
     const metadataDigest = await canonicalDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -948,7 +950,7 @@ export class NugetV3Provider implements CatalogProvider {
     if (!source)
       throw new ProviderError(
         'ARTIFACT_NOT_FOUND',
-        `No NuGet artifact source for ${exactPurl}`,
+        `No NuGet artifact source for ${echoed(exactPurl)}`,
       );
     const response = await this.transport.request({
       url: source.uri,
@@ -1118,7 +1120,7 @@ export class NugetV3Provider implements CatalogProvider {
       if (!existing)
         throw new ProviderError(
           'STALE_METADATA',
-          `Received 304 without cached metadata for ${key}`,
+          `Received 304 without cached metadata for ${echoed(key)}`,
           304,
         );
       const revalidated = { ...existing, retrievedAt: this.clock.now() };
@@ -1166,7 +1168,7 @@ export class NugetV3Provider implements CatalogProvider {
       if (prior && JSON.stringify(prior) !== JSON.stringify(leaf))
         throw new ProviderError(
           'INVALID_PROVIDER_METADATA',
-          `Conflicting NuGet registration leaf ${leafKey}`,
+          `Conflicting NuGet registration leaf ${echoed(leafKey)}`,
         );
       unique.set(leafKey, leaf);
     }
@@ -1273,7 +1275,7 @@ export class NugetV3Provider implements CatalogProvider {
       if (!existing)
         throw new ProviderError(
           'STALE_METADATA',
-          `Received 304 without cached NuGet page ${url}`,
+          `Received 304 without cached NuGet page ${echoed(url)}`,
           304,
         );
       return existing;

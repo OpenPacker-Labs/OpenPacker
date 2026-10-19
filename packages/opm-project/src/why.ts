@@ -1,5 +1,7 @@
+import { plainLine } from '@openpacker/canonical';
 import { lockEdges } from './lock-edges.js';
 import { LOCK_NAME, MANIFEST_NAME } from './paths.js';
+import { shownSource } from './shown-source.js';
 import { purlPackageName, stripPurlVersion } from './spec.js';
 import type { LockPackage, OpmLockfile, OpmManifest } from './types.js';
 
@@ -77,33 +79,34 @@ export function explainEntry(
   const lines: string[] = [];
   if (requirement !== undefined) {
     lines.push(
-      `"${key}" is a direct dependency in ${MANIFEST_NAME}`,
-      `  purl: ${requirement.purl}`,
+      `"${plainLine(key)}" is a direct dependency in ${MANIFEST_NAME}`,
+      `  purl: ${plainLine(requirement.purl)}`,
     );
     if (requirement.installName !== undefined)
-      lines.push(`  installed as: ${requirement.installName}`);
+      lines.push(`  installed as: ${plainLine(requirement.installName)}`);
     if (requirement.version)
-      lines.push(`  version constraint: ${requirement.version}`);
-    if (requirement.source) lines.push(`  source: ${requirement.source}`);
+      lines.push(`  version constraint: ${plainLine(requirement.version)}`);
+    if (requirement.source)
+      lines.push(`  source: ${shownSource(requirement.source)}`);
     lines.push(
       locked
-        ? `  locked: ${locked.purl} (${locked.digest})`
+        ? `  locked: ${plainLine(locked.purl)} (${plainLine(locked.digest)})`
         : '  locked: (none)',
     );
   } else if (locked !== undefined) {
     lines.push(
-      `"${key}" is in ${LOCK_NAME} as ${locked.reason} dependency`,
-      `  ${locked.purl}`,
+      `"${plainLine(key)}" is in ${LOCK_NAME} as ${plainLine(locked.reason)} dependency`,
+      `  ${plainLine(locked.purl)}`,
     );
   }
   if (lock !== undefined && locked !== undefined) {
     for (const requirer of requirersOf(lock, key)) {
       const by = lock.packages[requirer.key];
       lines.push(
-        `  required by ${requirer.key}${by === undefined ? '' : ` (${by.purl})`}` +
+        `  required by ${plainLine(requirer.key)}${by === undefined ? '' : ` (${plainLine(by.purl)})`}` +
           (requirer.installName === undefined
             ? ''
-            : ` as ${requirer.installName}`),
+            : ` as ${plainLine(requirer.installName)}`),
       );
     }
   }

@@ -124,7 +124,13 @@ parent OS handle (`RootDirectory`, reparse points refused) — openat semantics,
 never a lexical pathname fallback. Path escapes, symlink swaps, and linked
 metadata still fail closed with `UNSAFE_PATH`. The one symlink opm makes, a
 workspace member's link in `node_modules`, goes through the same handles
-([below](#workspace-member-links)).
+([below](#workspace-member-links)). So do the sandbox's directory grants and the
+output a delegated `opm pack` reads, so neither joins a name onto `/dev/fd/N`,
+which names nothing on macOS
+([ADR 0045](../adr/0045-macos-child-io-uses-libc-at-calls.md)). Hard-linking a
+file into `node_modules` (the `layout` level) still goes through `link(2)` on a
+`/dev/fd/N` path on macOS and has not been run there; see "Not covered" in that
+ADR.
 
 ---
 
@@ -320,11 +326,16 @@ Installed 894 packages into /app/node_modules (845 from the store, 0 fetched, 0.
 What it does, in order:
 
 1. **Reads the lock, refuses what it cannot install.** A git or path source, an
-   entry with no `resolved` or no `integrity`, a link or key in a workspace lock
-   that is not a member's, a place the lock names that cannot be written (two
-   names that differ only by case in one directory), and a `package.json` that
-   no longer matches the lock are each named, and nothing is installed or
-   removed. Exit code 3.
+   entry with no `resolved` or no `integrity`, an entry whose `resolved` names a
+   host longer than 253 characters, a link or key in a workspace lock that is
+   not a member's, a place the lock names that cannot be written (two names that
+   differ only by case in one directory), and a `package.json` that no longer
+   matches the lock are each named, and nothing is installed or removed. Exit
+   code 3. A source is named by its scheme, host and path, never its userinfo,
+   query or fragment; one the URL parser refuses, such as the scp-like
+   `git+ssh://git@github.com:o/r.git`, or one with an `@` after its host, is
+   named `git+ssh:[address withheld]`, and a `user:password@host:path` that is
+   no scheme at all, just `[address withheld]`.
 2. **Applies the project's policy to the lock's facts.** `opm.toml`'s `[policy]`
    when there is one, the default otherwise. Every package is judged before any
    is fetched, and one error lists those refused (exit 6). The minimum release
@@ -614,6 +625,27 @@ window (no version can be newer than the last change to the document, so nothing
 more is fetched), otherwise the full packument, only for a package changed
 inside the window. A time the registry will not give is _not provided_, which
 the default policy does not wave through.
+
+**Large packuments.** A package's registry document lists every version it has
+published, so the heavy ones are the busy ones: `@prisma/client` is 38.2 MB
+abbreviated, `next` 25.6 MB, `gatsby` 15.7 MB, `typescript` 8.7 MB. opm reads an
+abbreviated packument of up to 64 MiB and a full one of up to 96 MiB, counted as
+the body arrives. Past that the command stops with exit 8 and says which
+package, how much it had read and what the limit is, for example
+`The packument of x exceeds the limit of 67108864 bytes (64.00 MiB): stopped reading at 67174400 bytes (64.06 MiB)`.
+A document that is small enough but holds too many values, or is not JSON, is
+refused as
+`The packument of x is not usable: Provider metadata exceeds 4194304 values`,
+and the parser stops at the limit rather than after it. The bounds limit what
+opm reads, not what it holds: the heaviest 64 MiB document tried took 2,169 to
+2,683 MiB to parse, and under `--max-old-space-size=1536` V8 ended the process
+with exit 134 (`JavaScript heap out of memory`) instead of opm refusing it, so a
+process started with a heap limit below what a document needs can be ended by
+one the bound accepts. When the refused document is the full packument that a
+release-age check needed, the policy message says so after "not captured":
+`publishedAt/evaluationTime not captured for minimum release age: The full packument of x is not usable: ...`.
+A registry that is simply down leaves that message as it was. See the
+[amendment to ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md#amendment-2026-10-12-the-packument-bound).
 
 `--offline` refuses every registry read outright, so an offline build cannot
 quietly start depending on a registry being reachable.
@@ -1325,7 +1357,15 @@ containment by path strings and cannot consume the stable directory-handle
 authorities every run requires, so runs there fail closed (exit 78 under
 `fail-closed`, `TREE_CONTAINMENT_UNAVAILABLE` otherwise) instead of degrading
 toward ambient execution. This is an explicit capability withdrawal, like the
-Windows metadata refusal above, not a silent downgrade.
+Windows metadata refusal above, not a silent downgrade. The refusal names the
+platform and says where containment exists (a Linux host); for a tool you have
+reviewed and installed in the project, `opm exec <bin>` runs it with your own
+authority and no jail
+([ADR 0047](../adr/0047-opm-run-and-exec-run-the-users-own-scripts.md)).
+Anything that runs an approved executable snapshot (a delegated pack provider, a
+plugin) needs Linux and is refused by name before its file is opened, because a
+descriptor has no path the kernel will execute anywhere else and a named copy
+could be swapped between the check and the run.
 
 **Run tools with `opmx`.** Shims re-enter via `opmx`; ambient direct spawn needs
 `OPENPACKER_ALLOW_AMBIENT_SHIMS=1` (insecure).
@@ -1378,9 +1418,12 @@ opm: hint: HTTPS_PROXY is set, but Node's built-in fetch ignores proxy variables
 
 `opmx` prints the same lines without `internal error`. The exit code is
 unchanged (`9`). Everything printed is redacted: a URL keeps its origin and path
-and loses userinfo, query and fragment, and the value after a credential name
-(`token`, `authorization`, `password`, `api-key`, a bearer) is withheld. A
-failure opm named, such as `POLICY_DENIED` or `OFFLINE`, keeps its single line.
+and loses userinfo, query and fragment (one whose host, as written, is longer
+than 253 characters, which no DNS name can be, is printed as `[url]`, and one
+longer than twice its own length or 600 characters is cut there, ending in `…`),
+and the value after a credential name (`token`, `authorization`, `password`,
+`api-key`, a bearer) is withheld. A failure opm named, such as `POLICY_DENIED`
+or `OFFLINE`, keeps its single line.
 
 The `hint:` line appears only when a cause is a connection fault
 (`ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `ENOTFOUND`, `EAI_AGAIN`, an

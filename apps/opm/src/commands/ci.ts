@@ -6,6 +6,8 @@ import {
   type FrozenWorkspaceRequest,
 } from '@openpacker/opm-project';
 import type { FrozenOmit } from '@openpacker/adapter-core';
+import { out, plainLine } from '@openpacker/canonical';
+import { report } from '../error-report.js';
 import type { CommandArgs, CommandIo } from './yank.js';
 
 /** What `opm ci` accepts beyond the shared argument shape. */
@@ -140,29 +142,42 @@ export async function runCiCommand(
   });
 
   const noScripts = result.installScripts.length;
-  io.stdout.write(
+  out(
+    io,
     `Installed ${result.installed} package${result.installed === 1 ? '' : 's'} into ${resolve(root, 'node_modules')} ` +
       `(${result.fromStore} from the store, ${result.fetched} fetched, ${megabytes(result.fetchedBytes)}) ` +
       `in ${(result.milliseconds.total / 1000).toFixed(1)} s; ` +
       `${noScripts} ${noScripts === 1 ? 'declares an install script' : 'declare install scripts'}, which opm does not run\n`,
   );
   const clause = leftOut(result);
-  if (clause !== undefined) io.stdout.write(`  left out: ${clause}\n`);
+  if (clause !== undefined) out(io, `  left out: ${clause}\n`);
   if (result.workspace !== undefined)
-    io.stdout.write(
+    out(
+      io,
       `  workspace: ${result.workspace.linked} of ${result.workspace.members} member${result.workspace.members === 1 ? '' : 's'} linked, not fetched; their scripts are not run\n`,
     );
   const shown = result.installScripts.slice(0, 50);
   for (const item of shown)
-    io.stdout.write(`  install script not run: ${item.name}@${item.version}\n`);
+    out(
+      io,
+      `  install script not run: ${plainLine(item.name)}@${plainLine(item.version)}\n`,
+    );
   if (noScripts > shown.length)
-    io.stdout.write(`  ... and ${noScripts - shown.length} more\n`);
+    out(io, `  ... and ${noScripts - shown.length} more\n`);
   for (const entry of result.layout.skipped ?? [])
-    io.stderr.write(`opm: skipped ${entry.path}: ${entry.reason}\n`);
+    io.stderr.write(
+      report(
+        'opm: ',
+        `skipped ${plainLine(entry.path)}: ${plainLine(entry.reason)}`,
+      ),
+    );
   for (const loss of result.layout.semanticLoss)
     if (loss.severity !== 'info')
       io.stderr.write(
-        `opm: ${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}\n`,
+        report(
+          'opm: ',
+          `${plainLine(loss.code)}${loss.representedMeaning ? `: ${plainLine(loss.representedMeaning)}` : ''}`,
+        ),
       );
   return 0;
 }

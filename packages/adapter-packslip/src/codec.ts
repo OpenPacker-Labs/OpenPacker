@@ -10,6 +10,7 @@ import type {
 import {
   ProviderError,
   compareParsedVersions,
+  echoed,
   evaluateSemverRange,
   formatPurl,
   packageNodeId,
@@ -112,7 +113,7 @@ export class PackslipCodec implements EcosystemCodec<PackslipMetadata, never> {
     if (version !== undefined && !isSemver(version))
       throw new ProviderError(
         'INVALID_NATIVE_COORDINATE',
-        `"${version}" is not a semantic version`,
+        `"${echoed(version)}" is not a semantic version`,
       );
     return {
       ecosystem: 'packslip',
@@ -133,7 +134,7 @@ export class PackslipCodec implements EcosystemCodec<PackslipMetadata, never> {
     if (!isSemver(value))
       throw new ProviderError(
         'INVALID_NATIVE_VERSION',
-        `Invalid version: ${value}`,
+        `Invalid version: ${echoed(value)}`,
       );
     return parseSemver(value, 3);
   }

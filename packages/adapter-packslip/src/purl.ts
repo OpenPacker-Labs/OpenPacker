@@ -1,4 +1,9 @@
-import { ProviderError, formatPurl, parsePurl } from '@openpacker/adapter-core';
+import {
+  ProviderError,
+  echoed,
+  formatPurl,
+  parsePurl,
+} from '@openpacker/adapter-core';
 import {
   PackslipError,
   isSemver,
@@ -31,7 +36,7 @@ function invalid(message: string): ProviderError {
 export function parsePackslipPurl(purl: string): PackslipPurl {
   const parsed = parsePurl(purl);
   if (parsed.type !== 'packslip')
-    throw invalid(`${purl} is not a packslip PURL`);
+    throw invalid(`${echoed(purl)} is not a packslip PURL`);
   const name = [parsed.namespace, parsed.name]
     .filter((part): part is string => part !== undefined)
     .join('/');
@@ -45,12 +50,12 @@ export function parsePackslipPurl(purl: string): PackslipPurl {
   }
   for (const key of Object.keys(parsed.qualifiers))
     if (!QUALIFIERS.has(key))
-      throw invalid(`Unsupported packslip PURL qualifier "${key}"`);
+      throw invalid(`Unsupported packslip PURL qualifier "${echoed(key)}"`);
   const variant = parsed.qualifiers.variant;
   if (variant !== undefined && !/^[a-z0-9][a-z0-9_.-]*$/u.test(variant))
-    throw invalid(`Invalid packslip variant "${variant}"`);
+    throw invalid(`Invalid packslip variant "${echoed(variant)}"`);
   if (parsed.version !== undefined && !isSemver(parsed.version))
-    throw invalid(`"${parsed.version}" is not a semantic version`);
+    throw invalid(`"${echoed(parsed.version)}" is not a semantic version`);
   if (parsed.subpath !== undefined)
     throw invalid('A packslip PURL has no subpath');
   return {

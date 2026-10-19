@@ -1,8 +1,10 @@
 import {
   ProviderError,
+  echoedValue,
   formatPurl,
   packageNodeId,
   parsePurl,
+  parseUntrustedUrl,
   type Ecosystem,
   type EcosystemCodec,
   type LockCapture,
@@ -373,7 +375,7 @@ export function parsePnpmLock(text: string) {
   if (!/^9(?:\.|$)/u.test(version))
     throw new ProviderError(
       'INVALID_LOCKFILE',
-      `Unsupported pnpm lockfileVersion "${version}"; only version 9 is supported.`,
+      `Unsupported pnpm lockfileVersion "${echoedValue(version)}"; only version 9 is supported.`,
     );
   if (
     !document.packages ||
@@ -389,20 +391,20 @@ export function parsePnpmLock(text: string) {
     if (key.includes('('))
       throw new ProviderError(
         'INVALID_LOCKFILE',
-        `pnpm peer context cannot be represented losslessly: ${key}`,
+        `pnpm peer context cannot be represented losslessly: ${echoedValue(key)}`,
       );
     const at = key.lastIndexOf('@');
     if (at <= 0)
       throw new ProviderError(
         'INVALID_LOCKFILE',
-        `pnpm-lock.yaml contains an unsupported package key: ${key}`,
+        `pnpm-lock.yaml contains an unsupported package key: ${echoedValue(key)}`,
       );
     const name = key.slice(0, at);
     const packageVersion = key.slice(at + 1);
     if (!/^(?:@[^/]+\/)?[^/@]+$/u.test(name) || !/^[0-9]/u.test(packageVersion))
       throw new ProviderError(
         'INVALID_LOCKFILE',
-        `pnpm-lock.yaml contains an unsupported package key: ${key}`,
+        `pnpm-lock.yaml contains an unsupported package key: ${echoedValue(key)}`,
       );
     return { name, version: packageVersion };
   };
@@ -419,7 +421,7 @@ export function parsePnpmLock(text: string) {
     if (value === null || typeof value !== 'object' || Array.isArray(value))
       throw new ProviderError(
         'INVALID_LOCKFILE',
-        `pnpm-lock.yaml contains a malformed package value for: ${key}`,
+        `pnpm-lock.yaml contains a malformed package value for: ${echoedValue(key)}`,
       );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const resolution = (value as { resolution?: unknown }).resolution;
@@ -431,7 +433,7 @@ export function parsePnpmLock(text: string) {
     )
       throw new ProviderError(
         'INVALID_LOCKFILE',
-        `pnpm-lock.yaml contains a malformed resolution for: ${key}`,
+        `pnpm-lock.yaml contains a malformed resolution for: ${echoedValue(key)}`,
       );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const { integrity, tarball } = (resolution ?? {}) as {
@@ -441,12 +443,12 @@ export function parsePnpmLock(text: string) {
     if (tarball !== undefined && typeof tarball !== 'string')
       throw new ProviderError(
         'INVALID_LOCKFILE',
-        `pnpm-lock.yaml contains a malformed resolution for: ${key}`,
+        `pnpm-lock.yaml contains a malformed resolution for: ${echoedValue(key)}`,
       );
     if (integrity !== undefined && typeof integrity !== 'string')
       throw new ProviderError(
         'INVALID_LOCKFILE',
-        `pnpm-lock.yaml contains a malformed resolution for: ${key}`,
+        `pnpm-lock.yaml contains a malformed resolution for: ${echoedValue(key)}`,
       );
     // package-lock keys packages by install path; `node_modules/<name>` is the
     // form the npm codec reads.
@@ -454,7 +456,7 @@ export function parsePnpmLock(text: string) {
     if (packages[installPath] !== undefined)
       throw new ProviderError(
         'INVALID_LOCKFILE',
-        `pnpm-lock.yaml contains multiple locked selections for ${name}`,
+        `pnpm-lock.yaml contains multiple locked selections for ${echoedValue(name)}`,
       );
     packages[installPath] = {
       version: packageVersion,
@@ -478,7 +480,7 @@ export function parsePnpmLock(text: string) {
       if (!packageKeys.has(key))
         throw new ProviderError(
           'INVALID_LOCKFILE',
-          `pnpm-lock.yaml snapshot has no matching package: ${key}`,
+          `pnpm-lock.yaml snapshot has no matching package: ${echoedValue(key)}`,
         );
     }
   }
@@ -521,13 +523,13 @@ export function parseRequirementsTxt(text: string) {
     if (line.startsWith('-'))
       throw new ProviderError(
         'INVALID_LOCKFILE',
-        `requirements.txt line ${lineNumber} uses an option or include that cannot be represented losslessly: "${line}"`,
+        `requirements.txt line ${lineNumber} uses an option or include that cannot be represented losslessly: "${echoedValue(line)}"`,
       );
     const match = /^([A-Za-z0-9][A-Za-z0-9._-]*)\s*==\s*([^\s;]+)$/u.exec(line);
     if (!match) {
       throw new ProviderError(
         'INVALID_LOCKFILE',
-        `requirements.txt line ${lineNumber} is not an exact pin: "${rawLine.trim()}". ` +
+        `requirements.txt line ${lineNumber} is not an exact pin: "${echoedValue(rawLine.trim())}". ` +
           `Only "name==version" can be imported; a range or marker does not name a package.`,
       );
     }
@@ -588,7 +590,7 @@ export function parseUvLock(text: string): {
   if (record.version !== 1)
     throw new ProviderError(
       'INVALID_LOCKFILE',
-      `Expected uv.lock version 1, received ${String(record.version)}`,
+      `Expected uv.lock version 1, received ${echoedValue(String(record.version))}`,
     );
   if (!Array.isArray(record.package))
     throw new ProviderError(
@@ -1126,7 +1128,7 @@ async function minimalInstanceFromLockEntry(
       severity: 'warning',
       sourceEcosystem: ecosystem,
       sourcePath: '/',
-      originalMeaning: `The native lock references ${entry.resolved}`,
+      originalMeaning: `The native lock references ${echoedValue(entry.resolved)}`,
       representedMeaning: 'No executable artifact location was imported',
       blocksProfile: [],
     });
@@ -1222,7 +1224,7 @@ async function minimalInstanceFromLockEntry(
 function httpsArtifactLocation(resolved: string | undefined) {
   if (resolved === undefined) return undefined;
   try {
-    const url = new URL(resolved);
+    const url = parseUntrustedUrl(resolved);
     if (url.protocol !== 'https:' || url.username || url.password)
       return undefined;
     return {

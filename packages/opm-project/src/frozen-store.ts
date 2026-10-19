@@ -10,7 +10,9 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import {
-  redactUrl,
+  echoed,
+  echoedValue,
+  redactAddress,
   type FrozenLock,
   type FrozenLockPackage,
 } from '@openpacker/adapter-core';
@@ -105,15 +107,20 @@ export async function openStore(root: string, env: NodeJS.ProcessEnv) {
 }
 
 export function labelOf(pkg: FrozenLockPackage): string {
-  return `${pkg.packageName}@${pkg.version} (${pkg.path})`;
+  return `${echoedValue(pkg.packageName)}@${echoedValue(pkg.version)} (${echoedValue(pkg.path)})`;
 }
 
+/**
+ * A lock entry's source as an error may show it (`redactAddress` in
+ * `@openpacker/adapter-core`, which `classifyResolved` and the fetch plan use
+ * for the same text): the scheme, and the host and path the URL parser read,
+ * never userinfo, query or fragment, or the scheme and `[address withheld]` for
+ * an address it refuses or one in which an `@` may end a password (with no
+ * scheme where it may be a user name), or `[url]` for a host the URL parser
+ * should not be given.
+ */
 export function redactSource(source: string): string {
-  try {
-    return redactUrl(new URL(source));
-  } catch {
-    return source.replace(/\/\/[^/@]*@/u, '//');
-  }
+  return redactAddress(source);
 }
 
 /**
@@ -180,7 +187,7 @@ export async function storeArchives(input: {
       if (!checked.ok)
         throw new OpmError(
           'DIGEST_MISMATCH',
-          `${labelOf(pkg)} does not match the integrity the lock pins: the lock says ${pkg.integrity}, ${redactSource(pkg.source)} served ${checked.actual}. Nothing was installed from it`,
+          `${labelOf(pkg)} does not match the integrity the lock pins: the lock says ${echoed(pkg.integrity ?? '')}, ${echoed(redactSource(pkg.source))} served ${checked.actual}. Nothing was installed from it`,
         );
       const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
       const entry = await memory
@@ -200,7 +207,7 @@ export async function storeArchives(input: {
             ? error
             : new OpmError(
                 'UNSAFE_PATH',
-                `${labelOf(pkg)} cannot be extracted: ${error instanceof Error ? error.message : String(error)}`,
+                `${labelOf(pkg)} cannot be extracted: ${echoed(error instanceof Error ? error.message : String(error))}`,
                 { cause: error },
               );
         });
