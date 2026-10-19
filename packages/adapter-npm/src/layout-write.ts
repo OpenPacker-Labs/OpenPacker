@@ -7,13 +7,12 @@
  * script shims. Nothing here runs a package script.
  */
 
-import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
   NativeLayoutMember,
   NativeLockEntry,
 } from '@openpacker/adapter-core';
-import { materialiseTree } from '@openpacker/project-io';
+import { materialiseTree, tarballWrapper } from '@openpacker/project-io';
 import { directoryOf, modulesOf } from './layout-dirs.js';
 import type { LayoutLink } from './layout-links.js';
 import { placePath } from './layout-links.js';
@@ -280,19 +279,8 @@ function planFor(
   return planLayoutFromPaths(placed, { links, members });
 }
 
-/**
- * npm tarballs wrap their contents in one directory, `package/` by
- * convention; node_modules wants what is inside it. npm strips the first path
- * component whatever it is called, so a tarball that wraps in another name
- * (older packages do) is read the same way here.
- */
+/** What node_modules wants of a store tree: inside its tarball's wrapper. */
 async function treeToInstall(storePath: string): Promise<string> {
-  try {
-    const children = await readdir(storePath, { withFileTypes: true });
-    const only = children.length === 1 ? children[0] : undefined;
-    if (only?.isDirectory() === true) return join(storePath, only.name);
-    return storePath;
-  } catch {
-    return storePath;
-  }
+  const wrapper = await tarballWrapper(storePath);
+  return wrapper === undefined ? storePath : join(storePath, wrapper);
 }

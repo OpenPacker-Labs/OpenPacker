@@ -1,5 +1,4 @@
 import { mkdir } from 'node:fs/promises';
-import { policyDocumentFromPolicyInput } from '@openpacker/policy';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { OpmError, type BinDeclaration, type LockPackage } from './types.js';
@@ -17,11 +16,9 @@ import {
   listRegistryVersions,
   providerFor,
   resolveRegistryArtifactDeferred,
-  type RegistryOptions,
 } from './registry.js';
-import { defaultRelease } from './default-release.js';
-import { resolveGraph } from './resolve.js';
-import { solveGraph } from './solve.js';
+import type { ToolPackage } from './ephemeral-layout.js';
+import { solveToolClosure } from './ephemeral-closure.js';
 import { requireAdapterRegistry } from './adapters.js';
 import {
   captureFactsFromCatalog,
@@ -75,6 +72,10 @@ export interface EphemeralTool {
    * transitive dependencies of the tool are importable.
    */
   runtimePaths: string[];
+  /** The tool cache the run was placed in. */
+  cacheRoot: string;
+  /** The tool and every package of its runtime closure, as the cache holds them. */
+  closure: ToolPackage[];
 }
 
 /**
@@ -82,7 +83,7 @@ export interface EphemeralTool {
  * in the tool cache.
  *
  * Resolution mirrors `opm add`: an exact version is used as given, and a bare
- * package takes what `opm add` would (`default-release.ts`). There is no lockfile here,
+ * package takes the newest the registry publishes. There is no lockfile here,
  * so the version that ran is reported back rather than assumed — an unpinned
  * ephemeral run is a different thing tomorrow and should say so.
  */
@@ -90,11 +91,8 @@ export async function fetchTool(input: {
   purl: string;
   offline?: boolean;
   cacheRoot?: string;
-  /** Transport / endpoint overrides for hosts and tests. */
-  registryOptions?: RegistryOptions;
 }): Promise<EphemeralTool> {
   const ecosystem = ecosystemFromPurl(input.purl);
-  const options = input.registryOptions ?? {};
   if (!requireAdapterRegistry().has(ecosystem))
     throw new OpmError(
       'UNSUPPORTED_ECOSYSTEM',
@@ -110,20 +108,11 @@ export async function fetchTool(input: {
   const exact = input.purl.includes('@', 'pkg:'.length)
     ? input.purl
     : await (async () => {
-        const base = stripPurlVersion(input.purl);
-        // The policy the run is held to below, so that a `latest` inside
-        // its minimum release age gives way to the release before it, as an
-        // add does, rather than being chosen and then refused.
-        const newest = await defaultRelease({
+        const versions = await listRegistryVersions(
           ecosystem,
-          basePurl: base,
-          published: await listRegistryVersions(ecosystem, base, options),
-          provider: await providerFor(ecosystem, options),
-          policy: policyDocumentFromPolicyInput(
-            defaultSupplyChainPolicyInput(),
-          ),
-          evaluationTime: new Date().toISOString(),
-        });
+          stripPurlVersion(input.purl),
+        );
+        const newest = versions[versions.length - 1];
         if (!newest)
           throw new OpmError(
             'UNRESOLVABLE',
@@ -135,37 +124,31 @@ export async function fetchTool(input: {
   const cacheRoot = input.cacheRoot ?? toolCacheRoot();
   await mkdir(cacheRoot, { recursive: true });
 
-  const primary = await materialiseExact(ecosystem, exact, cacheRoot, options);
+  const primary = await materialiseExact(ecosystem, exact, cacheRoot);
 
   // Runtime closure: everything the tool needs at run time. Soft-fail if the
   // walk cannot complete — a tool that declares no dependencies must still
   // run, and a registry that omits a dependency must not make a previously
   // runnable tool unusable.
   const runtimePaths = [primary.storePath];
+  const closure: ToolPackage[] = [toolPackage(primary)];
   try {
-    const graph = await resolveGraph({
-      roots: [{ purl: stripPurlVersion(primary.exactPurl) }],
-      options,
+    const solved = await solveToolClosure({
+      tool: primary.exactPurl,
+      ecosystem,
     });
-    if (graph.packages.length > 0) {
-      const solved = await solveGraph({
-        graph,
-        rootRequirements: [{ purl: stripPurlVersion(primary.exactPurl) }],
-      });
-      for (const instance of solved.selected) {
-        const depExact = instance.identity.exactPurl;
-        if (!depExact || depExact === primary.exactPurl) continue;
-        const depEco = instance.identity.purlType;
-        if (!requireAdapterRegistry().has(depEco)) continue;
-        const dep = await materialiseExact(
-          depEco,
-          depExact,
-          cacheRoot,
-          options,
-        );
-        if (!runtimePaths.includes(dep.storePath))
+    if (solved !== undefined) {
+      for (const { exactPurl, purlType } of solved.dependencies) {
+        if (!requireAdapterRegistry().has(purlType)) continue;
+        const dep = await materialiseExact(purlType, exactPurl, cacheRoot);
+        if (!runtimePaths.includes(dep.storePath)) {
           runtimePaths.push(dep.storePath);
+          closure.push(toolPackage(dep));
+        }
       }
+      // Which package each one requires, for the layout an npm tool runs from.
+      for (const pkg of closure)
+        pkg.requires = solved.requires.get(pkg.exactPurl) ?? {};
     }
   } catch {
     // Direct tool only; the run path still works for packages without a graph.
@@ -178,6 +161,8 @@ export async function fetchTool(input: {
     bins: primary.bins,
     cached: primary.cached,
     runtimePaths,
+    cacheRoot,
+    closure,
   };
 }
 
@@ -185,33 +170,24 @@ async function materialiseExact(
   ecosystem: string,
   exact: string,
   cacheRoot: string,
-  options: RegistryOptions,
-): Promise<{
-  exactPurl: string;
-  digest: string;
-  storePath: string;
-  bins: BinDeclaration[];
-  cached: boolean;
-}> {
+): Promise<
+  ToolPackage & {
+    bins: BinDeclaration[];
+    cached: boolean;
+  }
+> {
   // Resolve the artifact identity with the byte download deferred: what an
   // unpinned purl means today is registry metadata and is re-read on every
   // run, but the bytes are content-addressed, so a digest the tool cache
   // already holds does not need to move again.
-  const resolved = await resolveRegistryArtifactDeferred(
-    ecosystem,
-    exact,
-    options,
-  );
+  const resolved = await resolveRegistryArtifactDeferred(ecosystem, exact);
   const policyInput = defaultSupplyChainPolicyInput();
   const { facts } = await captureFactsFromCatalog(
-    await providerFor(ecosystem, options),
+    await providerFor(ecosystem),
     resolved.exactPurl,
     {
       evaluationTime: new Date().toISOString(),
       registryId: resolved.registryId,
-      // Without it no publish time is captured, and the policy's minimum
-      // release age is indeterminate for every package.
-      minimumReleaseAgeMinutes: policyInput.minimumReleaseAgeMinutes,
     },
   );
   const pkg: LockPackage = {
@@ -252,6 +228,8 @@ async function materialiseExact(
         return {
           exactPurl: resolved.exactPurl,
           digest: resolved.digest,
+          size: pkg.size,
+          source: pkg.source,
           storePath: hit.storePath,
           bins: hit.bins,
           cached: true,
@@ -275,6 +253,8 @@ async function materialiseExact(
   return {
     exactPurl: resolved.exactPurl,
     digest: resolved.digest,
+    size: pkg.size,
+    source: pkg.source,
     storePath,
     bins,
     cached: cached ?? false,
@@ -333,4 +313,15 @@ export function selectToolBin(
     `${tool.exactPurl} provides several executables and none matches the ` +
       `package name. Name one with --bin: ${tool.bins.map((bin) => bin.name).join(', ')}.`,
   );
+}
+
+/** What the layout of a run needs of a materialised package, and no more. */
+function toolPackage(pkg: ToolPackage): ToolPackage {
+  return {
+    exactPurl: pkg.exactPurl,
+    digest: pkg.digest,
+    size: pkg.size,
+    source: pkg.source,
+    storePath: pkg.storePath,
+  };
 }
