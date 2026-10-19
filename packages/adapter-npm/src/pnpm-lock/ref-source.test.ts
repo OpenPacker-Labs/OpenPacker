@@ -173,9 +173,8 @@ describe('paths and URLs', () => {
     ['https:///a.tgz', 'no host'],
     ['https://h/a b.tgz', 'whitespace'],
     ['', 'not an http'],
-    // No DNS name is longer than 253 characters, and Node's URL parser takes
-    // the square of the length of a host of many non-ASCII labels.
-    [`https://${'é.'.repeat(200)}example/a.tgz`, 'longer than 253'],
+    // Read through the guard, so a host no DNS name can be is refused by length.
+    [`https://${'a'.repeat(254)}/a.tgz`, 'longer than 253'],
   ])('tarballUrlProblem(%j)', (url, word) => {
     const problem = tarballUrlProblem(url);
     if (word === undefined) expect(problem).toBeUndefined();

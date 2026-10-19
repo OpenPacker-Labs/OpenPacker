@@ -320,7 +320,7 @@ export function readLockWorkspace(
       answerFor(name);
       refused.push({
         path: link.path,
-        reason: `a link named ${name} to the member ${member.name} (${echoedValue(member.dir)}); a member is linked under its own name only`,
+        reason: `a link named ${echoedValue(name)} to the member ${echoedValue(member.name)} (${echoedValue(member.dir)}); a member is linked under its own name only`,
       });
       continue;
     }
@@ -332,7 +332,7 @@ export function readLockWorkspace(
       answered.add(member.dir);
       refused.push({
         path: link.path,
-        reason: `a link to ${echoedValue(member.dir)} that the layout's link rules refuse (${echoed(rule)})`,
+        reason: `a link to ${echoedValue(member.dir)} that the layout's link rules refuse (${rule})`,
       });
       continue;
     }
@@ -342,7 +342,7 @@ export function readLockWorkspace(
   for (const member of members)
     if (!linked.has(member.dir) && !answered.has(member.dir))
       throw invalid(
-        `The workspace member ${member.name} (${echoedValue(member.dir)}) has no node_modules/${member.name} link in the lock (npm ci would refuse too)`,
+        `The workspace member ${echoedValue(member.name)} (${echoedValue(member.dir)}) has no node_modules/${echoedValue(member.name)} link in the lock (npm ci would refuse too)`,
       );
   return {
     patterns,

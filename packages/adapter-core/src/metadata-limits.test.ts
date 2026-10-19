@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
+<<<<<<< ours
+=======
+import { PARSE_COSTS } from '@openpacker/canonical';
+>>>>>>> theirs
 import {
   MetadataLimitError,
   ProviderError,
   json,
+<<<<<<< ours
+=======
+  jsonWithCost,
+>>>>>>> theirs
   type HttpResponse,
 } from './index.js';
 
@@ -106,3 +114,65 @@ describe('a document that is not a bounded one is not a limit', () => {
     expect(error).toMatchObject({ code: 'INVALID_PROVIDER_METADATA' });
   });
 });
+<<<<<<< ours
+=======
+
+describe('a limit on what the tree costs', () => {
+  const { peak } = PARSE_COSTS;
+
+  it('refuses a dense document as soon as the tree would cost more, having built only what fits', () => {
+    const dense = `[${'{},'.repeat(1_000_000)}{}]`;
+    const maximumCost =
+      100 * (peak.element + peak.object) + peak.array + peak.firstElement;
+    const error = refused(dense, { maximumCost });
+    expect(error).toBeInstanceOf(MetadataLimitError);
+    expect(error).toMatchObject({
+      code: 'INVALID_PROVIDER_METADATA',
+      limit: 'cost',
+      maximum: maximumCost,
+      message: `Provider metadata exceeds ${maximumCost} bytes of parsed size`,
+      // The array and a hundred objects were built; the next one's slot was refused.
+      visited: 101,
+      documentLength: dense.length,
+    });
+    expect(error.spent).toBeGreaterThan(maximumCost);
+    expect(error.spent).toBeLessThanOrEqual(
+      maximumCost + peak.element + peak.object,
+    );
+    expect(error.offset).toBeLessThan(400);
+  });
+
+  it('weighs an object more than a number: the same count of values is refused as objects and not as numbers', () => {
+    const count = 20_000;
+    const numbers = `[${'1,'.repeat(count - 1)}1]`;
+    const objects = `[${'{},'.repeat(count - 1)}{}]`;
+    const maximumCost = 2_000_000;
+    expect(json<number[]>(respond(numbers), { maximumCost })).toHaveLength(
+      count,
+    );
+    expect(refused(objects, { maximumCost })).toMatchObject({ limit: 'cost' });
+  });
+
+  it('does not apply the default count of values unless a count is also given', () => {
+    const wide = `[${'1,'.repeat(299_999)}1]`;
+    expect(() => json(respond(wide))).toThrow(/exceeds 200000 values/u);
+    expect(json<number[]>(respond(wide), { maximumCost: 1e9 })).toHaveLength(
+      300_000,
+    );
+    expect(
+      refused(wide, { maximumCost: 1e9, maximumNodes: 1000 }),
+    ).toMatchObject({ limit: 'values', maximum: 1000 });
+  });
+
+  it('says what the tree cost, and what it keeps, which is less', () => {
+    const { value, cost, retained } = jsonWithCost<unknown[]>(
+      respond('[{"a":"bc"},[1],{}]'),
+      { maximumCost: 1e6 },
+    );
+    expect(value).toHaveLength(3);
+    expect(cost).toBeGreaterThan(0);
+    expect(retained).toBeGreaterThan(0);
+    expect(retained).toBeLessThan(cost);
+  });
+});
+>>>>>>> theirs

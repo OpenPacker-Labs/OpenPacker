@@ -35,6 +35,7 @@ import {
   findProjectRoot,
   scriptEnvironment,
 } from './run-paths.js';
+import { plain, quoted } from './run-plain.js';
 import { missingBinError, resolveExecutable } from './run-resolve.js';
 
 export { processContext, type RunContext } from './run-context.js';
