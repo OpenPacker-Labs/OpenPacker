@@ -4,7 +4,6 @@ import { createServer } from 'node:http';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { chromium } from 'playwright';
-import { chromiumLaunchOptions } from '../../../scripts/chromium.mjs';
 
 const root = resolve(import.meta.dirname, '../../..');
 const files = new Map([
@@ -63,11 +62,8 @@ test(
     );
     const address = server.address();
     assert.ok(address && typeof address === 'object');
-    let browser;
+    const browser = await chromium.launch({ headless: true });
     try {
-      // Inside the try: a browser that cannot start must still close the server,
-      // or the listening socket keeps this process alive after the failure.
-      browser = await chromium.launch(chromiumLaunchOptions());
       const page = await browser.newPage();
       await page.goto(`http://127.0.0.1:${address.port}/`);
       const result = await page.evaluate(async () => {
@@ -161,13 +157,10 @@ test(
       assert.equal(result.proofBytesEqual, true);
       assert.equal(result.receiptValid, true);
     } finally {
-      try {
-        await browser?.close();
-      } finally {
-        await new Promise((resolve, reject) =>
-          server.close((error) => (error ? reject(error) : resolve())),
-        );
-      }
+      await browser.close();
+      await new Promise((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
     }
   },
 );

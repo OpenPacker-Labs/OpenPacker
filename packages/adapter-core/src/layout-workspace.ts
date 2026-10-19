@@ -32,17 +32,4 @@ export interface NativeLayoutWorkspace {
   /** The members this install links, each once. */
   members: readonly NativeLayoutMember[];
   links: readonly NativeLayoutLink[];
-  /**
-   * Each installed importer's direct dependencies, for a tool that gives every
-   * importer the executables of its own (pnpm): their shims go in the
-   * importer's own `.bin` wherever the packages were written, and only they
-   * rank as the importer's own there. Absent, a package's executables go in
-   * the `.bin` beside it, as npm links them.
-   */
-  importers?: readonly {
-    /** Relative to the project root, `/`-separated; `''` for the project. */
-    readonly dir: string;
-    /** Project-relative places of the packages it depends on directly. */
-    readonly dependencies: readonly string[];
-  }[];
 }

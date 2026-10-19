@@ -1,11 +1,7 @@
-import { defineConfig, mergeConfig } from 'vitest/config';
-import shared from '../../vitest.shared.js';
+import { defineConfig } from 'vitest/config';
 
-export default mergeConfig(
-  shared,
-  defineConfig({
-    test: {
-      setupFiles: ['./test/setup.ts'],
-    },
-  }),
-);
+export default defineConfig({
+  test: {
+    setupFiles: ['./test/setup.ts'],
+  },
+});

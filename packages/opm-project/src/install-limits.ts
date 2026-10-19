@@ -1,4 +1,3 @@
-import { PACKAGE_TREE_LIMITS } from '@openpacker/adapter-core';
 import {
   DEFAULT_MATERIALIZATION_LIMITS,
   type MaterializationLimits,
@@ -28,12 +27,11 @@ export function installArchiveLimits(
   if (ecosystem !== 'npm') return { ...DEFAULT_MATERIALIZATION_LIMITS };
   return {
     ...DEFAULT_MATERIALIZATION_LIMITS,
-    ...PACKAGE_TREE_LIMITS,
+    maximumFiles: 100_000,
     maximumExpandedBytes: 1024 * 1024 * 1024,
     maximumCompressedBytes: MAXIMUM_ARCHIVE_BYTES,
     maximumCompressionRatio: 128,
     maximumMemoryBytes: 3 * 1024 * 1024 * 1024,
     acceptRedundantEntries: true,
-    requireNpmReaderAgreement: true,
   };
 }

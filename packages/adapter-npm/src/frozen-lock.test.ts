@@ -133,12 +133,6 @@ describe('reading a project', () => {
     ]);
     expect(result.lockDigest).toMatch(/^[0-9a-f]{64}$/u);
     expect(result.lockfileVersion).toBe(3);
-    // npm and pnpm are this lock's tar readers: what they read differently
-    // is refused (ADR 0057 §8).
-    expect(result.extraction).toEqual({
-      acceptRedundantEntries: true,
-      requireNpmReaderAgreement: true,
-    });
   });
 
   it('does not install a workspace lock for a project whose workspace it was not shown', async () => {

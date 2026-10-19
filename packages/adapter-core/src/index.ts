@@ -3,6 +3,35 @@ import { isIP } from 'node:net';
 // Node 22 exposes Agent as node:undici; Node 26 does not. Same dispatcher API.
 import { Agent } from 'undici';
 import { pinnedFetch, pinnedLookup } from './pinned-dial.js';
+import { splitPurlVersion } from './purl-version.js';
+import {
+  LONGEST_HOST_LENGTH,
+  OverlongHostError,
+  parseUntrustedUrl,
+} from '@openpacker/canonical';
+import { echoed, echoedValue } from './echo.js';
+import { ProviderError } from './provider-error.js';
+import {
+  MetadataLimitError,
+  ResponseTooLargeError,
+} from './document-refusal.js';
+export { ECHO_TEXT_LIMIT, echoed, echoedValue } from './echo.js';
+export { isAddress, redactText } from './redact-text.js';
+export { ProviderError } from './provider-error.js';
+export { redactAddress, shownScheme } from './redact-address.js';
+export {
+  hasOverlongHost,
+  LONGEST_HOST_LENGTH,
+  OverlongHostError,
+  parseUntrustedUrl,
+  writtenHostLength,
+} from '@openpacker/canonical';
+export {
+  MetadataLimitError,
+  ResponseTooLargeError,
+  isDocumentRefusal,
+  type TooLargeBasis,
+} from './document-refusal.js';
 export {
   detectLibc,
   detectNativeTarget,
@@ -10,25 +39,30 @@ export {
   type NativeTarget,
 } from './host-target.js';
 export * from './workspace/index.js';
-export { quote, terminalSafe } from './terminal-text.js';
-export { PACKAGE_TREE_LIMITS } from './package-tree-limits.js';
-export { ProviderError } from './provider-error.js';
-import { ProviderError } from './provider-error.js';
 import { createNpmRangeEngine, type RangeEngine } from './workspace/ranges.js';
-import { npmAst } from './npm-semver-range.js';
-export { npmVersion, npmVersionsEqual } from './npm-semver-range.js';
 import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
-import type { FrozenPatchFormat } from './frozen-patch.js';
 import type { NativeLayoutWorkspace } from './layout-workspace.js';
 import type { WorkspaceTool } from './workspace/members.js';
-export type * from './frozen-lock.js';
-export type * from './frozen-patch.js';
+export type {
+  FrozenExtraction,
+  FrozenLock,
+  FrozenLockOptions,
+  FrozenLockPackage,
+  FrozenLockRefusal,
+  FrozenLockSkip,
+  FrozenLockWorkspace,
+  FrozenOmit,
+  FrozenSourceKind,
+  FrozenWorkspaceInput,
+  FrozenWorkspaceScope,
+} from './frozen-lock.js';
 export type {
   NativeLayoutLink,
   NativeLayoutMember,
   NativeLayoutWorkspace,
 } from './layout-workspace.js';
 import {
+  CanonicalJsonLimitError,
   canonicalProjectionDigest,
   formatDigest,
   parseCanonicalJson,
@@ -416,7 +450,7 @@ export interface InstallOutcome extends InstallPlan {
  * an absent level means the projection does not happen, not that it silently
  * half-happens.
  */
-export interface ProjectFormat extends FrozenPatchFormat {
+export interface ProjectFormat {
   readonly providerId: string;
   /** PURL type whose requirements this format carries. */
   readonly purlType: Ecosystem;
@@ -467,11 +501,11 @@ export interface ProjectFormat extends FrozenPatchFormat {
 
   /**
    * Whose workspace rules read this ecosystem's members (`package.json`
-   * `workspaces` is npm's); a host discovers them and hands them to
-   * `readFrozenLock`. `workspaceToolFor` decides per project, when its lock does.
+   * `workspaces` is npm's). A host that sees one discovers the workspace on
+   * disk and hands it to `readFrozenLock`; a format without one is installed
+   * as a single project.
    */
   readonly workspaceTool?: WorkspaceTool;
-  workspaceToolFor?(project: DetectedProject): Promise<WorkspaceTool>;
 
   /**
    * Read the native lock as a frozen install would use it: exactly the
@@ -1075,7 +1109,7 @@ function normalizeAllowedOrigin(value: string): string {
   )
     throw new ProviderError(
       'INVALID_PROVIDER_ENDPOINT',
-      `Allowed provider origin must be an HTTP(S) origin: ${value}`,
+      `Allowed provider origin must be an HTTP(S) origin: ${echoedValue(value)}`,
     );
   return url.origin;
 }
@@ -1156,13 +1190,15 @@ export function firstPartyOriginPolicy(input: {
   artifactOrigins?: readonly string[];
   extraOrigins?: readonly string[];
 }) {
-  const endpointOrigin = new URL(input.endpoint).origin;
+  const endpointOrigin = parseUntrustedUrl(input.endpoint).origin;
   const extra = input.extraOrigins ?? [];
   const allowed = input.namedOrOverride
     ? uniqueOrigins([endpointOrigin, ...extra])
     : uniqueOrigins([
         endpointOrigin,
-        ...(input.artifactOrigins ?? []).map((uri) => new URL(uri).origin),
+        ...(input.artifactOrigins ?? []).map(
+          (uri) => parseUntrustedUrl(uri).origin,
+        ),
         ...extra,
       ]);
   const pinned = input.namedOrOverride ? [endpointOrigin] : [];
@@ -1431,11 +1467,16 @@ function isLoopbackHostname(hostname: string): boolean {
 
 function parseProviderUrl(value: string, base?: URL): URL {
   try {
-    return new URL(value, base);
-  } catch {
+    return parseUntrustedUrl(value, base);
+  } catch (error) {
+    // The address is a registry's or a peer's text and the message repeats none
+    // of it. A host no DNS name could be is named as such, since it is the
+    // reason the parser was not asked.
     throw new ProviderError(
       'INVALID_PROVIDER_ENDPOINT',
-      'Provider URL is invalid',
+      error instanceof OverlongHostError
+        ? `Provider URL names a host longer than ${LONGEST_HOST_LENGTH} characters`
+        : 'Provider URL is invalid',
     );
   }
 }
@@ -1550,9 +1591,10 @@ async function readBoundedBody(
   const declared = response.headers.get('content-length');
   if (declared !== null && Number(declared) > maximumBytes) {
     await response.body?.cancel();
-    throw new ProviderError(
-      'UPSTREAM_RESPONSE_TOO_LARGE',
-      `Response exceeds ${maximumBytes} bytes`,
+    throw new ResponseTooLargeError(
+      maximumBytes,
+      Number(declared),
+      'declared',
       response.status,
     );
   }
@@ -1570,9 +1612,10 @@ async function readBoundedBody(
       if (result.done) break;
       size += result.value.byteLength;
       if (size > maximumBytes)
-        throw new ProviderError(
-          'UPSTREAM_RESPONSE_TOO_LARGE',
-          `Response exceeds ${maximumBytes} bytes`,
+        throw new ResponseTooLargeError(
+          maximumBytes,
+          size,
+          'streamed',
           response.status,
         );
       chunks.push(result.value);
@@ -1633,9 +1676,10 @@ export class FixtureHttpTransport implements HttpTransport {
       request.maximumBytes !== undefined &&
       fixture.body.byteLength > request.maximumBytes
     ) {
-      throw new ProviderError(
-        'UPSTREAM_RESPONSE_TOO_LARGE',
-        `Response exceeds ${request.maximumBytes} bytes`,
+      throw new ResponseTooLargeError(
+        request.maximumBytes,
+        fixture.body.byteLength,
+        'delivered',
       );
     }
     return { ...fixture, url: 'url' in fixture ? fixture.url : request.url };
@@ -1657,7 +1701,7 @@ const decode = (value: string): string => {
   } catch {
     throw new ProviderError(
       'INVALID_PURL',
-      `Invalid percent encoding: ${value}`,
+      `Invalid percent encoding: ${echoed(value)}`,
     );
   }
 };
@@ -1706,9 +1750,8 @@ export function parsePurl(value: string): ParsedPurl {
     throw new ProviderError('INVALID_PURL', 'PURL requires a type and name');
   const type = identity.slice(0, slash).toLowerCase();
   const pathAndVersion = identity.slice(slash + 1);
-  const at = pathAndVersion.lastIndexOf('@');
-  const path = at < 0 ? pathAndVersion : pathAndVersion.slice(0, at);
-  const version = at < 0 ? undefined : decode(pathAndVersion.slice(at + 1));
+  const { path, version: encoded } = splitPurlVersion(pathAndVersion);
+  const version = encoded === undefined ? undefined : decode(encoded);
   const segments = path.split('/');
   if (segments.some((segment) => segment.length === 0))
     throw new ProviderError('INVALID_PURL', 'PURL path has an empty segment');
@@ -1718,10 +1761,16 @@ export function parsePurl(value: string): ParsedPurl {
   for (const pair of queryText === '' ? [] : queryText.split('&')) {
     const separator = pair.indexOf('=');
     if (separator <= 0)
-      throw new ProviderError('INVALID_PURL', `Invalid qualifier: ${pair}`);
+      throw new ProviderError(
+        'INVALID_PURL',
+        `Invalid qualifier: ${echoed(pair)}`,
+      );
     const key = decode(pair.slice(0, separator)).toLowerCase();
     if (key in qualifiers)
-      throw new ProviderError('INVALID_PURL', `Duplicate qualifier: ${key}`);
+      throw new ProviderError(
+        'INVALID_PURL',
+        `Duplicate qualifier: ${echoed(key)}`,
+      );
     qualifiers[key] = decode(pair.slice(separator + 1));
   }
   const result: ParsedPurl = { type, name: decode(namePart), qualifiers };
@@ -1740,7 +1789,7 @@ export function assertPackageIdentityMatchesRequest(
   if (!identity.exactPurl)
     throw new ProviderError(
       'INVALID_PROVIDER_METADATA',
-      `Provider returned no exact identity for ${requestedPurl}`,
+      `Provider returned no exact identity for ${echoed(requestedPurl)}`,
     );
   const requested = parsePurl(requestedPurl);
   const actual = parsePurl(identity.exactPurl);
@@ -1752,7 +1801,7 @@ export function assertPackageIdentityMatchesRequest(
   )
     throw new ProviderError(
       'INVALID_PROVIDER_METADATA',
-      `Provider identity ${identity.exactPurl} does not match ${requestedPurl}`,
+      `Provider identity ${echoed(identity.exactPurl)} does not match ${echoed(requestedPurl)}`,
     );
 }
 
@@ -1793,7 +1842,7 @@ export function parseSemver(
   if (!match)
     throw new ProviderError(
       'INVALID_NATIVE_VERSION',
-      `Invalid version: ${value}`,
+      `Invalid version: ${echoed(value)}`,
     );
   const present = match
     .slice(1, 5)
@@ -1801,7 +1850,7 @@ export function parseSemver(
   if (present.length > maximumReleaseParts)
     throw new ProviderError(
       'INVALID_NATIVE_VERSION',
-      `Too many release components: ${value}`,
+      `Too many release components: ${echoed(value)}`,
     );
   const release = present.map(Number);
   while (release.length < maximumReleaseParts) release.push(0);
@@ -1912,7 +1961,6 @@ export function evaluateSemverRange(
   return acceptsPrerelease(ast);
 }
 
-/** How a range is read; an `npm` one is node-semver's, whatever the rest says. */
 export interface SemverRangeOptions {
   scheme: 'npm' | 'cargo' | 'golang';
   bare: 'exact' | 'caret';
@@ -1976,7 +2024,7 @@ function parseRangeToken(
   if (!operatorMatch)
     throw new ProviderError(
       'INVALID_NATIVE_RANGE',
-      `Invalid range token: ${token}`,
+      `Invalid range token: ${echoed(token)}`,
     );
   const operator = operatorMatch[1] ?? '';
   const rawVersion = operatorMatch[2]!.trim();
@@ -1994,7 +2042,7 @@ function parseRangeToken(
         if (!/^\d+$/.test(part))
           throw new ProviderError(
             'INVALID_NATIVE_RANGE',
-            `Invalid partial version: ${rawVersion}`,
+            `Invalid partial version: ${echoed(rawVersion)}`,
           );
         return Number(part);
       });
@@ -2047,8 +2095,16 @@ function astVers(ast: RangeAst): string | undefined {
   return parts.some((part) => part === undefined) ? undefined : parts.join('|');
 }
 
-/** A cargo or Go range, by the reader those schemes share. */
-function sharedAst(value: string, options: SemverRangeOptions): RangeAst {
+export function parseSemverRange(
+  value: string,
+  options: SemverRangeOptions,
+): ParsedRange {
+  if (value.length > 4096)
+    throw new ProviderError(
+      'INVALID_NATIVE_RANGE',
+      'Native range exceeds 4096 characters',
+    );
+  const original = value;
   let normalizedInput = value.trim();
   if (normalizedInput === '' || normalizedInput === '*') normalizedInput = '*';
   if (options.hyphenRanges) {
@@ -2081,23 +2137,10 @@ function sharedAst(value: string, options: SemverRangeOptions): RangeAst {
       tokens.flatMap((token) => parseRangeToken(token, options)),
     );
   });
-  return alternatives.length === 1
-    ? alternatives[0]!
-    : { type: 'or', items: alternatives };
-}
-
-export function parseSemverRange(
-  value: string,
-  options: SemverRangeOptions,
-): ParsedRange {
-  if (value.length > 4096)
-    throw new ProviderError(
-      'INVALID_NATIVE_RANGE',
-      'Native range exceeds 4096 characters',
-    );
-  const original = value;
-  const ast =
-    options.scheme === 'npm' ? npmAst(value) : sharedAst(value, options);
+  const ast: RangeAst =
+    alternatives.length === 1
+      ? alternatives[0]!
+      : { type: 'or', items: alternatives };
   const versBody = exactlyRepresentableSemverRange(ast)
     ? astVers(ast)
     : undefined;
@@ -2147,7 +2190,7 @@ function parseVersExpression(expression: string): RangeAst {
       if (!match?.[1] || !match[2])
         throw new ProviderError(
           'INVALID_VERS',
-          `Invalid VERS clause: ${clause}`,
+          `Invalid VERS clause: ${echoed(clause)}`,
         );
       return {
         type: 'comparison' as const,
@@ -2234,15 +2277,69 @@ export function text(response: HttpResponse): string {
   return new TextDecoder('utf-8', { fatal: true }).decode(response.body);
 }
 
-export function json<T>(response: HttpResponse): T {
+/** How deep, and how many values, a metadata document may hold by default. */
+const DEFAULT_MAXIMUM_DEPTH = 64;
+const DEFAULT_MAXIMUM_VALUES = 200_000;
+
+/**
+ * The shape a metadata document may have once parsed. The defaults suit the
+ * small documents most registries serve; a registry whose documents are
+ * legitimately large (an npm packument lists every version ever published)
+ * states its own, derived from the byte limit it reads under.
+ */
+export interface ProviderMetadataLimits {
+  maximumDepth?: number;
+  maximumNodes?: number;
+}
+
+/**
+ * The largest metadata document any adapter reads, in bytes, and so the
+ * largest one a resolve keeps in memory to read once. An adapter's own bound
+ * may be lower; none may be higher, or the resolve stops keeping what it reads
+ * and fetches it again. Artifact downloads have their own, larger bound.
+ */
+export const MAXIMUM_METADATA_BYTES = 64 * 1024 * 1024;
+
+/**
+ * The least a parsed metadata value may weigh, in bytes of the document it came
+ * from. A document denser than this (`[1,1,1,...]` is two bytes a value) costs
+ * far more to hold than its size says, so the number of values allowed is the
+ * byte limit divided by this, never a number of its own.
+ */
+export const MINIMUM_BYTES_PER_METADATA_VALUE = 16;
+
+/** How many values a document read under `maximumBytes` may hold. */
+export function metadataValueLimit(maximumBytes: number): number {
+  return Math.floor(maximumBytes / MINIMUM_BYTES_PER_METADATA_VALUE);
+}
+
+export function json<T>(
+  response: HttpResponse,
+  limits: ProviderMetadataLimits = {},
+): T {
   if (response.status < 200 || response.status >= 300)
     throw providerErrorForStatus(response.status);
+  // Decoding is inside the try: a body that is not UTF-8 is a refused document
+  // like any other, and `text` throws a bare TypeError for it.
+  let document = '';
   try {
+    document = text(response);
+    // The limits stop the parse itself: counting values after the tree is built
+    // spends the memory the limit exists to protect.
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    const value = parseCanonicalJson(text(response)) as T;
-    assertBoundedProviderMetadata(value);
-    return value;
+    return parseCanonicalJson(document, {
+      maximumValues: limits.maximumNodes ?? DEFAULT_MAXIMUM_VALUES,
+      maximumDepth: limits.maximumDepth ?? DEFAULT_MAXIMUM_DEPTH,
+    }) as T;
   } catch (error) {
+    if (error instanceof CanonicalJsonLimitError)
+      throw new MetadataLimitError(
+        error.limit,
+        error.maximum,
+        error.visited,
+        error.offset,
+        document.length,
+      );
     throw new ProviderError(
       'INVALID_PROVIDER_METADATA',
       error instanceof Error ? error.message : 'Invalid JSON',
@@ -2252,8 +2349,8 @@ export function json<T>(response: HttpResponse): T {
 
 export function assertBoundedProviderMetadata(
   value: unknown,
-  maximumDepth = 64,
-  maximumNodes = 200_000,
+  maximumDepth = DEFAULT_MAXIMUM_DEPTH,
+  maximumNodes = DEFAULT_MAXIMUM_VALUES,
 ): void {
   const pending: { value: unknown; depth: number }[] = [{ value, depth: 0 }];
   let nodes = 0;
@@ -2308,7 +2405,7 @@ export async function verifyNativeDigest(
   if (webAlgorithm === undefined)
     throw new ProviderError(
       'INVALID_PROVIDER_METADATA',
-      `Unsupported native digest algorithm: ${algorithm}`,
+      `Unsupported native digest algorithm: ${echoed(algorithm)}`,
     );
   const digest = new Uint8Array(
     await crypto.subtle.digest(webAlgorithm, Uint8Array.from(bytes).buffer),

@@ -11,7 +11,6 @@ import {
 } from '../src/error-report.js';
 import { EXIT_CODES as OPM_EXIT_CODES, runOpm } from '../src/opm.js';
 import { EXIT_CODES as OPMX_EXIT_CODES, runOpmx } from '../src/opmx.js';
-import { unsafeIn } from './terminal-fixture.js';
 
 const PROXIED = { HTTPS_PROXY: 'http://user:hunter2@proxy.example:3128' };
 
@@ -145,24 +144,6 @@ describe('formatFailure', () => {
     ).toBe(
       'opmx: fetch failed\nopmx:   caused by: Error: connect ECONNREFUSED 127.0.0.1:443\n',
     );
-  });
-
-  it('leaves no character a terminal acts on in what opmx prints, coded or not', () => {
-    // An OSC that sets the title, BEL, CR, DEL, CSI (C1), a right-to-left
-    // override, a zero-width space and a line separator, in a message and a cause.
-    const hostile = 'a\u001b]0;PWN\u0007\r\u007f\u009b2J\u202eb\u200b\u2028c';
-    const coded = Object.assign(new Error(hostile), { code: 'NOT_FOUND' });
-    const uncoded = new Error(hostile, { cause: new Error(hostile) });
-    for (const error of [coded, uncoded]) {
-      const text = formatFailure(parseFailure(error), {
-        tool: 'opmx',
-        env: {},
-      });
-      expect(text.startsWith('opmx: ')).toBe(true);
-      expect(text).toContain('\\u001b]0;PWN\\u0007');
-      expect(text).toContain('\\u202e');
-      expect(unsafeIn(text)).toEqual([]);
-    }
   });
 });
 

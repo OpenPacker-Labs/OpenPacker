@@ -29,9 +29,6 @@ import { readFrozenPackageLock } from './frozen-lock.js';
 import { layoutLoss } from './layout-loss.js';
 import { planLayout, toLayoutEntries } from './layout-plan.js';
 import { writeNodeModules } from './layout-write.js';
-import { chooseProjectLock } from './lock-choice.js';
-import { readFrozenPnpmLock } from './pnpm-install/frozen.js';
-import { applyPnpmPatch } from './pnpm-patch/index.js';
 import { integrityLoss, scopeLoss } from './project-losses.js';
 import { packNpmProject } from './project-pack.js';
 import { purlForName } from './purl.js';
@@ -72,8 +69,6 @@ export class NpmProjectFormat implements ProjectFormat {
   readonly purlType = 'npm' as const;
   /** `package.json` `workspaces` is npm's: a frozen install reads members the way npm does. */
   readonly workspaceTool = 'npm' as const;
-  /** A pnpm lock's `patchedDependencies`, applied as pnpm 10.28 applies them. */
-  readonly applyFrozenPatch = applyPnpmPatch;
 
   async detect(root: string): Promise<DetectedProject | undefined> {
     const manifestPath = join(root, 'package.json');
@@ -325,19 +320,11 @@ export class NpmProjectFormat implements ProjectFormat {
    * `package-lock.json` as `npm ci` reads it: what this machine installs, what
    * it leaves out, and what the lock holds that cannot be installed.
    */
-  async readFrozenLock(
+  readFrozenLock(
     project: DetectedProject,
     options: FrozenLockOptions,
   ): Promise<FrozenLock> {
-    const choice = await chooseProjectLock(project);
-    return choice.kind === 'pnpm'
-      ? readFrozenPnpmLock(project, options, choice.path)
-      : readFrozenPackageLock(project, options);
-  }
-
-  /** A pnpm project's members are `pnpm-workspace.yaml`'s; an npm project's are `package.json`'s. */
-  async workspaceToolFor(project: DetectedProject): Promise<'npm' | 'pnpm'> {
-    return (await chooseProjectLock(project)).kind;
+    return readFrozenPackageLock(project, options);
   }
 
   /**

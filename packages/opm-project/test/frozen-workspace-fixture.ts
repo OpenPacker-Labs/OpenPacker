@@ -36,7 +36,7 @@ export async function cleanup(): Promise<void> {
   );
 }
 
-export const ORIGIN = 'https://registry.npmjs.org';
+const ORIGIN = 'https://registry.npmjs.org';
 
 export interface Pkg {
   name: string;
@@ -45,7 +45,7 @@ export interface Pkg {
   manifest?: Record<string, unknown>;
 }
 
-export function tarballOf(pkg: Pkg): Uint8Array {
+function tarballOf(pkg: Pkg): Uint8Array {
   const files: Record<string, string> = {
     'package.json': JSON.stringify({
       name: pkg.name,
@@ -65,7 +65,7 @@ export function tarballOf(pkg: Pkg): Uint8Array {
   );
 }
 
-export class FakeRegistry implements HttpTransport {
+class FakeRegistry implements HttpTransport {
   readonly requests: string[] = [];
   readonly archives = new Map<string, Uint8Array>();
   async request(request: HttpRequest): Promise<HttpResponse> {
@@ -80,7 +80,7 @@ export class FakeRegistry implements HttpTransport {
   }
 }
 
-export const sri = (bytes: Uint8Array) =>
+const sri = (bytes: Uint8Array) =>
   `sha512-${createHash('sha512').update(bytes).digest('base64')}`;
 
 /** A workspace on disk, its lock, and a registry that serves the lock's packages. */

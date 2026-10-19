@@ -17,7 +17,7 @@
  * prefix. What a member holds back is then its block (up to the group limit)
  * and at most one unfinished line per stream.
  */
-import { terminalSafe } from '@openpacker/adapter-core';
+import { outRaw, plainLine } from '@openpacker/canonical';
 import type { ChildIo } from './run-child.js';
 
 export const GROUP_LIMIT = 8 * 1024 * 1024;
@@ -28,15 +28,6 @@ export const LINE_LIMIT = 64 * 1024;
 export type OutputMode = 'group' | 'stream';
 
 type Stream = 'stdout' | 'stderr';
-
-/**
- * `text` as one line of plain text: what a terminal may act on written as an
- * escape, and the line feed and tab `terminalSafe` leaves alone too, so that a
- * directory name cannot make a line of its own.
- */
-function oneLine(text: string): string {
-  return terminalSafe(text).replaceAll('\n', '\\n').replaceAll('\t', '\\t');
-}
 
 /** Where to cut `text` at `limit`: never between the two halves of a surrogate pair. */
 function cutAt(text: string, limit: number): number {
@@ -120,7 +111,7 @@ export class MemberOutput {
   /** The streams for one step of the member (`build`, `prebuild`, `tsc`). */
   step(name: string): ChildIo {
     this.endLines();
-    this.prefix = oneLine(`${this.label} ${name}: `);
+    this.prefix = `${this.label} ${plainLine(name)}: `;
     return {
       stdout: { write: (chunk) => this.take('stdout', String(chunk)) },
       stderr: { write: (chunk) => this.take('stderr', String(chunk)) },
@@ -140,7 +131,7 @@ export class MemberOutput {
   private write(stream: Stream, line: string): void {
     const text = `${this.prefix}${line}\n`;
     if (this.streaming) {
-      this.out[stream].write(text);
+      this.emit(stream, text);
       return;
     }
     this.held.push({ stream, text });
@@ -152,9 +143,18 @@ export class MemberOutput {
   }
 
   private flush(): void {
-    for (const { stream, text } of this.held.splice(0))
-      this.out[stream].write(text);
+    for (const { stream, text } of this.held.splice(0)) this.emit(stream, text);
     this.heldBytes = 0;
+  }
+
+  /**
+   * A line of the member's own output after its prefix: the prefix is opm's and
+   * one plain line (`memberLabel`, `step`), the rest is what the child wrote, as
+   * a single run passes it through (`run-child.ts`).
+   */
+  private emit(stream: Stream, text: string): void {
+    if (stream === 'stdout') outRaw(this.out, text);
+    else this.out.stderr.write(text);
   }
 
   /** The member has ended: finish the last lines and write what is held. */
@@ -164,10 +164,15 @@ export class MemberOutput {
   }
 }
 
-/** The label a member is shown by: its name, else its directory (`.` for the root). */
+/**
+ * The label a member is shown by: its name, else its directory (`.` for the
+ * root). A directory is named by whoever made the repository, and the label
+ * starts every line of the member's output and names it in every message, so it
+ * is one plain line.
+ */
 export function memberLabel(member: {
   name: string | undefined;
   dir: string;
 }): string {
-  return member.name ?? (member.dir === '' ? '.' : member.dir);
+  return plainLine(member.name ?? (member.dir === '' ? '.' : member.dir));
 }

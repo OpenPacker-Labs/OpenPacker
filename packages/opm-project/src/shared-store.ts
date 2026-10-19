@@ -24,17 +24,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import {
-  chmod,
-  copyFile,
-  link,
-  lstat,
-  mkdir,
-  rename,
-  rm,
-  unlink,
-} from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { lstat, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   descriptorForBytes,
@@ -46,19 +36,23 @@ import {
   type ArchiveFormat,
   type MaterializationLimits,
 } from '@openpacker/materializer';
-import { assertHandleSegment, StableHandleError } from '@openpacker/project-io';
 import { stableStoreTreeDigest } from './generations.js';
-import { readTreeRecord, recordTreeDigest } from './shared-store-record.js';
+import { holdSharedStore } from './shared-store-lease.js';
 import { OpmError } from './types.js';
 import {
   assertDigest,
   ensureStableDirectory,
-  openChild,
-  openStableDirectory,
-  readDirChildWithTypes,
+  readStableFile,
   removeStableTree,
   storeKeyFromDigest,
+  writeStableFile,
 } from './paths.js';
+import {
+  assertNoFollowTree,
+  hardlinkFile,
+  linkTree,
+  sealTreeReadOnly,
+} from './shared-store-tree.js';
 
 import {
   enableDefaultSharedStore,
@@ -67,6 +61,11 @@ import {
 } from './shared-store-root.js';
 
 export { enableDefaultSharedStore, sharedStoreRoot, usableSharedRoot };
+export {
+  assertEntryName,
+  isolateProjectStoreFromSharedLinks,
+  sealTreeReadOnly,
+} from './shared-store-tree.js';
 
 export async function materializeThroughSharedStore(input: {
   digest: string;
@@ -98,111 +97,55 @@ export async function materializeThroughSharedStore(input: {
     return { path: projectStorePath, shared: false };
   }
 
-  // A concurrent `opm gc --shared` can unpublish an entry between publishing
-  // it and linking from it. That is a retry, not a failure.
-  for (let attempt = 0; ; attempt += 1) {
-    const published = await publishSharedEntry({
-      sharedRoot,
-      digest,
-      format,
-      bytes: input.bytes,
-      ...(input.limits !== undefined && { limits: input.limits }),
-    });
-    try {
-      await linkTree(published.path, projectStorePath, linkFile);
-      const projectDigest = await stableStoreTreeDigest(projectStorePath);
-      if (projectDigest !== published.treeDigest)
-        throw new OpmError(
-          'VERIFICATION_FAILED',
-          `Project store tree for ${digest} does not match the shared entry`,
+  // The claim keeps `opm gc --shared` away from the entry until this project's
+  // links hold it (ADR 0048, amendment 2026-10-17). A remover that does not
+  // honour claims can still unpublish it between publishing and linking: that
+  // is published again, once.
+  const hold = await holdSharedStore(sharedRoot);
+  try {
+    await hold.claim(storeKeyFromDigest(digest));
+    for (let attempt = 0; ; attempt += 1) {
+      const published = await publishSharedEntry({
+        sharedRoot,
+        digest,
+        format,
+        bytes: input.bytes,
+        ...(input.limits !== undefined && { limits: input.limits }),
+      });
+      try {
+        await linkTree(published.path, projectStorePath, linkFile);
+        const projectDigest = await stableStoreTreeDigest(projectStorePath);
+        if (projectDigest !== published.treeDigest)
+          throw new OpmError(
+            'VERIFICATION_FAILED',
+            `Project store tree for ${digest} does not match the shared entry`,
+          );
+        return {
+          path: projectStorePath,
+          shared: true,
+          treeDigest: published.treeDigest,
+        };
+      } catch (error) {
+        await rm(projectStorePath, { recursive: true, force: true }).catch(
+          () => undefined,
         );
-      return {
-        path: projectStorePath,
-        shared: true,
-        treeDigest: published.treeDigest,
-      };
-    } catch (error) {
-      await rm(projectStorePath, { recursive: true, force: true }).catch(
-        () => undefined,
-      );
-      if (attempt === 0 && isMissing(error)) continue;
-      throw error;
+        if (!isMissing(error)) throw error;
+        if (attempt === 0) continue;
+        throw new OpmError(
+          'STORE_ENTRY_VANISHED',
+          `The shared store entry ${published.path} was removed again while it was linked into ${projectStorePath}`,
+          { cause: error },
+        );
+      }
     }
+  } finally {
+    await hold.release();
   }
 }
 
 function isMissing(error: unknown): boolean {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   return (error as NodeJS.ErrnoException).code === 'ENOENT';
-}
-
-/**
- * Break hardlinks in a project store tree so later writes (lifecycle scripts)
- * cannot mutate the shared CAS inodes they were linked from. The copies are
- * writable: the point is that the script may write to them.
- */
-export async function isolateProjectStoreFromSharedLinks(
-  projectStorePath: string,
-): Promise<void> {
-  await isolateEntries(projectStorePath);
-}
-
-async function isolateEntries(root: string): Promise<void> {
-  const handle = await openStableDirectory(root);
-  try {
-    const entries = await readDirChildWithTypes(handle);
-    for (const entry of entries) {
-      assertEntryName(entry.name);
-      const path = join(root, entry.name);
-      if (entry.isSymbolicLink())
-        throw new OpmError(
-          'UNSAFE_PATH',
-          `Project store entry is a symbolic link: ${path}`,
-        );
-      if (entry.isDirectory()) {
-        await isolateEntries(path);
-        continue;
-      }
-      if (!entry.isFile())
-        throw new OpmError(
-          'UNSAFE_PATH',
-          `Project store entry is not a regular file: ${path}`,
-        );
-      const info = await lstat(path);
-      if (info.nlink <= 1) continue;
-      const tmp = `${path}.copy-${randomUUID()}`;
-      try {
-        await copyFile(path, tmp);
-        await chmod(tmp, (info.mode & 0o777) | 0o200);
-        await unlink(path);
-        await rename(tmp, path);
-      } catch (error) {
-        await rm(tmp, { force: true }).catch(() => undefined);
-        throw error;
-      }
-    }
-  } finally {
-    await handle.close();
-  }
-}
-
-/**
- * A name inside a package tree.
- *
- * The materializer already refused everything unsafe about an archive's paths
- * (traversal, absolute paths, Windows device names, links), and every access
- * below goes through an open directory handle, so what is checked here is only
- * that a name is one path segment. A package may legitimately ship `[id].js`,
- * `+page.svelte` or `README (copy).md`.
- */
-export function assertEntryName(name: string): void {
-  try {
-    assertHandleSegment(name);
-  } catch (error) {
-    if (error instanceof StableHandleError)
-      throw new OpmError('UNSAFE_PATH', `Invalid store entry "${name}"`);
-    throw error;
-  }
 }
 
 /**
@@ -284,6 +227,29 @@ export async function adoptSharedEntry(
   return treeDigest === undefined ? undefined : { path, treeDigest };
 }
 
+/**
+ * Write the digest an entry's tree must hash to.
+ *
+ * Two installs publishing the same package write the same bytes here, and the
+ * second one's atomic replace finds a different inode than it wrote. Same
+ * content is not a conflict; different content is.
+ */
+async function recordTreeDigest(
+  sharedPath: string,
+  treeDigest: string,
+): Promise<void> {
+  const record = `${treeDigest}\n`;
+  try {
+    await writeStableFile(`${sharedPath}.tree`, record);
+  } catch (error) {
+    if (
+      !(error instanceof OpmError && error.code === 'INPUT_CHANGED') ||
+      (await readStableFile(`${sharedPath}.tree`).catch(() => '')) !== record
+    )
+      throw error;
+  }
+}
+
 /** The recorded tree digest of an entry that is there and intact, else undefined. */
 async function adoptExistingEntry(
   sharedPath: string,
@@ -316,13 +282,14 @@ async function adoptExistingEntry(
 async function readRecordedTreeDigest(sharedPath: string): Promise<string> {
   let text: string;
   try {
-    text = await readTreeRecord(`${sharedPath}.tree`);
+    text = await readStableFile(`${sharedPath}.tree`);
   } catch (error) {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
       throw new OpmError(
         'VERIFICATION_FAILED',
-        `Shared store entry is missing its tree digest: ${sharedPath}`,
+        `Shared store entry is missing its tree digest: ${sharedPath}; ` +
+          `remove ${sharedPath} and run the command again`,
       );
     throw error;
   }
@@ -399,169 +366,5 @@ function mediaTypeForFormat(format: ArchiveFormat): string {
       return 'application/gzip';
     case 'zip':
       return 'application/zip';
-  }
-}
-
-async function hardlinkFile(
-  existingPath: string,
-  newPath: string,
-): Promise<void> {
-  await link(existingPath, newPath);
-}
-
-async function linkTree(
-  source: string,
-  destination: string,
-  linkFile: (existingPath: string, newPath: string) => Promise<void>,
-): Promise<void> {
-  await ensureStableDirectory(dirname(destination));
-  await mkdir(destination);
-  const handle = await openStableDirectory(source);
-  try {
-    await linkEntries(source, destination, linkFile);
-  } finally {
-    await handle.close();
-  }
-}
-
-async function linkEntries(
-  source: string,
-  destination: string,
-  linkFile: (existingPath: string, newPath: string) => Promise<void>,
-): Promise<void> {
-  const handle = await openStableDirectory(source);
-  try {
-    const entries = await readDirChildWithTypes(handle);
-    for (const entry of entries) {
-      assertEntryName(entry.name);
-      const from = join(source, entry.name);
-      const to = join(destination, entry.name);
-      if (entry.isSymbolicLink())
-        throw new OpmError(
-          'UNSAFE_PATH',
-          `Shared store entry is a symbolic link: ${from}`,
-        );
-      if (entry.isDirectory()) {
-        await mkdir(to);
-        await linkEntries(from, to, linkFile);
-        continue;
-      }
-      if (!entry.isFile())
-        throw new OpmError(
-          'UNSAFE_PATH',
-          `Shared store entry is not a regular file: ${from}`,
-        );
-      await publishFile(from, to, linkFile);
-    }
-  } finally {
-    await handle.close();
-  }
-}
-
-async function publishFile(
-  from: string,
-  to: string,
-  linkFile: (existingPath: string, newPath: string) => Promise<void>,
-): Promise<void> {
-  try {
-    await linkFile(from, to);
-  } catch (error) {
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
-    await copyFile(from, to);
-    const mode = (await lstat(from)).mode;
-    // A copy is the project's own file, so it stays writable.
-    await chmod(to, (mode & 0o777) | 0o200);
-  }
-}
-
-async function assertNoFollowTree(root: string): Promise<void> {
-  const handle = await openStableDirectory(root);
-  try {
-    await assertNoFollowEntries(root);
-  } catch (error) {
-    if (
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      (error as NodeJS.ErrnoException).code === 'ELOOP' ||
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      (error as NodeJS.ErrnoException).code === 'ENOTDIR'
-    )
-      throw new OpmError(
-        'UNSAFE_PATH',
-        `Shared store entry is linked or unstable: ${root}`,
-      );
-    throw error;
-  } finally {
-    await handle.close();
-  }
-}
-
-async function assertNoFollowEntries(root: string): Promise<void> {
-  const handle = await openStableDirectory(root);
-  try {
-    const entries = await readDirChildWithTypes(handle);
-    for (const entry of entries) {
-      assertEntryName(entry.name);
-      const child = join(root, entry.name);
-      if (entry.isSymbolicLink())
-        throw new OpmError(
-          'UNSAFE_PATH',
-          `Shared store entry is a symbolic link: ${child}`,
-        );
-      if (entry.isDirectory()) {
-        await assertNoFollowEntries(child);
-        continue;
-      }
-      if (!entry.isFile())
-        throw new OpmError(
-          'UNSAFE_PATH',
-          `Shared store entry is not a regular file: ${child}`,
-        );
-      const file = await lstat(child);
-      if (file.isSymbolicLink() || !file.isFile())
-        throw new OpmError(
-          'UNSAFE_PATH',
-          `Shared store entry is linked or not a regular file: ${child}`,
-        );
-    }
-  } finally {
-    await handle.close();
-  }
-}
-
-/**
- * Drop the write bits of every file in a tree (POSIX).
- *
- * Every project's `node_modules` file is one of these inodes, so an editor or
- * script that writes one in place would change them all. A read-only file
- * turns that into an error for the person who tried. It is a guard, not a
- * boundary — the owner can still `chmod` — and the digest re-check on
- * adoption is what actually catches a file that was changed anyway.
- */
-export async function sealTreeReadOnly(root: string): Promise<void> {
-  if (process.platform === 'win32') return;
-  const handle = await openStableDirectory(root);
-  try {
-    for (const entry of await readDirChildWithTypes(handle)) {
-      assertEntryName(entry.name);
-      if (entry.isDirectory()) {
-        await sealTreeReadOnly(join(root, entry.name));
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      const file = await openChild(
-        handle,
-        entry.name,
-        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-      );
-      try {
-        const info = await file.stat();
-        await file.chmod(info.mode & 0o555);
-      } finally {
-        await file.close();
-      }
-    }
-  } finally {
-    await handle.close();
   }
 }

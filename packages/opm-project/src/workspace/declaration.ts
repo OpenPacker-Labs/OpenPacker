@@ -1,10 +1,6 @@
 import type { JsonValue } from '@openpacker/contracts';
-import {
-  quote,
-  WorkspaceError,
-  type WorkspaceLimits,
-} from '@openpacker/adapter-core';
-import { Lexer, Parser, isMap, isScalar, isSeq, parseDocument } from 'yaml';
+import { WorkspaceError, type WorkspaceLimits } from '@openpacker/adapter-core';
+import { parseDocument } from 'yaml';
 
 /** What `pnpm-workspace.yaml` says that the workspace model uses. */
 export interface PnpmDeclaration {
@@ -28,72 +24,6 @@ function invalid(problem: string): WorkspaceError {
   );
 }
 
-/** Deeper than any real declaration nests; `[` a megabyte long is refused here. */
-const MAXIMUM_NESTING = 64;
-
-/**
- * Refuse text that nests deeper than {@link MAXIMUM_NESTING}, watching the
- * parser's stack as the lexemes arrive, before a document is built: a megabyte
- * of `[` otherwise costs a second and close to a gigabyte to compose.
- */
-function checkNesting(text: string): void {
-  const parser = new Parser();
-  for (const lexeme of new Lexer().lex(text)) {
-    // The tokens are not kept; walking the generator is what moves the parser.
-    for (const token of parser.next(lexeme)) void token;
-    if (parser.stack.length > MAXIMUM_NESTING)
-      throw invalid(`nests deeper than ${MAXIMUM_NESTING} levels`);
-  }
-}
-
-/**
- * The library's options. Its own repeated-key check (`uniqueKeys`) compares
- * each key with every earlier one (40,000 catalog entries took 13 s), so it is
- * off, and `firstRepeatedKey` finds a repeat by one lookup per key.
- */
-export const DOCUMENT_OPTIONS = {
-  version: '1.2',
-  uniqueKeys: false,
-  prettyErrors: false,
-  logLevel: 'error',
-} as const;
-
-/** Counts the keys looked up, for the tests that hold a read to linear work. */
-export interface DeclarationMeter {
-  keyLookups: number;
-}
-
-/**
- * The first key a mapping repeats, anywhere in the tree, by its scalar value as
- * text. The YAML spec tells `1` (an integer) from `"1"` (a string); pnpm does
- * not, as its reader keys an object by text and refuses the second as a
- * duplicated mapping key (pnpm 10.28 on `1: ^1` beside `"1": ^2`), so neither
- * does this.
- */
-function firstRepeatedKey(
-  node: unknown,
-  meter: DeclarationMeter,
-): string | undefined {
-  if (isSeq(node))
-    for (const item of node.items) {
-      const found = firstRepeatedKey(item, meter);
-      if (found !== undefined) return found;
-    }
-  if (!isMap(node)) return undefined;
-  const seen = new Set<string>();
-  for (const pair of node.items) {
-    if (isScalar(pair.key)) {
-      const key = String(pair.key.value);
-      meter.keyLookups += 1;
-      if (seen.has(key)) return key;
-      seen.add(key);
-    }
-    const found = firstRepeatedKey(pair.value, meter);
-    if (found !== undefined) return found;
-  }
-  return undefined;
-}
-
 /**
  * Read `pnpm-workspace.yaml`. A document that is not one YAML mapping, that
  * repeats a key, or whose `packages` is not a list of strings is refused;
@@ -103,21 +33,15 @@ function firstRepeatedKey(
 export function parsePnpmWorkspaceYaml(
   text: string,
   limits: WorkspaceLimits,
-  meter: DeclarationMeter = { keyLookups: 0 },
 ): PnpmDeclaration {
-  checkNesting(text);
-  const document = parseDocument(text, DOCUMENT_OPTIONS);
+  const document = parseDocument(text, {
+    version: '1.2',
+    uniqueKeys: true,
+    prettyErrors: false,
+  });
   const failure = document.errors[0];
   if (failure !== undefined)
     throw invalid(`is not valid YAML: ${failure.message.split('\n')[0]}`);
-  const warning = document.warnings[0];
-  if (warning !== undefined)
-    throw invalid(`is not read: ${warning.message.split('\n')[0]}`);
-  const repeated = firstRepeatedKey(document.contents, meter);
-  if (repeated !== undefined)
-    throw invalid(
-      `has the duplicate key ${quote(repeated)} in one mapping (a key is compared as text, as pnpm compares it, so 1 and "1" are one key)`,
-    );
   let value: JsonValue;
   try {
     value = document.toJS({ maxAliasCount: 64 }) ?? null;

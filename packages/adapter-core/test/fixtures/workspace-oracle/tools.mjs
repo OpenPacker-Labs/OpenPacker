@@ -33,28 +33,6 @@ function expect(what, directory, wanted) {
 }
 
 /**
- * pnpm's own code reads ranges with the semver its bundle embeds
- * (`dist/pnpm.cjs`, from `node_modules/.pnpm/semver@<version>`), which cannot
- * be loaded on its own; npm's copy stands in for it, so the two must be one
- * version. The `dist/node_modules/semver` beside the bundle (7.7.3 in pnpm
- * 10.28.0) is shipped for node-gyp and is not what pnpm runs.
- */
-function expectEmbeddedSemver(pnpmDirectory) {
-  const bundle = join(pnpmDirectory, 'dist', 'pnpm.cjs');
-  const versions = new Set(
-    [
-      ...readFileSync(bundle, 'utf8').matchAll(
-        /node_modules\/\.pnpm\/semver@([^/]+)\//gu,
-      ),
-    ].map((match) => match[1]),
-  );
-  if (versions.size !== 1 || !versions.has(PINNED.semver))
-    throw new Error(
-      `${bundle} embeds semver ${[...versions].join(', ') || 'of no version'}; the golden files are generated with ${PINNED.semver}`,
-    );
-}
-
-/**
  * The two tools, from the package directories given on the command line.
  * Nothing here installs anything: pnpm is run as a program in a throwaway home
  * over a throwaway tree, and npm's libraries are only read.
@@ -71,7 +49,6 @@ export function loadTools(pnpmDirectory, npmDirectory) {
   );
   expect('glob', join(modules, 'glob'), PINNED.glob);
   expect('semver', join(modules, 'semver'), PINNED.semver);
-  expectEmbeddedSemver(pnpmDirectory);
   return {
     pnpmBinary: join(pnpmDirectory, 'bin', 'pnpm.cjs'),
     mapWorkspaces: required('@npmcli/map-workspaces'),

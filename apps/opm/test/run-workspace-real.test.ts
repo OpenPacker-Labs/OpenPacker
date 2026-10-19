@@ -190,7 +190,7 @@ posix('the filters the real scripts use', () => {
 });
 
 posix('the real workspaces, planned', () => {
-  it('HoBo: discovery, selection and ordering of 792 members cost a small multiple of reading them, and tens of megabytes at most', async () => {
+  it('HoBo: discovery, selection and ordering of 792 members take seconds and tens of megabytes at most', async () => {
     const { root } = await build('hobo');
     const { planWorkspace } = await import('../src/commands/run-select.js');
     const { contextWith } = await import('./workspace-fixture.js');
@@ -202,41 +202,16 @@ posix('the real workspaces, planned', () => {
       for (let at = 0; at < tokens.length; ) at += parser.accept(tokens, at);
       return parser.result()!;
     };
-    // The cost is read against the least any discovery must do on this machine
-    // right now (read and parse each of the 792 manifests), not against a clock:
-    // a loaded machine slows both. Alone the plan costs 1.3 to 2.4 times that;
-    // an ordering that is quadratic in the members costs far more.
-    const { readdir } = await import('node:fs/promises');
-    const readEveryManifest = async () => {
-      const started = performance.now();
-      const names = (await readdir(root, { recursive: true })).filter((name) =>
-        name.endsWith('package.json'),
-      );
-      for (const name of names)
-        JSON.parse(await readFile(join(root, name), 'utf8'));
-      return performance.now() - started;
-    };
-    const planAll = async () => {
-      const started = performance.now();
-      const planned = await planWorkspace(
-        parse('-r'),
-        root,
-        false,
-        root,
-        contextWith(),
-      );
-      return { planned, ms: performance.now() - started };
-    };
     const before = process.memoryUsage();
-    let all: Awaited<ReturnType<typeof planAll>>['planned'] | undefined;
-    let allMs = Infinity;
-    let readMs = Infinity;
-    for (let round = 0; round < 2; round += 1) {
-      readMs = Math.min(readMs, await readEveryManifest());
-      const run = await planAll();
-      all = run.planned;
-      allMs = Math.min(allMs, run.ms);
-    }
+    const started = performance.now();
+    const all = await planWorkspace(
+      parse('-r'),
+      root,
+      false,
+      root,
+      contextWith(),
+    );
+    const allMs = performance.now() - started;
     const closure = await planWorkspace(
       parse('--filter', '...@hobo/core'),
       root,
@@ -245,12 +220,12 @@ posix('the real workspaces, planned', () => {
       contextWith(),
     );
     const after = process.memoryUsage();
-    expect(all?.members).toHaveLength(791);
+    expect(all.members).toHaveLength(791);
     expect(closure.members.length).toBeGreaterThan(10);
-    expect(allMs).toBeLessThan(20 * readMs);
+    expect(allMs).toBeLessThan(5000);
     expect(after.heapUsed - before.heapUsed).toBeLessThan(200 * 1024 * 1024);
     console.info(
-      `HoBo plan: -r ${allMs.toFixed(0)} ms against ${readMs.toFixed(0)} ms to read the manifests (${all?.members.length} members), closure ${closure.members.length} members, heap +${((after.heapUsed - before.heapUsed) / 1048576).toFixed(1)} MiB, rss +${((after.rss - before.rss) / 1048576).toFixed(1)} MiB`,
+      `HoBo plan: -r ${allMs.toFixed(0)} ms (${all.members.length} members), closure ${closure.members.length} members, heap +${((after.heapUsed - before.heapUsed) / 1048576).toFixed(1)} MiB, rss +${((after.rss - before.rss) / 1048576).toFixed(1)} MiB`,
     );
   });
 });

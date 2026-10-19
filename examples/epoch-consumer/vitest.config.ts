@@ -1,13 +1,9 @@
-import { defineConfig, mergeConfig } from 'vitest/config';
-import shared from '../../vitest.shared.js';
+import { defineConfig } from 'vitest/config';
 
-export default mergeConfig(
-  shared,
-  defineConfig({
-    test: {
-      // Pact owns ephemeral mock/provider servers; parallel files can retire a
-      // server while another interaction is still issuing its request.
-      fileParallelism: false,
-    },
-  }),
-);
+export default defineConfig({
+  test: {
+    // Pact owns ephemeral mock/provider servers; parallel files can retire a
+    // server while another interaction is still issuing its request.
+    fileParallelism: false,
+  },
+});

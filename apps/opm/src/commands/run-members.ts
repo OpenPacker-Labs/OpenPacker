@@ -8,10 +8,10 @@
  * work itself (a script with its hooks, a bin) is the caller's.
  */
 import { constants } from 'node:os';
+import { report } from '../error-report.js';
 import { runChild, startChild, type ChildIo } from './run-child.js';
 import type { RunContext } from './run-context.js';
 import type { ChildRunner } from './run-package.js';
-import { say } from '../error-report.js';
 import { MemberOutput } from './run-output.js';
 import { schedule, type Job, type JobResult } from './run-schedule.js';
 import type { PlannedMember, WorkspacePlan } from './run-select.js';
@@ -31,8 +31,10 @@ export interface MemberTask {
   work(env: MemberEnv): Promise<JobResult>;
 }
 
-function report(io: ChildIo, result: JobResult): number {
-  if (result.failure !== undefined) say(io.stderr, `opm: ${result.failure}\n`);
+/** Say why a run stopped, through the one writer, and give its status. */
+function ended(io: ChildIo, result: JobResult): number {
+  if (result.failure !== undefined)
+    io.stderr.write(report('opm: ', result.failure));
   return result.status;
 }
 
@@ -43,11 +45,11 @@ export async function runMembers(
   io: ChildIo,
   context: RunContext,
 ): Promise<number> {
-  for (const warning of plan.warnings) say(io.stderr, `${warning}\n`);
+  for (const warning of plan.warnings) io.stderr.write(report('', warning));
   const runnable = tasks.filter((task) => task.runs);
   if (runnable.length === 1) {
     const only = runnable[0]!;
-    return report(
+    return ended(
       io,
       await only.work({
         io,
@@ -89,7 +91,7 @@ export async function runMembers(
     host: context.host,
   });
   if (outcome.error !== undefined) throw outcome.error.error;
-  if (outcome.failed !== undefined) return report(io, outcome.failed.result);
+  if (outcome.failed !== undefined) return ended(io, outcome.failed.result);
   if (outcome.interrupted !== undefined)
     return 128 + (constants.signals[outcome.interrupted] ?? 0);
   return 0;
