@@ -13,7 +13,6 @@ import {
   type NativeTarget,
 } from '@openpacker/adapter-core';
 import { say } from '../error-report.js';
-import { printPeerNotice } from './ci-peers.js';
 import type { CommandArgs, CommandIo } from './yank.js';
 
 /** What `opm ci` accepts beyond the shared argument shape. */
@@ -206,6 +205,18 @@ function leftOut(result: Pick<FrozenPlan, 'skipped'>): string | undefined {
     .join(', ');
 }
 
+/** The packages a lock patches, when it patches any (ADR 0056). */
+function writePatched(
+  patched: { packages: number; patches: number },
+  io: CommandIo,
+): void {
+  if (patched.packages === 0) return;
+  say(
+    io.stdout,
+    `  patched: ${patched.packages} package${patched.packages === 1 ? '' : 's'} by ${patched.patches} patch${patched.patches === 1 ? '' : 'es'} from patchedDependencies, each a store entry of its own\n`,
+  );
+}
+
 /**
  * What `opm ci --plan` says: the install up to the first byte fetched, and
  * nothing done. The same plan is the same text, so it carries no wall time.
@@ -218,6 +229,7 @@ function printPlan(plan: FrozenPlan, io: CommandIo, root: string): void {
   );
   const clause = leftOut(plan);
   if (clause !== undefined) say(io.stdout, `  left out: ${clause}\n`);
+  writePatched(plan.patched, io);
   if (plan.targets !== undefined)
     say(io.stdout, `  platforms: ${describeTargets(plan.targets)}\n`);
   if (plan.workspace !== undefined)
@@ -260,9 +272,7 @@ export async function runCiCommand(
     ...(options.fetch !== undefined && { fetch: options.fetch }),
   };
   if (args.options.has('plan')) {
-    const plan = await planFrozen(request);
-    printPlan(plan, io, root);
-    if (plan.peers !== undefined) printPeerNotice(io, plan.peers);
+    printPlan(await planFrozen(request), io, root);
     return 0;
   }
   const result = await installFrozen(request);
@@ -277,6 +287,7 @@ export async function runCiCommand(
   );
   const clause = leftOut(result);
   if (clause !== undefined) say(io.stdout, `  left out: ${clause}\n`);
+  writePatched(result.patched, io);
   if (result.targets !== undefined)
     say(io.stdout, `  platforms: ${describeTargets(result.targets)}\n`);
   if (result.workspace !== undefined)
@@ -297,6 +308,5 @@ export async function runCiCommand(
         io.stderr,
         `opm: ${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}\n`,
       );
-  if (result.peers !== undefined) printPeerNotice(io, result.peers);
   return 0;
 }

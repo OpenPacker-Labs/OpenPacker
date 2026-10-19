@@ -1,8 +1,15 @@
 /**
+<<<<<<< ours
  * What `opm` exits with, and the exit code of each refusal it reports: an
  * `OpmError` by its code, and an error a provider or a delegated plugin raised
  * by the string code it carries.
  */
+=======
+ * The exit codes of `opm`, which tell a script what kind of failure it was,
+ * and the one an `OpmError`'s code maps to.
+ */
+
+>>>>>>> theirs
 export const EXIT_CODES = {
   success: 0,
   usage: 2,
@@ -15,12 +22,18 @@ export const EXIT_CODES = {
   internal: 9,
 } as const;
 
+<<<<<<< ours
 /** The exit code of an `OpmError` of this code. */
 export function opmErrorExit(code: string): number {
   switch (code) {
     // What the person wrote, in an option or the environment, is not usable.
     case 'USAGE':
       return EXIT_CODES.usage;
+=======
+/** The exit code of a failure whose `OpmError` code is `code`. */
+export function opmErrorExitCode(code: string): number {
+  switch (code) {
+>>>>>>> theirs
     case 'NOT_FOUND':
     case 'NO_PROJECT':
     case 'PLUGIN_NOT_INSTALLED':
@@ -30,6 +43,11 @@ export function opmErrorExit(code: string): number {
     case 'INVALID_MANIFEST':
     case 'INVALID_LOCK':
     case 'UNSUPPORTED_LOCK':
+<<<<<<< ours
+=======
+    case 'PATCH_FAILED':
+    case 'INVALID_PATCH':
+>>>>>>> theirs
     case 'INVALID_CATALOG':
     case 'INVALID_PLUGIN_SPEC':
     case 'INVALID_PLUGIN_MANIFEST':
@@ -64,6 +82,7 @@ export function opmErrorExit(code: string): number {
       return EXIT_CODES.internal;
   }
 }
+<<<<<<< ours
 
 /** The exit code of a provider's or a plugin's error of this code. */
 export function providerErrorExit(code: string): number {
@@ -109,3 +128,5 @@ export function providerErrorExit(code: string): number {
       return EXIT_CODES.internal;
   }
 }
+=======
+>>>>>>> theirs

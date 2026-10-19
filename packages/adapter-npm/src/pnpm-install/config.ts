@@ -29,8 +29,17 @@ export interface PnpmProjectConfig {
   /** Catalog name (`default` for the unnamed one) to dependency to specifier. */
   readonly catalogs: ReadonlyMap<string, ReadonlyMap<string, string>>;
   readonly supportedArchitectures: SupportedArchitectures | undefined;
+<<<<<<< ours
   /** The patches the project declares, by `name@version` or name. */
   readonly patches: readonly string[];
+=======
+  /** The patches the project declares: key (`name@version`, a range or a name) to path. */
+  readonly patches: ReadonlyMap<string, string>;
+  /** Where `patches` were read: the root `package.json`'s or the workspace file's. */
+  readonly patchesFrom:
+    | 'package.json pnpm.patchedDependencies'
+    | 'pnpm-workspace.yaml patchedDependencies';
+>>>>>>> theirs
   /** `ignoredOptionalDependencies`, which opm does not apply. */
   readonly ignoredOptionalDependencies: readonly string[];
   /**
@@ -162,6 +171,7 @@ export async function readPnpmProjectConfig(
         name,
         strings(entries, `pnpm-workspace.yaml catalogs[${quote(name)}]`),
       );
+<<<<<<< ours
   const patches = [
     ...strings(pnpm['patchedDependencies'], 'pnpm.patchedDependencies').keys(),
     ...strings(
@@ -169,6 +179,20 @@ export async function readPnpmProjectConfig(
       'pnpm-workspace.yaml patchedDependencies',
     ).keys(),
   ];
+=======
+  // As for overrides: the root manifest's setting, when it has the key at all,
+  // is spread over the workspace file's whole (getOptionsFromRootManifest).
+  const patchesFrom =
+    'patchedDependencies' in pnpm
+      ? ('package.json pnpm.patchedDependencies' as const)
+      : ('pnpm-workspace.yaml patchedDependencies' as const);
+  const patches = strings(
+    'patchedDependencies' in pnpm
+      ? pnpm['patchedDependencies']
+      : workspace['patchedDependencies'],
+    patchesFrom,
+  );
+>>>>>>> theirs
   const own = (key: 'name' | 'version') =>
     typeof manifest[key] === 'string' ? { [key]: manifest[key] } : {};
   const publish = isRecord(manifest['publishConfig'])
@@ -203,5 +227,9 @@ export async function readPnpmProjectConfig(
         'pnpm-workspace.yaml supportedArchitectures',
       ),
     patches,
+<<<<<<< ours
+=======
+    patchesFrom,
+>>>>>>> theirs
   };
 }

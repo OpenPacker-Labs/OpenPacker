@@ -8,9 +8,15 @@
  */
 
 import { createHash } from 'node:crypto';
+<<<<<<< ours
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
+=======
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+>>>>>>> theirs
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { packTarGzip } from '@openpacker/project-io';
 import { EXIT_CODES, runOpm } from '../src/opm.js';
@@ -32,6 +38,7 @@ afterEach(async () => {
   );
 });
 
+<<<<<<< ours
 /** A package whose executable `bin` prints which package it is, and the packages it depends on. */
 const tool = (name: string, bin: string, needs: readonly string[] = []) => ({
   name,
@@ -62,6 +69,18 @@ async function installed(
     needs: readonly string[];
   }[],
   importers: Record<string, string | undefined | Importer>,
+=======
+/** A package whose executable `bin` prints which package it is. */
+const tool = (name: string, bin: string) => ({ name, bin });
+
+/**
+ * A pnpm workspace whose importers each need one tool and run it as `build`:
+ * `importers` maps a directory (`.` for the project) to its tool, or none.
+ */
+async function installed(
+  tools: readonly { name: string; bin: string }[],
+  importers: Record<string, string | undefined>,
+>>>>>>> theirs
 ): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'opm-ci-pnpm-bins-'));
   const store = await mkdtemp(join(tmpdir(), 'opm-ci-pnpm-bins-store-'));
@@ -71,7 +90,11 @@ async function installed(
   const packages: string[] = [];
   const snapshots: string[] = [];
   const text = (value: string) => new TextEncoder().encode(value);
+<<<<<<< ours
   for (const { name, bin, needs } of tools) {
+=======
+  for (const { name, bin } of tools) {
+>>>>>>> theirs
     const bytes = packTarGzip([
       {
         path: 'package/package.json',
@@ -89,6 +112,7 @@ async function installed(
     packages.push(
       `  ${name}@1.0.0:\n    resolution: {integrity: ${integrity}}\n    hasBin: true\n`,
     );
+<<<<<<< ours
     snapshots.push(
       needs.length === 0
         ? `  ${name}@1.0.0: {}\n`
@@ -135,6 +159,24 @@ async function installed(
       lines.length === 0
         ? `  ${id}: {}\n`
         : `  ${id}:\n    dependencies:\n${lines.join('')}`,
+=======
+    snapshots.push(`  ${name}@1.0.0: {}\n`);
+  }
+  const lockImporters: string[] = [];
+  for (const [id, need] of Object.entries(importers)) {
+    const manifest = {
+      name: id === '.' ? 'app' : id.split('/').at(-1),
+      version: '1.0.0',
+      scripts: { build: tools.find((t) => t.name === need)?.bin ?? 'true' },
+      ...(need !== undefined && { dependencies: { [need]: '^1.0.0' } }),
+    };
+    await mkdir(join(dir, id), { recursive: true });
+    await writeFile(join(dir, id, 'package.json'), JSON.stringify(manifest));
+    lockImporters.push(
+      need === undefined
+        ? `  ${id}: {}\n`
+        : `  ${id}:\n    dependencies:\n      ${need}:\n        specifier: ^1.0.0\n        version: 1.0.0\n`,
+>>>>>>> theirs
     );
   }
   await writeFile(
@@ -203,6 +245,7 @@ posix("each importer's own executable", () => {
     expect(await build(dir, 'packages/native')).toBe('I am esbuild');
   });
 });
+<<<<<<< ours
 
 posix("a member's own executable", () => {
   it("is not offered to the project's .bin, where the project's own dependency keeps the name", async () => {
@@ -294,3 +337,5 @@ posix("a member's own executable", () => {
     expect(await build(dir, '')).toBe('I am the member aaa (tool)');
   });
 });
+=======
+>>>>>>> theirs

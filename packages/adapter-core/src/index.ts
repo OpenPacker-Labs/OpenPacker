@@ -3,48 +3,6 @@ import { isIP } from 'node:net';
 // Node 22 exposes Agent as node:undici; Node 26 does not. Same dispatcher API.
 import { Agent } from 'undici';
 import { pinnedFetch, pinnedLookup } from './pinned-dial.js';
-import {
-  LONGEST_HOST_LENGTH,
-  OverlongHostError,
-  parseUntrustedUrl,
-} from '@openpacker/canonical';
-import { echoed, echoedValue } from './echo.js';
-import { ProviderError, providerErrorForStatus } from './provider-error.js';
-import type { HttpResponse } from './metadata-json.js';
-import { ResponseTooLargeError } from './document-refusal.js';
-export { ECHO_TEXT_LIMIT, echoed, echoedValue } from './echo.js';
-export { isAddress, redactText } from './redact-text.js';
-export { ProviderError, providerErrorForStatus } from './provider-error.js';
-export {
-  DEFAULT_METADATA_PARSE_COST,
-  MAXIMUM_METADATA_BYTES,
-  assertBoundedProviderMetadata,
-  json,
-  jsonWithCost,
-  text,
-  type HttpResponse,
-  type ProviderMetadataLimits,
-} from './metadata-json.js';
-import { RetentionLedger } from './retention.js';
-export {
-  DEFAULT_RETAINED_BYTES,
-  RetentionLedger,
-  type Release,
-} from './retention.js';
-export { redactAddress, shownScheme } from './redact-address.js';
-export {
-  hasOverlongHost,
-  LONGEST_HOST_LENGTH,
-  OverlongHostError,
-  parseUntrustedUrl,
-  writtenHostLength,
-} from '@openpacker/canonical';
-export {
-  MetadataLimitError,
-  ResponseTooLargeError,
-  isDocumentRefusal,
-  type TooLargeBasis,
-} from './document-refusal.js';
 export {
   detectLibc,
   detectNativeTarget,
@@ -53,21 +11,28 @@ export {
 } from './host-target.js';
 export * from './workspace/index.js';
 export { quote, terminalSafe } from './terminal-text.js';
+export * from './package-tree-limits.js';
 export { ProviderError } from './provider-error.js';
 import { ProviderError } from './provider-error.js';
 import { createNpmRangeEngine, type RangeEngine } from './workspace/ranges.js';
 import { npmAst } from './npm-semver-range.js';
 export { npmVersion, npmVersionsEqual } from './npm-semver-range.js';
 import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
+import type { FrozenPatchFormat } from './frozen-patch.js';
 import type { NativeLayoutWorkspace } from './layout-workspace.js';
 import type { WorkspaceTool } from './workspace/members.js';
 export type * from './frozen-lock.js';
+export type * from './frozen-patch.js';
 export type {
   NativeLayoutLink,
   NativeLayoutMember,
   NativeLayoutWorkspace,
 } from './layout-workspace.js';
-import { canonicalProjectionDigest, formatDigest } from '@openpacker/canonical';
+import {
+  canonicalProjectionDigest,
+  formatDigest,
+  parseCanonicalJson,
+} from '@openpacker/canonical';
 import { DIGEST_PROJECTIONS, type JsonValue } from '@openpacker/contracts';
 import type {
   Distribution,
@@ -451,7 +416,7 @@ export interface InstallOutcome extends InstallPlan {
  * an absent level means the projection does not happen, not that it silently
  * half-happens.
  */
-export interface ProjectFormat {
+export interface ProjectFormat extends FrozenPatchFormat {
   readonly providerId: string;
   /** PURL type whose requirements this format carries. */
   readonly purlType: Ecosystem;
@@ -823,23 +788,15 @@ export interface HttpRequest {
   maximumBytes?: number | undefined;
 }
 
+export interface HttpResponse {
+  status: number;
+  headers: Readonly<Record<string, string>>;
+  body: Uint8Array;
+  url: string;
+}
+
 export interface HttpTransport {
   request(request: HttpRequest): Promise<HttpResponse>;
-  /**
-   * Whether asking again for a document this transport already answered gets
-   * the document again, from the origin or from a store of the transport's
-   * own. A holder may let go of a document only of such a transport, because
-   * it can get it back. Absent means no: a transport that replays what it was
-   * recorded with, or answers once from a source that is gone, is kept whole.
-   */
-  readonly refetchable?: boolean | undefined;
-  /**
-   * Where a holder of what this transport returned says what it keeps, so that
-   * a resolve's documents and the objects parsed from them are bounded
-   * together. Present on a transport that keeps documents for a resolve; a
-   * holder uses it only when `refetchable`.
-   */
-  readonly retention?: RetentionLedger | undefined;
 }
 
 export type DestinationPolicy = 'origin-allowlist' | 'classify-and-pin';
@@ -903,12 +860,6 @@ const CROSS_ORIGIN_REDIRECT_HEADERS = new Set([
 const TOKEN68 = /^[A-Za-z0-9\-._~+/]+=*$/u;
 
 export class BoundedFetchTransport implements HttpTransport {
-  /**
-   * The origin is asked again, so a caller may let go of what it was given;
-   * not over a `fetch` it was handed, which may answer from anywhere, a
-   * recorded sequence of answers among them.
-   */
-  readonly refetchable: boolean;
   readonly #allowedOrigins: ReadonlySet<string>;
   readonly #pinnedOrigins: ReadonlySet<string>;
   readonly #pinnedTokenEnvNames: ReadonlyMap<string, string> | undefined;
@@ -952,7 +903,6 @@ export class BoundedFetchTransport implements HttpTransport {
       options.fetch === undefined;
     this.#fetch =
       options.fetch ?? (this.#pinProduction ? pinnedFetch : globalThis.fetch);
-    this.refetchable = options.fetch === undefined;
     this.#lookup =
       options.lookup ?? (this.#pinProduction ? defaultHostLookup : undefined);
     this.#delay = options.delay ?? abortableDelay;
@@ -1125,7 +1075,7 @@ function normalizeAllowedOrigin(value: string): string {
   )
     throw new ProviderError(
       'INVALID_PROVIDER_ENDPOINT',
-      `Allowed provider origin must be an HTTP(S) origin: ${echoedValue(value)}`,
+      `Allowed provider origin must be an HTTP(S) origin: ${value}`,
     );
   return url.origin;
 }
@@ -1206,15 +1156,13 @@ export function firstPartyOriginPolicy(input: {
   artifactOrigins?: readonly string[];
   extraOrigins?: readonly string[];
 }) {
-  const endpointOrigin = parseUntrustedUrl(input.endpoint).origin;
+  const endpointOrigin = new URL(input.endpoint).origin;
   const extra = input.extraOrigins ?? [];
   const allowed = input.namedOrOverride
     ? uniqueOrigins([endpointOrigin, ...extra])
     : uniqueOrigins([
         endpointOrigin,
-        ...(input.artifactOrigins ?? []).map(
-          (uri) => parseUntrustedUrl(uri).origin,
-        ),
+        ...(input.artifactOrigins ?? []).map((uri) => new URL(uri).origin),
         ...extra,
       ]);
   const pinned = input.namedOrOverride ? [endpointOrigin] : [];
@@ -1483,16 +1431,11 @@ function isLoopbackHostname(hostname: string): boolean {
 
 function parseProviderUrl(value: string, base?: URL): URL {
   try {
-    return parseUntrustedUrl(value, base);
-  } catch (error) {
-    // The address is a registry's or a peer's text and the message repeats none
-    // of it. A host no DNS name could be is named as such, since it is the
-    // reason the parser was not asked.
+    return new URL(value, base);
+  } catch {
     throw new ProviderError(
       'INVALID_PROVIDER_ENDPOINT',
-      error instanceof OverlongHostError
-        ? `Provider URL names a host longer than ${LONGEST_HOST_LENGTH} characters`
-        : 'Provider URL is invalid',
+      'Provider URL is invalid',
     );
   }
 }
@@ -1511,6 +1454,26 @@ function assertAllowedProviderUrl(
       'INVALID_PROVIDER_ENDPOINT',
       `Provider origin is not allowed: ${url.origin}`,
     );
+}
+
+export function providerErrorForStatus(status: number): ProviderError {
+  if (status === 404)
+    return new ProviderError(
+      'PACKAGE_NOT_FOUND',
+      'Upstream resource was not found',
+      status,
+    );
+  if (status === 429)
+    return new ProviderError(
+      'RATE_LIMITED',
+      'Upstream rate limit exceeded',
+      status,
+    );
+  return new ProviderError(
+    'UPSTREAM_UNAVAILABLE',
+    `Upstream returned ${status}`,
+    status,
+  );
 }
 
 function stripCrossOriginHeaders(
@@ -1587,10 +1550,9 @@ async function readBoundedBody(
   const declared = response.headers.get('content-length');
   if (declared !== null && Number(declared) > maximumBytes) {
     await response.body?.cancel();
-    throw new ResponseTooLargeError(
-      maximumBytes,
-      Number(declared),
-      'declared',
+    throw new ProviderError(
+      'UPSTREAM_RESPONSE_TOO_LARGE',
+      `Response exceeds ${maximumBytes} bytes`,
       response.status,
     );
   }
@@ -1608,10 +1570,9 @@ async function readBoundedBody(
       if (result.done) break;
       size += result.value.byteLength;
       if (size > maximumBytes)
-        throw new ResponseTooLargeError(
-          maximumBytes,
-          size,
-          'streamed',
+        throw new ProviderError(
+          'UPSTREAM_RESPONSE_TOO_LARGE',
+          `Response exceeds ${maximumBytes} bytes`,
           response.status,
         );
       chunks.push(result.value);
@@ -1672,10 +1633,9 @@ export class FixtureHttpTransport implements HttpTransport {
       request.maximumBytes !== undefined &&
       fixture.body.byteLength > request.maximumBytes
     ) {
-      throw new ResponseTooLargeError(
-        request.maximumBytes,
-        fixture.body.byteLength,
-        'delivered',
+      throw new ProviderError(
+        'UPSTREAM_RESPONSE_TOO_LARGE',
+        `Response exceeds ${request.maximumBytes} bytes`,
       );
     }
     return { ...fixture, url: 'url' in fixture ? fixture.url : request.url };
@@ -1697,7 +1657,7 @@ const decode = (value: string): string => {
   } catch {
     throw new ProviderError(
       'INVALID_PURL',
-      `Invalid percent encoding: ${echoed(value)}`,
+      `Invalid percent encoding: ${value}`,
     );
   }
 };
@@ -1758,16 +1718,10 @@ export function parsePurl(value: string): ParsedPurl {
   for (const pair of queryText === '' ? [] : queryText.split('&')) {
     const separator = pair.indexOf('=');
     if (separator <= 0)
-      throw new ProviderError(
-        'INVALID_PURL',
-        `Invalid qualifier: ${echoed(pair)}`,
-      );
+      throw new ProviderError('INVALID_PURL', `Invalid qualifier: ${pair}`);
     const key = decode(pair.slice(0, separator)).toLowerCase();
     if (key in qualifiers)
-      throw new ProviderError(
-        'INVALID_PURL',
-        `Duplicate qualifier: ${echoed(key)}`,
-      );
+      throw new ProviderError('INVALID_PURL', `Duplicate qualifier: ${key}`);
     qualifiers[key] = decode(pair.slice(separator + 1));
   }
   const result: ParsedPurl = { type, name: decode(namePart), qualifiers };
@@ -1786,7 +1740,7 @@ export function assertPackageIdentityMatchesRequest(
   if (!identity.exactPurl)
     throw new ProviderError(
       'INVALID_PROVIDER_METADATA',
-      `Provider returned no exact identity for ${echoed(requestedPurl)}`,
+      `Provider returned no exact identity for ${requestedPurl}`,
     );
   const requested = parsePurl(requestedPurl);
   const actual = parsePurl(identity.exactPurl);
@@ -1798,7 +1752,7 @@ export function assertPackageIdentityMatchesRequest(
   )
     throw new ProviderError(
       'INVALID_PROVIDER_METADATA',
-      `Provider identity ${echoed(identity.exactPurl)} does not match ${echoed(requestedPurl)}`,
+      `Provider identity ${identity.exactPurl} does not match ${requestedPurl}`,
     );
 }
 
@@ -1839,7 +1793,7 @@ export function parseSemver(
   if (!match)
     throw new ProviderError(
       'INVALID_NATIVE_VERSION',
-      `Invalid version: ${echoed(value)}`,
+      `Invalid version: ${value}`,
     );
   const present = match
     .slice(1, 5)
@@ -1847,7 +1801,7 @@ export function parseSemver(
   if (present.length > maximumReleaseParts)
     throw new ProviderError(
       'INVALID_NATIVE_VERSION',
-      `Too many release components: ${echoed(value)}`,
+      `Too many release components: ${value}`,
     );
   const release = present.map(Number);
   while (release.length < maximumReleaseParts) release.push(0);
@@ -2022,7 +1976,7 @@ function parseRangeToken(
   if (!operatorMatch)
     throw new ProviderError(
       'INVALID_NATIVE_RANGE',
-      `Invalid range token: ${echoed(token)}`,
+      `Invalid range token: ${token}`,
     );
   const operator = operatorMatch[1] ?? '';
   const rawVersion = operatorMatch[2]!.trim();
@@ -2040,7 +1994,7 @@ function parseRangeToken(
         if (!/^\d+$/.test(part))
           throw new ProviderError(
             'INVALID_NATIVE_RANGE',
-            `Invalid partial version: ${echoed(rawVersion)}`,
+            `Invalid partial version: ${rawVersion}`,
           );
         return Number(part);
       });
@@ -2193,7 +2147,7 @@ function parseVersExpression(expression: string): RangeAst {
       if (!match?.[1] || !match[2])
         throw new ProviderError(
           'INVALID_VERS',
-          `Invalid VERS clause: ${echoed(clause)}`,
+          `Invalid VERS clause: ${clause}`,
         );
       return {
         type: 'comparison' as const,
@@ -2276,6 +2230,55 @@ export function semanticLoss(
   return result;
 }
 
+export function text(response: HttpResponse): string {
+  return new TextDecoder('utf-8', { fatal: true }).decode(response.body);
+}
+
+export function json<T>(response: HttpResponse): T {
+  if (response.status < 200 || response.status >= 300)
+    throw providerErrorForStatus(response.status);
+  try {
+    // SAFETY: The surrounding boundary establishes the asserted domain contract.
+    const value = parseCanonicalJson(text(response)) as T;
+    assertBoundedProviderMetadata(value);
+    return value;
+  } catch (error) {
+    throw new ProviderError(
+      'INVALID_PROVIDER_METADATA',
+      error instanceof Error ? error.message : 'Invalid JSON',
+    );
+  }
+}
+
+export function assertBoundedProviderMetadata(
+  value: unknown,
+  maximumDepth = 64,
+  maximumNodes = 200_000,
+): void {
+  const pending: { value: unknown; depth: number }[] = [{ value, depth: 0 }];
+  let nodes = 0;
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    nodes += 1;
+    if (nodes > maximumNodes)
+      throw new ProviderError(
+        'UPSTREAM_RESPONSE_TOO_LARGE',
+        `Provider metadata exceeds ${maximumNodes} values`,
+      );
+    if (current.depth > maximumDepth)
+      throw new ProviderError(
+        'INVALID_PROVIDER_METADATA',
+        `Provider metadata exceeds depth ${maximumDepth}`,
+      );
+    if (current.value !== null && typeof current.value === 'object') {
+      for (const child of Array.isArray(current.value)
+        ? current.value
+        : Object.values(current.value))
+        pending.push({ value: child, depth: current.depth + 1 });
+    }
+  }
+}
+
 export function header(
   response: HttpResponse,
   name: string,
@@ -2305,7 +2308,7 @@ export async function verifyNativeDigest(
   if (webAlgorithm === undefined)
     throw new ProviderError(
       'INVALID_PROVIDER_METADATA',
-      `Unsupported native digest algorithm: ${echoed(algorithm)}`,
+      `Unsupported native digest algorithm: ${algorithm}`,
     );
   const digest = new Uint8Array(
     await crypto.subtle.digest(webAlgorithm, Uint8Array.from(bytes).buffer),

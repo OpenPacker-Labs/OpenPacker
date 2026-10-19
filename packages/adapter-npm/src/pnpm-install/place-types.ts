@@ -38,12 +38,15 @@ export interface PlaceInput {
   /** The project first when it is installed, then the members. */
   readonly tops: readonly PlaceTop[];
   readonly maximumPlacements?: number;
+<<<<<<< ours
   /**
    * The most places a layout made with peers in view may take; by default
    * eight for each instance and importer, and 256 more. Past it the planner
    * lays the lock out without peers in view instead.
    */
   readonly peerPlacements?: number;
+=======
+>>>>>>> theirs
 }
 
 /** One instance at one place. */
@@ -72,6 +75,7 @@ export interface Placement {
   /** Things that cannot be laid out; any one stops the install. */
   readonly problems: readonly string[];
 }
+<<<<<<< ours
 
 /** An edge whose dependency loads another copy of a peer its dependent requires too. */
 export interface SplitEdge {
@@ -100,3 +104,5 @@ export interface PlannedPlacement extends Placement {
   /** The first of them, when there are any: what a notice about them names. */
   readonly firstSplit?: SplitEdge;
 }
+=======
+>>>>>>> theirs

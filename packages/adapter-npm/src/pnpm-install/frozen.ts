@@ -15,7 +15,10 @@ import type {
   FrozenLock,
   FrozenLockOptions,
   FrozenLockPackage,
+<<<<<<< ours
   FrozenLockPeers,
+=======
+>>>>>>> theirs
   FrozenLockRefusal,
   FrozenLockWorkspace,
   WorkspaceMember,
@@ -34,17 +37,32 @@ import { npmPurl } from '../purl.js';
 import { readPnpmLock } from '../pnpm-lock/index.js';
 import { isSemver } from '../pnpm-lock/source.js';
 import { buildPnpmModel, type PnpmInstance, type PnpmModel } from './model.js';
+<<<<<<< ours
 import { quote } from './quote.js';
 import { planPlacement } from './place.js';
 import type { PlannedPlacement } from './place-types.js';
 import { placeInputOf } from './place-input.js';
 import { directPlaces, resolutionProblems } from './place-check.js';
+=======
+import { planPlacement } from './place.js';
+import { placeInputOf } from './place-input.js';
+import {
+  directPlaces,
+  peerSplitProblems,
+  resolutionProblems,
+} from './place-check.js';
+>>>>>>> theirs
 import {
   importerRefusals,
   lockRefusals,
   sourceOfInstance,
   type InstanceSource,
 } from './refuse.js';
+<<<<<<< ours
+=======
+import { lockPatches } from './patches.js';
+import { readProjectPatches } from './patch-files.js';
+>>>>>>> theirs
 import { selectTops } from './scope.js';
 import { platformsOf } from './targets.js';
 import { selectInstances, type Selection } from './select.js';
@@ -92,7 +110,12 @@ export async function readFrozenPnpmLock(
   });
 
   // 1. What the lock says by itself.
+<<<<<<< ours
   const wholeLock = lockRefusals(model);
+=======
+  const patching = lockPatches(model);
+  const wholeLock = [...lockRefusals(model), ...patching.refused];
+>>>>>>> theirs
   if (wholeLock.length > 0) return refuse(wholeLock);
   if (options.omit.has('peer'))
     throw new ProviderError(
@@ -135,6 +158,7 @@ export async function readFrozenPnpmLock(
       'INVALID_LOCKFILE',
       `pnpm-lock.yaml does not list every member of the project's workspace (opm ci installs what the lock lists, and a member with dependencies has to be in it; pnpm install writes it there): ${members.join('; ')}`,
     );
+<<<<<<< ours
   const { stale, own } = freshnessProblems({
     root,
     model,
@@ -147,6 +171,17 @@ export async function readFrozenPnpmLock(
       `opm ci does not install this project as it is: ${own.join('; ')}`,
     );
   if (stale.length > 0) refuseStale(stale);
+=======
+  // The patch files first, as pnpm hashes them before it compares anything.
+  const declared = await readProjectPatches(
+    project.root,
+    root.config,
+    model.lock,
+  );
+  const { stale } = freshnessProblems({ root, model, present, disk });
+  if (stale.length + declared.stale.length > 0)
+    refuseStale([...stale, ...declared.stale]);
+>>>>>>> theirs
 
   // 3. What needs the machine.
   if (selection.refused.length > 0) return refuse([...selection.refused]);
@@ -158,16 +193,31 @@ export async function readFrozenPnpmLock(
     return refuse(
       placement.problems.map((reason) => ({ path: 'node_modules', reason })),
     );
+<<<<<<< ours
   const unresolved = resolutionProblems(input, placement);
   if (unresolved.length > 0)
     throw new ProviderError(
       'INVALID_LOCKFILE',
       `the layout opm planned for ${project.root} does not resolve every dependency, which is a defect in the planner and not in the lock; nothing was installed: ${unresolved.slice(0, 5).join('; ')}${unresolved.length > 5 ? `; and ${unresolved.length - 5} more` : ''}`,
+=======
+  const unresolved = [
+    ...resolutionProblems(input, placement),
+    ...peerSplitProblems(input, placement),
+  ];
+  if (unresolved.length > 0)
+    throw new ProviderError(
+      'INVALID_LOCKFILE',
+      `the layout opm planned for ${project.root} does not resolve every dependency to the instance the lock names, one copy of each peer a package shares with its dependent, which is a defect in the planner and not in the lock; nothing was installed: ${unresolved.slice(0, 5).join('; ')}${unresolved.length > 5 ? `; and ${unresolved.length - 5} more` : ''}`,
+>>>>>>> theirs
     );
 
   const packages = placement.placed.map((place): FrozenLockPackage => {
     const instance = model.instances.get(place.key)!;
     const source = sources.get(place.key)!;
+<<<<<<< ours
+=======
+    const patch = patching.byInstance.get(place.key);
+>>>>>>> theirs
     return {
       path: placePath(place.chain, place.base),
       name: place.chain.at(-1)!,
@@ -187,6 +237,7 @@ export async function readFrozenPnpmLock(
       ...(instance.pkg.deprecated !== undefined && {
         deprecated: instance.pkg.deprecated,
       }),
+<<<<<<< ours
     };
   });
   const direct = directPlaces(input, placement);
@@ -198,6 +249,19 @@ export async function readFrozenPnpmLock(
         placePath(place.chain, place.base),
       ),
       members: top.links.map((link) => link.memberDir),
+=======
+      // Every key of the lock is the project's once the lock is fresh.
+      ...(patch !== undefined && { patch: declared.patches.get(patch)! }),
+    };
+  });
+  const workspace = workspaceOf(model, tops, present, disk, {
+    links: placement.links,
+    importers: [...directPlaces(input, placement)].map(([dir, places]) => ({
+      dir,
+      dependencies: places.map(({ place }) =>
+        placePath(place.chain, place.base),
+      ),
+>>>>>>> theirs
     })),
   });
   return {
@@ -207,6 +271,7 @@ export async function readFrozenPnpmLock(
     skipped: [...selection.skipped],
     refused: [],
     ...(workspace !== undefined && { workspace }),
+<<<<<<< ours
     ...peersOf(model, placement),
   };
 }
@@ -240,6 +305,8 @@ function peersOf(
         },
       }),
     },
+=======
+>>>>>>> theirs
   };
 }
 

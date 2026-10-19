@@ -2,9 +2,15 @@
  * Hold the lock to the project's files (ADR 0055 §15, §18), in the order a
  * frozen install reports it: the importers against the members on disk, each
  * importer's dependencies against its `package.json`, then `overrides`,
+<<<<<<< ours
  * `catalogs` and the settings pnpm records, and apart from those, what opm
  * does not do (a declared patch, an override it cannot read as pnpm does).
  * Everything is collected, so one error names all of it.
+=======
+ * `catalogs` and the settings pnpm records (the patches are
+ * `patch-files.ts`'s, which reads them). Everything is collected, so one error
+ * names all of it.
+>>>>>>> theirs
  */
 
 import type {
@@ -114,8 +120,11 @@ export interface Freshness {
    * and `publishConfig.directory`.
    */
   readonly stale: readonly string[];
+<<<<<<< ours
   /** What opm does not install, by its own rule: a patch the project declares. */
   readonly own: readonly string[];
+=======
+>>>>>>> theirs
 }
 
 /** How the lock differs from the files of the importers the project has. */
@@ -169,11 +178,15 @@ export function freshnessProblems(input: {
     ...ignoredProblems(lock.ignoredOptionalDependencies, config),
     ...catalogProblems(lock, config.catalogs),
   ];
+<<<<<<< ours
   const own = config.patches.map(
     (key) =>
       `the project declares a patch for ${quote(key)}, which opm does not apply`,
   );
   return { stale, own };
+=======
+  return { stale };
+>>>>>>> theirs
 }
 
 /** pnpm compares the two lists sorted; the lock's own list is refused before this. */
