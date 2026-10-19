@@ -1,4 +1,8 @@
 <<<<<<< ours
+<<<<<<< ours
+=======
+/** A failure a provider names by its code, with the upstream's HTTP status when it has one. */
+>>>>>>> theirs
 =======
 /** A failure a provider names by its code, with the upstream's HTTP status when it has one. */
 >>>>>>> theirs
@@ -12,6 +16,7 @@ export class ProviderError extends Error {
     this.name = 'ProviderError';
   }
 }
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
 =======
@@ -36,6 +41,8 @@ export function providerErrorForStatus(status: number): ProviderError {
     status,
   );
 }
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs

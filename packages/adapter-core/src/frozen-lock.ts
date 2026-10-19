@@ -7,6 +7,7 @@
  * verifies, applies policy and writes the layout without knowing the format.
  */
 
+import type { FrozenPatch } from './frozen-patch.js';
 import type { NativeTarget } from './host-target.js';
 import type { NativeLayoutWorkspace } from './layout-workspace.js';
 import type { WorkspaceMember } from './workspace/members.js';
@@ -138,6 +139,12 @@ export interface FrozenLockPackage {
    * package unless the project allows that kind of release.
    */
   withdrawn?: 'yanked' | 'quarantined' | 'revoked' | 'delisted';
+  /**
+   * A patch the lock applies to this package's files before they are
+   * installed (pnpm's `patchedDependencies`). The patched files are a package
+   * of their own: never the unpatched archive's, and never another patch's.
+   */
+  patch?: FrozenPatch;
 }
 
 export interface FrozenLockSkip {

@@ -82,8 +82,12 @@ function mostWanted(
  * The names whose slot in the project a plan left empty while one instance of
  * the name is written in two or more members' own `node_modules`, each with
  * the instance written in the most of them: given the slot, that instance has
+<<<<<<< ours
  * one real path for all of those members. An isolated importer's are left
  * out: it keeps its packages to itself.
+=======
+ * one real path for all of those members.
+>>>>>>> theirs
  */
 export function emptySlotChoices(
   laid: {
@@ -92,13 +96,19 @@ export function emptySlotChoices(
     readonly preferred: ReadonlyMap<string, string>;
   },
   instances: ReadonlyMap<string, PlaceInstance>,
+<<<<<<< ours
   isolated: ReadonlySet<string>,
+=======
+>>>>>>> theirs
 ): Map<string, string> {
   const counts = new Map<string, Map<string, number>>();
   for (const node of laid.placed) {
     const name = node.installName;
     if (node.base === '' || node.chain.length !== 1) continue;
+<<<<<<< ours
     if (isolated.has(node.base)) continue;
+=======
+>>>>>>> theirs
     if (laid.project.children.has(name)) continue;
     const byKey = counts.get(name) ?? new Map<string, number>();
     counts.set(name, byKey);

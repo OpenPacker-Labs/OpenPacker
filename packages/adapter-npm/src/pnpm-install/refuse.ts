@@ -1,8 +1,13 @@
 /**
  * What a frozen install of a pnpm lock cannot honour, by name (ADR 0055 §20).
  *
+<<<<<<< ours
  * Three kinds, asked in this order: what the lock as a whole says (a patch,
  * links left out of it), what an importer being installed says (a link to
+=======
+ * Three kinds, asked in this order: what the lock as a whole says (links left
+ * out of it; its patches are `patches.ts`'s), what an importer being installed says (a link to
+>>>>>>> theirs
  * something that is not a member), and what an instance being installed is (a
  * source this install does not fetch, a digest that does not pin its bytes).
  * Every refusal is collected, not thrown, so one run names everything.
@@ -20,12 +25,15 @@ import { quote } from './quote.js';
 export function lockRefusals(model: PnpmModel): FrozenLockRefusal[] {
   const { lock } = model;
   const out: FrozenLockRefusal[] = [];
+<<<<<<< ours
   for (const key of lock.patchedDependencies.keys())
     out.push({
       path: `patchedDependencies[${quote(key)}]`,
       reason:
         'is a patch, and opm does not apply patches (ADR 0055): a lock that needs one is not installed as it is written',
     });
+=======
+>>>>>>> theirs
   if (lock.ignoredOptionalDependencies.length > 0)
     out.push({
       path: 'ignoredOptionalDependencies',

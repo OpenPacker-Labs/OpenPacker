@@ -8,11 +8,15 @@
  * network, the store or the disk.
  */
 
+<<<<<<< ours
 import type {
   FrozenLockPeers,
   FrozenLockSkip,
   NativeTarget,
 } from '@openpacker/adapter-core';
+=======
+import type { FrozenLockSkip, NativeTarget } from '@openpacker/adapter-core';
+>>>>>>> theirs
 import {
   now,
   prepareFrozen,
@@ -31,12 +35,20 @@ export interface FrozenPlan {
   places: number;
   /** Archives to fetch or find in the store: places and instances can share one. */
   archives: number;
+<<<<<<< ours
+=======
+  /** Packages the lock patches (one per archive and patch), and the patches. */
+  patched: { packages: number; patches: number };
+>>>>>>> theirs
   /** For a workspace lock: the members, the ones installed and the links made. */
   workspace?: { members: number; installed: number; linked: number };
   skipped: readonly FrozenLockSkip[];
   targets?: readonly NativeTarget[];
+<<<<<<< ours
   /** Present when the places would not keep every shared peer to one copy of it. */
   peers?: FrozenLockPeers;
+=======
+>>>>>>> theirs
   milliseconds: number;
 }
 
@@ -50,6 +62,10 @@ export async function planFrozen(
   const archives = new Set(
     lock.packages.map((pkg) => integrityKey(claims.get(pkg.path)!)),
   );
+<<<<<<< ours
+=======
+  const patched = lock.packages.filter((pkg) => pkg.patch !== undefined);
+>>>>>>> theirs
   return {
     ecosystem,
     lockPath: lock.lockPath,
@@ -57,6 +73,18 @@ export async function planFrozen(
     instances: instances.size,
     places: lock.packages.length,
     archives: archives.size,
+<<<<<<< ours
+=======
+    patched: {
+      packages: new Set(
+        patched.map(
+          (pkg) =>
+            `${integrityKey(claims.get(pkg.path)!)}\0${pkg.patch!.digest}`,
+        ),
+      ).size,
+      patches: new Set(patched.map((pkg) => pkg.patch!.key)).size,
+    },
+>>>>>>> theirs
     ...(lock.workspace !== undefined && {
       workspace: {
         members: lock.workspace.memberDirs.length,
@@ -66,7 +94,10 @@ export async function planFrozen(
     }),
     skipped: lock.skipped,
     ...(lock.targets !== undefined && { targets: lock.targets }),
+<<<<<<< ours
     ...(lock.peers !== undefined && { peers: lock.peers }),
+=======
+>>>>>>> theirs
     milliseconds: now() - started,
   };
 }

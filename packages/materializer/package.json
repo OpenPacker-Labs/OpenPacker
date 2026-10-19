@@ -26,6 +26,7 @@
     "test:integration": "vitest run"
   },
   "dependencies": {
+    "@openpacker/adapter-core": "0.1.0",
     "@openpacker/artifact-model": "0.1.0",
     "@openpacker/canonical": "0.1.0",
     "@openpacker/contracts": "0.1.0",
