@@ -10,6 +10,7 @@ API detail.
 | --------------------------------------------------------------- | ------------------------------------- | ---------------------------------------- |
 | **[opm package manager](guides/opm.md)**                        | **Anyone managing project packages**  | **`opm` / `opmx` add/install/sync/exec** |
 | [Packing with opm](guides/opm-pack.md)                          | Package publishers                    | Standard and delegated native packages   |
+| [When opm is killed](guides/opm-recovery.md)                    | Anyone running opm in CI              | Recovery, locks, `opm recover`           |
 | [Example opm project](../examples/opm-project/)                 | Shell users                           | Offline `opm sync` + `opmx` demo         |
 | [PREX control-plane CLI](guides/cli.md)                         | Advanced / protocol users             | `openpacker` normalize/solve/import-lock |
 | [CLI sample inputs](../examples/cli/)                           | Shell users                           | Ready JSON for normalize / identify / …  |

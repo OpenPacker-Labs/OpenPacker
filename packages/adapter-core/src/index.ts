@@ -3,6 +3,7 @@ import { isIP } from 'node:net';
 // Node 22 exposes Agent as node:undici; Node 26 does not. Same dispatcher API.
 import { Agent } from 'undici';
 import { pinnedFetch, pinnedLookup } from './pinned-dial.js';
+import { splitPurlVersion } from './purl-version.js';
 import {
   LONGEST_HOST_LENGTH,
   OverlongHostError,
@@ -1749,9 +1750,8 @@ export function parsePurl(value: string): ParsedPurl {
     throw new ProviderError('INVALID_PURL', 'PURL requires a type and name');
   const type = identity.slice(0, slash).toLowerCase();
   const pathAndVersion = identity.slice(slash + 1);
-  const at = pathAndVersion.lastIndexOf('@');
-  const path = at < 0 ? pathAndVersion : pathAndVersion.slice(0, at);
-  const version = at < 0 ? undefined : decode(pathAndVersion.slice(at + 1));
+  const { path, version: encoded } = splitPurlVersion(pathAndVersion);
+  const version = encoded === undefined ? undefined : decode(encoded);
   const segments = path.split('/');
   if (segments.some((segment) => segment.length === 0))
     throw new ProviderError('INVALID_PURL', 'PURL path has an empty segment');
