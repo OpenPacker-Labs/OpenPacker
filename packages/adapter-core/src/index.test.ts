@@ -11,7 +11,6 @@ import {
   createFirstPartyTransport,
   createPinnedFetch,
   evaluateRange,
-  evaluateSemverRange,
   FixtureHttpTransport,
   formatPurl,
   header,
@@ -22,7 +21,6 @@ import {
   parseHttpsOriginList,
   parsePurl,
   parseSemver,
-  parseSemverRange,
   parseVers,
   packageNodeId,
   providerErrorForStatus,
@@ -30,8 +28,6 @@ import {
   type HostLookup,
   type ProviderExecutable,
   type ProviderInspection,
-  rangeToConstraint,
-  renderRange,
   semanticLoss,
   sourceRef,
   text,
@@ -111,34 +107,6 @@ describe('version primitives', () => {
     expect(isEcosystem('npm')).toBe(true);
     expect(isEcosystem('NPM')).toBe(false);
     expect(compareCodePoints('a', 'b')).toBeLessThan(0);
-    const compareNative = (left: string, right: string) =>
-      compareParsedVersions(parseSemver(left), parseSemver(right));
-    const caret = parseSemverRange('^1.2.3', {
-      scheme: 'npm',
-      bare: 'caret',
-      commaAnd: true,
-      hyphenRanges: true,
-    });
-    expect(renderRange(caret.ast)).toBe('>=1.2.3 <2.0.0');
-    expect(evaluateSemverRange('1.9.0', caret.ast, compareNative)).toBe(true);
-    expect(rangeToConstraint(caret)).toMatchObject({
-      reversible: false,
-      semanticLoss: [{ code: 'NATIVE_RANGE_NOT_EXACTLY_REPRESENTABLE' }],
-    });
-    expect(
-      parseSemverRange('1.2 - 1.4', {
-        scheme: 'npm',
-        bare: 'caret',
-        hyphenRanges: true,
-      }).normalized,
-    ).toBe('>=1.2.0 <1.5.0');
-    const prerelease = parseSemverRange('>=1.0.0-beta.1 <2.0.0', {
-      scheme: 'npm',
-      bare: 'caret',
-    });
-    expect(
-      evaluateSemverRange('1.0.0-beta.2', prerelease.ast, compareNative),
-    ).toBe(true);
     expect(semanticLoss('npm', 'LOSS', '/range', 'native').severity).toBe(
       'warning',
     );

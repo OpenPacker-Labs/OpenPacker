@@ -8,10 +8,10 @@
  * work itself (a script with its hooks, a bin) is the caller's.
  */
 import { constants } from 'node:os';
-import { report } from '@openpacker/canonical';
 import { runChild, startChild, type ChildIo } from './run-child.js';
 import type { RunContext } from './run-context.js';
 import type { ChildRunner } from './run-package.js';
+import { say } from '../error-report.js';
 import { MemberOutput } from './run-output.js';
 import { schedule, type Job, type JobResult } from './run-schedule.js';
 import type { PlannedMember, WorkspacePlan } from './run-select.js';
@@ -31,11 +31,8 @@ export interface MemberTask {
   work(env: MemberEnv): Promise<JobResult>;
 }
 
-/** The exit status of a member's work, after saying why it failed. */
-function settle(io: ChildIo, result: JobResult): number {
-  // The failure names the member and the step, which its package.json chose.
-  if (result.failure !== undefined)
-    io.stderr.write(report('opm: ', result.failure));
+function report(io: ChildIo, result: JobResult): number {
+  if (result.failure !== undefined) say(io.stderr, `opm: ${result.failure}\n`);
   return result.status;
 }
 
@@ -46,11 +43,11 @@ export async function runMembers(
   io: ChildIo,
   context: RunContext,
 ): Promise<number> {
-  for (const warning of plan.warnings) io.stderr.write(report('', warning));
+  for (const warning of plan.warnings) say(io.stderr, `${warning}\n`);
   const runnable = tasks.filter((task) => task.runs);
   if (runnable.length === 1) {
     const only = runnable[0]!;
-    return settle(
+    return report(
       io,
       await only.work({
         io,
@@ -92,7 +89,7 @@ export async function runMembers(
     host: context.host,
   });
   if (outcome.error !== undefined) throw outcome.error.error;
-  if (outcome.failed !== undefined) return settle(io, outcome.failed.result);
+  if (outcome.failed !== undefined) return report(io, outcome.failed.result);
   if (outcome.interrupted !== undefined)
     return 128 + (constants.signals[outcome.interrupted] ?? 0);
   return 0;
