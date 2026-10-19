@@ -39,10 +39,17 @@ export interface CliIo {
   stderr: Pick<NodeJS.WriteStream, 'write'>;
 }
 
+/** Seams a caller of {@link runOpmx} may replace; the process entry passes none. */
+export interface RunOpmxOptions {
+  /** Network for an ephemeral `pkg:` run; production resolves and pins real addresses. */
+  fetch?: typeof fetch;
+}
+
 export async function runOpmx(
   argv = process.argv.slice(2),
   io: CliIo = process,
   cwd = process.cwd(),
+  options: RunOpmxOptions = {},
 ): Promise<number> {
   try {
     if (argv.includes('--help') || argv.includes('-h') || argv.length === 0) {
@@ -104,6 +111,7 @@ export async function runOpmx(
       const tool = await fetchTool({
         purl: requested,
         ...(flags.offline && { offline: true }),
+        ...(!(options.fetch === undefined) && { fetch: options.fetch }),
       });
       const bin = selectToolBin(tool, binName);
       // Say which version ran: an unpinned run is another thing tomorrow.

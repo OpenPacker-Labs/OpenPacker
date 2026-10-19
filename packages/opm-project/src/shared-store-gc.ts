@@ -3,7 +3,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { link, lstat, readdir, rename, stat } from 'node:fs/promises';
+import { lstat, readdir, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   openStableDirectory,
@@ -25,12 +25,9 @@ function isMissing(error: unknown): boolean {
 export interface SharedStoreCollection {
   /** The shared root that was examined, when there is one. */
   root?: string;
-  /**
-   * Entries removed, or that would be on a dry run, with the leftovers of
-   * installs that died and the records whose entry is gone.
-   */
+  /** Entries removed, or that would be on a dry run. */
   removed: string[];
-  /** Entries some project still links to, or that a kept patched copy was made from. */
+  /** Entries some project still links to. */
   referenced: number;
   /** Unreferenced entries left alone because they are too new to judge. */
   tooNew: number;
@@ -45,6 +42,17 @@ export interface SharedStoreCollection {
  * nothing but the shared root. Only this explicit command ever does it —
  * project `gc` never touches the shared root — and it leaves an entry younger
  * than `minimumAgeMs`, which a concurrent install may be about to link.
+ *
+ * An entry's age is that of the newer of its record (`<entry>.tree`, by mtime)
+ * and the entry directory itself (by ctime, from `lstat`): either one changed
+ * within `minimumAgeMs` makes it too new. The record alone does not date a
+ * publication, because a publish that finds the same record already on disk
+ * does not write it again, and a record outlives its entry when a collection is
+ * interrupted between the two removals or a publish fails before its rename.
+ * The directory's ctime is set when the extraction fills it and moves again
+ * when it is renamed into place (ext4 does, as measured; POSIX leaves it open),
+ * so it dates the publication within the time an extraction takes, and nothing
+ * can set it back.
  */
 export async function collectSharedStore(
   input: {
@@ -75,10 +83,8 @@ export async function collectSharedStore(
   // What an install or an earlier collection left half-done when it died.
   for (const leftover of await readdir(root, { withFileTypes: true })) {
     if (
-      !(leftover.isDirectory() || leftover.isFile()) ||
-      !/^\.sha256-[0-9a-f]{64}(?:-patch-[0-9a-f]{64})?\.(materialize|collect)-/u.test(
-        leftover.name,
-      )
+      !leftover.isDirectory() ||
+      !/^\.sha256-[0-9a-f]{64}\.(materialize|collect)-/u.test(leftover.name)
     )
       continue;
     const path = join(root, leftover.name);
@@ -86,46 +92,24 @@ export async function collectSharedStore(
     if (info === undefined || now - info.mtimeMs < minimumAge) continue;
     result.removed.push(path);
     if (input.dryRun !== true)
-      await (leftover.isDirectory() ? removeStableTree : removeStableFile)(
-        path,
-      ).catch(() => undefined);
+      await removeStableTree(path).catch(() => undefined);
   }
   const keys = (await readdir(root, { withFileTypes: true }))
     .filter(
       (entry) =>
-        entry.isDirectory() &&
-        // An archive's files, or a patched copy of them (ADR 0056).
-        /^sha256-[0-9a-f]{64}(?:-patch-[0-9a-f]{64})?$/u.test(entry.name),
+        entry.isDirectory() && /^sha256-[0-9a-f]{64}$/u.test(entry.name),
     )
     .map((entry) => entry.name)
     .sort();
-  // A patched copy is judged before the entry it was made from (ADR 0056):
-  // while the copy is kept, so is that entry, which an install proves to be
-  // the package its lock names before it adopts the copy, offline too.
-  const needed = new Set<string>();
-  const keep = (key: string) => {
-    const at = key.indexOf('-patch-');
-    if (at !== -1) needed.add(key.slice(0, at));
-  };
-  for (const key of [
-    ...keys.filter((name) => name.includes('-patch-')),
-    ...keys.filter((name) => !name.includes('-patch-')),
-  ]) {
+  for (const key of keys) {
     const entry = join(root, key);
-    if (needed.has(key) || (await hasLinkedFile(entry))) {
+    if (await hasLinkedFile(entry)) {
       result.referenced += 1;
-      keep(key);
       continue;
     }
-    // Dated by its record, or, while it has none, by the directory itself: a
-    // patched entry is renamed into place before its record is written.
-    const published = await stat(`${entry}.tree`).then(
-      (record) => record.mtimeMs,
-      async () => (await lstat(entry).catch(() => undefined))?.ctimeMs,
-    );
+    const published = await publishedAt(entry);
     if (published !== undefined && now - published < minimumAge) {
       result.tooNew += 1;
-      keep(key);
       continue;
     }
     result.removed.push(entry);
@@ -140,49 +124,23 @@ export async function collectSharedStore(
     await removeStableFile(`${entry}.tree`).catch(() => undefined);
     await removeStableFile(`${entry}.artifact`).catch(() => undefined);
   }
-  await collectOrphanRecords(root, now - minimumAge, input.dryRun, result);
   return result;
 }
 
 /**
- * Remove every `<key>.tree` whose entry is gone and that is older than
- * `before`: an install or a collection that stopped between the record and
- * the entry leaves one, and no publish of that key may follow. A young one
- * may be a publish about to rename its entry into place. The record is moved
- * aside before it is removed, and put back if a publish replaced it in the
- * meantime (an atomic replace is a new inode).
+ * When `entry` was last published, in ms: the newer of its record's mtime and
+ * the directory's own ctime (never through a link), or undefined when neither
+ * can be read.
  */
-async function collectOrphanRecords(
-  root: string,
-  before: number,
-  dryRun: boolean | undefined,
-  result: SharedStoreCollection,
-): Promise<void> {
-  const names = new Set(await readdir(root));
-  for (const name of [...names].sort()) {
-    const key = /^(sha256-[0-9a-f]{64}(?:-patch-[0-9a-f]{64})?)\.tree$/u.exec(
-      name,
-    )?.[1];
-    if (key === undefined || names.has(key)) continue;
-    const path = join(root, name);
-    const judged = await lstat(path).catch(() => undefined);
-    if (judged?.isFile() !== true || judged.mtimeMs >= before) continue;
-    result.removed.push(path);
-    if (dryRun === true) continue;
-    const doomed = join(root, `.${key}.collect-${randomUUID()}`);
-    if (
-      !(await rename(path, doomed).then(
-        () => true,
-        () => false,
-      ))
-    )
-      continue;
-    const moved = await lstat(doomed);
-    if (moved.ino !== judged.ino || moved.dev !== judged.dev)
-      // Never over a record written since.
-      await link(doomed, path).catch(() => undefined);
-    await removeStableFile(doomed).catch(() => undefined);
-  }
+async function publishedAt(entry: string): Promise<number | undefined> {
+  const [record, directory] = await Promise.all([
+    stat(`${entry}.tree`).catch(() => undefined),
+    lstat(entry).catch(() => undefined),
+  ]);
+  const times = [record?.mtimeMs, directory?.ctimeMs].filter(
+    (time): time is number => time !== undefined,
+  );
+  return times.length === 0 ? undefined : Math.max(...times);
 }
 
 /** True when any file under `entry` has a second name somewhere else. */

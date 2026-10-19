@@ -62,6 +62,7 @@ import {
   verifyTufTarget,
 } from '@openpacker/trust';
 import { chromium } from 'playwright';
+import { chromiumLaunchOptions } from './chromium.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
@@ -721,7 +722,11 @@ function modeDigest(solved, receiptDigest) {
   };
 }
 
-async function browserSolve(input, receipt) {
+export async function browserSolve(
+  input,
+  receipt,
+  launch = () => chromium.launch(chromiumLaunchOptions()),
+) {
   const directory = join(root, 'packages/embedded/dist/esm');
   const server = createServer((request, response) => {
     const file =
@@ -745,8 +750,11 @@ async function browserSolve(input, receipt) {
     server.listen(0, '127.0.0.1', resolve).once('error', reject),
   );
   const address = server.address();
-  const browser = await chromium.launch({ headless: true });
+  let browser;
   try {
+    // Inside the try: a browser that cannot start must still close the server,
+    // or the listening socket keeps the process alive after the error is printed.
+    browser = await launch();
     const page = await browser.newPage();
     await page.goto(`http://127.0.0.1:${address.port}`);
     return await page.evaluate(
@@ -761,10 +769,13 @@ async function browserSolve(input, receipt) {
       { input, receipt },
     );
   } finally {
-    await browser.close();
-    await new Promise((resolve, reject) =>
-      server.close((error) => (error ? reject(error) : resolve())),
-    );
+    try {
+      await browser?.close();
+    } finally {
+      await new Promise((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
   }
 }
 
