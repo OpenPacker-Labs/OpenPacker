@@ -535,54 +535,53 @@ describe('materialiseTree', () => {
   it('rechecks staging after removing the previous destination', async () => {
     await withTemp(async (dir) => {
       const { materialiseTree } = await import('./layout.js');
+      const handlePath = await import('./handle-path.js');
       const source = join(dir, 'source');
       const root = join(dir, 'out');
       const destination = join(root, 'pkg');
       const old = join(destination, 'old');
       await mkdir(source);
       await mkdir(old, { recursive: true });
-      await writeFile(
-        join(source, 'large.bin'),
-        new Uint8Array(4 * 1024 * 1024),
-      );
-      const oldCount = 2_000;
+      await writeFile(join(source, 'package.json'), '{}');
       await Promise.all(
-        Array.from({ length: oldCount }, async (_, index) =>
+        Array.from({ length: 50 }, async (_, index) =>
           writeFile(join(old, String(index)), 'old'),
         ),
       );
 
-      let settled = false;
-      const materialising = materialiseTree(source, destination, root);
-      void materialising.then(
-        () => {
-          settled = true;
-        },
-        () => {
-          settled = true;
-        },
-      );
+      // Add a file to the staging directory right after the previous
+      // destination has been removed and before materialiseTree looks at
+      // staging again, from inside the removal itself. An earlier version
+      // polled for the moment half of the old tree was gone and wrote through
+      // the staging name; a poll starved by load wrote after the rename had
+      // moved staging away (ENOENT), and the test failed for a race of its own.
       let mutated = false;
-      while (!settled && !mutated) {
-        // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        const staging = (await readdir(root).catch(() => [] as string[])).find(
-          (entry) => entry.startsWith('.pkg.openpacker-'),
-        );
-        if (staging) {
-          // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          const remaining = await readdir(old).catch(() => [] as string[]);
-          if (remaining.length < oldCount) {
-            await writeFile(join(root, staging, 'attacker'), 'late mutation');
+      const removeChild = handlePath.removeChild;
+      const spy = vi
+        .spyOn(handlePath, 'removeChild')
+        .mockImplementation(async (parent, name, options) => {
+          await removeChild(parent, name, options);
+          if (name === 'pkg' && !mutated) {
             mutated = true;
+            const staging = (await readdir(root)).find((entry) =>
+              entry.startsWith('.pkg.openpacker-'),
+            );
+            if (staging === undefined)
+              throw new Error('staging was gone before the recheck');
+            await writeFile(join(root, staging, 'attacker'), 'late mutation');
           }
-        }
-        if (!mutated)
-          await new Promise<void>((resolve) => setImmediate(resolve));
+        });
+      try {
+        await expect(
+          materialiseTree(source, destination, root),
+        ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+        expect(mutated).toBe(true);
+        await expect(lstat(destination)).rejects.toMatchObject({
+          code: 'ENOENT',
+        });
+      } finally {
+        spy.mockRestore();
       }
-      expect(mutated).toBe(true);
-      await expect(materialising).rejects.toMatchObject({
-        code: 'UNSAFE_PATH',
-      });
     });
   });
 

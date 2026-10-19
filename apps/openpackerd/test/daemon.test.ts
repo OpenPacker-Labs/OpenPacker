@@ -244,6 +244,15 @@ describe('openpackerd', () => {
         'utf8',
       ),
     ) as SolveRequest;
+    // The first request pays for starting the app (route and schema set-up,
+    // 0.2 to 0.4 s alone, over 1.3 s at load 20); the bound is on answering a
+    // refused solve, so it is read on the second.
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/solve',
+      payload: request,
+    });
+    expect(first.statusCode).toBe(429);
     const started = Date.now();
     const response = await app.inject({
       method: 'POST',

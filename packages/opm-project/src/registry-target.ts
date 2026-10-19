@@ -1,8 +1,8 @@
 import type { PolicyDocument } from '@openpacker/policy';
 import type { CatalogProvider } from '@openpacker/adapter-core';
-import { codecFor } from './codecs.js';
+import { codecFor, hasCodec } from './codecs.js';
 import { listRegistryVersions, type RegistryOptions } from './registry.js';
-import { stripPurlVersion } from './spec.js';
+import { purlAtVersion, stripPurlVersion } from './spec.js';
 import { insideReleaseAge } from './supply-chain.js';
 import { OpmError } from './types.js';
 
@@ -18,8 +18,35 @@ import { OpmError } from './types.js';
  * `string-width-cjs@npm:string-width@^4` could have locked 7.x.
  */
 
+/**
+ * The release asked for by what the manifest wrote, for an ecosystem whose
+ * adapter exports no codec (a delegated plugin's): nothing here can tell a
+ * range or a tag from a version, so any hint, `^` and `~` ranges included, goes
+ * to the plugin as written, encoded as the PURL's version (`^1.0.0` is asked
+ * for as `@%5E1.0.0`). The hint is text, not PURL syntax: an `@`, `/`, `?` or
+ * `#` in it stays inside the version, and a hint that cannot is refused, so it
+ * never names another package, a qualifier or a subpath (`purlAtVersion`). The
+ * identity the plugin answers must carry that same package and version, so it
+ * cannot turn a range into a release: it accepts the hint as the version it
+ * names, or the resolve fails. Undefined when the ecosystem has a codec or
+ * nothing was written; only the latter lists the releases.
+ */
+export function targetAsWritten(
+  ecosystem: string,
+  purl: string,
+  hint: string | undefined,
+): string | undefined {
+  if (hint === undefined || hint === '' || hasCodec(ecosystem))
+    return undefined;
+  return purlAtVersion(purl, hint);
+}
+
 /** Whether `hint` is one release, in the ecosystem's own grammar. */
 export function isExactVersion(ecosystem: string, hint: string): boolean {
+  // With no codec nothing can tell a range or a tag from a version. A resolve
+  // does not act on this answer for such an ecosystem: `targetAsWritten`, which
+  // it asks first, sends the hint as written.
+  if (!hasCodec(ecosystem)) return true;
   try {
     codecFor(ecosystem).parseNativeVersion(hint);
     return true;
