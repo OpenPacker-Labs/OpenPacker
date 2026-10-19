@@ -19,7 +19,7 @@
  */
 
 import { echoed } from '@openpacker/adapter-core';
-import { quoted } from './layout-plan.js';
+import { quoted } from './layout-names.js';
 import {
   chainOfLockPath,
   readEntry,

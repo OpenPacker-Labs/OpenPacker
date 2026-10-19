@@ -5,7 +5,7 @@
  */
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { plain, quoted, RunError } from './run-error.js';
+import { RunError } from './run-error.js';
 import { firstWord, isBatchFile, planScript } from './run-command-line.js';
 import {
   exitStatus,
@@ -15,6 +15,7 @@ import {
 } from './run-child.js';
 import type { RunContext } from './run-context.js';
 import { binDirectories, resolveBin, scriptEnvironment } from './run-paths.js';
+import { plain, quoted } from './run-plain.js';
 
 export interface PackageFile {
   name: string | undefined;
@@ -33,7 +34,10 @@ function asText(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-/** What `opm run` keeps of a `package.json`: its name, version and scripts. */
+/**
+ * What `opm run` keeps of a `package.json`: its name, version and scripts. The
+ * path is quoted as one plain line in what it says (`run-plain.ts`).
+ */
 export async function readPackageText(
   file: string,
   text: string,
@@ -155,16 +159,16 @@ export interface ScriptRun {
 }
 
 /** Refuse a `pre`, main or `post` script that is not a string, before any step runs. */
-export function assertStringSteps(
+export async function assertStringSteps(
   dir: string,
   pkg: PackageFile,
   script: string,
-): void {
+): Promise<void> {
   for (const event of stepsOf(pkg, script))
     if (typeof pkg.scripts.get(event) !== 'string')
       throw new RunError(
         'INVALID_MANIFEST',
-        `Script "${event}" in ${join(dir, 'package.json')} is not a string`,
+        `Script "${event}" in ${await quoted(join(dir, 'package.json'))} is not a string`,
       );
 }
 

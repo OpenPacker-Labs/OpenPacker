@@ -95,7 +95,7 @@ export async function runScriptInWorkspace(
     );
   }
   for (const member of having)
-    assertStringSteps(member.abs, packages.get(member.dir)!, script);
+    await assertStringSteps(member.abs, packages.get(member.dir)!, script);
   const initCwd = resolve(cwd);
   const hasScript = new Set(having);
   const tasks: MemberTask[] = plan.members.map((member) => {

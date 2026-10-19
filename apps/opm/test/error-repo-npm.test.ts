@@ -121,6 +121,7 @@ describe('opm ci, in a repository whose lock holds an entry it refuses', () => {
         member(lock, 'packages', 'packages/l').name = `lnk${text}`;
       },
     ],
+<<<<<<< ours
     [
       "a workspace member's directory, the member not linked",
       (lock, manifest, text) => {
@@ -135,6 +136,8 @@ describe('opm ci, in a repository whose lock holds an entry it refuses', () => {
         delete member(packages, '', 'dependencies').lnk;
       },
     ],
+=======
+>>>>>>> theirs
   ])('one line, when it is %s', async (_, edit) => {
     await expectNoNewLines(repo('links', edit), CI);
   });

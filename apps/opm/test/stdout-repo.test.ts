@@ -48,6 +48,7 @@ describe('opm list, in a repository whose opm.lock.json holds', () => {
         ];
       },
     ],
+<<<<<<< ours
     [
       'a name another package installs it under',
       (lock, _toml, text) => {
@@ -59,6 +60,8 @@ describe('opm list, in a repository whose opm.lock.json holds', () => {
         };
       },
     ],
+=======
+>>>>>>> theirs
   ])('one line a package, when it is %s', async (_, edit) => {
     await expectNoNewLines(repo(edit), ['list']);
   });
@@ -100,6 +103,7 @@ describe('opm why, in a repository whose files hold', () => {
     await expectNoNewLines(repo(edit), ['why', 'a']);
   });
 
+<<<<<<< ours
   it.each<[string, Edit]>([
     [
       'the name a package requires it under',
@@ -138,6 +142,8 @@ describe('opm why, in a repository whose files hold', () => {
     await expectNoNewLines(repo(edit), ['why', 'a']);
   });
 
+=======
+>>>>>>> theirs
   it('one line, when the package is only in the lock', async () => {
     await expectNoNewLines(
       repo((lock, _toml, text) => {

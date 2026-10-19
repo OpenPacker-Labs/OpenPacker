@@ -1,6 +1,7 @@
-import { parseCanonicalJson } from '@openpacker/canonical';
+import { echoed } from '@openpacker/adapter-core';
+import { parseCanonicalJson, printable } from '@openpacker/canonical';
+import type { JsonValue } from '@openpacker/contracts';
 import { isSourceKind, isTrustTier } from '@openpacker/policy';
-import { canonicalLockPurl } from './lock-purl.js';
 import { readStableFile, writeStableFile } from './paths.js';
 import type {
   BinDeclaration,
@@ -32,7 +33,6 @@ export function serializeLockfile(lock: OpmLockfile): string {
     if (!pkg) continue;
     packages[alias] = {
       ...pkg,
-      purl: canonicalLockPurl(pkg.purl),
       bins: [...pkg.bins].sort((a, b) => a.name.localeCompare(b.name)),
     };
   }
@@ -50,31 +50,65 @@ export function serializeLockfile(lock: OpmLockfile): string {
   )}\n`;
 }
 
+/**
+ * A lock reduced to what a fresh resolution of the same manifest must
+ * reproduce.
+ *
+ * Attestation state that advances by itself — a signed list's sequence rises
+ * with every release the vendor publishes — differs between resolutions
+ * without the release changing, so it is left out. Which keys advance is taken
+ * from `reference`, the fresh resolution, never from the lock under
+ * verification: an edited lock cannot excuse its own differences.
+ */
+export function reproducibleLockForm(
+  lock: OpmLockfile,
+  reference: OpmLockfile,
+): JsonValue {
+  const packages = Object.fromEntries(
+    Object.entries(lock.packages).map(([alias, pkg]) => {
+      if (pkg.attestation === undefined) return [alias, pkg];
+      const skipped = new Set(
+        reference.packages[alias]?.attestation?.advancing ?? [],
+      );
+      const record = Object.fromEntries(
+        Object.entries(pkg.attestation.record).filter(
+          ([key]) => !skipped.has(key),
+        ),
+      );
+      // The list of advancing keys is the provider's description of its own
+      // record, not a fact about the release, so it is not compared either.
+      const { advancing: _described, ...attestation } = pkg.attestation;
+      return [alias, { ...pkg, attestation: { ...attestation, record } }];
+    }),
+  );
+  // SAFETY: serializeLockfile writes JSON.
+  return JSON.parse(serializeLockfile({ ...lock, packages })) as JsonValue;
+}
+
 export function parseLockfile(text: string): OpmLockfile {
-  let value: unknown;
+  let value: JsonValue;
   try {
     value = parseCanonicalJson(text);
   } catch (error) {
     throw new OpmError(
       'INVALID_LOCK',
-      `opm.lock.json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `opm.lock.json is not valid JSON: ${echoed(error instanceof Error ? error.message : String(error))}`,
     );
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new OpmError('INVALID_LOCK', 'opm.lock.json must be a JSON object');
   }
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const record = value as Record<string, unknown>;
+  const record = value;
   if (record.schemaVersion !== 1) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Unsupported lock schemaVersion: ${String(record.schemaVersion)}`,
+      `Unsupported lock schemaVersion: ${echoed(printable(record.schemaVersion))}`,
     );
   }
   if (record.generatedBy !== 'opm') {
     throw new OpmError(
       'INVALID_LOCK',
-      `Unexpected generatedBy: ${String(record.generatedBy)}`,
+      `Unexpected generatedBy: ${echoed(printable(record.generatedBy))}`,
     );
   }
   if (
@@ -103,7 +137,10 @@ export function parseLockfile(text: string): OpmLockfile {
 
 function parseLockPackage(alias: string, raw: unknown): LockPackage {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    throw new OpmError('INVALID_LOCK', `Invalid lock package entry: ${alias}`);
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Invalid lock package entry: ${echoed(alias)}`,
+    );
   }
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const pkg = raw as Record<string, unknown>;
@@ -112,34 +149,37 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
     if (typeof value !== 'string' || value === '') {
       throw new OpmError(
         'INVALID_LOCK',
-        `Package "${alias}" missing string field ${key}`,
+        `Package "${echoed(alias)}" missing string field ${key}`,
       );
     }
     return value;
   };
   const size = pkg.size;
   if (typeof size !== 'number' || !Number.isInteger(size) || size < 0) {
-    throw new OpmError('INVALID_LOCK', `Package "${alias}" has invalid size`);
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${echoed(alias)}" has invalid size`,
+    );
   }
   const format = requiredString('format');
   if (format !== 'tar' && format !== 'tar+gzip' && format !== 'zip') {
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${alias}" has unsupported format ${format}`,
+      `Package "${echoed(alias)}" has unsupported format ${echoed(format)}`,
     );
   }
   const binsRaw = pkg.bins;
   if (!Array.isArray(binsRaw)) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${alias}" bins must be an array`,
+      `Package "${echoed(alias)}" bins must be an array`,
     );
   }
   const bins = binsRaw.map((entry, index) => {
     if (typeof entry !== 'object' || entry === null) {
       throw new OpmError(
         'INVALID_LOCK',
-        `Package "${alias}" bins[${index}] invalid`,
+        `Package "${echoed(alias)}" bins[${index}] invalid`,
       );
     }
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -147,7 +187,7 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
     if (typeof bin.name !== 'string' || typeof bin.path !== 'string') {
       throw new OpmError(
         'INVALID_LOCK',
-        `Package "${alias}" bins[${index}] needs name and path`,
+        `Package "${echoed(alias)}" bins[${index}] needs name and path`,
       );
     }
     // interpreter/entry ride along so a lock round-trip keeps how the bin
@@ -163,14 +203,14 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
     if (rawInterpreter !== undefined && interpreter === undefined) {
       throw new OpmError(
         'INVALID_LOCK',
-        `Package "${alias}" bins[${index}] has invalid interpreter`,
+        `Package "${echoed(alias)}" bins[${index}] has invalid interpreter`,
       );
     }
     const binEntry = bin.entry;
     if (binEntry !== undefined && typeof binEntry !== 'string') {
       throw new OpmError(
         'INVALID_LOCK',
-        `Package "${alias}" bins[${index}] has invalid entry`,
+        `Package "${echoed(alias)}" bins[${index}] has invalid entry`,
       );
     }
     return {
@@ -182,18 +222,21 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   });
   const reason = pkg.reason;
   if (reason !== 'direct' && reason !== 'transitive') {
-    throw new OpmError('INVALID_LOCK', `Package "${alias}" has invalid reason`);
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${echoed(alias)}" has invalid reason`,
+    );
   }
   if (pkg.trustLevel !== undefined && !isTrustTier(pkg.trustLevel)) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${alias}" has invalid trustLevel`,
+      `Package "${echoed(alias)}" has invalid trustLevel`,
     );
   }
   if (pkg.sourceKind !== undefined && !isSourceKind(pkg.sourceKind)) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${alias}" has invalid sourceKind`,
+      `Package "${echoed(alias)}" has invalid sourceKind`,
     );
   }
   if (
@@ -202,7 +245,7 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   ) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${alias}" has invalid publishedAt`,
+      `Package "${echoed(alias)}" has invalid publishedAt`,
     );
   }
   if (
@@ -211,13 +254,13 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   ) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${alias}" has invalid registryId`,
+      `Package "${echoed(alias)}" has invalid registryId`,
     );
   }
   if (pkg.lifecycle !== undefined && !isLifecycleState(pkg.lifecycle))
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${alias}" has invalid lifecycle`,
+      `Package "${echoed(alias)}" has invalid lifecycle`,
     );
   if (
     pkg.nativeIntegrity !== undefined &&
@@ -225,7 +268,7 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   )
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${alias}" has invalid nativeIntegrity`,
+      `Package "${echoed(alias)}" has invalid nativeIntegrity`,
     );
   const attestation = parseAttestation(alias, pkg.attestation);
   if (
@@ -237,13 +280,13 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   )
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${alias}" has invalid dependencies`,
+      `Package "${echoed(alias)}" has invalid dependencies`,
     );
   const aliases = parseAliases(alias, pkg.aliases);
   const installName = parseInstallName(alias, pkg.installName);
   const built: LockPackage = {
     alias,
-    purl: canonicalLockPurl(requiredString('purl')),
+    purl: requiredString('purl'),
     version: requiredString('version'),
     digest: requiredString('digest'),
     size,

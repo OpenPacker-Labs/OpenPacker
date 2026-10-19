@@ -17,7 +17,7 @@
  * prefix. What a member holds back is then its block (up to the group limit)
  * and at most one unfinished line per stream.
  */
-import { outRaw, plainLine } from '@openpacker/canonical';
+import { plainLine } from '@openpacker/canonical';
 import type { ChildIo } from './run-child.js';
 
 export const GROUP_LIMIT = 8 * 1024 * 1024;
@@ -111,7 +111,9 @@ export class MemberOutput {
   /** The streams for one step of the member (`build`, `prebuild`, `tsc`). */
   step(name: string): ChildIo {
     this.endLines();
-    this.prefix = `${this.label} ${plainLine(name)}: `;
+    // The member's name and the step's both came from its package.json, and
+    // the prefix is opm's own text before every line of it.
+    this.prefix = `${plainLine(this.label)} ${plainLine(name)}: `;
     return {
       stdout: { write: (chunk) => this.take('stdout', String(chunk)) },
       stderr: { write: (chunk) => this.take('stderr', String(chunk)) },
@@ -124,14 +126,13 @@ export class MemberOutput {
   }
 
   private endLines(): void {
-    this.lines.stdout.end();
-    this.lines.stderr.end();
+    for (const lines of Object.values(this.lines)) lines.end();
   }
 
   private write(stream: Stream, line: string): void {
     const text = `${this.prefix}${line}\n`;
     if (this.streaming) {
-      this.emit(stream, text);
+      this.out[stream].write(text);
       return;
     }
     this.held.push({ stream, text });
@@ -143,18 +144,9 @@ export class MemberOutput {
   }
 
   private flush(): void {
-    for (const { stream, text } of this.held.splice(0)) this.emit(stream, text);
+    for (const { stream, text } of this.held.splice(0))
+      this.out[stream].write(text);
     this.heldBytes = 0;
-  }
-
-  /**
-   * A line of the member's own output after its prefix: the prefix is opm's and
-   * one plain line (`memberLabel`, `step`), the rest is what the child wrote, as
-   * a single run passes it through (`run-child.ts`).
-   */
-  private emit(stream: Stream, text: string): void {
-    if (stream === 'stdout') outRaw(this.out, text);
-    else this.out.stderr.write(text);
   }
 
   /** The member has ended: finish the last lines and write what is held. */
@@ -164,15 +156,10 @@ export class MemberOutput {
   }
 }
 
-/**
- * The label a member is shown by: its name, else its directory (`.` for the
- * root). A directory is named by whoever made the repository, and the label
- * starts every line of the member's output and names it in every message, so it
- * is one plain line.
- */
+/** The label a member is shown by: its name, else its directory (`.` for the root). */
 export function memberLabel(member: {
   name: string | undefined;
   dir: string;
 }): string {
-  return plainLine(member.name ?? (member.dir === '' ? '.' : member.dir));
+  return member.name ?? (member.dir === '' ? '.' : member.dir);
 }

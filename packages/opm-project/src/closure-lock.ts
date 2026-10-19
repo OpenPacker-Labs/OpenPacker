@@ -1,9 +1,8 @@
 import { echoed } from '@openpacker/adapter-core';
-import { plainLine } from '@openpacker/canonical';
 import type { PackageInstance } from '@openpacker/contracts';
 import { binDeclarationsFromExecutables } from './bins.js';
 import { requireAdapterRegistry } from './adapters.js';
-import { rootRangeFor } from './closure-roots.js';
+import { codecFor } from './codecs.js';
 import {
   bindVerifiedArtifactBytes,
   digestOf,
@@ -18,6 +17,8 @@ import {
   type RegistryArtifact,
   type RegistryOptions,
 } from './registry.js';
+import { isChangedUnderTheResolve } from './registry-changed.js';
+import { unresolvedNote } from './closure-note.js';
 import { resolveGraph, type ResolvedGraph } from './resolve.js';
 import { solveGraph } from './solve.js';
 import { purlPackageName, stripPurlVersion } from './spec.js';
@@ -44,6 +45,29 @@ import { OpmError } from './types.js';
  * another name), and a name selected at more than one version has an entry per
  * version (ADR 0054).
  */
+
+/**
+ * The manifest constraint for a package, when its ecosystem can read it.
+ *
+ * `version` in opm.toml is whatever the user wrote, and an exact pin is not
+ * always a valid range: PyPI wants `==1.0.0`, so a bare `1.0.0` fails to parse
+ * and the whole closure comes back empty. Probe the codec and drop a range it
+ * cannot read — candidate enumeration is bounded either way, and the solver is
+ * pinned to the locked version regardless.
+ */
+function nativeRangeFor(
+  pkg: LockPackage,
+  manifest: OpmManifest,
+): string | undefined {
+  const declared = manifest.packages[pkg.alias]?.version;
+  if (declared === undefined) return undefined;
+  try {
+    codecFor(pkg.ecosystem).parseNativeRange(declared);
+    return declared;
+  } catch {
+    return undefined;
+  }
+}
 
 /** What the closure of the direct entries adds to a lock. */
 export interface TransitiveLock {
@@ -90,8 +114,8 @@ export async function resolveTransitive(input: {
           : undefined,
       roots: resolvable.map((pkg) => ({
         purl: stripPurlVersion(pkg.purl),
-        ...(!(rootRangeFor(pkg, input.manifest) === undefined) && {
-          range: rootRangeFor(pkg, input.manifest)!,
+        ...(!(nativeRangeFor(pkg, input.manifest) === undefined) && {
+          range: nativeRangeFor(pkg, input.manifest)!,
         }),
       })),
     });
@@ -235,8 +259,8 @@ export async function resolveTransitive(input: {
         const own = purlPackageName(instance.identity.canonicalPurl);
         throw new OpmError(
           error.code,
-          `${error.message} (${exact} is required by ${dependent.identity.exactPurl}` +
-            `${asked.installName === own ? '' : ` as ${asked.installName}`})`,
+          `${error.message} (${echoed(exact)} is required by ${echoed(String(dependent.identity.exactPurl))}` +
+            `${asked.installName === own ? '' : ` as ${echoed(asked.installName)}`})`,
           { cause: error },
         );
       }
@@ -325,6 +349,7 @@ export async function resolveTransitive(input: {
     // missing. The policy, digest and size refusals already propagated as they
     // were; the rest now say what stopped the closure.
     if (error instanceof OpmError && isClosureRefusal(error)) throw error;
+    if (isChangedUnderTheResolve(error)) throw error;
     const reason = error instanceof Error ? error.message : String(error);
     throw new OpmError(
       error instanceof OpmError ? error.code : 'UNRESOLVABLE',
@@ -341,36 +366,5 @@ function isClosureRefusal(error: OpmError): boolean {
     error.code === 'POLICY_INDETERMINATE' ||
     error.code === 'DIGEST_MISMATCH' ||
     error.code === 'SIZE_MISMATCH'
-  );
-}
-
-/** Who asked for a package, for a line of an error. */
-function askedBy(requiredBy: readonly string[] | undefined): string {
-  if (requiredBy === undefined || requiredBy.length === 0) return '';
-  return ` (required by ${requiredBy.slice(0, 3).join(', ')}${requiredBy.length > 3 ? `, and ${requiredBy.length - 3} more` : ''})`;
-}
-
-/**
- * The candidates the walk had to set aside, and the ones the policy did, for an
- * error that follows from it.
- */
-function unresolvedNote(
-  unresolved: ResolvedGraph['unresolved'],
-  gated: ResolvedGraph['gated'],
-): string {
-  const list = (items: ResolvedGraph['unresolved']) =>
-    items
-      .slice(0, 5)
-      .map(
-        (item) =>
-          `\n  - ${echoed(item.purl)}: ${plainLine(item.reason)}${askedBy(item.requiredBy)}`,
-      )
-      .join('') +
-    (items.length > 5 ? `\n  - and ${items.length - 5} more` : '');
-  return (
-    (unresolved.length === 0
-      ? ''
-      : `\nWhat the walk could not use:${list(unresolved)}`) +
-    (gated.length === 0 ? '' : `\nWhat the policy set aside:${list(gated)}`)
   );
 }

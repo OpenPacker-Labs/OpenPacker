@@ -110,7 +110,11 @@ const EXEMPT: ReadonlyArray<{
     file: 'commands/run.ts',
     starts: '`opm: ${result.failure}',
     reason:
+<<<<<<< ours
       "how a script of the project ended (`describeEnd`): the name of a script in the person's own package.json and an exit status; the run path loads no workspace package (run-load.test.ts). A run over members writes the same through `report` (run-members.ts)",
+=======
+      "the name of a script in the person's own package.json, labelled with no member, and an exit status; the run path loads no workspace package (run-load.test.ts)",
+>>>>>>> theirs
   },
   {
     file: 'commands/run.ts',
@@ -121,6 +125,7 @@ const EXEMPT: ReadonlyArray<{
   {
     file: 'commands/run-child.ts',
     starts: 'const handedNoTerminal',
+<<<<<<< ours
     reason:
       "compares the stdio choices made on the lines above (a child handed none of the terminal's streams gets a group of its own); writes nothing",
   },
@@ -135,6 +140,9 @@ const EXEMPT: ReadonlyArray<{
     starts: 'text',
     reason:
       "a line of a member's own stderr in a run over members: the prefix is opm's and one plain line (`memberLabel`, `step`), the rest is what the child wrote, passed through as run-child.ts passes a single script's",
+=======
+    reason: 'compares the stdio choices made above; writes nothing',
+>>>>>>> theirs
   },
   {
     file: 'commands/run-child.ts',
@@ -226,7 +234,10 @@ describe('what opm writes to stderr', () => {
         'commands/packslip.ts',
         'commands/run-child.ts',
         'commands/run-members.ts',
+<<<<<<< ours
         'commands/run-output.ts',
+=======
+>>>>>>> theirs
         'commands/run.ts',
         'openpacker-cli/index.ts',
         'openpackerd/cli.ts',

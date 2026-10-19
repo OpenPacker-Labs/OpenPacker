@@ -16,9 +16,10 @@ import {
   listRegistryVersions,
   providerFor,
   resolveRegistryArtifactDeferred,
+  type RegistryOptions,
 } from './registry.js';
-import type { ToolPackage } from './ephemeral-layout.js';
-import { solveToolClosure } from './ephemeral-closure.js';
+import { resolveGraph } from './resolve.js';
+import { solveGraph } from './solve.js';
 import { requireAdapterRegistry } from './adapters.js';
 import {
   captureFactsFromCatalog,
@@ -72,10 +73,6 @@ export interface EphemeralTool {
    * transitive dependencies of the tool are importable.
    */
   runtimePaths: string[];
-  /** The tool cache the run was placed in. */
-  cacheRoot: string;
-  /** The tool and every package of its runtime closure, as the cache holds them. */
-  closure: ToolPackage[];
 }
 
 /**
@@ -91,6 +88,13 @@ export async function fetchTool(input: {
   purl: string;
   offline?: boolean;
   cacheRoot?: string;
+  /**
+   * Network used for registry metadata and artifact bytes. Production leaves
+   * it unset and dials the pinned, classified address of each registry; a
+   * caller that hands one in (a test serving a fixture registry) is
+   * responsible for what it reaches, so no address is resolved or pinned.
+   */
+  fetch?: typeof fetch;
 }): Promise<EphemeralTool> {
   const ecosystem = ecosystemFromPurl(input.purl);
   if (!requireAdapterRegistry().has(ecosystem))
@@ -105,12 +109,16 @@ export async function fetchTool(input: {
         'Install the tool into a project instead.',
     );
 
+  const registry: RegistryOptions =
+    input.fetch === undefined ? {} : { fetch: input.fetch };
+
   const exact = input.purl.includes('@', 'pkg:'.length)
     ? input.purl
     : await (async () => {
         const versions = await listRegistryVersions(
           ecosystem,
           stripPurlVersion(input.purl),
+          registry,
         );
         const newest = versions[versions.length - 1];
         if (!newest)
@@ -124,31 +132,37 @@ export async function fetchTool(input: {
   const cacheRoot = input.cacheRoot ?? toolCacheRoot();
   await mkdir(cacheRoot, { recursive: true });
 
-  const primary = await materialiseExact(ecosystem, exact, cacheRoot);
+  const primary = await materialiseExact(ecosystem, exact, cacheRoot, registry);
 
   // Runtime closure: everything the tool needs at run time. Soft-fail if the
   // walk cannot complete — a tool that declares no dependencies must still
   // run, and a registry that omits a dependency must not make a previously
   // runnable tool unusable.
   const runtimePaths = [primary.storePath];
-  const closure: ToolPackage[] = [toolPackage(primary)];
   try {
-    const solved = await solveToolClosure({
-      tool: primary.exactPurl,
-      ecosystem,
+    const graph = await resolveGraph({
+      roots: [{ purl: stripPurlVersion(primary.exactPurl) }],
+      options: registry,
     });
-    if (solved !== undefined) {
-      for (const { exactPurl, purlType } of solved.dependencies) {
-        if (!requireAdapterRegistry().has(purlType)) continue;
-        const dep = await materialiseExact(purlType, exactPurl, cacheRoot);
-        if (!runtimePaths.includes(dep.storePath)) {
+    if (graph.packages.length > 0) {
+      const solved = await solveGraph({
+        graph,
+        rootRequirements: [{ purl: stripPurlVersion(primary.exactPurl) }],
+      });
+      for (const instance of solved.selected) {
+        const depExact = instance.identity.exactPurl;
+        if (!depExact || depExact === primary.exactPurl) continue;
+        const depEco = instance.identity.purlType;
+        if (!requireAdapterRegistry().has(depEco)) continue;
+        const dep = await materialiseExact(
+          depEco,
+          depExact,
+          cacheRoot,
+          registry,
+        );
+        if (!runtimePaths.includes(dep.storePath))
           runtimePaths.push(dep.storePath);
-          closure.push(toolPackage(dep));
-        }
       }
-      // Which package each one requires, for the layout an npm tool runs from.
-      for (const pkg of closure)
-        pkg.requires = solved.requires.get(pkg.exactPurl) ?? {};
     }
   } catch {
     // Direct tool only; the run path still works for packages without a graph.
@@ -161,8 +175,6 @@ export async function fetchTool(input: {
     bins: primary.bins,
     cached: primary.cached,
     runtimePaths,
-    cacheRoot,
-    closure,
   };
 }
 
@@ -170,20 +182,26 @@ async function materialiseExact(
   ecosystem: string,
   exact: string,
   cacheRoot: string,
-): Promise<
-  ToolPackage & {
-    bins: BinDeclaration[];
-    cached: boolean;
-  }
-> {
+  registry: RegistryOptions,
+): Promise<{
+  exactPurl: string;
+  digest: string;
+  storePath: string;
+  bins: BinDeclaration[];
+  cached: boolean;
+}> {
   // Resolve the artifact identity with the byte download deferred: what an
   // unpinned purl means today is registry metadata and is re-read on every
   // run, but the bytes are content-addressed, so a digest the tool cache
   // already holds does not need to move again.
-  const resolved = await resolveRegistryArtifactDeferred(ecosystem, exact);
+  const resolved = await resolveRegistryArtifactDeferred(
+    ecosystem,
+    exact,
+    registry,
+  );
   const policyInput = defaultSupplyChainPolicyInput();
   const { facts } = await captureFactsFromCatalog(
-    await providerFor(ecosystem),
+    await providerFor(ecosystem, registry),
     resolved.exactPurl,
     {
       evaluationTime: new Date().toISOString(),
@@ -228,8 +246,6 @@ async function materialiseExact(
         return {
           exactPurl: resolved.exactPurl,
           digest: resolved.digest,
-          size: pkg.size,
-          source: pkg.source,
           storePath: hit.storePath,
           bins: hit.bins,
           cached: true,
@@ -253,8 +269,6 @@ async function materialiseExact(
   return {
     exactPurl: resolved.exactPurl,
     digest: resolved.digest,
-    size: pkg.size,
-    source: pkg.source,
     storePath,
     bins,
     cached: cached ?? false,
@@ -313,15 +327,4 @@ export function selectToolBin(
     `${tool.exactPurl} provides several executables and none matches the ` +
       `package name. Name one with --bin: ${tool.bins.map((bin) => bin.name).join(', ')}.`,
   );
-}
-
-/** What the layout of a run needs of a materialised package, and no more. */
-function toolPackage(pkg: ToolPackage): ToolPackage {
-  return {
-    exactPurl: pkg.exactPurl,
-    digest: pkg.digest,
-    size: pkg.size,
-    source: pkg.source,
-    storePath: pkg.storePath,
-  };
 }
