@@ -8,7 +8,7 @@
  * or an executable `opm sync` laid out in `node_modules/.bin`.
  */
 import { join, resolve } from 'node:path';
-import { plain, quoted, RunError } from './run-error.js';
+import { RunError } from './run-error.js';
 import {
   parseExecRequest,
   parseRunRequest,
@@ -35,7 +35,6 @@ import {
   findProjectRoot,
   scriptEnvironment,
 } from './run-paths.js';
-import { plain, quoted } from './run-plain.js';
 import { missingBinError, resolveExecutable } from './run-resolve.js';
 
 export { processContext, type RunContext } from './run-context.js';
@@ -49,25 +48,10 @@ async function projectDirectory(
   return (await findProjectRoot(cwd)) ?? resolve(cwd);
 }
 
-/**
- * A command on one line: a line feed shows as the two characters `\n`, and
- * what a terminal acts on is removed.
- */
-function oneLine(command: string, plainLine: (text: string) => string): string {
-  return plainLine(command.replace(/\r?\n/gu, '\\n'));
-}
-
+/** The scripts a `package.json` wrote; the printer that escapes them loads the library. */
 async function listScripts(pkg: PackageFile, io: ChildIo): Promise<number> {
-  // Through a dynamic import, like `plain`, so that starting a script loads
-  // nothing but Node and this directory.
-  const { out, plainLine } = await import('@openpacker/canonical');
-  let listed = 0;
-  for (const [name, command] of pkg.scripts)
-    if (typeof command === 'string') {
-      out(io, `${plainLine(name)}\t${oneLine(command, plainLine)}\n`);
-      listed += 1;
-    }
-  if (listed === 0) out(io, '(no scripts)\n');
+  const { writeScripts } = await import('../terminal-lines.js');
+  writeScripts(pkg.scripts, io);
   return 0;
 }
 
@@ -111,7 +95,7 @@ export async function runScriptCommand(
   if (pkg === undefined)
     throw new RunError(
       'NOT_FOUND',
-      `No package.json in ${await quoted(root)}; opm run reads the scripts of the project's package.json (--path <dir> names another)`,
+      `No package.json in ${root}; opm run reads the scripts of the project's package.json (--path <dir> names another)`,
     );
   if (request.script === undefined) return await listScripts(pkg, io);
 
@@ -120,11 +104,10 @@ export async function runScriptCommand(
     if (request.ifPresent) return 0;
     if (request.fallbackExec)
       return await execInstead(request, script, io, cwd, context);
-    const plainLine = await plain();
-    const names = [...pkg.scripts.keys()].map((name) => plainLine(name));
+    const names = [...pkg.scripts.keys()];
     throw new RunError(
       'NOT_FOUND',
-      `No script "${script}" in ${plainLine(join(root, 'package.json'))}` +
+      `No script "${script}" in ${join(root, 'package.json')}` +
         (names.length === 0
           ? ' (it has no scripts)'
           : `; it has: ${names.slice(0, 12).join(', ')}${names.length > 12 ? ', ...' : ''}`),
@@ -140,7 +123,11 @@ export async function runScriptCommand(
     initCwd: resolve(cwd),
     context,
   });
-  if (result.failure !== undefined) io.stderr.write(`opm: ${result.failure}\n`);
+  if (result.failure !== undefined) {
+    // A failure is the rare path: the printer that escapes it loads the library.
+    const { say } = await import('../error-report.js');
+    say(io.stderr, `opm: ${result.failure}\n`);
+  }
   return result.status;
 }
 
@@ -196,8 +183,10 @@ export async function runExecCommand(
     io,
     context.host,
   );
-  if (outcome.code === undefined)
-    io.stderr.write(`opm: ${describeEnd(`"${request.bin}"`, outcome)}\n`);
+  if (outcome.code === undefined) {
+    const { say } = await import('../error-report.js');
+    say(io.stderr, `opm: ${describeEnd(`"${request.bin}"`, outcome)}\n`);
+  }
   return exitStatus(outcome);
 }
 

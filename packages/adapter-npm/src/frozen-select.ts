@@ -22,15 +22,6 @@
  * host's to judge.
  */
 
-import {
-  echoed,
-  echoedValue,
-  hasOverlongHost,
-  LONGEST_HOST_LENGTH,
-  parseUntrustedUrl,
-  redactAddress,
-  shownScheme,
-} from '@openpacker/adapter-core';
 import type {
   FrozenLockOptions,
   FrozenLockPackage,
@@ -53,20 +44,19 @@ export interface FrozenInstallPlan {
   workspace?: FrozenLockWorkspace;
 }
 
-/** A locked package as a message names it: its name, `@`, its version. */
-function label(entry: LockEntry): string {
-  return `${echoedValue(entry.packageName)}@${echoedValue(entry.version)}`;
-}
-
 function describeTarget(target: NativeTarget): string {
   return `${target.os}/${target.architecture}${target.libc === undefined ? '' : `/${target.libc}`}`;
 }
 
+function describeTargets(targets: readonly NativeTarget[]): string {
+  return targets.map(describeTarget).join(' or ');
+}
+
 function describeDeclared(entry: LockEntry): string {
   return [
-    entry.os && `os ${entry.os.map((item) => echoed(item)).join(',')}`,
-    entry.cpu && `cpu ${entry.cpu.map((item) => echoed(item)).join(',')}`,
-    entry.libc && `libc ${entry.libc.map((item) => echoed(item)).join(',')}`,
+    entry.os && `os ${entry.os.join(',')}`,
+    entry.cpu && `cpu ${entry.cpu.join(',')}`,
+    entry.libc && `libc ${entry.libc.join(',')}`,
   ]
     .filter(Boolean)
     .join(' ');
@@ -81,12 +71,6 @@ export function classifyResolved(entry: {
   const resolved = entry.resolved;
   if (resolved === undefined)
     return { problem: 'has no resolved URL, so there is nothing to fetch' };
-  // Before any parser reads it: Node's takes the square of the length of a host
-  // of many non-ASCII labels, and no DNS name is longer than 253 characters.
-  if (hasOverlongHost(resolved))
-    return {
-      problem: `resolved names a host longer than ${LONGEST_HOST_LENGTH} characters, which no DNS name can be`,
-    };
   if (
     /^(?:git(?:\+[a-z]+)?:|github:|gitlab:|bitbucket:|gist:)/iu.test(resolved)
   )
@@ -98,24 +82,12 @@ export function classifyResolved(entry: {
     return { kind: 'path' };
   let url: URL;
   try {
-    url = parseUntrustedUrl(resolved);
+    url = new URL(resolved);
   } catch {
-    // The text is not a URL, so it was never parsed: it can hold userinfo, a
-    // query and a fragment that must not reach a terminal.
-    return {
-      problem: `resolved ${JSON.stringify(redactAddress(resolved))} is not a URL`,
-    };
+    return { problem: `resolved ${JSON.stringify(resolved)} is not a URL` };
   }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    // The scheme of `user:password@host:path` is the user name.
-    const scheme = shownScheme(url);
-    return {
-      problem:
-        scheme === undefined
-          ? `resolved is ${redactAddress(resolved)}, not an https URL`
-          : `resolved uses ${scheme}, not https`,
-    };
-  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:')
+    return { problem: `resolved uses ${url.protocol}, not https` };
   if (url.username !== '' || url.password !== '')
     return { problem: 'resolved carries credentials in its URL' };
   // A registry serves `/<name>/-/<last segment>-<version>.tgz`, behind whatever
@@ -139,6 +111,7 @@ export function planFrozenPackageLock(input: {
 }): FrozenInstallPlan {
   const { tree, options } = input;
   const { omit, target } = options;
+  const targets = options.targets ?? [target];
   const all = [...tree.entries, ...(tree.workspace?.entries ?? [])];
   const byPath = new Map(all.map((entry) => [entry.path, entry]));
   const graph = buildGraph(tree, all, byPath);
@@ -185,13 +158,13 @@ export function planFrozenPackageLock(input: {
 
   const failed: LockEntry[] = [];
   for (const entry of left) {
-    if (npmPackageRuns(entry, target)) continue;
+    if (targets.some((candidate) => npmPackageRuns(entry, candidate))) continue;
     if (entry.optional) failed.push(entry);
     else {
       left.delete(entry);
       refused.push({
         path: entry.path,
-        reason: `${label(entry)} is for ${describeDeclared(entry)}, not this machine (${describeTarget(target)}), and is not optional`,
+        reason: `${entry.packageName}@${entry.version} is for ${describeDeclared(entry)}, not this machine (${describeTargets(targets)}), and is not optional`,
       });
     }
   }
@@ -200,7 +173,7 @@ export function planFrozenPackageLock(input: {
     skip(
       entry,
       'platform',
-      `optional, and for ${describeDeclared(entry)}, not ${describeTarget(target)}`,
+      `optional, and for ${describeDeclared(entry)}, not ${describeTargets(targets)}`,
     );
   }
   for (const entry of failed)
@@ -209,7 +182,7 @@ export function planFrozenPackageLock(input: {
       skip(
         dropped,
         'orphaned',
-        `only needed by ${echoedValue(entry.path)}, which this machine does not install`,
+        `only needed by ${entry.path}, which this machine does not install`,
       );
     }
 
@@ -220,7 +193,7 @@ export function planFrozenPackageLock(input: {
     if (parent !== undefined && !installed(left, byPath.get(parent))) {
       refused.push({
         path: entry.path,
-        reason: `${label(entry)} lives inside ${echoedValue(parent)}, which is not installed; the lock's flags do not match its dependency graph`,
+        reason: `${entry.packageName}@${entry.version} lives inside ${parent}, which is not installed; the lock's flags do not match its dependency graph`,
       });
       continue;
     }
@@ -228,14 +201,14 @@ export function planFrozenPackageLock(input: {
     if ('problem' in source) {
       refused.push({
         path: entry.path,
-        reason: `${label(entry)} ${source.problem}`,
+        reason: `${entry.packageName}@${entry.version} ${source.problem}`,
       });
       continue;
     }
     if (entry.integrity === undefined) {
       refused.push({
         path: entry.path,
-        reason: `${label(entry)} has no integrity, so the lock does not pin its bytes`,
+        reason: `${entry.packageName}@${entry.version} has no integrity, so the lock does not pin its bytes`,
       });
       continue;
     }

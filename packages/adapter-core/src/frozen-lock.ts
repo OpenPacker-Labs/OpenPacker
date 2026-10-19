@@ -49,6 +49,24 @@ export interface FrozenWorkspaceInput {
 export interface FrozenLockOptions {
   /** The machine the install is for, in the ecosystem's own vocabulary. */
   target: NativeTarget;
+  /**
+   * Every machine whose packages are installed, `target` among them: a package
+   * is installed when it runs on any one of them (pnpm's
+   * `supportedArchitectures`). Absent, `target` alone.
+   */
+  targets?: readonly NativeTarget[];
+  /**
+   * `project`: the platforms are the ones the project itself names (a pnpm
+   * project's `supportedArchitectures`), widening the host's. Absent, only
+   * `targets`, else `target`. A format with no such setting refuses it.
+   */
+  architectures?: 'project';
+  /**
+   * The registry a package that has no URL in its lock is fetched from (a pnpm
+   * lock records an integrity and nothing else for one). The public registry
+   * when absent.
+   */
+  registry?: string;
   omit: ReadonlySet<FrozenOmit>;
   /**
    * Set by a host that discovered the project's workspace. A format that
@@ -89,6 +107,29 @@ export interface FrozenLockPackage {
   scope: 'runtime' | 'development' | 'optional' | 'peer';
   /** Declares an install script. Nothing here runs it. */
   hasInstallScript: boolean;
+  /**
+   * The lock does not describe the archive (a pnpm lock keeps whether a package
+   * declares an install script elsewhere, and pins the bytes by integrity
+   * alone), so the host reads it once extracted: the install script, for which
+   * `hasInstallScript` is only a default, and the archive's own name and
+   * version, which must be this package's.
+   */
+  scriptsFromArchive?: true;
+  /**
+   * What the archive's own `package.json` must say, read with
+   * `scriptsFromArchive`, as the lock records it: the version, absent when the
+   * lock records none (a pnpm entry for a tarball may not, and its key's version
+   * is the URL), in which case only the name is compared; and the `name` the
+   * lock writes beside the key, when it writes one, which the archive must carry
+   * as well as `packageName`. Without it, `packageName` and `version`.
+   */
+  archiveIdentity?: { readonly name?: string; readonly version?: string };
+  /**
+   * What the lock calls this package when several places hold it (a pnpm
+   * snapshot key, `react-dom@18.2.0(react@18.2.0)`): one id may have several
+   * paths, and two ids may share an archive.
+   */
+  instance?: string;
   /** The registry's deprecation message, when the lock carries one. */
   deprecated?: string;
   /**
@@ -145,6 +186,24 @@ export interface FrozenLockWorkspace {
   layout: NativeLayoutWorkspace;
 }
 
+/**
+ * How far the places chosen for a lock that records none keep a package and
+ * its dependent to one copy of a peer they share. Present only when they do
+ * not all: a layout in `node_modules` has no symlinks, so some locks cannot be
+ * laid out so that they do.
+ */
+export interface FrozenLockPeers {
+  /** Edges whose dependency loads another copy of a peer its dependent requires too. */
+  splits: number;
+  /** Whether the places were chosen without peers in view, because no layout with them could be written. */
+  withoutPeers: boolean;
+  /**
+   * The first such edge, named for a person: the dependency, and what needs
+   * it. Each is already quoted, and holds nothing of the lock but names.
+   */
+  first?: { dependency: string; dependent: string };
+}
+
 export interface FrozenLock {
   /** The lock file read, absolute. */
   lockPath: string;
@@ -153,6 +212,8 @@ export interface FrozenLock {
   lockfileVersion: number;
   /** How its archives are to be read. */
   extraction: FrozenExtraction;
+  /** The machines the install was for, when that is more than the host alone. */
+  targets?: readonly NativeTarget[];
   /** What to install, parents before the packages nested in them. */
   packages: FrozenLockPackage[];
   /** What the lock holds that this host and these options leave out. */
@@ -161,4 +222,6 @@ export interface FrozenLock {
   refused: FrozenLockRefusal[];
   /** Present when the lock is a workspace's. */
   workspace?: FrozenLockWorkspace;
+  /** Present when the places do not keep every shared peer to one copy. */
+  peers?: FrozenLockPeers;
 }

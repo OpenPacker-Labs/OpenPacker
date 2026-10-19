@@ -10,7 +10,7 @@ import {
   removeAuthOrigin,
   upsertAuthOrigin,
 } from '@openpacker/opm-project';
-import { out } from '@openpacker/canonical';
+import { say } from '../error-report.js';
 
 export interface AuthCliIo {
   stdout: Pick<NodeJS.WriteStream, 'write'>;
@@ -68,7 +68,8 @@ export async function runAuthCommand(
   if (sub === 'set') return runSet(args, io);
   if (sub === 'list') return runList(io);
   if (sub === 'unset') return runUnset(args, io);
-  io.stderr.write(
+  say(
+    io.stderr,
     `Unknown auth subcommand: ${sub ?? '(none)'}. Use set | list | unset.\n\n${AUTH_USAGE}`,
   );
   return EXIT.usage;
@@ -78,7 +79,8 @@ async function runSet(args: AuthArgs, io: AuthCliIo): Promise<number> {
   const origin = option(args, 'origin');
   const tokenEnv = option(args, 'token-env');
   if (origin === undefined) {
-    io.stderr.write(
+    say(
+      io.stderr,
       `opm auth set requires --origin <https-origin>\n\n${AUTH_USAGE}`,
     );
     return EXIT.usage;
@@ -87,8 +89,8 @@ async function runSet(args: AuthArgs, io: AuthCliIo): Promise<number> {
     origin,
     ...(!(tokenEnv === undefined) && { tokenEnv }),
   });
-  out(
-    io,
+  say(
+    io.stdout,
     tokenEnv === undefined
       ? `Pinned ${origin}\n`
       : `Pinned ${origin} to env ${tokenEnv}\n`,
@@ -100,13 +102,13 @@ async function runList(io: AuthCliIo): Promise<number> {
   const config = await readAuthConfig();
   const origins = Object.keys(config.origins).sort();
   if (origins.length === 0) {
-    out(io, '(no origins)\n');
+    io.stdout.write('(no origins)\n');
     return EXIT.success;
   }
   for (const origin of origins) {
     const entry = config.origins[origin];
     if (entry === undefined) continue;
-    out(io, `${origin}\t${entry.tokenEnv ?? '(pin)'}\n`);
+    say(io.stdout, `${origin}\t${entry.tokenEnv ?? '(pin)'}\n`);
   }
   return EXIT.success;
 }
@@ -114,13 +116,14 @@ async function runList(io: AuthCliIo): Promise<number> {
 async function runUnset(args: AuthArgs, io: AuthCliIo): Promise<number> {
   const origin = option(args, 'origin');
   if (origin === undefined) {
-    io.stderr.write(
+    say(
+      io.stderr,
       `opm auth unset requires --origin <https-origin>\n\n${AUTH_USAGE}`,
     );
     return EXIT.usage;
   }
   await removeAuthOrigin({ origin });
-  out(io, `Removed ${origin}\n`);
+  say(io.stdout, `Removed ${origin}\n`);
   return EXIT.success;
 }
 
