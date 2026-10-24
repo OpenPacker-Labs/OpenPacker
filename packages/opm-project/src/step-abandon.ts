@@ -15,7 +15,7 @@ import {
   parseStepWait,
   DEFAULT_STEP_WAIT_MS,
 } from './project-step.js';
-import { opmEntry, printable } from './fs-reason.js';
+import { opmEntry, plainReason, printable } from './fs-reason.js';
 import { discardCopy } from './rollback-files.js';
 import {
   copyId,
@@ -134,9 +134,9 @@ export async function abandonStep(
       abandonedFiles: new Set([named.name]),
     });
     try {
-      const recovered = await recoverHeldProject(paths.root);
-      for (const step of recovered) options.onRecovered?.(step);
-      return { removedLocks: lock?.removed ?? [], recovered };
+      // Only that file: what the refusal said. The next step finishes whatever
+      // a gone step left, as every step does.
+      return { removedLocks: lock?.removed ?? [], recovered: [] };
     } finally {
       await lock?.release();
     }
@@ -205,7 +205,12 @@ async function find(root: string, opmDir: string, id: string): Promise<Named> {
       candidate.toLowerCase() === embedded);
   for (const name of names.sort()) {
     if (matches(stepLockId(name)))
-      return describeEntry(opmDir, name, 'lock', await lockOwner(opmDir, name));
+      return describeEntry(
+        opmDir,
+        name,
+        'lock',
+        await lockOwnerOf(opmDir, name),
+      );
     if (name.startsWith(ROLLBACK_PREFIX) && matches(copyId(name))) {
       const record = await copyRecord(opmDir, name);
       const foreign =
@@ -256,16 +261,54 @@ async function describeEntry(
   };
 }
 
-/** Who holds the lock `name`; `undefined` where it does not say (empty, cut short, newer). */
-async function lockOwner(
+/**
+ * Who holds the lock `name`; `undefined` where it does not say: empty, cut
+ * short, from a newer opm, a link, a file that is not one or is too large. A
+ * lock that says nothing may be removed on the operator's word (`--force`).
+ *
+ * A read that failed for the system's own reason (no descriptors left, an I/O
+ * error, a permission, the lock gone or changed as it was read) says nothing
+ * about the lock, and is not taken for a lock that says nothing: `--force`
+ * would then remove a lock that holds a name. It is `UNAVAILABLE`, nothing
+ * changed, to run again.
+ */
+export async function lockOwnerOf(
   opmDir: string,
   name: string,
+  read: (
+    path: string,
+    maximumBytes: number,
+  ) => Promise<string> = readStableFile,
 ): Promise<ProcessOwner | undefined> {
+  let text: string;
+  try {
+    text = await read(join(opmDir, name), 4096);
+  } catch (error) {
+    if (
+      error instanceof OpmError &&
+      (error.code === 'UNSAFE_PATH' || error.code === 'INVALID_STATE')
+    )
+      return undefined;
+    throw new OpmError(
+      'UNAVAILABLE',
+      `opm could not read ${opmEntry(name)} (${
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'INPUT_CHANGED'
+          ? 'it changed as it was read'
+          : error instanceof Error
+            ? plainReason(error)
+            : 'unknown'
+      }). Nothing was changed; run this again.`,
+      { cause: error },
+    );
+  }
   try {
     // SAFETY: parsed below; anything unexpected is a lock that says nothing.
-    const record = JSON.parse(
-      await readStableFile(join(opmDir, name), 4096),
-    ) as { lockVersion?: unknown; owner?: unknown };
+    const record = JSON.parse(text) as {
+      lockVersion?: unknown;
+      owner?: unknown;
+    };
     return record.lockVersion === 1
       ? parseProcessOwner(record.owner)
       : undefined;
