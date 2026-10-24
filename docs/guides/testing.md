@@ -32,6 +32,26 @@ least one live oracle. A type that loses its last oracle fails the gate.
 `npm run verify` runs every mandatory lane. Live registry and native
 package-manager lanes stay opt-in and never substitute for offline failure.
 
+## What a test run may touch
+
+Every package's `vitest.config.ts` and the root gate and coverage configs extend
+[`vitest.shared.ts`](../../vitest.shared.ts): a 30 s test and hook bound, and
+[`tests/support/stores.setup.ts`](../../tests/support/stores.setup.ts), which
+unsets `OPM_STORE_HOME`, `OPM_TOOL_CACHE` and `OPM_PLUGIN_HOME` and points
+`XDG_CACHE_HOME` and `XDG_DATA_HOME` at a fresh directory per test file, so no
+test reads or writes the caller's shared store, tool cache or plugin store. The
+opm-project and opm suites and the root runs also fail a test whose environment
+would resolve one of those outside the temporary directory
+([`tests/support/store-guard.ts`](../../tests/support/store-guard.ts)).
+
+`HOME` and `XDG_CONFIG_HOME` are left as the caller has them, and a few reads
+through them are not isolated, only read: opm-project looks for an installed
+.NET under `$HOME/.dotnet/shared/Microsoft.NETCore.App` (`src/bins.ts`), the
+registry auth configuration is read from `$XDG_CONFIG_HOME` or `$HOME/.config`
+(`src/auth-config.ts`; a test that writes one names its own file with
+`OPM_AUTH_CONFIG` or a path), and the sandbox names the home directory in its
+deny rules. Their answers depend on the machine; nothing is written there.
+
 ## Coverage policy
 
 [`scripts/coverage-policy.mjs`](../../scripts/coverage-policy.mjs) requires 100%

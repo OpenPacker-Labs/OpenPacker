@@ -22,6 +22,11 @@ import { afterAll } from 'vitest';
  * shared store on for every test, which the suites are not written for (61 of
  * opm-project's tests then fail). `store-guard.setup.ts` fails a test whose
  * environment resolves a store outside the temporary directory.
+ *
+ * HOME and XDG_CONFIG_HOME stay the caller's. What is read through them (an
+ * installed .NET under `~/.dotnet`, the registry auth configuration, the home
+ * directory the sandbox denies) is only read, and depends on the machine
+ * (docs/guides/testing.md, "What a test run may touch").
  */
 // Named, not created: the library makes what it uses, so a file whose tests
 // are all skipped (and whose afterAll therefore never runs) leaves nothing.
