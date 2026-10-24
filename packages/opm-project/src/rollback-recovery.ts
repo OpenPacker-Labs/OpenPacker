@@ -19,7 +19,7 @@ import {
   projectIdentity,
   sharesOpmDir,
 } from './rollback-project.js';
-import { printable } from './fs-reason.js';
+import { opmEntry, printable } from './fs-reason.js';
 import { markerOf, marked, restoreFrom } from './rollback-restore.js';
 import {
   DISCARD_SUFFIX,
@@ -86,7 +86,7 @@ export async function recoverHeldProject(
   const recovered: RecoveredStep[] = [];
   for (const name of (await readdir(paths.opmDir)).sort()) {
     if (!name.startsWith(ROLLBACK_PREFIX)) continue;
-    const copy = join('.opm', name);
+    const copy = opmEntry(name);
     const holder = join(paths.opmDir, name);
     const info = await lstat(holder).catch(absent);
     if (info === undefined) continue;
@@ -116,7 +116,7 @@ export async function recoverHeldProject(
     )
       throw new OpmError(
         'PROJECT_BUSY',
-        `${copy} belongs to a step of ${describeProcessOwner(record.owner)} that may still be running, and opm cannot tell from here. Run this again when it has finished (--wait <ms> waits longer). If that step is dead and cannot be seen from here (another container or host), opm recover --abandon-step ${copyId(name)} says what taking it for dead costs and asks you to confirm.`,
+        `${copy} belongs to a step of ${describeProcessOwner(record.owner)} that may still be running, and opm cannot tell from here. Run this again when it has finished (--wait <ms> waits longer). If that step is dead and cannot be seen from here (another container or host), opm recover --abandon-step ${printable(copyId(name))} says what taking it for dead costs and asks you to confirm.`,
       );
     if (restore) {
       await assertRestorable(paths.root, holder, record, copy);

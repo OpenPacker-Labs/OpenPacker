@@ -9,7 +9,7 @@ import {
   type FileHandle,
 } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { plainReason } from './fs-reason.js';
+import { opmEntry, plainReason } from './fs-reason.js';
 import {
   openChild,
   openStableDirectory,
@@ -56,7 +56,7 @@ export function absent(error: NodeJS.ErrnoException): undefined {
 
 /** Refuse, with nothing changed: the copy or the project is not what it should be. */
 export function refuse(code: string, holder: string, what: string): OpmError {
-  const copy = join('.opm', basename(holder));
+  const copy = opmEntry(basename(holder));
   return new OpmError(
     code,
     `Refusing to put the project back from ${copy}: ${what}. opm made no change; remove ${copy} to keep the project as it is now.`,

@@ -15,6 +15,7 @@ import {
   parseStepWait,
   DEFAULT_STEP_WAIT_MS,
 } from './project-step.js';
+import { opmEntry, printable } from './fs-reason.js';
 import { discardCopy } from './rollback-files.js';
 import {
   copyId,
@@ -227,12 +228,13 @@ async function find(root: string, opmDir: string, id: string): Promise<Named> {
     );
   throw new OpmError(
     'NOT_FOUND',
-    `No step lock or copy with id ${wanted} in ${opmDir}; what is there is ${
+    `No step lock or copy with id ${printable(wanted)} in ${opmDir}; what is there is ${
       names
         .filter(
           (name) =>
             stepLockId(name) !== undefined || name.startsWith(ROLLBACK_PREFIX),
         )
+        .map(printable)
         .join(', ') || 'neither'
     }`,
   );
@@ -246,7 +248,7 @@ async function describeEntry(
 ): Promise<Named> {
   const info = await lstat(join(opmDir, name)).catch(() => undefined);
   return {
-    file: join('.opm', name),
+    file: opmEntry(name),
     name,
     kind,
     ...(!(owner === undefined) && { owner }),
@@ -285,6 +287,6 @@ async function copyRecord(opmDir: string, name: string) {
   }
   throw new OpmError(
     'INVALID_ROLLBACK',
-    `.opm/${name} has no record opm can read, so it cannot tell whose step it is; remove it to keep the project as it is now`,
+    `${opmEntry(name)} has no record opm can read, so it cannot tell whose step it is; remove it to keep the project as it is now`,
   );
 }
