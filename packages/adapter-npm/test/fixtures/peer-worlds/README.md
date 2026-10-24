@@ -74,3 +74,8 @@ same way, of a world on which a mutant of the planner that kept the second way
 of pinning on a tie changed the plan). Both ways of pinning keep the one split;
 the first also writes a package a second time in the member, so the planner
 keeps the layout with fewer places.
+
+`full-tie` is the same beside packages that peer one another in a member: the
+two ways of pinning keep the one split in as many places, in different layouts,
+and the planner keeps the first's (a mutant that kept the second changed no test
+before it).
