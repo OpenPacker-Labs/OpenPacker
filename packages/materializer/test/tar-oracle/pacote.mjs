@@ -12,7 +12,8 @@
  *
  * A crash is the answer, not a failure of the oracle: `tar.x` can throw from
  * inside a stream, which is an uncaught exception in the process, so it is
- * caught here and recorded as `error`, and a run that never ends as `timeout`.
+ * caught here and recorded as `error` (with no files: what a crashed run left
+ * on disk depends on timing), and a run that never ends as `timeout`.
  */
 
 import {
@@ -83,17 +84,17 @@ export async function pacoteInstalls(reader, bytes) {
         resolve(`throw ${error.code ?? error.message}`);
       }
     });
+    // What a crashed run left on disk depends on timing; the failure is the answer.
+    if (failure !== undefined) return { error: failure };
     const files = filesUnder(cwd).sort((left, right) =>
       left.path < right.path ? -1 : 1,
     );
-    const installed = {
+    return {
       entries: files.map(({ path, text }) => [path, text]),
       executable: files
         .filter((file) => file.executable)
         .map(({ path }) => path),
     };
-    if (failure !== undefined) installed.error = failure;
-    return installed;
   } finally {
     clearTimeout(timer);
     process.off('uncaughtException', onUncaught);

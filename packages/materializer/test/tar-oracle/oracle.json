@@ -2670,8 +2670,6 @@
       },
       "fed7": {},
       "pacote": {
-        "entries": [["a.js", ""]],
-        "executable": [],
         "error": "uncaught s.normalize is not a function"
       },
       "pacote7": {
