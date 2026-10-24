@@ -26,8 +26,13 @@ import { JailPathError } from './paths.js';
  * its home it stayed in the temporary directory for good. So each run's
  * directory `home-<uuid>` holds who made it, in `.owner`, written before
  * anything else (`writeOwnerFile`, ADR 0056's record), and the home itself in
- * `home`, which is all the sandbox binds: a tool never sees or writes its
- * owner. Every run first removes the homes whose owner has ended, by the one
+ * `home`, which is all the sandbox binds of it: a tool never writes its owner,
+ * and in the package-exec profile with the temporary directory under /tmp or
+ * /var/tmp (which bwrap mounts empty) it does not see it either. Where the
+ * whole file system is bound read-only (`legacy_fat_root`, host installers),
+ * or the temporary directory is somewhere the run binds (inside its project,
+ * say), the jail root is visible read-only, and with it every home's `.owner`,
+ * as the homes themselves were before. Every run first removes the homes whose owner has ended, by the one
  * rule every holder opm records is judged by (`abandonedByOwner`, the owner
  * rule of `process-owner.ts`): a home whose owner may still be running, runs
  * elsewhere, or cannot be read is never touched.

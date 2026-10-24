@@ -504,14 +504,23 @@ runs.
 
 Decision (`jail-home.ts`):
 
-1. **A home names its owner, out of the tool's sight.** A run's directory is
+1. **A home names its owner, out of the tool's reach.** A run's directory is
    `home-<uuid>`, holding `.owner`, the record every holder opm keeps (ADR
    0056's `writeOwnerFile`, written before anything else), and `home`, the one
-   thing the sandbox binds. The owner rule (`process-owner.ts`, `owner-file.ts`
-   and the system reads behind them) moved from opm-project to
-   `@openpacker/project-io`, which the sandbox and opm-project both build on;
-   opm-project re-exports it as before, and the judgement a run's scratch made
-   of its directories is the same function for both (`abandonedByOwner`).
+   thing the sandbox binds of it, so a tool never writes its owner. It does not
+   see it either in the package-exec profile with `$TMPDIR` under `/tmp` or
+   `/var/tmp`, which bwrap mounts empty. Where the whole file system is bound
+   read-only (`legacy_fat_root`, host installers), or `$TMPDIR` is somewhere the
+   run binds (inside its project, say), the jail root is visible read-only, and
+   with it every home's `.owner`: a pid, a host name and digests, as visible as
+   the homes themselves were before. Closing that would take a mask over the
+   jail root between the binds above it and the home's own, which the bwrap
+   command line does not order that way today. The owner rule
+   (`process-owner.ts`, `owner-file.ts` and the system reads behind them) moved
+   from opm-project to `@openpacker/project-io`, which the sandbox and
+   opm-project both build on; opm-project re-exports it as before, and the
+   judgement a run's scratch made of its directories is the same function for
+   both (`abandonedByOwner`).
 2. **Every run first removes the homes whose owner has ended, by that rule**
    (`sweepJailHomes`): an owner of this place whose pid is gone, a zombie, or
    now another process, or one of an earlier boot of this machine. A home whose
