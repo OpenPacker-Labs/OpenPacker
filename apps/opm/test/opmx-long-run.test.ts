@@ -42,7 +42,7 @@ describe.runIf(canSandbox)('opmx runs a tool for as long as it runs', () => {
       '[sandbox]\ntimeout_ms = 200',
     );
     const cap = capture();
-    expect(await runOpmx(['chatty'], cap.io, root), cap.err).toBe(0);
+    expect(await runOpmx(['chatty'], cap.io, root), cap.seen.err).toBe(0);
     expect(cap.seen.out.length).toBe(3 * MiB + 'done\n'.length);
     expect(cap.seen.out.endsWith('x\ndone\n')).toBe(true);
     // Nothing but the tool's own output, and no word from the sandbox.
