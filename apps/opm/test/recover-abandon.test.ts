@@ -188,10 +188,20 @@ describe('how long a command waits for another opm', () => {
   it('--wait 0 gives up at once', async () => {
     const root = await project();
     const { held } = await holding(root, 800);
-    const started = Date.now();
-    const run = await opm(root, 'sync', '--offline', '--wait', '0');
-    expect(run.code).toBe(8);
-    expect(Date.now() - started).toBeLessThan(2_000);
+    // With two minutes as the default, a run that did not take --wait 0 would
+    // wait them out (and one that waited for the step would succeed: code 0);
+    // 10 s leaves a loaded machine room to run opm once.
+    const before = process.env.OPM_STEP_WAIT_MS;
+    process.env.OPM_STEP_WAIT_MS = '120000';
+    try {
+      const started = Date.now();
+      const run = await opm(root, 'sync', '--offline', '--wait', '0');
+      expect(run.code).toBe(8);
+      expect(Date.now() - started).toBeLessThan(10_000);
+    } finally {
+      if (before === undefined) delete process.env.OPM_STEP_WAIT_MS;
+      else process.env.OPM_STEP_WAIT_MS = before;
+    }
     await held;
   });
 

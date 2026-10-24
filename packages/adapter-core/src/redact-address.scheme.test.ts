@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { redactAddress, shownScheme } from './redact-address.js';
 
 /**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
+/**
  * `user:password@host:path` is how a user name comes before a colon in a text
  * with no `//`, and it is also a valid URL whose scheme is the user name. An
  * error that prints the scheme of such a value prints the user name. A scheme
@@ -106,9 +116,9 @@ describe('how long a scheme is printed', () => {
     ['a refused host', (s: string) => `${s}://u:p@ho st/x`],
     ['a blob', (s: string) => `blob:${s}://h/x`],
   ])('prints almost nothing of a scheme of 1 MiB: %s', (_, build) => {
-    const started = performance.now();
+    const started = cpuMs();
     const shown = redactAddress(build(scheme(1 << 20)));
     expect(shown.length).toBeLessThan(64);
-    expect(performance.now() - started).toBeLessThan(3000);
+    expect(cpuMs() - started).toBeLessThan(3000);
   });
 });

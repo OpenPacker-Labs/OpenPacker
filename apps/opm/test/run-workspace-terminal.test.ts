@@ -20,7 +20,7 @@ posix('a failing member, with a terminal on opm', () => {
       'packages/a': {
         name: 'a',
         scripts: {
-          go: `sh -c 'sleep 20 & echo $! > "$INIT_CWD/pid-a"; wait'`,
+          go: `sh -c 'sleep 120 & echo $! > "$INIT_CWD/pid-a"; wait'`,
         },
       },
       'packages/b': {
@@ -40,10 +40,13 @@ posix('a failing member, with a terminal on opm', () => {
         contextWith({}, { host }),
       );
       expect(ran.status).toBe(7);
+      // A run that waited for the sleep would take its two minutes; this one
+      // returns once the members have started and stopped, which a loaded
+      // machine may stretch to seconds, far under the bound.
       expect(
         Date.now() - before,
         'the run waited for the sleep a stopped member started',
-      ).toBeLessThan(10_000);
+      ).toBeLessThan(20_000);
       const pid = Number(readFileSync(join(ws.root, 'pid-a'), 'utf8'));
       await until(async () => {
         try {

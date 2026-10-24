@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { echoedValue } from './echo.js';
 import { isAddress, redactText } from './redact-text.js';
 
+/**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
 /** Stands for a credential a value holds. */
 const MARKER = 'vtok_dummy_marker_0123456789abcdef';
 const ADDRESS = `https://user:${MARKER}@host.example/x.tgz?token=${MARKER}#${MARKER}`;
@@ -71,12 +81,12 @@ describe('a value of a document that may be an address', () => {
   });
 
   it('is linear', { timeout: 30_000 }, () => {
-    const started = performance.now();
+    const started = cpuMs();
     redactText('a://'.repeat(250_000));
     redactText('a:// '.repeat(200_000));
     redactText('://'.repeat(300_000));
     redactText(`${'a'.repeat(1 << 20)}://x`);
     redactText(`${'é'.repeat(1 << 19)} ${ADDRESS}`);
-    expect(performance.now() - started).toBeLessThan(15_000);
+    expect(cpuMs() - started).toBeLessThan(5000);
   });
 });

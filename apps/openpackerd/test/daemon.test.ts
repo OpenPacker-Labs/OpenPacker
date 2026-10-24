@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as bindings from '@openpacker/embedded/wasm-node';
 import { createEmbeddedResolver } from '@openpacker/embedded';
 import { packageNodeId } from '@openpacker/adapter-core';
@@ -207,9 +207,11 @@ describe('openpackerd', () => {
     const unavailable = async (): Promise<never> => {
       throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
     };
+    let solves = 0;
     const resolver = createEmbeddedResolver({
       ...bindings,
       solve_json: () => {
+        solves += 1;
         throw new Error(
           'RESOURCE_LIMIT: exhaustive resolution proof requires 2000 work units (limit 1000)',
         );
@@ -244,18 +246,33 @@ describe('openpackerd', () => {
         'utf8',
       ),
     ) as SolveRequest;
-    const started = Date.now();
-    const response = await app.inject({
+    // The refusal is the answer, at once: one solve per request, no retry, and
+    // no timer to wait on (setTimeout is frozen for the second request, so a
+    // backoff before answering never answers). Counted, not timed: a bound of
+    // 1000 ms measured the machine's load as much as the answer.
+    const first = await app.inject({
       method: 'POST',
       url: '/v1/solve',
       payload: request,
     });
-    expect(response.statusCode).toBe(429);
-    expect(response.json()).toMatchObject({
-      code: 'RATE_LIMITED',
-      retryable: true,
-    });
-    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(first.statusCode).toBe(429);
+    expect(solves).toBe(1);
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/solve',
+        payload: request,
+      });
+      expect(response.statusCode).toBe(429);
+      expect(response.json()).toMatchObject({
+        code: 'RATE_LIMITED',
+        retryable: true,
+      });
+      expect(solves).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
     await app.close();
   });
 

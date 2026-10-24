@@ -93,7 +93,7 @@ posix('a failing member', () => {
       },
       'packages/slow': {
         name: 'slow',
-        scripts: { build: trace('slow', 20_000) },
+        scripts: { build: trace('slow', 120_000) },
       },
     });
     const before = Date.now();
@@ -104,7 +104,10 @@ posix('a failing member', () => {
       contextWith({}, { host: hostWithSignals().host }),
     );
     expect(ran.status).toBe(7);
-    expect(Date.now() - before).toBeLessThan(10_000);
+    // A run that waited for `slow` would take its two minutes; one that ends
+    // it returns as soon as the processes have started and stopped, which a
+    // loaded machine may stretch to seconds, far under this.
+    expect(Date.now() - before).toBeLessThan(20_000);
     const log = await ws.log();
     expect(log.some(([what, id]) => what === 'term' && id === 'slow')).toBe(
       true,
