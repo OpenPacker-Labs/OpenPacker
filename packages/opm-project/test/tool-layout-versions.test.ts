@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
@@ -10,6 +10,7 @@ import {
   layOutTool,
   type ToolPackage,
 } from '../src/index.js';
+import { OWNER_FILE } from '../src/owner-file.js';
 
 configureDefaultAdapters();
 
@@ -103,6 +104,39 @@ describe('a tool whose closure holds two versions of one name', () => {
       expect(stdout).toBe('shared@2.0.0 lib uses shared@1.0.0 shared@2.0.0\n');
     } finally {
       await layout.dispose();
+    }
+  });
+});
+
+describe('what the sandbox binds for a tool', () => {
+  // opmx binds the layout's root and nothing beside it (`runtimePaths` in
+  // apps/opm's opmx-spawn.ts), so that root is the `tree` of the run's scratch
+  // directory: the `.owner` beside it says who made the run, and a tool that
+  // could see it, or write one, could take part in judging its own run.
+  it('is the tree of the run scratch, which does not hold its owner', async () => {
+    const { cacheRoot, closure } = await closureWithTwoVersions();
+    const tool = { exactPurl: 'pkg:npm/tool@1.0.0', cacheRoot, closure };
+    const layout = await layOutTool({
+      cacheRoot,
+      tool: tool.exactPurl,
+      closure,
+    });
+    const run = await ephemeralNodeRun(tool, {
+      name: 'tool',
+      path: 'package/cli.js',
+    });
+    try {
+      for (const root of [layout.root, run!.root]) {
+        expect(basename(root)).toBe('tree');
+        expect(await readdir(root)).not.toContain(OWNER_FILE);
+        expect((await readdir(dirname(root))).sort()).toEqual([
+          OWNER_FILE,
+          'tree',
+        ]);
+      }
+    } finally {
+      await layout.dispose();
+      await run?.dispose();
     }
   });
 });
