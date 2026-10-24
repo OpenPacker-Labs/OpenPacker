@@ -18,6 +18,37 @@ import { stableHandlePath } from '@openpacker/project-io';
  */
 
 export const MAX_DELEGATED_EXECUTABLE_BYTES = 64 * 1_024 * 1_024;
+
+/**
+ * Error code for a host that cannot hold the snapshot at all. Not "unsafe
+ * executable": the file may be fine, the platform cannot run it.
+ */
+export const UNSUPPORTED_PLATFORM = 'UNSUPPORTED_PLATFORM';
+
+/**
+ * Why a delegated executable cannot be snapshotted and run here, or undefined
+ * when it can. The snapshot is an unnamed O_TMPFILE file run by its
+ * /proc/self/fd path; macOS has neither (no unnamed files, `/dev/fd/N` is a
+ * descriptor filesystem, ADR 0045) and Node cannot fexecve, so a named copy is
+ * the only thing left and it is exactly the swappable path this refuses to
+ * run. Said before the file is opened, not as a late "not a stable file".
+ */
+export function delegatedExecutionRefusal(
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  if (platform === 'linux') return undefined;
+  const label =
+    platform === 'darwin'
+      ? 'macOS'
+      : platform === 'win32'
+        ? 'Windows'
+        : platform;
+  return (
+    `Delegated provider executables need Linux: they are snapshotted into an unnamed O_TMPFILE file and run from ` +
+    `its /proc/self/fd path, and ${label} has neither (Node cannot fexecve, and a named copy could be swapped ` +
+    `between the check and the run). Run the delegated pack on a Linux host.`
+  );
+}
 const LINUX_O_TMPFILE = 0x40_0000 | constants.O_DIRECTORY;
 
 export interface DelegatedExecutableIdentity {
@@ -60,7 +91,10 @@ export async function openDelegatedExecutable(
   path: string,
   openFile: typeof open = open,
 ): Promise<DelegatedExecutableAuthority> {
-  if (!isAbsolute(path) || process.platform !== 'linux') unsafeExecutable(path);
+  const unsupported = delegatedExecutionRefusal();
+  if (unsupported !== undefined)
+    throw new ProviderError(UNSUPPORTED_PLATFORM, unsupported);
+  if (!isAbsolute(path)) unsafeExecutable(path);
   const before = await lstat(path, { bigint: true });
   if (
     !before.isFile() ||

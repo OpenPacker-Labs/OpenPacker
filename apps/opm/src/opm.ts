@@ -675,7 +675,7 @@ export async function runOpm(
           const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
           io.stdout.write(
             `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'} from ${result.root}; ` +
-              `${result.referenced} still used by a project, ${result.tooNew} too new to judge\n`,
+              `${result.referenced} still used by a project, ${result.held} in use by an install in progress, ${result.tooNew} too new to judge\n`,
           );
           for (const path of result.removed) io.stdout.write(`  ${path}\n`);
           return EXIT_CODES.success;
@@ -778,6 +778,7 @@ export function handleError(error: unknown, io: CliIo): number {
       case 'OFFLINE':
       case 'FETCH_FAILED':
       case 'UNAVAILABLE':
+      case 'STORE_ENTRY_VANISHED':
       case 'PLUGIN_ERROR':
       case 'PLUGIN_FAILED':
       case 'PLUGIN_REGISTRY_UNCONFIGURED':

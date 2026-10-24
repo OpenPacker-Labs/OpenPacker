@@ -1,5 +1,6 @@
 import type { JsonValue } from '@openpacker/contracts';
 import { PackslipError, type PackslipErrorCode } from './errors.js';
+import { shown } from './shown.js';
 
 export type JsonObject = { [key: string]: JsonValue };
 
@@ -136,7 +137,10 @@ export class ObjectReader {
     for (const member of Object.keys(reader.#value)) {
       const value = reader.#value[member];
       if (typeof value !== 'string')
-        throw reader.fail(`${reader.#path}.${member}`, 'must be a string');
+        throw reader.fail(
+          `${reader.#path}.${shown(member)}`,
+          'must be a string',
+        );
       result[member] = value;
     }
     return result;

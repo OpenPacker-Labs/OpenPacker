@@ -16,6 +16,7 @@ import {
   removeChild,
   renameChild,
 } from './handle-path.js';
+import { readDirChildBounded } from './handle-bounded.js';
 
 /**
  * Windows has no procfs, so every child operation is an NtCreateFile with the
@@ -97,6 +98,29 @@ describe.skipIf(process.platform !== 'win32')(
       await removeChild(dir, 'b.txt', {});
       trace('removeChild directory');
       await removeChild(dir, 'sub', { recursive: true });
+      expect(await readDirChild(dir)).toEqual([]);
+    });
+
+    it('stops a listing at the bound', async () => {
+      const names = ['one', 'two', 'three'];
+      for (const name of names) {
+        trace(`openChild ${name} (create, exclusive)`);
+        const file = await openChild(
+          dir,
+          name,
+          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+          0o644,
+        );
+        await file.close();
+      }
+      trace('readDirChildBounded 2 of 3');
+      const cut = await readDirChildBounded(dir, 2);
+      expect([cut.exceeded, cut.entries.length]).toEqual([true, 2]);
+      trace('readDirChildBounded 3 of 3');
+      const whole = await readDirChildBounded(dir, 3);
+      expect([whole.exceeded, whole.entries.length]).toEqual([false, 3]);
+      expect(whole.entries.every((entry) => entry.isFile())).toBe(true);
+      for (const name of names) await removeChild(dir, name, {});
       expect(await readDirChild(dir)).toEqual([]);
     });
 

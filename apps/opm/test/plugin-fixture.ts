@@ -36,7 +36,7 @@ function tarEntry(name: string, data: Uint8Array, mode: number): Uint8Array {
   return block;
 }
 
-function tar(
+export function tar(
   entries: readonly { name: string; data: Uint8Array; mode: number }[],
 ): Uint8Array {
   const blocks = entries.map((entry) =>

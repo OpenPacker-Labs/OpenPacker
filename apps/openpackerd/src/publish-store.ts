@@ -13,6 +13,7 @@ import {
   canonicalBytes,
   canonicalDigest,
   parseCanonicalJson,
+  parseUntrustedUrl,
 } from '@openpacker/canonical';
 import { createPrexValidator, validateContract } from '@openpacker/conformance';
 import type {
@@ -458,7 +459,7 @@ async function readLocationBytes(
     );
   let path: string;
   try {
-    path = fileURLToPath(location.uri);
+    path = fileURLToPath(parseUntrustedUrl(location.uri));
   } catch {
     throw new OperationError(
       'INVALID_REQUEST',

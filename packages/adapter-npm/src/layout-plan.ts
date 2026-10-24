@@ -36,6 +36,7 @@ import { checkLayoutLinks } from './layout-links.js';
 import {
   caseCollision,
   caseVariant,
+  quoted,
   unsafeNameProblem,
 } from './layout-names.js';
 import {
@@ -48,7 +49,7 @@ import {
 } from './layout-plan-types.js';
 
 export { compareVersions };
-export { unsafeNameProblem };
+export { quoted, unsafeNameProblem };
 export {
   LayoutTooLargeError,
   MAXIMUM_PLACEMENTS,

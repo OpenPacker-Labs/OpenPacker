@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
+import { out, report } from '@openpacker/canonical';
 import type { PrexOperations } from './operations.js';
 import { startOpenPackerDaemon } from './index.js';
 import { createStandaloneReferenceOperations } from './reference.js';
@@ -42,8 +43,20 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
-  const server = await runDaemon();
-  process.stdout.write(`${server.address}\n`);
-  for (const signal of ['SIGINT', 'SIGTERM'] as const)
-    process.once(signal, () => void server.close());
+  try {
+    const server = await runDaemon();
+    out(process, `${server.address}\n`);
+    for (const signal of ['SIGINT', 'SIGTERM'] as const)
+      process.once(signal, () => void server.close());
+  } catch (error) {
+    // A failure to start is written through the one writer of an error, not
+    // left to Node to print with whatever text the failure carried.
+    process.stderr.write(
+      report(
+        'openpackerd: ',
+        error instanceof Error ? error.message : String(error),
+      ),
+    );
+    process.exitCode = 1;
+  }
 }

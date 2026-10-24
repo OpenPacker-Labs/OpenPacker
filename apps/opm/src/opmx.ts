@@ -18,7 +18,8 @@ import {
   parsePackageSpec,
 } from '@openpacker/opm-project';
 import type { PolicyInput } from '@openpacker/contracts';
-import { formatFailure, parseFailure } from './error-report.js';
+import { out } from '@openpacker/canonical';
+import { formatFailure, parseFailure, report } from './error-report.js';
 import { grantedEnvironment, help, parse } from './opmx-args.js';
 import { holdingSignals } from './opmx-signals.js';
 import {
@@ -38,7 +39,7 @@ export async function runOpmx(
 ): Promise<number> {
   try {
     if (argv.includes('--help') || argv.includes('-h') || argv.length === 0) {
-      io.stdout.write(help());
+      out(io, help());
       return argv.length === 0 ? EXIT_CODES.usage : EXIT_CODES.success;
     }
 
@@ -101,7 +102,7 @@ export async function runOpmx(
       // Say which version actually ran. An unpinned ephemeral run resolves to
       // whatever is newest, so it is a different thing tomorrow.
       io.stderr.write(
-        `opmx: ${tool.exactPurl}${tool.cached ? ' (cached)' : ''}\n`,
+        report('opmx: ', `${tool.exactPurl}${tool.cached ? ' (cached)' : ''}`),
       );
       // An npm script runs from a node_modules of its closure, bound whole.
       return await holdingSignals((signal) =>
@@ -255,9 +256,14 @@ export function exitForError(error: unknown): number {
 
 export const parseForTest = (argv: string[]) => parse(argv);
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  // Same user-level package store as `opm`, so a tool run once is not stored
-  // again for the next project.
+/** The `opmx` process: the user-level package store `opm` uses, then the run. */
+export async function runOpmxFromProcess(): Promise<number> {
   enableDefaultSharedStore();
-  process.exitCode = await runOpmx();
+  return await runOpmx();
+}
+
+// The `opmx` bin is `opmx-main.js`. This is false when the file is started
+// through a link, so it serves only `node dist/opmx.js` by its own path.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  process.exitCode = await runOpmxFromProcess();
 }

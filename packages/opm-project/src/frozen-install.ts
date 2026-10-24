@@ -28,6 +28,8 @@ import { access } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
   detectNativeTarget,
+  echoed,
+  echoedValue,
   type DetectedProject,
   type FrozenLock,
   type FrozenLockSkip,
@@ -59,6 +61,7 @@ import {
 import { strongestClaims, type IntegrityClaim } from './integrity.js';
 import { MANIFEST_NAME, projectPaths } from './paths.js';
 import { readManifestFile } from './project.js';
+import { projectStep, type StepOptions } from './project-step.js';
 import type { OpmManifest } from './types.js';
 import { OpmError } from './types.js';
 
@@ -78,6 +81,8 @@ export interface FrozenInstallInput extends FrozenFetchOptions {
   target?: NativeTarget;
   /** The time policy is evaluated at. */
   now?: () => string;
+  /** Told what a killed step left and this one finished first. */
+  step?: StepOptions;
   /** Archives read at the same time. */
   concurrency?: number;
   signal?: AbortSignal;
@@ -184,6 +189,12 @@ function adapterFailure(error: unknown): Error {
 export async function installFrozen(
   input: FrozenInstallInput,
 ): Promise<FrozenInstallResult> {
+  return projectStep(input.root, input.step, () => installFrozenInStep(input));
+}
+
+async function installFrozenInStep(
+  input: FrozenInstallInput,
+): Promise<FrozenInstallResult> {
   const started = now();
   const root = resolve(input.root);
   const env = input.env ?? process.env;
@@ -208,7 +219,7 @@ export async function installFrozen(
   if (lock.refused.length > 0)
     throw new OpmError(
       'UNSUPPORTED_LOCK',
-      `Refusing to install ${lock.lockPath}: it holds ${lock.refused.length} entr${lock.refused.length === 1 ? 'y' : 'ies'} opm ci cannot install, and installing the rest would not be installing the lock:\n${listLines(lock.refused.map((item) => `${item.path}: ${item.reason}`))}`,
+      `Refusing to install ${lock.lockPath}: it holds ${lock.refused.length} entr${lock.refused.length === 1 ? 'y' : 'ies'} opm ci cannot install, and installing the rest would not be installing the lock:\n${listLines(lock.refused.map((item) => `${echoedValue(item.path)}: ${echoed(item.reason)}`))}`,
     );
 
   const evaluationTime = (input.now ?? (() => new Date().toISOString()))();
@@ -224,7 +235,7 @@ export async function installFrozen(
   if (unfetchable.length > 0)
     throw new OpmError(
       'UNSUPPORTED_LOCK',
-      `opm ci installs from archives with a pinned digest, and cannot install ${unfetchable.length} package${unfetchable.length === 1 ? '' : 's'} from a git or path source yet:\n${listLines(unfetchable.map((pkg) => `${labelOf(pkg)}: ${redactSource(pkg.source)}`))}`,
+      `opm ci installs from archives with a pinned digest, and cannot install ${unfetchable.length} package${unfetchable.length === 1 ? '' : 's'} from a git or path source yet:\n${listLines(unfetchable.map((pkg) => `${labelOf(pkg)}: ${echoed(redactSource(pkg.source))}`))}`,
     );
   const claims = new Map<string, IntegrityClaim[]>(
     lock.packages.map((pkg) => [

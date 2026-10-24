@@ -32,6 +32,11 @@ export {
 
 export { packageExecRoRoots } from './backends/native.js';
 
+export {
+  containmentWithdrawnNote,
+  executableAuthorityRefusal,
+} from './platform.js';
+
 export { minimalPathValue } from './env.js';
 
 export {

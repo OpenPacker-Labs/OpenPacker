@@ -3,10 +3,13 @@ import {
   assertPackageIdentityMatchesRequest,
   BoundedFetchTransport,
   createFirstPartyTransport,
+  echoed,
   firstPartyOriginPolicy,
+  MAXIMUM_METADATA_BYTES,
   normalizePinnedOrigin,
   parseHttpsOriginList,
   parsePurl,
+  parseUntrustedUrl,
   ProviderError,
   redactUrl,
   type CatalogProvider,
@@ -108,7 +111,7 @@ export function registryEndpoint(ecosystem: string): string {
 function safeRegistryEndpoint(endpoint: string, ecosystem: string): string {
   let parsed: URL;
   try {
-    parsed = new URL(endpoint);
+    parsed = parseUntrustedUrl(endpoint);
   } catch {
     throw new OpmError(
       'INVALID_PROVIDER_ENDPOINT',
@@ -486,14 +489,22 @@ function etagOf(response: HttpResponse): string | undefined {
  * request for a document already being fetched waits for that fetch rather
  * than starting another.
  *
- * Only small, repeatable reads are kept: a GET, bounded to a few MiB, that is
- * not an artifact download. Artifact bytes pass through and are not held. Every
- * request, kept or not, takes one of a fixed number of slots, so a walk that
- * reads ahead cannot open a connection per package.
+ * Only repeatable metadata reads are kept: a GET, bounded to no more than the
+ * largest metadata document an adapter reads, that is not an artifact download.
+ * Artifact bytes pass through and are not held. Every request, kept or not,
+ * takes one of a fixed number of slots, so a walk that reads ahead cannot open
+ * a connection per package.
+ *
+ * `ENTRY_LIMIT` is the adapters' own ceiling and not a number of this class's:
+ * a request is kept only if it asks for no more than that, so an adapter that
+ * is allowed a bigger document than this keeps would be fetched again at every
+ * use (npm's `next` packument is 25.6 MB). What is kept is what the provider
+ * holds for the resolve anyway, so the total bounds how many large documents a
+ * resolve keeps being able to answer from memory, not how much it holds.
  */
 export class MemoizingTransport implements HttpTransport {
-  static readonly ENTRY_LIMIT = 8 * 1024 * 1024;
-  static readonly TOTAL_LIMIT = 128 * 1024 * 1024;
+  static readonly ENTRY_LIMIT = MAXIMUM_METADATA_BYTES;
+  static readonly TOTAL_LIMIT = 4 * MAXIMUM_METADATA_BYTES;
   static readonly CONCURRENCY = 12;
   readonly #kept = new Map<string, Promise<HttpResponse>>();
   readonly #waiting: (() => void)[] = [];
@@ -869,7 +880,15 @@ function assertArtifactUriAllowed(
   exactPurl: string,
   options: RegistryOptions,
 ): void {
-  const uriOrigin = new URL(uri).origin;
+  let uriOrigin: string;
+  try {
+    uriOrigin = parseUntrustedUrl(uri).origin;
+  } catch {
+    throw new OpmError(
+      'UNSAFE_PATH',
+      `${echoed(exactPurl)} published a download location that is not a URL.`,
+    );
+  }
   const allowed =
     options.endpoint !== undefined
       ? firstPartyPolicy(ecosystem, options).allowedOrigins
@@ -1083,7 +1102,7 @@ async function fetchDelegatedArtifactBytes(input: {
     );
   let endpointOrigin: string;
   try {
-    endpointOrigin = new URL(input.endpoint).origin;
+    endpointOrigin = parseUntrustedUrl(input.endpoint).origin;
   } catch {
     throw new OpmError(
       'UNSAFE_PATH',
@@ -1092,7 +1111,7 @@ async function fetchDelegatedArtifactBytes(input: {
   }
   let location: URL;
   try {
-    location = new URL(input.uri);
+    location = parseUntrustedUrl(input.uri);
   } catch {
     throw new OpmError(
       'UNSAFE_PATH',
@@ -1108,7 +1127,7 @@ async function fetchDelegatedArtifactBytes(input: {
   )
     throw new OpmError(
       'UNSAFE_PATH',
-      `Refusing to fetch ${input.exactPurl} from ${redactUrl(location)}: ` +
+      `Refusing to fetch ${echoed(input.exactPurl)} from ${echoed(redactUrl(location))}: ` +
         'artifact locations must be HTTPS and carry no credentials, query, or hash.',
     );
   const envPins = parseHostFetchPinnedOrigins(

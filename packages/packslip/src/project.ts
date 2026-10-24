@@ -1,4 +1,5 @@
 import { PackslipError } from './errors.js';
+import { shown } from './shown.js';
 
 /** Where a project's name says it lives, and so who may sign for it. */
 export type Forge = 'github' | 'gitlab' | 'other';
@@ -35,7 +36,7 @@ const SEGMENT = /^[A-Za-z0-9._~+-]+$/u;
 function invalid(name: string, why: string): PackslipError {
   return new PackslipError(
     'INVALID_INPUT',
-    `Invalid project name "${name}": ${why}`,
+    `Invalid project name "${shown(name)}": ${why}`,
   );
 }
 
@@ -52,11 +53,11 @@ export function parseProject(name: string): Project {
   for (const segment of segments) {
     if (segment === '') throw invalid(name, 'it has an empty path segment');
     if (segment === '.' || segment === '..')
-      throw invalid(name, `it has a "${segment}" path segment`);
+      throw invalid(name, `it has a "${shown(segment)}" path segment`);
     if (!SEGMENT.test(segment))
       throw invalid(
         name,
-        `"${segment}" has characters a project name cannot carry`,
+        `"${shown(segment)}" has characters a project name cannot carry`,
       );
   }
   if (host === 'github.com') {

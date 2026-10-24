@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { outRaw } from '@openpacker/canonical';
 import type { PolicyInput } from '@openpacker/contracts';
 import {
   OpmError,
@@ -7,6 +8,7 @@ import {
   type BinDeclaration,
   type EphemeralTool,
 } from '@openpacker/opm-project';
+import { report } from './error-report.js';
 
 export const EXIT_CODES = {
   success: 0,
@@ -200,7 +202,7 @@ async function spawnProcess(
         pathPrefix: sandbox.pathPrefix,
       }),
     });
-    if (outcome.stdout) io.stdout.write(outcome.stdout);
+    if (outcome.stdout) outRaw(io, outcome.stdout);
     if (outcome.stderr) io.stderr.write(outcome.stderr);
     if (
       outcome.exitCode !== 0 &&
@@ -219,7 +221,12 @@ async function spawnProcess(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOENT';
     io.stderr.write(
-      `opmx: ${missing && missingHint ? `${missingHint} (${command} not found)` : message}\n`,
+      report(
+        'opmx: ',
+        missing && missingHint
+          ? `${missingHint} (${command} not found)`
+          : message,
+      ),
     );
     return missing && missingHint
       ? EXIT_CODES.unavailable

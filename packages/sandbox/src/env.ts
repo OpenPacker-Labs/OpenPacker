@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -196,6 +197,20 @@ export function scrubEnvironment(input: {
   return out;
 }
 
+/**
+ * Where each run's jail home is made. The home is a read-write grant of the
+ * run, and a grant may not contain a link (`assertSafeJailPath`), so the root
+ * is the real path of the temp directory: macOS's $TMPDIR is under /var, a
+ * link to /private/var, and a home made under the lexical path refused every
+ * run there. Where the temp directory cannot be resolved the lexical path
+ * stays, and the grant check then names the problem.
+ */
 export function defaultJailHomeRoot(): string {
-  return join(tmpdir(), 'openpacker-sandbox');
+  let base = tmpdir();
+  try {
+    base = realpathSync.native(base);
+  } catch {
+    // keep the lexical path
+  }
+  return join(base, 'openpacker-sandbox');
 }

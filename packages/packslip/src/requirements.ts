@@ -1,4 +1,5 @@
 import type { Artifact, HostRequirements } from './types.js';
+import { shown } from './shown.js';
 
 /**
  * What a consumer can learn about the machine. Every probe may answer
@@ -74,11 +75,11 @@ export function checkRequirements(
         : compareDotted(host.osVersion, requires.osMin);
     if (order === undefined)
       warnings.push(
-        `Could not compare the ${host.os} version with the required minimum ${requires.osMin}`,
+        `Could not compare the ${host.os} version with the required minimum ${shown(requires.osMin)}`,
       );
     else if (order < 0)
       refusals.push(
-        `Requires ${host.os} ${requires.osMin} or newer; this host has ${host.osVersion}`,
+        `Requires ${host.os} ${shown(requires.osMin)} or newer; this host has ${shown(host.osVersion)}`,
       );
   }
 
@@ -90,31 +91,31 @@ export function checkRequirements(
         : compareDotted(host.glibcVersion, requires.glibcMin);
     if (order === undefined)
       warnings.push(
-        `Could not read this host's glibc version to compare with the required ${requires.glibcMin}`,
+        `Could not read this host's glibc version to compare with the required ${shown(requires.glibcMin)}`,
       );
     else if (order < 0)
       refusals.push(
-        `Requires glibc ${requires.glibcMin} or newer; this host has ${host.glibcVersion}`,
+        `Requires glibc ${shown(requires.glibcMin)} or newer; this host has ${shown(host.glibcVersion)}`,
       );
   }
 
   for (const library of requires.libs ?? []) {
     const present = host.hasLibrary?.(library);
     if (present === undefined)
-      warnings.push(`Could not check for the shared library ${library}`);
+      warnings.push(`Could not check for the shared library ${shown(library)}`);
     else if (!present)
       refusals.push(
-        `Requires the shared library ${library}, which is not installed`,
+        `Requires the shared library ${shown(library)}, which is not installed`,
       );
   }
 
   for (const required of requires.bin ?? []) {
     const probe = host.command?.(required.name);
     if (probe === undefined) {
-      warnings.push(`Could not check for the command ${required.name}`);
+      warnings.push(`Could not check for the command ${shown(required.name)}`);
     } else if (!probe.found) {
       warnings.push(
-        `Needs the command ${required.name}${required.min === undefined ? '' : ` ${required.min} or newer`}, which is not on PATH`,
+        `Needs the command ${shown(required.name)}${required.min === undefined ? '' : ` ${shown(required.min)} or newer`}, which is not on PATH`,
       );
     } else if (required.min !== undefined) {
       const order =
@@ -123,11 +124,11 @@ export function checkRequirements(
           : compareDotted(probe.version, required.min);
       if (order === undefined)
         warnings.push(
-          `Could not read the version of ${required.name} to compare with the required ${required.min}`,
+          `Could not read the version of ${shown(required.name)} to compare with the required ${shown(required.min)}`,
         );
       else if (order < 0)
         warnings.push(
-          `Needs ${required.name} ${required.min} or newer; found ${probe.version}`,
+          `Needs ${shown(required.name)} ${shown(required.min)} or newer; found ${shown(probe.version)}`,
         );
     }
   }

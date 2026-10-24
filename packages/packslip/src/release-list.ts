@@ -12,6 +12,7 @@ import { parseProject } from './project.js';
 import type { ReleaseEntry, ReleaseList } from './types.js';
 import { RELEASES_PREDICATE } from './types.js';
 import { assertSemver } from './version.js';
+import { shown } from './shown.js';
 
 function invalid(message: string): PackslipError {
   return new PackslipError('INVALID_STATEMENT', message);
@@ -77,20 +78,20 @@ export function decodeReleaseList(value: JsonValue): ReleaseList {
   const subjectNames = new Set(subjects.map((subject) => subject.name));
   for (const release of releases) {
     if (versions.has(release.version))
-      throw invalid(`version ${release.version} is listed twice`);
+      throw invalid(`version ${shown(release.version)} is listed twice`);
     versions.add(release.version);
     urls.add(release.packslip);
     if (!subjectNames.has(release.packslip))
       throw invalid(
-        `release ${release.version} has no subject digest for ${release.packslip}`,
+        `release ${shown(release.version)} has no subject digest for ${shown(release.packslip)}`,
       );
   }
   for (const subject of subjects)
     if (!urls.has(subject.name))
-      throw invalid(`subject ${subject.name} is not a listed release`);
+      throw invalid(`subject ${shown(subject.name)} is not a listed release`);
   const latest = predicate.optionalString('latest');
   if (latest !== undefined && !versions.has(latest))
-    throw invalid(`latest ${latest} is not a listed version`);
+    throw invalid(`latest ${shown(latest)} is not a listed version`);
   const sequence = predicate.integer('sequence');
   const extensions = predicate.optionalExtensions();
   return {
@@ -111,7 +112,7 @@ export function assertListFresh(list: ReleaseList, now: Date): void {
   if (Date.parse(list.expiresAt) <= now.getTime())
     throw new PackslipError(
       'LIST_EXPIRED',
-      `The signed release list for ${list.project} expired at ${list.expiresAt}`,
+      `The signed release list for ${shown(list.project)} expired at ${shown(list.expiresAt)}`,
     );
 }
 
@@ -126,6 +127,6 @@ export function assertListSequence(
   if (highestAccepted !== undefined && list.sequence < highestAccepted)
     throw new PackslipError(
       'LIST_ROLLBACK',
-      `The signed release list for ${list.project} has sequence ${list.sequence}, below the accepted ${highestAccepted}`,
+      `The signed release list for ${shown(list.project)} has sequence ${list.sequence}, below the accepted ${highestAccepted}`,
     );
 }

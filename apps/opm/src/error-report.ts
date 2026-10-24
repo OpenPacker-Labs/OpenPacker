@@ -1,4 +1,7 @@
-import { redactUrl } from '@openpacker/adapter-core';
+import { plainLine, plainText, report } from '@openpacker/canonical';
+import { scrub } from './scrub.js';
+
+export { scrub };
 
 /**
  * How an unexpected failure is reported by `opm` and `opmx`.
@@ -8,9 +11,52 @@ import { redactUrl } from '@openpacker/adapter-core';
  * `error.cause`. Printing only the message left a person with nothing to act
  * on, so an error that carries no code of its own is printed with its cause
  * chain. Everything printed passes the same redaction: a URL keeps its origin
- * and path and loses userinfo, query and fragment (`redactUrl`), and a value
+ * and path and loses userinfo, query and fragment (`scrub`), and a value
  * that follows a credential-shaped name is withheld.
+ *
+ * What is printed is made plain first, once, here, and that is the second layer
+ * of two. A message can carry text a registry chose (a dependency's name, a
+ * version, a key in its document) on its way from an adapter. Where that is
+ * known, the adapter or the policy makes the text plain at its source
+ * (`safeEcho` in `@openpacker/canonical`: npm's dependency names, ranges and
+ * owners, the policy's publish-time bound), so that a library user gets it
+ * too. This writer does not rely on that: `plainText` (the same package, the
+ * one definition of what a terminal must not be sent) removes escape sequences
+ * and control, format and bidirectional characters, turns a tab into a space
+ * and a carriage return into a line break, and keeps the line breaks a message
+ * carries, because several of opm's own errors are lists, one entry to a line.
+ * What it cannot do is tell an entry opm wrote from a line a registry added: a
+ * message that reaches it with a line feed from a registry in it can start a
+ * line of its own, in plain text. Flattening that text where it is quoted is
+ * the first layer's job, and it is done at the source for what a registry or a
+ * cloned repository sends: `echoed` in @openpacker/adapter-core (its shared
+ * parsers, the PyPI, Cargo, NuGet, Maven, Go, OCI and PREX registry adapters, the
+ * plugin store, opm-project's reading of opm.toml, opm.lock.json and the npm
+ * lock, and the apt, Chocolatey, winget and Nix refusals), `safeEcho` in the OCI
+ * client, the materializer, npm and the policy, and `plainLine`, at the line
+ * that quotes it, for what `opm list`, `why`, `import --native`, `run`, `exec`
+ * and a successful `opm ci` print and for the lost meaning `manifest`, `pack`
+ * and `ci` report. Standard output is held the same way: `out`, `outJson` and
+ * `outRaw` (`@openpacker/canonical`) are its only writers, and
+ * `stdout-writers.test.ts` fails on any other reference to it. `out` removes
+ * escape sequences and control characters and keeps line feeds, as this writer
+ * does, so a value that carries a line feed still starts a line of its own:
+ * whoever quotes a value from a repository or a registry makes it one line
+ * where it is quoted. Text that does not come through one of those (a plugin's,
+ * a path project-io refuses, a packer's file name, a child's own stderr)
+ * reaches this writer unflattened, safe from escapes and not from line feeds.
+ * It also reads an unterminated `ESC ]` or `ESC P` as running to the end of the
+ * message, as a terminal does, so a field that ends in one drops the entries
+ * after it (ADR 0044). The `openpacker` command line and the daemon's start
+ * write their errors through the same `report`, and `stderr-writers.test.ts`
+ * holds them to it.
  */
+
+// The one writer of an error, and the type of what it may be handed, are in
+// `@openpacker/canonical` beside `plainText`, so that the `openpacker` command
+// line writes its errors through the same function.
+export { report };
+export type { MessageLike } from '@openpacker/canonical';
 
 /** How many `cause` links below the reported error are followed. */
 export const MAX_CAUSE_DEPTH = 3;
@@ -90,33 +136,10 @@ function nonEmpty(value: unknown): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined;
 }
 
-/** Withhold what must not reach a terminal, a log or a pasted bug report. */
-export function scrub(text: string): string {
-  return text
-    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s'"<>)\]]+/giu, (match) => {
-      try {
-        const url = new URL(match);
-        // A URL with an opaque origin (`socks5://…`) still has a host.
-        return url.origin === 'null'
-          ? `${url.protocol}//${url.host}${url.pathname}`
-          : redactUrl(url);
-      } catch {
-        return '[url]';
-      }
-    })
-    .replace(
-      /\b([\w-]*(?:authorization|token|secret|password|passwd|api[_-]?key))(\s*[:=]\s*)(?:(?:Bearer|Basic)\s+)?[^\s,;'")\]]+/giu,
-      (_match, name: string, separator: string) =>
-        `${name}${separator}[REDACTED]`,
-    )
-    .replace(
-      /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/giu,
-      (_match, scheme: string) => `${scheme} [REDACTED]`,
-    );
-}
-
 function oneLine(text: string): string {
-  const flat = scrub(text).replace(/\s+/gu, ' ').trim();
+  // Plain before scrubbed: a credential-shaped name with a zero-width character
+  // in it must be read as the terminal would show it, or it escapes the scrub.
+  const flat = scrub(plainLine(text)).replace(/\s+/gu, ' ').trim();
   return flat.length > MAX_LINE_LENGTH
     ? `${flat.slice(0, MAX_LINE_LENGTH)}…`
     : flat;
@@ -227,9 +250,9 @@ export function formatFailure(
   failure: Failure,
   { tool, internalError = false, env = process.env }: FailureReportOptions,
 ): string {
-  if (failure.coded) return `${tool}: ${failure.message}\n`;
+  if (failure.coded) return report(`${tool}: `, failure.message);
   const label = internalError ? `${tool}: internal error` : tool;
-  const lines = [`${label}: ${scrub(failure.message)}`];
+  const lines = [`${label}: ${scrub(plainText(failure.message))}`];
   for (const [depth, cause] of failure.causes.entries())
     lines.push(`${tool}: ${'  '.repeat(depth + 1)}caused by: ${cause.text}`);
   if (failure.causes.some((cause) => cause.connectionFault)) {

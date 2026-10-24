@@ -1,3 +1,4 @@
+import { echoed } from '@openpacker/adapter-core';
 import type { JsonValue } from '@openpacker/contracts';
 import {
   ObjectReader,
@@ -81,10 +82,10 @@ function decode(value: JsonValue): PriorAttestation {
   const signerReader = root.object('signer');
   const scheme = signerReader.string('scheme');
   if (scheme !== 'sigstore-oidc' && scheme !== 'sigstore-key')
-    throw fail(`unknown signature scheme "${scheme}"`);
+    throw fail(`unknown signature scheme "${echoed(scheme)}"`);
   const attestedBy = root.string('attested_by');
   if (attestedBy !== 'vendor' && attestedBy !== 'repackager')
-    throw fail(`unknown attestation "${attestedBy}"`);
+    throw fail(`unknown attestation "${echoed(attestedBy)}"`);
   const issuer = signerReader.optionalString('issuer');
   const repositoryId = signerReader.optionalString('repository_id');
   const keyHint = signerReader.optionalString('key_hint');

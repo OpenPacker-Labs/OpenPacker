@@ -28,11 +28,52 @@ export function isExactVersion(ecosystem: string, hint: string): boolean {
   }
 }
 
+/**
+ * The range or dist-tag in opm.toml's `version` that the registry has to
+ * resolve, or undefined when it is a version. An ecosystem whose adapter has no
+ * codec cannot tell the two apart, so what was written goes to the adapter as
+ * it is, as the exact version asked for; only a codec reads a range or a tag
+ * (npm's resolves `latest` through the registry's dist-tags).
+ */
+export function registryHintFor(
+  ecosystem: string,
+  version: string | undefined,
+): string | undefined {
+  if (version === undefined || version === '' || !hasCodec(ecosystem))
+    return undefined;
+  return isExactVersion(ecosystem, version) ? undefined : version;
+}
+
+function hasCodec(ecosystem: string): boolean {
+  try {
+    codecFor(ecosystem);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** What a version (not a range) may be spelled with, in any ecosystem. */
+const VERSION_SPELLING = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u;
+
+/**
+ * Whether opm.toml's `version` pins one release. `latest` and `1.2.x` are
+ * spelled like a version, but npm's codec reads neither as one: the first is a
+ * dist-tag and the second a range, so neither is held to the lock's version
+ * as a pin is. An ecosystem whose adapter has no codec is judged by the
+ * spelling alone, as before.
+ */
+export function isPinnedVersion(ecosystem: string, version: string): boolean {
+  if (!VERSION_SPELLING.test(version)) return false;
+  return !hasCodec(ecosystem) || isExactVersion(ecosystem, version);
+}
+
 interface TagSource {
   resolveTag(basePurl: string, tag: string): Promise<string | undefined>;
 }
 
-function canResolveTags(
+/** Whether the provider can say which version a dist-tag points at. */
+export function canResolveTags(
   provider: CatalogProvider,
 ): provider is CatalogProvider & TagSource {
   return (

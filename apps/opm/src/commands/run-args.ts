@@ -132,9 +132,14 @@ export function parseRunRequest(
 }
 
 /**
- * `exec` hands everything after the bin name to the bin, `--` or not, so
- * `opm exec vitest --version` reaches vitest. One `--` straight after the bin
- * is dropped, which keeps `opm exec vitest -- --version` working too.
+ * `opm exec <bin> [--path <dir>] [-- <args...>]`, the grammar the help shows.
+ *
+ * A `--path` straight after the bin is opm's, as it is before the bin, so
+ * `opm exec tsc --path pkg -- -b` runs `tsc -b` in `pkg`. The program's own
+ * arguments start at the first other token, or after a `--`: `opm exec vitest
+ * --version` still reaches vitest, and an argument the program calls `--path`
+ * is written after `--` (`opm exec tool -- --path x`). One `--` straight after
+ * the bin and its options is dropped; any later one is the program's.
  */
 export function parseExecRequest(
   head: readonly string[],
@@ -172,9 +177,33 @@ export function parseExecRequest(
       throw usage(
         `Unknown option ${token} for opm exec; put options for the executable after its name`,
       );
-    return request(token, dropSeparator(rest.slice(index + 1)));
+    let next = index + 1;
+    for (
+      let found = ownPathOption(rest, next);
+      found !== undefined;
+      found = ownPathOption(rest, next)
+    ) {
+      if (path !== undefined)
+        throw usage(
+          '--path is given twice; an argument for the executable named --path goes after --',
+        );
+      path = found.value;
+      next += found.consumed;
+    }
+    return request(token, dropSeparator(rest.slice(next)));
   }
   throw usage('opm exec requires an executable: opm exec <bin> [-- <args>]');
+}
+
+/** `--path <dir>` or `--path=<dir>` at `tokens[index]`: opm's own spelling only, not pnpm's or npm's. */
+function ownPathOption(
+  tokens: readonly string[],
+  index: number,
+): { value: string; consumed: number } | undefined {
+  const token = tokens[index] ?? '';
+  return token === '--path' || token.startsWith('--path=')
+    ? pathOption(tokens, index)
+    : undefined;
 }
 
 function dropSeparator(args: readonly string[]): string[] {

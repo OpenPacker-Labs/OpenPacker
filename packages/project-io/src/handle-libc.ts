@@ -29,7 +29,12 @@ import {
   type Koffi,
   type LibcApi,
 } from './handle-libc-api.js';
-import { direntOf, listEntries, type Entry } from './handle-libc-list.js';
+import {
+  direntOf,
+  listEntries,
+  scanEntries,
+  type Entry,
+} from './handle-libc-list.js';
 import {
   makeLink,
   readLinkText,
@@ -50,6 +55,7 @@ import {
   StableHandleError,
   locateModuleFile,
   wrapFd,
+  type BoundedListing,
 } from './handle-support.js';
 
 /** One implementation of the child operations `handle-path.ts` exposes. */
@@ -71,6 +77,11 @@ export interface ChildBackend {
   lstatChild(parent: FileHandle, name: string): Promise<BigIntStats>;
   readDirChild(parent: FileHandle): Promise<string[]>;
   readDirChildWithTypes(parent: FileHandle): Promise<Dirent[]>;
+  /** `readDirChildWithTypes` that stops reading past `limit` entries. */
+  readDirChildBounded(
+    parent: FileHandle,
+    limit: number,
+  ): Promise<BoundedListing>;
   /** `symlinkat(target, parent, name)`: the link is the new child; `target` is its text, not followed. */
   symlinkChild(parent: FileHandle, name: string, target: string): Promise<void>;
   /** `readlinkat(parent, name)`: the text of a link child; EINVAL when the child is not a link. */
@@ -139,6 +150,16 @@ export function createLibcAtBackend(profile: LibcAtProfile): ChildBackend {
     return listEntries(api, dirfd, display);
   }
 
+  function listBounded(
+    api: LibcApi,
+    dirfd: number,
+    display: string,
+    limit: number,
+  ): { entries: Entry[]; exceeded: boolean } {
+    verifyDirentLayout(api, verified);
+    return scanEntries(api, dirfd, display, limit);
+  }
+
   function unlink(
     api: LibcApi,
     dirfd: number,
@@ -187,22 +208,21 @@ export function createLibcAtBackend(profile: LibcAtProfile): ChildBackend {
     else unlink(api, dirfd, entry.name, 0);
   }
 
-  async function entriesOf(
+  /** Give an entry the filesystem reported no type for the one lstat says. */
+  function resolved(
+    api: LibcApi,
     parent: FileHandle,
-    typed: boolean,
-  ): Promise<Entry[]> {
-    const api = native();
-    const listed = list(api, parent.fd, `fd ${parent.fd}`);
-    if (!typed) return listed;
-    const resolved: Entry[] = [];
+    listed: readonly Entry[],
+  ): Entry[] {
+    const out: Entry[] = [];
     for (const entry of listed) {
       if (entry.kind !== 'unknown') {
-        resolved.push(entry);
+        out.push(entry);
         continue;
       }
       // The filesystem gave no d_type: ask it, as Node's readdir does.
       try {
-        resolved.push({
+        out.push({
           name: entry.name,
           kind: entryKindOfMode(lstatRaw(api, parent.fd, entry.name).mode),
         });
@@ -211,7 +231,16 @@ export function createLibcAtBackend(profile: LibcAtProfile): ChildBackend {
         if (!isAbsent(error as NodeJS.ErrnoException)) throw error;
       }
     }
-    return resolved;
+    return out;
+  }
+
+  async function entriesOf(
+    parent: FileHandle,
+    typed: boolean,
+  ): Promise<Entry[]> {
+    const api = native();
+    const listed = list(api, parent.fd, `fd ${parent.fd}`);
+    return typed ? resolved(api, parent, listed) : listed;
   }
 
   return {
@@ -288,6 +317,22 @@ export function createLibcAtBackend(profile: LibcAtProfile): ChildBackend {
       return (await entriesOf(parent, true)).map((entry) =>
         direntOf(entry.name, entry.kind),
       );
+    },
+
+    async readDirChildBounded(parent, limit) {
+      const api = native();
+      const { entries, exceeded } = listBounded(
+        api,
+        parent.fd,
+        `fd ${parent.fd}`,
+        limit,
+      );
+      return {
+        entries: resolved(api, parent, entries).map((entry) =>
+          direntOf(entry.name, entry.kind),
+        ),
+        exceeded,
+      };
     },
   };
 }
