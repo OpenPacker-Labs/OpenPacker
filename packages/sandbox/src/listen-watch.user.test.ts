@@ -1,4 +1,5 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { constants } from 'node:fs';
 import { chmod, chown, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,6 +17,7 @@ import { findTrustedSandboxHelper } from './backends/native.js';
  */
 
 const NOBODY = 65534;
+const { R_OK, W_OK, X_OK } = constants;
 const source = fileURLToPath(new URL('.', import.meta.url));
 // The resolve hook opm-project's tests use to run TypeScript sources in a child.
 const hook = new URL(
@@ -30,6 +32,11 @@ const { runInSandbox } = await import(src + '/run.ts');
 const work = process.env.WORK;
 let printed = '';
 const told = [];
+let settle;
+const done = new Promise((resolve) => (settle = resolve));
+const check = () => {
+  if (told.length > 0 && printed.endsWith('\\n')) settle();
+};
 const stop = new AbortController();
 const server = "const s = require('node:http').createServer();" +
   "s.listen(0, '127.0.0.1', () => process.stdout.write(s.address().port + '\\\\n'));";
@@ -41,23 +48,30 @@ const run = runInSandbox({
   readonlyPaths: [work],
   backend: createNativeBackend(),
   output: {
-    stdout: (chunk) => (printed += Buffer.from(chunk).toString('utf8')),
+    stdout: (chunk) => {
+      printed += Buffer.from(chunk).toString('utf8');
+      check();
+    },
     stderr: () => undefined,
   },
-  onIsolatedListen: (port) => told.push(port),
+  onIsolatedListen: (port) => {
+    told.push(port);
+    check();
+  },
   signal: stop.signal,
 });
-for (const until = Date.now() + 20000; Date.now() < until; ) {
-  if (told.length > 0 && printed.endsWith('\\n')) break;
-  await new Promise((resolve) => setTimeout(resolve, 25));
-}
+// Done once the port has been told and the server has printed its own;
+// or once the run has ended without that, which the parent then reports.
+await Promise.race([done, run]);
 stop.abort();
 await run;
 process.stdout.write(JSON.stringify({ uid: process.getuid(), printed, told }));
 `;
 
 const temps: string[] = [];
+const children: ChildProcess[] = [];
 afterEach(async () => {
+  for (const child of children.splice(0)) child.kill('SIGKILL');
   await Promise.all(
     temps.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
   );
@@ -79,7 +93,28 @@ describe.runIf(
       await mkdir(dir);
       await chown(dir, NOBODY, NOBODY);
     }
-    const ran = spawnSync(
+    // Whether a child of that uid can reach what the run needs, asked as that
+    // uid before the run: only this decides a skip, never the run's output.
+    const probe = spawnSync(
+      process.execPath,
+      [
+        '-e',
+        'const { accessSync, constants: c } = require("node:fs");' +
+          'for (const [path, mode] of JSON.parse(process.argv[1])) accessSync(path, mode);',
+        JSON.stringify([
+          [source, R_OK | X_OK],
+          [fileURLToPath(hook), R_OK],
+          [own, R_OK | W_OK | X_OK],
+          [work, R_OK | X_OK],
+        ]),
+      ],
+      { uid: NOBODY, gid: NOBODY, encoding: 'utf8' },
+    );
+    context.skip(
+      probe.status !== 0,
+      `uid ${NOBODY} cannot reach the sources or its temporary directory here: ${probe.stderr.slice(0, 200)}`,
+    );
+    const child = spawn(
       process.execPath,
       [
         '--experimental-transform-types',
@@ -95,21 +130,26 @@ describe.runIf(
         env: { ...process.env, TMPDIR: own, WORK: work, NODE_NO_WARNINGS: '1' },
         uid: NOBODY,
         gid: NOBODY,
-        encoding: 'utf8',
-        timeout: 60_000,
+        stdio: ['ignore', 'pipe', 'pipe'],
       },
     );
-    context.skip(
-      ran.status !== 0 && /EACCES|cannot open|Cannot find/u.test(ran.stderr),
-      `a child run as uid ${NOBODY} cannot reach the sources or the temporary directory here: ${ran.stderr.slice(0, 200)}`,
-    );
-    expect(ran.status, ran.stderr).toBe(0);
-    const seen = JSON.parse(ran.stdout) as {
+    children.push(child);
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    const status = await new Promise((resolve) => child.once('exit', resolve));
+    expect(status, stderr).toBe(0);
+    const seen = JSON.parse(stdout) as {
       uid: number;
       printed: string;
       told: number[];
     };
     expect(seen.uid).toBe(NOBODY);
     expect(seen.told).toEqual([Number(seen.printed.trim())]);
-  }, 90_000);
+  });
 });
