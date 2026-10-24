@@ -1,73 +1,22 @@
 /**
  * `opm run` over the member lists of four real repositories (HoBo, ai-bdd,
- * ts-autocode, gitlang). The manifests are wave one's fixtures in
- * packages/opm-project/test/fixtures/workspaces: names, versions, workspaces
- * and the dependency lists, no source. Every member gets one script that
- * appends its directory to order.log, so a run is read back as an order.
+ * ts-autocode, gitlang), written by `real-workspace-fixture.ts`. Every member
+ * gets one script that appends its directory to order.log, so a run is read
+ * back as an order. What planning HoBo costs is `run-workspace-plan.test.ts`.
  */
-import { readFileSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   parseFilter,
   resolveWorkspaceLimits,
   selectMembers,
 } from '@openpacker/adapter-core';
 import { discoverWorkspace, graphOfWorkspace } from '@openpacker/opm-project';
-import { afterAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { buildRealWorkspace as build } from './real-workspace-fixture.js';
 import { go } from './workspace-fixture.js';
 
 const posix = describe.skipIf(process.platform === 'win32');
-
-interface Fixture {
-  repo: string;
-  declaration: { file: string; text?: string };
-  root: Record<string, unknown>;
-  bare: string[];
-  members: Record<string, Record<string, unknown>>;
-}
-
-const made: string[] = [];
-afterAll(async () => {
-  await Promise.all(made.map((d) => rm(d, { recursive: true, force: true })));
-});
-
-const MARK = 'echo "${PWD#"$INIT_CWD"/}" >> "$INIT_CWD/order.log"';
-
-async function build(
-  name: string,
-): Promise<{ root: string; fixture: Fixture }> {
-  const fixture = JSON.parse(
-    readFileSync(
-      new URL(
-        `../../../packages/opm-project/test/fixtures/workspaces/${name}.json`,
-        import.meta.url,
-      ),
-      'utf8',
-    ),
-  ) as Fixture;
-  const root = await mkdtemp(join(tmpdir(), `opm-real-${name}-`));
-  made.push(root);
-  const write = async (path: string, text: string) => {
-    await mkdir(dirname(join(root, path)), { recursive: true });
-    await writeFile(join(root, path), text);
-  };
-  await write(
-    'package.json',
-    JSON.stringify({ ...fixture.root, scripts: { build: MARK } }),
-  );
-  if (fixture.declaration.text !== undefined)
-    await write('pnpm-workspace.yaml', fixture.declaration.text);
-  for (const [dir, manifest] of Object.entries(fixture.members))
-    await write(
-      `${dir}/package.json`,
-      JSON.stringify({ ...manifest, scripts: { build: MARK } }),
-    );
-  for (const dir of fixture.bare)
-    await mkdir(join(root, dir), { recursive: true });
-  return { root, fixture };
-}
 
 async function ranDirs(root: string): Promise<string[]> {
   return (await readFile(join(root, 'order.log'), 'utf8'))
@@ -186,71 +135,5 @@ posix('the filters the real scripts use', () => {
     const dirs = await ranDirs(root);
     expect(dirs).toHaveLength(8);
     expect(dirs).toEqual([...dirs].sort());
-  });
-});
-
-posix('the real workspaces, planned', () => {
-  it('HoBo: discovery, selection and ordering of 792 members cost a small multiple of reading them, and tens of megabytes at most', async () => {
-    const { root } = await build('hobo');
-    const { planWorkspace } = await import('../src/commands/run-select.js');
-    const { contextWith } = await import('./workspace-fixture.js');
-    const { SelectionParser } = await import(
-      '../src/commands/run-select-args.js'
-    );
-    const parse = (...tokens: string[]) => {
-      const parser = new SelectionParser('run');
-      for (let at = 0; at < tokens.length; ) at += parser.accept(tokens, at);
-      return parser.result()!;
-    };
-    // The cost is read against the least any discovery must do on this machine
-    // right now (read and parse each of the 792 manifests), not against a clock:
-    // a loaded machine slows both. Alone the plan costs 1.3 to 2.4 times that;
-    // an ordering that is quadratic in the members costs far more.
-    const { readdir } = await import('node:fs/promises');
-    const readEveryManifest = async () => {
-      const started = performance.now();
-      const names = (await readdir(root, { recursive: true })).filter((name) =>
-        name.endsWith('package.json'),
-      );
-      for (const name of names)
-        JSON.parse(await readFile(join(root, name), 'utf8'));
-      return performance.now() - started;
-    };
-    const planAll = async () => {
-      const started = performance.now();
-      const planned = await planWorkspace(
-        parse('-r'),
-        root,
-        false,
-        root,
-        contextWith(),
-      );
-      return { planned, ms: performance.now() - started };
-    };
-    const before = process.memoryUsage();
-    let all: Awaited<ReturnType<typeof planAll>>['planned'] | undefined;
-    let allMs = Infinity;
-    let readMs = Infinity;
-    for (let round = 0; round < 2; round += 1) {
-      readMs = Math.min(readMs, await readEveryManifest());
-      const run = await planAll();
-      all = run.planned;
-      allMs = Math.min(allMs, run.ms);
-    }
-    const closure = await planWorkspace(
-      parse('--filter', '...@hobo/core'),
-      root,
-      false,
-      root,
-      contextWith(),
-    );
-    const after = process.memoryUsage();
-    expect(all?.members).toHaveLength(791);
-    expect(closure.members.length).toBeGreaterThan(10);
-    expect(allMs).toBeLessThan(20 * readMs);
-    expect(after.heapUsed - before.heapUsed).toBeLessThan(200 * 1024 * 1024);
-    console.info(
-      `HoBo plan: -r ${allMs.toFixed(0)} ms against ${readMs.toFixed(0)} ms to read the manifests (${all?.members.length} members), closure ${closure.members.length} members, heap +${((after.heapUsed - before.heapUsed) / 1048576).toFixed(1)} MiB, rss +${((after.rss - before.rss) / 1048576).toFixed(1)} MiB`,
-    );
   });
 });
