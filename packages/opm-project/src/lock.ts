@@ -57,7 +57,7 @@ export function parseLockfile(text: string): OpmLockfile {
     if (error instanceof OpmError) throw error;
     throw new OpmError(
       'INVALID_LOCK',
-      error instanceof Error ? error.message : String(error),
+      plainLine(error instanceof Error ? error.message : String(error)),
     );
   }
 }
@@ -85,7 +85,7 @@ function parseLockfileBody(text: string): OpmLockfile {
   } catch (error) {
     throw new OpmError(
       'INVALID_LOCK',
-      `opm.lock.json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `opm.lock.json is not valid JSON: ${plainLine(error instanceof Error ? error.message : String(error))}`,
     );
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
