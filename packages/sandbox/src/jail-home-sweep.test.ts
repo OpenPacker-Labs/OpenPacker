@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
   mkdir,
@@ -13,9 +13,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { afterEach, describe, expect, it } from 'vitest';
+import { fileURLToPath } from 'node:url';
 import {
   currentOwner,
   OWNER_FILE,
+  systemProbe,
   writeOwnerFile,
   type ProcessOwner,
 } from '@openpacker/project-io';
@@ -109,6 +111,46 @@ async function aRun(
   });
 }
 
+/** Whether `command` ran and succeeded. */
+function spawnSyncOk(command: string, args: string[]): boolean {
+  return spawnSync(command, args, { stdio: 'ignore' }).status === 0;
+}
+
+// The resolve hook opm-project's tests use to run TypeScript sources in a child.
+const hook = new URL(
+  '../../opm-project/test/fixtures/ts-resolve.mjs',
+  import.meta.url,
+).href;
+
+/**
+ * Another process holding its jail home: it runs a tool through
+ * `runInSandbox` that says it is up and reads the FIFO it is given, and says
+ * `held` once the tool is up; the tool ends when the FIFO is written.
+ */
+const HOLDER = `
+const [src, fifo] = process.argv.slice(1);
+const { runInSandbox } = await import(src + '/run.ts');
+const { createMockBackend } = await import(src + '/backends/mock.ts');
+const cwd = process.env.TMPDIR;
+const outcome = await runInSandbox({
+  argv: ['/bin/sh', '-c', 'echo up; read line < "$GO"'],
+  cwd,
+  env: { GO: fifo },
+  policy: { enabled: true, mode: 'fail-closed', required: true },
+  readwritePaths: [],
+  readonlyPaths: [cwd],
+  backend: createMockBackend(),
+  output: {
+    stdout: (chunk) => {
+      if (Buffer.from(chunk).toString('utf8').includes('up'))
+        process.stdout.write('held\\n');
+    },
+    stderr: () => undefined,
+  },
+});
+process.exitCode = outcome.exitCode;
+`;
+
 const present = (paths: readonly string[]) =>
   paths.map((path) => existsSync(path));
 
@@ -162,6 +204,81 @@ describe('a run removes the jail homes runs that ended left', () => {
     await mkdir(join(tombstone, 'home'), { recursive: true });
     expect((await aRun()).exitCode).toBe(0);
     expect(present([tombstone])).toEqual([false]);
+  });
+});
+
+const children: ChildProcess[] = [];
+afterEach(() => {
+  for (const child of children.splice(0)) child.kill('SIGKILL');
+});
+
+/** The first line a child writes that `test` accepts. */
+function line(child: ChildProcess, test: (text: string) => boolean) {
+  return new Promise<string>((resolve, reject) => {
+    let seen = '';
+    child.stdout!.setEncoding('utf8').on('data', (chunk: string) => {
+      seen += chunk;
+      const found = seen.split('\n').find(test);
+      if (found !== undefined) resolve(found);
+    });
+    child.once('exit', (code) =>
+      reject(new Error(`the child ended (${code}) having written: ${seen}`)),
+    );
+  });
+}
+
+describe('a home whose owner is another process, alive', () => {
+  it('is kept, its pid and start time those of a process that runs', async () => {
+    await ownTmpdir();
+    const sleeper = spawn('sleep', ['300'], { stdio: 'ignore' });
+    children.push(sleeper);
+    await new Promise((resolve) => sleeper.once('spawn', resolve));
+    const started = await systemProbe.stat(sleeper.pid!);
+    const owner: ProcessOwner = {
+      ...(await currentOwner()),
+      pid: sleeper.pid!,
+      ...(!(started === undefined) && { startTime: started.startTime }),
+    };
+    const alive = await leftHome('home-sleeper', owner);
+    const dead = await leftHome('home-dead', {
+      ...(await currentOwner()),
+      pid: await ended(),
+    });
+    expect((await aRun()).exitCode).toBe(0);
+    expect(present([alive, dead])).toEqual([true, false]);
+  });
+
+  it('is kept while that process holds it through runInSandbox', async () => {
+    const dir = await ownTmpdir();
+    const fifo = join(dir, 'go');
+    expect(spawnSyncOk('mkfifo', [fifo])).toBe(true);
+    const holder = spawn(
+      process.execPath,
+      [
+        '--experimental-transform-types',
+        '--import',
+        hook,
+        '--input-type=module',
+        '-e',
+        HOLDER,
+        fileURLToPath(new URL('.', import.meta.url)),
+        fifo,
+      ],
+      {
+        env: { ...process.env, TMPDIR: dir, NODE_NO_WARNINGS: '1' },
+        stdio: ['ignore', 'pipe', 'inherit'],
+      },
+    );
+    children.push(holder);
+    const exited = new Promise((resolve) => holder.once('exit', resolve));
+    await line(holder, (text) => text === 'held');
+    const [held] = await readdir(defaultJailHomeRoot());
+    // This process's run sweeps first, beside the other's home.
+    expect((await aRun()).exitCode).toBe(0);
+    expect(await readdir(defaultJailHomeRoot())).toEqual([held]);
+    await writeFile(fifo, 'go\n');
+    expect(await exited).toBe(0);
+    expect(await readdir(defaultJailHomeRoot())).toEqual([]);
   });
 });
 
