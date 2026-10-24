@@ -48,6 +48,17 @@ describe('opm list, in a repository whose opm.lock.json holds', () => {
         ];
       },
     ],
+    [
+      'a name another package installs it under',
+      (lock, _toml, text) => {
+        member(lock, 'packages').b = {
+          ...member(lock, 'packages', 'a'),
+          reason: 'transitive',
+          purl: 'pkg:npm/b@1.0.0',
+          aliases: { [`ax${text}`]: 'a' },
+        };
+      },
+    ],
   ])('one line a package, when it is %s', async (_, edit) => {
     await expectNoNewLines(repo(edit), ['list']);
   });
@@ -86,6 +97,44 @@ describe('opm why, in a repository whose files hold', () => {
       },
     ],
   ])('one line, when it is %s', async (_, edit) => {
+    await expectNoNewLines(repo(edit), ['why', 'a']);
+  });
+
+  it.each<[string, Edit]>([
+    [
+      'the name a package requires it under',
+      (lock, _toml, text) => {
+        member(lock, 'packages').b = {
+          ...member(lock, 'packages', 'a'),
+          reason: 'transitive',
+          purl: 'pkg:npm/b@1.0.0',
+          aliases: { [`ax${text}`]: 'a' },
+        };
+      },
+    ],
+    [
+      'the key of the package that requires it',
+      (lock, _toml, text) => {
+        member(lock, 'packages')[`b${text}`] = {
+          ...member(lock, 'packages', 'a'),
+          reason: 'transitive',
+          purl: 'pkg:npm/b@1.0.0',
+          dependencies: ['a'],
+        };
+      },
+    ],
+    [
+      'the PURL of the package that requires it',
+      (lock, _toml, text) => {
+        member(lock, 'packages').b = {
+          ...member(lock, 'packages', 'a'),
+          reason: 'transitive',
+          purl: `pkg:npm/b@1.0.0${text}`,
+          dependencies: ['a'],
+        };
+      },
+    ],
+  ])('one line a requirer, when opm.lock.json holds %s', async (_, edit) => {
     await expectNoNewLines(repo(edit), ['why', 'a']);
   });
 

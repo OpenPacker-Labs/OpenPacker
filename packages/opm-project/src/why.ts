@@ -68,11 +68,7 @@ export function entriesNamed(
     .sort();
 }
 
-/**
- * One entry's explanation, in the words `opm why` has always used. What it
- * quotes came from opm.toml and the lock, so each value is one plain line, and
- * a source is named as every address is named.
- */
+/** One entry's explanation, in the words `opm why` has always used. */
 export function explainEntry(
   manifest: OpmManifest,
   lock: OpmLockfile | undefined,

@@ -158,7 +158,7 @@ describe('what opm ci repeats of the fields of a lock entry it refuses', () => {
       'node_modules/p2': { link: true, resolved: '../packages/shared' },
     });
     expect(link.written).toContain(
-      'a link that points at ../packages/shared, which leaves',
+      'a link that points at ../packages/shared, which leaves the project root;',
     );
   });
 });

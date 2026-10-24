@@ -76,11 +76,6 @@ const EXEMPT: ReadonlyArray<{
   },
   {
     file: 'commands/run-child.ts',
-    starts: 'const handedNoTerminal',
-    reason: 'compares the stdio choices made above; writes nothing',
-  },
-  {
-    file: 'commands/run-child.ts',
     starts: "child.stdout?.setEncoding('utf8')",
     reason: "reads the child's own stdout; writes nothing",
   },
@@ -95,6 +90,24 @@ const EXEMPT: ReadonlyArray<{
     starts: 'chunk',
     reason:
       "the script's own stdout, passed through as it wrote it, which is the point of `opm run`",
+  },
+  {
+    file: 'commands/run-child.ts',
+    starts: 'const handedNoTerminal',
+    reason:
+      "compares the stdio choices made on the lines above (a child handed none of the terminal's streams gets a group of its own); writes nothing",
+  },
+  {
+    file: 'commands/run-output.ts',
+    starts: 'this.lines.stdout.end()',
+    reason:
+      "ends the line splitter of a member's stdout, which holds the child's text; writes nothing itself",
+  },
+  {
+    file: 'commands/run-output.ts',
+    starts: 'outRaw',
+    reason:
+      "a line of a member's own stdout in a run over members: the prefix is opm's and one plain line (`memberLabel`, `step`), the rest is what the child wrote, passed through as a single run passes it",
   },
   {
     file: 'opm.ts',
@@ -134,7 +147,12 @@ const matches = (place: Place, entry: (typeof EXEMPT)[number]) =>
 describe('what the command lines write to stdout', () => {
   it('finds the places it is about', () => {
     expect(new Set(places.map((place) => place.file))).toEqual(
-      new Set(['commands/run-child.ts', 'opm.ts', 'opmx.ts']),
+      new Set([
+        'commands/run-child.ts',
+        'commands/run-output.ts',
+        'opm.ts',
+        'opmx.ts',
+      ]),
     );
   });
 
@@ -155,6 +173,7 @@ describe('what the command lines write to stdout', () => {
   it('lists every call of outRaw', () => {
     const calls = places.filter((place) => place.how === 'outRaw');
     expect(calls.map((place) => place.file).sort()).toEqual([
+      'commands/run-output.ts',
       'opm.ts',
       'opmx.ts',
     ]);

@@ -8,7 +8,7 @@
  * work itself (a script with its hooks, a bin) is the caller's.
  */
 import { constants } from 'node:os';
-import { report } from '@openpacker/canonical';
+import { report } from '../error-report.js';
 import { runChild, startChild, type ChildIo } from './run-child.js';
 import type { RunContext } from './run-context.js';
 import type { ChildRunner } from './run-package.js';
@@ -31,9 +31,8 @@ export interface MemberTask {
   work(env: MemberEnv): Promise<JobResult>;
 }
 
-/** The exit status of a member's work, after saying why it failed. */
-function settle(io: ChildIo, result: JobResult): number {
-  // The failure names the member and the step, which its package.json chose.
+/** Say why a run stopped, through the one writer, and give its status. */
+function ended(io: ChildIo, result: JobResult): number {
   if (result.failure !== undefined)
     io.stderr.write(report('opm: ', result.failure));
   return result.status;
@@ -50,7 +49,7 @@ export async function runMembers(
   const runnable = tasks.filter((task) => task.runs);
   if (runnable.length === 1) {
     const only = runnable[0]!;
-    return settle(
+    return ended(
       io,
       await only.work({
         io,
@@ -92,7 +91,7 @@ export async function runMembers(
     host: context.host,
   });
   if (outcome.error !== undefined) throw outcome.error.error;
-  if (outcome.failed !== undefined) return settle(io, outcome.failed.result);
+  if (outcome.failed !== undefined) return ended(io, outcome.failed.result);
   if (outcome.interrupted !== undefined)
     return 128 + (constants.signals[outcome.interrupted] ?? 0);
   return 0;

@@ -210,10 +210,13 @@ function npmRequirement(
     if (enforced)
       throw new ProviderError(
         'UNSUPPORTED_DEPENDENCY_SPEC',
-        dependencyText.unsupportedSpec(owner, name, range, specKind) +
-          (aliasProblem === undefined
-            ? ''
-            : ` (${dependencyText.echoedReason(aliasProblem)})`),
+        dependencyText.unsupportedSpec(
+          owner,
+          name,
+          range,
+          specKind,
+          aliasProblem,
+        ),
       );
     return {
       id: `${dependerNodeId}:${kind}:${name}`,

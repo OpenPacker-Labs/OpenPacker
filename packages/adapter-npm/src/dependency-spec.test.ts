@@ -90,6 +90,19 @@ describe('a dependency the package cannot resolve', () => {
     });
   });
 
+  it('says why an npm: alias is not one npm installs, in plain text', async () => {
+    const error = await refusal({
+      dependencies: {
+        dep: `npm:foo@git+https://x.test/${ESC}]0;pwned${BEL}\nx`,
+      },
+    });
+    expect(error).toMatchObject({ code: 'UNSUPPORTED_DEPENDENCY_SPEC' });
+    expect(error.message).toContain(
+      '(aliases only work for registry packages, and ',
+    );
+    expect(holdsControl(error.message)).toBe(false);
+  });
+
   it('names the package in plain text too', async () => {
     const error = await refusal({
       name: `de${ESC}[31mmo`,

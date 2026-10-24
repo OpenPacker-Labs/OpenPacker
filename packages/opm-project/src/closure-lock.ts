@@ -1,4 +1,5 @@
 import { echoed } from '@openpacker/adapter-core';
+import { plainLine } from '@openpacker/canonical';
 import type { PackageInstance } from '@openpacker/contracts';
 import { binDeclarationsFromExecutables } from './bins.js';
 import { requireAdapterRegistry } from './adapters.js';
@@ -18,7 +19,6 @@ import {
   type RegistryOptions,
 } from './registry.js';
 import { isChangedUnderTheResolve } from './registry-changed.js';
-import { unresolvedNote } from './closure-note.js';
 import { resolveGraph, type ResolvedGraph } from './resolve.js';
 import { solveGraph } from './solve.js';
 import { purlPackageName, stripPurlVersion } from './spec.js';
@@ -259,8 +259,8 @@ export async function resolveTransitive(input: {
         const own = purlPackageName(instance.identity.canonicalPurl);
         throw new OpmError(
           error.code,
-          `${error.message} (${echoed(exact)} is required by ${echoed(String(dependent.identity.exactPurl))}` +
-            `${asked.installName === own ? '' : ` as ${echoed(asked.installName)}`})`,
+          `${error.message} (${exact} is required by ${dependent.identity.exactPurl}` +
+            `${asked.installName === own ? '' : ` as ${asked.installName}`})`,
           { cause: error },
         );
       }
@@ -366,5 +366,36 @@ function isClosureRefusal(error: OpmError): boolean {
     error.code === 'POLICY_INDETERMINATE' ||
     error.code === 'DIGEST_MISMATCH' ||
     error.code === 'SIZE_MISMATCH'
+  );
+}
+
+/** Who asked for a package, for a line of an error. */
+function askedBy(requiredBy: readonly string[] | undefined): string {
+  if (requiredBy === undefined || requiredBy.length === 0) return '';
+  return ` (required by ${requiredBy.slice(0, 3).join(', ')}${requiredBy.length > 3 ? `, and ${requiredBy.length - 3} more` : ''})`;
+}
+
+/**
+ * The candidates the walk had to set aside, and the ones the policy did, for an
+ * error that follows from it.
+ */
+function unresolvedNote(
+  unresolved: ResolvedGraph['unresolved'],
+  gated: ResolvedGraph['gated'],
+): string {
+  const list = (items: ResolvedGraph['unresolved']) =>
+    items
+      .slice(0, 5)
+      .map(
+        (item) =>
+          `\n  - ${echoed(item.purl)}: ${plainLine(item.reason)}${askedBy(item.requiredBy)}`,
+      )
+      .join('') +
+    (items.length > 5 ? `\n  - and ${items.length - 5} more` : '');
+  return (
+    (unresolved.length === 0
+      ? ''
+      : `\nWhat the walk could not use:${list(unresolved)}`) +
+    (gated.length === 0 ? '' : `\nWhat the policy set aside:${list(gated)}`)
   );
 }

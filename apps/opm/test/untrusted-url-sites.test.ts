@@ -80,13 +80,6 @@ const REVIEWED: readonly Reviewed[] = [
     reason: 'maps the five GitHub origins written in the file above it',
   },
   {
-    file: 'packages/adapter-npm/src/pnpm-lock/fixture-support.ts',
-    how: 'new URL',
-    count: 3,
-    reason:
-      "test support: resolves the repository's own pnpm-lock fixtures against this file's URL, and is handed no registry's or lock's text",
-  },
-  {
     file: 'packages/packslip-testkit/src/world.ts',
     how: 'new URL',
     count: 1,

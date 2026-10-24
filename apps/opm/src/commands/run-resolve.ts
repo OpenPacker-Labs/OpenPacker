@@ -4,9 +4,8 @@
  */
 import type { BinProviderReport } from '@openpacker/opm-project';
 import type { RunContext } from './run-context.js';
-import { RunError } from './run-error.js';
+import { plain, RunError } from './run-error.js';
 import { resolveBin, type BinResolution } from './run-paths.js';
-import { plain } from './run-plain.js';
 
 /**
  * The first runnable `bin` in `binDirs`. Nothing is searched on `PATH`, with

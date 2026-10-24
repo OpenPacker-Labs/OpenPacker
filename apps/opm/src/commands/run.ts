@@ -8,7 +8,7 @@
  * or an executable `opm sync` laid out in `node_modules/.bin`.
  */
 import { join, resolve } from 'node:path';
-import { RunError } from './run-error.js';
+import { plain, quoted, RunError } from './run-error.js';
 import {
   parseExecRequest,
   parseRunRequest,
@@ -35,7 +35,6 @@ import {
   findProjectRoot,
   scriptEnvironment,
 } from './run-paths.js';
-import { plain, quoted } from './run-plain.js';
 import { missingBinError, resolveExecutable } from './run-resolve.js';
 
 export { processContext, type RunContext } from './run-context.js';

@@ -192,7 +192,7 @@ function listed(
 ): string {
   return members.length === 0
     ? '(none)'
-    : members.map((member) => member.dir).join(', ');
+    : members.map((member) => echoedValue(member.dir)).join(', ');
 }
 
 /**
@@ -211,24 +211,24 @@ export function memberListDisagreements(
   for (const member of lockMembers)
     if (!onDisk.has(member.dir))
       lines.push(
-        `${member.dir} (${member.name}) is a member in the lock and is not on disk`,
+        `${echoedValue(member.dir)} (${member.name}) is a member in the lock and is not on disk`,
       );
   for (const member of disk)
     if (!inLock.has(member.dir))
       lines.push(
-        `${member.dir} (${member.name ?? 'unnamed'}) is a member on disk and is not in the lock`,
+        `${echoedValue(member.dir)} (${member.name ?? 'unnamed'}) is a member on disk and is not in the lock`,
       );
   for (const member of lockMembers) {
     const there = onDisk.get(member.dir);
     if (there === undefined) continue;
     if (there.name !== member.name)
       lines.push(
-        `${member.dir} is named ${JSON.stringify(member.name)} in the lock and ${JSON.stringify(there.name ?? null)} on disk`,
+        `${echoedValue(member.dir)} is named ${JSON.stringify(member.name)} in the lock and ${JSON.stringify(there.name ?? null)} on disk`,
       );
     const version = there.manifest.version;
     if (version !== member.version)
       lines.push(
-        `${member.dir} is version ${JSON.stringify(member.version ?? null)} in the lock and ${JSON.stringify(version ?? null)} on disk`,
+        `${echoedValue(member.dir)} is version ${JSON.stringify(member.version ?? null)} in the lock and ${JSON.stringify(version ?? null)} on disk`,
       );
   }
   if (lines.length === 0) return [];

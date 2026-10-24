@@ -16,8 +16,7 @@ export function listLine(row: {
   digest: string;
   installed: boolean;
   bins: readonly string[];
-  /** The names under node_modules it is installed as, when not its own (ADR 0054). */
-  installedAs?: readonly string[];
+  installedAs: readonly string[];
 }): string {
   const digest = plainLine(
     row.digest.length > 15 ? `${row.digest.slice(0, 15)}…` : row.digest,
@@ -28,7 +27,7 @@ export function listLine(row: {
       ? ` bins=[${row.bins.map((bin) => plainLine(bin)).join(',')}]`
       : '';
   const names =
-    row.installedAs !== undefined && row.installedAs.length > 0
+    row.installedAs.length > 0
       ? ` as=[${row.installedAs.map((name) => plainLine(name)).join(',')}]`
       : '';
   return `${plainLine(row.alias)}\t${plainLine(row.purl)}\t${digest}\t${status}${bins}${names}\n`;
