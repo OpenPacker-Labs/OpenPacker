@@ -70,8 +70,17 @@ loader paths, or runtime trees such as an nvm installation. Use an approved
 self-contained bundle or standalone wrapper. OPM fails closed instead of
 reopening the configured path or broadening filesystem authority. Native
 delegation currently requires Linux `O_TMPFILE` support and fails closed when
-unnamed snapshot storage is unavailable. This does not restrict the standardized
-emitters listed above.
+unnamed snapshot storage is unavailable. On macOS and Windows it is refused
+before the executable is opened, with `UNSUPPORTED_PLATFORM`: the snapshot is
+run from its descriptor, those platforms give a descriptor no path the kernel
+will execute, and a named copy could be swapped between the check and the run.
+The message names the standard emitter that does run there
+(`opm pack <ecosystem> --package-version <version>`, without `--provider` or
+`--delegate`) where the ecosystem has one. This does not restrict the
+standardized emitters listed above. Output a delegated provider leaves is read
+through the output directory's retained handle, never a path joined onto it, so
+the same collection runs on Linux and macOS
+([ADR 0045](../adr/0045-macos-child-io-uses-libc-at-calls.md)).
 
 Provider manifests map to the standard `package-build` WIT plan interface; the
 host retains execution authority. Native compilation or project-controlled

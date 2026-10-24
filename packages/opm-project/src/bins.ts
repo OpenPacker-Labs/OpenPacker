@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import type { ProviderExecutable } from '@openpacker/adapter-core';
+import { echoed, type ProviderExecutable } from '@openpacker/adapter-core';
 import type { BinDeclaration } from './types.js';
 import { OpmError } from './types.js';
 import {
@@ -295,7 +295,7 @@ export function binDeclarationsFromExecutables(
     )
       throw new OpmError(
         'UNSAFE_BIN',
-        `Provider-declared bin path escapes its store: ${bin.path}`,
+        `Provider-declared bin path escapes its store: ${echoed(bin.path)}`,
       );
     return {
       name: assertSafeSegment(bin.name, 'bin name'),
@@ -361,7 +361,10 @@ export async function writeBinShims(input: {
       .split(/[/\\]/)
       .filter((part) => part !== '' && part !== '.');
     if (segments.length === 0 || segments.includes('..')) {
-      throw new OpmError('UNSAFE_BIN', `Bin path escapes store: ${bin.path}`);
+      throw new OpmError(
+        'UNSAFE_BIN',
+        `Bin path escapes store: ${echoed(bin.path)}`,
+      );
     }
     const target = resolveContained(storeRoot, ...segments);
     const shimPath = resolveContained(binDir, name);
@@ -426,7 +429,7 @@ function shimScriptFor(
     if (!moduleName || !callable)
       throw new OpmError(
         'UNSAFE_BIN',
-        `${bin.name} declares an unusable Python entry point: ${bin.entry ?? '(none)'}`,
+        `${echoed(bin.name)} declares an unusable Python entry point: ${echoed(bin.entry ?? '(none)')}`,
       );
     const pathLiteral = JSON.stringify(context.pythonRoots);
     ambientBody = `
@@ -550,7 +553,7 @@ export async function resolveExecutable(input: {
     if (bins.length === 0) {
       throw new OpmError(
         'NOT_FOUND',
-        `Package "${input.packageAlias}" is not installed or has no bins`,
+        `Package "${echoed(input.packageAlias)}" is not installed or has no bins`,
       );
     }
     const bin = input.binName
@@ -559,7 +562,7 @@ export async function resolveExecutable(input: {
     if (!bin) {
       throw new OpmError(
         'NOT_FOUND',
-        `Bin "${input.binName}" not found in package "${input.packageAlias}"`,
+        `Bin "${echoed(String(input.binName))}" not found in package "${echoed(input.packageAlias)}"`,
       );
     }
     return {
@@ -600,7 +603,7 @@ export async function resolveExecutable(input: {
   } catch {
     throw new OpmError(
       'NOT_FOUND',
-      `No installed bin or package named "${wantBin}". Run opm install / opm sync first.`,
+      `No installed bin or package named "${echoed(wantBin)}". Run opm install / opm sync first.`,
     );
   }
 }

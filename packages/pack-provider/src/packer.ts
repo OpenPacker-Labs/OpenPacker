@@ -1,12 +1,10 @@
 import { createHash } from 'node:crypto';
-import { constants, type Dirent } from 'node:fs';
-import { lstat, open, opendir, realpath, stat } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { lstat, open, type FileHandle } from 'node:fs/promises';
+import { isAbsolute, join, resolve } from 'node:path';
 import {
   ProviderError,
   formatPurl,
   type DetectedProject,
-  type PackArtifact,
   type PackAvailability,
   type PackInput,
   type PackOptions,
@@ -14,9 +12,8 @@ import {
   type PackPlan,
   type PackagePacker,
 } from '@openpacker/adapter-core';
-import { canonicalBytes, compareCanonicalStrings } from '@openpacker/canonical';
+import { canonicalBytes } from '@openpacker/canonical';
 import type {
-  DelegatedPackHostPlan,
   DelegatedPackArtifactIdentity,
   DelegatedPackProviderManifest,
   JsonValue,
@@ -26,7 +23,6 @@ import { validateContract } from '@openpacker/conformance';
 import {
   assertNamedDirectory,
   openStableDirectory,
-  stableHandlePath,
 } from '@openpacker/project-io';
 import {
   runInSandbox,
@@ -35,9 +31,15 @@ import {
 } from '@openpacker/sandbox';
 
 import {
+  collectArtifacts,
+  handleRelativeReads,
+  type CollectionReads,
+} from './collect.js';
+import {
   assertExecutableIdentity,
   inspectDelegatedExecutable,
   openDelegatedExecutable,
+  UNSUPPORTED_PLATFORM,
   type DelegatedExecutableAuthority,
   type DelegatedExecutableIdentity,
 } from './executable.js';
@@ -78,8 +80,14 @@ export interface ManifestPackagePackerDependencies {
   openExecutableAuthority?: OpenExecutableAuthority;
   sandboxRun?: SandboxRun;
   limits?: Partial<ManifestPackagePackerLimits>;
+  /** Opens the approved executable for its snapshot. */
   openFile?: typeof open;
-  openDirectory?: typeof opendir;
+  /**
+   * The reads made of the output directory, each against its retained handle.
+   * Defaults to project-io's handle-relative operations; tests land a swap
+   * between two of them.
+   */
+  collectionReads?: Partial<CollectionReads>;
 }
 
 export class ManifestPackagePacker implements PackagePacker {
@@ -92,7 +100,7 @@ export class ManifestPackagePacker implements PackagePacker {
   readonly #sandboxRun: SandboxRun;
   readonly #limits: ManifestPackagePackerLimits;
   readonly #openFile: typeof open;
-  readonly #openDirectory: typeof opendir;
+  readonly #reads: CollectionReads;
 
   constructor(
     private readonly manifest: DelegatedPackProviderManifest,
@@ -131,17 +139,24 @@ export class ManifestPackagePacker implements PackagePacker {
           }));
     this.#sandboxRun = dependencies.sandboxRun ?? runInSandbox;
     this.#limits = { ...DEFAULT_LIMITS, ...dependencies.limits };
-    this.#openDirectory = dependencies.openDirectory ?? opendir;
+    this.#reads = { ...handleRelativeReads, ...dependencies.collectionReads };
   }
 
   async available(): Promise<PackAvailability> {
+    let platformRefusal: string | undefined;
     const identity = await this.#inspectExecutable(this.#executablePath).catch(
-      () => undefined,
+      (error: unknown) => {
+        if (isUnsupportedPlatform(error))
+          platformRefusal = this.#withAlternative(error.message);
+        return undefined;
+      },
     );
     return identity === undefined
       ? {
           available: false,
-          reason: `${this.#executablePath} is not a stable executable`,
+          reason:
+            platformRefusal ??
+            `${this.#executablePath} is not a stable executable`,
         }
       : {
           available: true,
@@ -151,6 +166,14 @@ export class ManifestPackagePacker implements PackagePacker {
             digest: identity.digest,
           },
         };
+  }
+
+  /** The platform refusal, and the standard emitter that does run here. */
+  #withAlternative(refusal: string): string {
+    return (
+      `${refusal} Where ${this.purlType} has a standard emitter, ` +
+      `\`opm pack ${this.purlType} --package-version <version>\` (without --provider or --delegate) runs on this platform.`
+    );
   }
 
   async detect(root: string): Promise<DetectedProject | undefined> {
@@ -265,7 +288,16 @@ export class ManifestPackagePacker implements PackagePacker {
         );
     const executableAuthority = await this.#openExecutableAuthority(
       this.#executablePath,
-    ).catch(() => undefined);
+    ).catch((error: unknown) => {
+      // A host that cannot hold the snapshot at all is said so, with where to
+      // run it, not reported as a problem with the file.
+      if (isUnsupportedPlatform(error))
+        throw new ProviderError(
+          UNSUPPORTED_PLATFORM,
+          `${this.providerId} cannot pack here: ${this.#withAlternative(error.message)}`,
+        );
+      return undefined;
+    });
     if (executableAuthority === undefined)
       throw new ProviderError(
         'UNSUPPORTED_ECOSYSTEM',
@@ -310,24 +342,23 @@ export class ManifestPackagePacker implements PackagePacker {
         options.outputDirectory ?? join(input.project.root, '.opm', 'pack'),
       );
       const outputAuthority = await openStableDirectory(outputDirectory);
-      const stableOutputDirectory = stableHandlePath(outputAuthority);
-      const outputReal = await realpath(stableOutputDirectory);
-      const outputIdentity = await directoryIdentity(stableOutputDirectory);
+      const outputIdentity = await directoryIdentity(
+        outputAuthority,
+        outputDirectory,
+      );
       await assertNamedDirectory(outputDirectory, outputAuthority);
       try {
         const existingArtifacts = await checkedProviderOutput(async () => {
           const artifacts = await collectArtifacts(
-            stableOutputDirectory,
+            outputAuthority,
             outputDirectory,
-            outputReal,
             hostPlan,
             this.#limits,
-            this.#openFile,
-            this.#openDirectory,
+            this.#reads,
           );
           await assertDirectoryIdentity(
-            stableOutputDirectory,
-            outputReal,
+            outputAuthority,
+            outputDirectory,
             outputIdentity,
           );
           return artifacts;
@@ -380,12 +411,12 @@ export class ManifestPackagePacker implements PackagePacker {
         let artifacts = await checkedProviderOutput(async () => {
           await assertNamedDirectory(outputDirectory, outputAuthority);
           const currentIdentity = await directoryIdentity(
-            stableOutputDirectory,
+            outputAuthority,
+            outputDirectory,
           );
           if (
             currentIdentity.dev !== outputIdentity.dev ||
-            currentIdentity.ino !== outputIdentity.ino ||
-            (await realpath(stableOutputDirectory)) !== outputReal
+            currentIdentity.ino !== outputIdentity.ino
           )
             throw new ProviderError(
               'INVALID_RESPONSE',
@@ -394,18 +425,16 @@ export class ManifestPackagePacker implements PackagePacker {
           const collected =
             outcome.exitCode === 0
               ? await collectArtifacts(
-                  stableOutputDirectory,
+                  outputAuthority,
                   outputDirectory,
-                  outputReal,
                   hostPlan,
                   this.#limits,
-                  this.#openFile,
-                  this.#openDirectory,
+                  this.#reads,
                 )
               : [];
           await assertDirectoryIdentity(
-            stableOutputDirectory,
-            outputReal,
+            outputAuthority,
+            outputDirectory,
             currentIdentity,
           );
           return collected;
@@ -418,7 +447,8 @@ export class ManifestPackagePacker implements PackagePacker {
         if (outcome.exitCode === 0) {
           const identities = new Map<string, DelegatedPackArtifactIdentity>();
           const identityDirectoryIdentity = await directoryIdentity(
-            stableOutputDirectory,
+            outputAuthority,
+            outputDirectory,
           );
           for (const artifact of artifacts) {
             const identityOutcome = await this.runCommand(
@@ -458,17 +488,15 @@ export class ManifestPackagePacker implements PackagePacker {
           artifacts = await checkedProviderOutput(async () => {
             await assertNamedDirectory(outputDirectory, outputAuthority);
             const collected = await collectArtifacts(
-              stableOutputDirectory,
+              outputAuthority,
               outputDirectory,
-              outputReal,
               hostPlan,
               this.#limits,
-              this.#openFile,
-              this.#openDirectory,
+              this.#reads,
             );
             await assertDirectoryIdentity(
-              stableOutputDirectory,
-              outputReal,
+              outputAuthority,
+              outputDirectory,
               identityDirectoryIdentity,
             );
             return collected;
@@ -662,6 +690,10 @@ function parseArtifactIdentity(stdout: string): DelegatedPackArtifactIdentity {
   return value as DelegatedPackArtifactIdentity;
 }
 
+function isUnsupportedPlatform(error: unknown): error is ProviderError {
+  return error instanceof ProviderError && error.code === UNSUPPORTED_PLATFORM;
+}
+
 function emptyOutcome(plan: PackPlan): PackOutcome {
   return {
     ...plan,
@@ -671,132 +703,6 @@ function emptyOutcome(plan: PackPlan): PackOutcome {
     stderr: '',
     artifacts: [],
   };
-}
-
-async function collectArtifacts(
-  outputDirectory: string,
-  reportedDirectory: string,
-  outputReal: string,
-  plan: DelegatedPackHostPlan,
-  limits: ManifestPackagePackerLimits,
-  openFile: typeof open,
-  openDirectory: typeof opendir,
-): Promise<PackArtifact[]> {
-  const artifacts: PackArtifact[] = [];
-  let totalBytes = 0n;
-  const entries: Dirent[] = [];
-  const directory = await openDirectory(outputDirectory);
-  try {
-    for (;;) {
-      const entry = await directory.read();
-      if (entry === null) break;
-      if (entries.length >= limits.outputEntries)
-        throw new ProviderError(
-          'INVALID_RESPONSE',
-          `Delegated provider output exceeds ${limits.outputEntries} entries`,
-        );
-      entries.push(entry);
-    }
-  } finally {
-    await directory.close().catch(() => undefined);
-  }
-  entries.sort((left, right) => compareCanonicalStrings(left.name, right.name));
-  for (const entry of entries) {
-    if (entry.name === 'opm-pack-receipt.json')
-      throw new ProviderError(
-        'INVALID_RESPONSE',
-        'Delegated providers may not create the host receipt',
-      );
-    if (!entry.isFile()) continue;
-    const type = plan.artifacts.find(
-      (candidate) =>
-        ('basename' in candidate && candidate.basename === entry.name) ||
-        ('suffix' in candidate && entry.name.endsWith(candidate.suffix)),
-    );
-    if (type === undefined) continue;
-    if (artifacts.length >= limits.artifacts)
-      throw new ProviderError(
-        'INVALID_RESPONSE',
-        `Delegated provider output exceeds ${limits.artifacts} artifacts`,
-      );
-    const path = join(outputDirectory, entry.name);
-    const resolved = await realpath(path);
-    const relativePath = relative(outputReal, resolved);
-    if (relativePath === '..' || relativePath.startsWith(`..${sep}`))
-      throw new ProviderError(
-        'INVALID_RESPONSE',
-        `Artifact escapes output: ${entry.name}`,
-      );
-    const before = await lstat(path, { bigint: true });
-    if (!before.isFile() || before.isSymbolicLink())
-      throw new ProviderError(
-        'INVALID_RESPONSE',
-        `Artifact is not a regular file: ${entry.name}`,
-      );
-    if (before.size > limits.artifactBytes)
-      throw new ProviderError(
-        'INVALID_RESPONSE',
-        `Artifact exceeds ${limits.artifactBytes} bytes: ${entry.name}`,
-      );
-    const handle = await openFile(
-      path,
-      constants.O_RDONLY | constants.O_NOFOLLOW,
-    );
-    try {
-      const opened = await handle.stat({ bigint: true });
-      if (opened.dev !== before.dev || opened.ino !== before.ino)
-        throw new ProviderError(
-          'INVALID_RESPONSE',
-          `Artifact changed while opening: ${entry.name}`,
-        );
-      const hash = createHash('sha256');
-      let bytes = 0n;
-      for await (const chunk of handle.createReadStream({
-        autoClose: false,
-        highWaterMark: limits.readChunkBytes,
-      })) {
-        bytes += BigInt(chunk.byteLength);
-        if (bytes > limits.artifactBytes)
-          throw new ProviderError(
-            'INVALID_RESPONSE',
-            `Artifact exceeds ${limits.artifactBytes} bytes while hashing: ${entry.name}`,
-          );
-        hash.update(chunk);
-      }
-      const after = await handle.stat({ bigint: true });
-      const pathAfter = await lstat(path, { bigint: true });
-      if (
-        opened.size !== after.size ||
-        opened.mtimeNs !== after.mtimeNs ||
-        opened.ctimeNs !== after.ctimeNs ||
-        bytes !== after.size ||
-        after.dev !== pathAfter.dev ||
-        after.ino !== pathAfter.ino ||
-        (await realpath(path)) !== resolved
-      )
-        throw new ProviderError(
-          'INVALID_RESPONSE',
-          `Artifact changed while hashing: ${entry.name}`,
-        );
-      totalBytes += after.size;
-      if (totalBytes > limits.totalArtifactBytes)
-        throw new ProviderError(
-          'INVALID_RESPONSE',
-          `Delegated provider artifacts exceed ${limits.totalArtifactBytes} total bytes`,
-        );
-      artifacts.push({
-        path: join(reportedDirectory, entry.name),
-        mediaType: type.mediaType,
-        size: Number(after.size),
-        digest: `sha256:${hash.digest('hex')}`,
-        nativeRole: type.nativeRole,
-        outputName: basename(path),
-      });
-    } finally {
-      await handle.close();
-    }
-  }
-  return artifacts;
 }
 
 async function checkedProviderOutput<T>(
@@ -813,12 +719,15 @@ async function checkedProviderOutput<T>(
   }
 }
 
-async function directoryIdentity(path: string): Promise<DirectoryIdentity> {
-  const info = await stat(path, { bigint: true });
+async function directoryIdentity(
+  directory: FileHandle,
+  reported: string,
+): Promise<DirectoryIdentity> {
+  const info = await directory.stat({ bigint: true });
   if (!info.isDirectory())
     throw new ProviderError(
       'INVALID_RESPONSE',
-      `Output is not a directory: ${path}`,
+      `Output is not a directory: ${reported}`,
     );
   return {
     dev: info.dev,
@@ -835,21 +744,27 @@ interface DirectoryIdentity {
   mtimeNs: bigint;
 }
 
+/**
+ * The retained directory is the one first opened (same inode, same change and
+ * modify times), and the output path still names it. The handle is what is
+ * read; the path check is what notices a directory renamed away and not put
+ * back.
+ */
 async function assertDirectoryIdentity(
-  path: string,
-  expectedReal: string,
+  directory: FileHandle,
+  outputDirectory: string,
   expected: DirectoryIdentity,
 ): Promise<void> {
-  const current = await directoryIdentity(path);
+  const current = await directoryIdentity(directory, outputDirectory);
   if (
     current.dev !== expected.dev ||
     current.ino !== expected.ino ||
     current.ctimeNs !== expected.ctimeNs ||
-    current.mtimeNs !== expected.mtimeNs ||
-    (await realpath(path)) !== expectedReal
+    current.mtimeNs !== expected.mtimeNs
   )
     throw new ProviderError(
       'INVALID_RESPONSE',
       'Delegated provider output directory changed during artifact collection',
     );
+  await assertNamedDirectory(outputDirectory, directory);
 }

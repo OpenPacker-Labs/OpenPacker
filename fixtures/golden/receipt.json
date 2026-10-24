@@ -115,7 +115,7 @@
     },
     "proofDigest": {
       "algorithm": "sha256",
-      "value": "a54a2b63b32dc56f1da7642c46f046b38300d22ebd057c0a40fc358a5167a689"
+      "value": "3c1fe6582fc036549831ddd7de5f39e8ed976d08b89abdcfe693ccdd3ed773c2"
     },
     "protocolVersion": "1.0-draft",
     "receiptVersion": "1",
@@ -135,7 +135,7 @@
     "semanticsProfile": "prex-calculus-subset-v1",
     "solutionDigest": {
       "algorithm": "sha256",
-      "value": "5b066e9dd09df88a41c61793aa5d4bc8617fc81c3f7c7854f3d58d8e3aef0618"
+      "value": "0f89049e69954ab8525e15d69711570bc514254796b4a25eb02b578e88d66f18"
     },
     "sourceSnapshots": [
       {
@@ -147,15 +147,15 @@
         "providerType": "npm-registry",
         "recordsDigest": {
           "algorithm": "sha256",
-          "value": "8dbb3ae40086459066da7fb353d0634530e7b41d87827e0003995d9e0f7d8cad"
+          "value": "3bfd04610d8dec5cea3677327ea5688776ac0434ed2006d2f63b21d7885c71d9"
         },
         "retrievedAt": "2026-08-02T00:00:00Z",
         "revision": "sha256:f205ca7467d05b93e5700a867db07bf15c2f463c9b38afd03f4561234c3ffb1e",
         "rootDigest": {
           "algorithm": "sha256",
-          "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
+          "value": "c2cc24a52f2eccfba614f45fc2f552ae633eec540ddb01640a5e16191fe6837f"
         },
-        "snapshotId": "sha256:b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
+        "snapshotId": "sha256:c2cc24a52f2eccfba614f45fc2f552ae633eec540ddb01640a5e16191fe6837f"
       },
       {
         "endpointIdentity": "https://fixtures.test",
@@ -202,18 +202,18 @@
     },
     "universeDigest": {
       "algorithm": "sha256",
-      "value": "7df30630919dd3a174a69c69a78fafb168b9ce8f024a5e94eafa893ef69a21d3"
+      "value": "44c3f17d4b723238df94892e2a7d2263b29f9feedfab04b0ed4c0e3c1aa3700a"
     }
   },
   "receiptDigest": {
     "algorithm": "sha256",
-    "value": "f15261331a9b02c8ca450baf2d2269eb10853f9844a9155bf51b4801cd4f2814"
+    "value": "567c74982770f71cc9197b30e558fb4cf7b1ba1e0c2f1e917bbde552941b7612"
   },
   "signatures": [
     {
       "algorithm": "ed25519",
       "keyId": "root",
-      "signature": "bzCHlwo1jCVfoRBYBZHd9RpAHCG3cKTWXm3sRxNUqEIl12h9D4uZ4GSVD__iP8pZq17VnelR1JqYGrL8kF76AA"
+      "signature": "RooHiJIJUJZnH03fkEAGIg0cm9BG0Z8eKv71Qe25QTyCHqsGb61OfMukNL-BwEq9v_nToYPkswJkn0SJp5KcAA"
     }
   ]
 }

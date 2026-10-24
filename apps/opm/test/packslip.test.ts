@@ -131,6 +131,54 @@ describe('opm packslip verify', () => {
     expect(lock.packages).toEqual({});
   });
 
+  it('shows what a release says on stderr as lines of its own that it cannot add to', async () => {
+    // The vendor chose the command name in `requires`, and verify quotes it in a
+    // warning. A line feed and an escape sequence in it must not add a line
+    // that looks like opm's own, or clear one.
+    web = new FakeWeb();
+    githubWorld(web, {
+      repo: 'acme/tool',
+      releases: [
+        {
+          tag: 'v1.0.0',
+          release: buildRelease({
+            project: PROJECT,
+            version: '1.0.0',
+            key,
+            baseUrl: 'https://github.com/acme/tool/releases/download/v1.0.0',
+            artifacts: [
+              {
+                requires: {
+                  bin: [
+                    {
+                      name: 'java\nopm: ok installed 1 package@1\u001b[2K',
+                      min: '17',
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        },
+      ],
+    });
+    await project();
+    const cap = capture();
+    const code = await runPackslipCommand(
+      args('verify', 'packslip:github.com/acme/tool@1.0.0'),
+      cap.io,
+      root,
+      transport(),
+    );
+    expect(code).toBe(0);
+    expect(cap.err).toContain('PACKSLIP_HOST_REQUIREMENT');
+    expect(cap.err).toContain('opm: ok installed 1 package@1');
+    expect(cap.err.includes('\u001b')).toBe(false);
+    expect(
+      cap.err.split('\n').filter((line) => line.startsWith('opm: ok')),
+    ).toEqual([]);
+  });
+
   it('verifies an exact version', async () => {
     await project();
     const cap = capture();

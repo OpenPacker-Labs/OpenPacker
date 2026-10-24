@@ -41,6 +41,7 @@ import {
 } from './frozen-prepare.js';
 import { checkArchiveIdentities } from './frozen-identity.js';
 import { installScriptFlags, scriptedPackages } from './frozen-scripts.js';
+import { projectStep } from './project-step.js';
 import {
   frozenArchiveLimits,
   openStore,
@@ -77,6 +78,12 @@ export interface FrozenInstallResult {
 }
 
 export async function installFrozen(
+  input: FrozenInstallInput,
+): Promise<FrozenInstallResult> {
+  return projectStep(input.root, input.step, () => installFrozenInStep(input));
+}
+
+async function installFrozenInStep(
   input: FrozenInstallInput,
 ): Promise<FrozenInstallResult> {
   const {

@@ -24,7 +24,10 @@ import type {
 } from '@openpacker/contracts';
 import {
   BoundedFetchTransport,
+  echoed,
+  echoedValue,
   encodeUrlPathComponent,
+  parseUntrustedUrl,
   ProviderError,
   type HttpTransport,
 } from '@openpacker/adapter-core';
@@ -118,7 +121,7 @@ export class RegistryClient {
   readonly #paginationLimits: PaginationLimits;
 
   constructor(options: RegistryClientOptions) {
-    const url = new URL(options.baseUrl);
+    const url = parseUntrustedUrl(options.baseUrl);
     if (
       url.protocol !== 'https:' &&
       url.hostname !== 'localhost' &&
@@ -126,7 +129,7 @@ export class RegistryClient {
     )
       throw new ProviderError(
         'INVALID_PROVIDER_ENDPOINT',
-        `A registry must be https, or loopback for development: ${options.baseUrl}`,
+        `A registry must be https, or loopback for development: ${echoedValue(options.baseUrl)}`,
       );
     this.#baseUrl = url.origin + url.pathname.replace(/\/$/u, '');
     this.#transport =
@@ -178,7 +181,7 @@ export class RegistryClient {
     if (!validation.valid)
       throw new ProviderError(
         'INVALID_RESPONSE',
-        `Registry served an invalid SignedRevocationList: ${validation.errors[0]?.message ?? 'schema validation failed'}`,
+        `Registry served an invalid SignedRevocationList: ${echoed(validation.errors[0]?.message ?? 'schema validation failed')}`,
       );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const body = value as SignedRevocationList;
@@ -186,7 +189,7 @@ export class RegistryClient {
     if (body.list.registryId !== definition.registryId)
       throw new ProviderError(
         'INVALID_SIGNATURE',
-        `Revocation list belongs to ${body.list.registryId}, not ${definition.registryId}`,
+        `Revocation list belongs to ${echoed(body.list.registryId)}, not ${echoed(definition.registryId)}`,
       );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const digest = await canonicalDigest(
@@ -255,7 +258,7 @@ export class RegistryClient {
       throw new ProviderError(
         'UNSUPPORTED_PROVIDER',
         `Registry at ${this.#baseUrl} speaks registryDefinitionVersion ` +
-          `${String(definition.registryDefinitionVersion)}, not 1`,
+          `${echoed(String(definition.registryDefinitionVersion))}, not 1`,
       );
     if (
       !Array.isArray(definition.resources) ||
@@ -284,8 +287,8 @@ export class RegistryClient {
     if (!(await this.supports(type, signal)))
       throw new ProviderError(
         'PROVIDER_CAPABILITY_MISSING',
-        `Registry ${(await this.definition(signal)).registryId} does not advertise ` +
-          `${type}, so it cannot ${what}.`,
+        `Registry ${echoed((await this.definition(signal)).registryId)} does not advertise ` +
+          `${echoed(type)}, so it cannot ${what}.`,
       );
   }
 
@@ -305,7 +308,7 @@ export class RegistryClient {
       options.updatedSince === undefined ? 'be searched' : 'be synced from',
       options.signal,
     );
-    const url = new URL(`${this.#baseUrl}/v1/packages`);
+    const url = parseUntrustedUrl(`${this.#baseUrl}/v1/packages`);
     for (const [key, value] of [
       ['search', options.search],
       ['purlType', options.purlType],
@@ -389,7 +392,7 @@ export class RegistryClient {
       if (seen.has(next))
         throw new ProviderError(
           'INVALID_PROVIDER_RESPONSE',
-          `Registry repeated pagination cursor ${next}; refusing to loop.`,
+          `Registry repeated pagination cursor ${echoed(next)}; refusing to loop.`,
         );
       seen.add(next);
       cursor = next;
@@ -450,7 +453,7 @@ export class RegistryClient {
     if (digestMatches === false)
       throw new ProviderError(
         'DIGEST_MISMATCH',
-        `Registry entry for ${entry.manifest.name}@${entry.manifest.version} states ` +
+        `Registry entry for ${echoed(entry.manifest.name)}@${echoed(entry.manifest.version)} states ` +
           `${formatDigest(stated!)} but its manifest hashes to ${formatDigest(digest)}`,
       );
 
@@ -497,7 +500,7 @@ export class RegistryClient {
     if (bad)
       throw new ProviderError(
         'INVALID_SIGNATURE',
-        `Signature from ${bad.keyId} on ${entry.manifest.name}@${entry.manifest.version} does not verify`,
+        `Signature from ${echoed(bad.keyId)} on ${echoed(entry.manifest.name)}@${echoed(entry.manifest.version)} does not verify`,
       );
 
     return {
@@ -529,17 +532,17 @@ export class RegistryClient {
       ...(signal && { signal }),
     });
     if (response.status === 404)
-      throw new ProviderError('PACKAGE_NOT_FOUND', `Not found: ${url}`);
+      throw new ProviderError('PACKAGE_NOT_FOUND', `Not found: ${echoed(url)}`);
     if (response.status >= 400)
       throw new ProviderError(
         'UPSTREAM_UNAVAILABLE',
-        `Registry returned ${response.status} for ${url}`,
+        `Registry returned ${response.status} for ${echoed(url)}`,
       );
     try {
       if (response.body.byteLength > maximumBytes)
         throw new ProviderError(
           'INVALID_PROVIDER_RESPONSE',
-          `Registry response exceeds ${maximumBytes} bytes: ${url}`,
+          `Registry response exceeds ${maximumBytes} bytes: ${echoed(url)}`,
         );
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       const value = JSON.parse(
@@ -554,9 +557,7 @@ export class RegistryClient {
       if (error instanceof ProviderError) throw error;
       throw new ProviderError(
         'INVALID_PROVIDER_RESPONSE',
-        `Registry returned a body that is not JSON: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Registry returned a body that is not JSON: ${echoed(error instanceof Error ? error.message : String(error))}`,
       );
     }
   }

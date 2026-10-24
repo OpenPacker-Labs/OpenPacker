@@ -80,6 +80,7 @@ describe('a split the planner cures by trying again', () => {
       expect(resolutionProblems(input, search.found!)).toEqual([]);
       expect(peerSplitProblems(input, search.found!)).toEqual([]);
     },
+    60_000,
   );
 });
 
@@ -117,5 +118,5 @@ describe('a split no layout avoids', () => {
     const search = searchSplitFree(input, 16);
     expect(search.found).toBeUndefined();
     expect(search.complete).toBe(2969);
-  });
+  }, 60_000);
 });

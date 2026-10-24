@@ -37,6 +37,8 @@ const sandboxReady =
 /** A CSI (C1) and a right-to-left override, as a directory name may hold them. */
 const HOSTILE = 'x\u009b2J\u202ey';
 const SHOWN = 'x\\u009b2J\\u202ey';
+/** The same as `report` and `out` (`@openpacker/canonical`) write it: plain, with the controls removed. */
+const PLAIN = 'x2Jy';
 
 const temps: string[] = [];
 afterEach(async () => {
@@ -117,7 +119,7 @@ describe('what opm and opmx write themselves', () => {
         const c = capture();
         expect(await runOpmx(['demo-tool'], c.io, root)).not.toBe(0);
         expect(c.err).toMatch(/^opmx: ENOTDIR/u);
-        expect(c.err).toContain(SHOWN);
+        expect(c.err).toContain(PLAIN);
         expect(unsafeIn(c.err)).toEqual([]);
       } finally {
         if (previous === undefined) delete process.env.TMPDIR;
@@ -136,7 +138,7 @@ describe('what opm and opmx write themselves', () => {
     expect(c.err).toBe(`opm: script "${SHOWN}" exited with code 7\n`);
   });
 
-  it('escapes the warnings and the failure of a workspace run', async () => {
+  it('makes plain the warnings and the failure of a workspace run', async () => {
     const member = {
       dir: 'a',
       abs: '/w/a',
@@ -166,7 +168,7 @@ describe('what opm and opmx write themselves', () => {
     );
     expect(status).toBe(3);
     expect(c.err).toBe(
-      `opm: warning: cyclic workspace dependencies ${SHOWN}\nopm: ${SHOWN}\n`,
+      `opm: warning: cyclic workspace dependencies ${PLAIN}\nopm: ${PLAIN}\n`,
     );
   });
 });
@@ -182,7 +184,9 @@ describe('lines printed from what a registry, a lock or a package.json wrote', (
     });
     const c = capture();
     expect(await runOpm(['run'], c.io, root)).toBe(0);
-    expect(c.out).toBe(`${ESCAPED}\techo ${ESCAPED}\n`);
+    // Made one plain line (`plainLine`): the sequences removed, the rest kept.
+    expect(c.out).toBe('a2Jb\techo a2Jb\n');
+    expect(unsafeIn(c.out)).toEqual([]);
   });
 
   it.each([

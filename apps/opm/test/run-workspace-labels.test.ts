@@ -4,7 +4,8 @@
  * The member's own lines follow it as they are, as a child's output is passed
  * through. A name that holds a control or a bidi character is refused by
  * workspace discovery, but a directory is not, and a repository can hold one:
- * the prefix is escaped like every other value that reaches a terminal.
+ * the prefix is made one plain line (`plainLine`, `memberLabel`), what a
+ * terminal acts on removed and a line break a space.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -16,7 +17,6 @@ const ESC = String.fromCharCode(0x1b);
 const BEL = String.fromCharCode(0x07);
 const C1 = String.fromCharCode(0x9b);
 const RLO = String.fromCharCode(0x202e);
-const SLASH = String.fromCharCode(92);
 
 /** The characters of `text` that a terminal would act on. */
 function controls(text: string): string[] {
@@ -57,12 +57,13 @@ posix(
   'a member known only by a directory that holds a control or a bidi character',
   () => {
     it.each([
-      ['an escape', ESC, `${SLASH}u001b`],
-      ['a right-to-left override', RLO, `${SLASH}u202e`],
-      ['a line feed', String.fromCharCode(0x0a), `${SLASH}n`],
+      // An escape takes the character after it as its own (`ESC b`).
+      ['an escape', ESC, 'packages/a'],
+      ['a right-to-left override', RLO, 'packages/ab'],
+      ['a line feed', String.fromCharCode(0x0a), 'packages/a b'],
     ])(
-      'prefixes its lines with the directory as text, in the default and the streaming shape (%s)',
-      async (_what, char, shown) => {
+      'prefixes its lines with the directory as one plain line, in the default and the streaming shape (%s)',
+      async (_what, char, label) => {
         for (const flags of [[], ['--stream']]) {
           const ws = await makeWorkspace({
             [`packages/a${char}b`]: {
@@ -81,10 +82,10 @@ posix(
           // Every line says whose it is: a forged line cannot be made of a name.
           for (const line of (ran.out + ran.err).split('\n').filter(Boolean))
             expect(line, line).toMatch(
-              /^(packages\/a.+b|ok) build: (out|err)$/u,
+              /^(packages\/a.*|ok) build: (out|err)$/u,
             );
-          expect(ran.out).toContain(`a${shown}b build: out`);
-          expect(ran.err).toContain(`a${shown}b build: err`);
+          expect(ran.out).toContain(`${label} build: out`);
+          expect(ran.err).toContain(`${label} build: err`);
         }
       },
     );

@@ -91,7 +91,7 @@ export async function runGc(
     say(
       io.stdout,
       `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'} from ${result.root}; ` +
-        `${result.referenced} still used by a project, ${result.tooNew} too new to judge\n`,
+        `${result.referenced} still used by a project, ${result.held} in use by an install in progress, ${result.tooNew} too new to judge\n`,
     );
     for (const path of result.removed) say(io.stdout, `  ${path}\n`);
     return SUCCESS;

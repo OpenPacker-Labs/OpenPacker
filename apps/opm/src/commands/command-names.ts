@@ -31,6 +31,7 @@ export const COMMANDS: ReadonlySet<string> = new Set([
   'system',
   'generations',
   'rollback',
+  'recover',
   'gc',
   'shell',
   'help',

@@ -1,6 +1,7 @@
 import {
   ProviderError,
   createPinnedFetch,
+  echoed,
   formatPurl,
   packageNodeId,
   parsePurl,
@@ -16,7 +17,7 @@ import type {
   PackageInstance,
   SourceSnapshot,
 } from '@openpacker/contracts';
-import { sha256 } from '@openpacker/canonical';
+import { parseUntrustedUrl, sha256 } from '@openpacker/canonical';
 import {
   BearerTokenAuthentication,
   DOCKER_MEDIA_TYPES,
@@ -58,7 +59,7 @@ export const OCI_MATERIALIZATION_LIMITS = Object.freeze({
 });
 
 function exactRegistryOrigin(value: string): string {
-  const url = new URL(value);
+  const url = parseUntrustedUrl(value);
   if (
     url.protocol !== 'https:' ||
     url.username ||
@@ -69,7 +70,7 @@ function exactRegistryOrigin(value: string): string {
   )
     throw new ProviderError(
       'INVALID_PROVIDER_ENDPOINT',
-      `OCI registry authority must be an exact HTTPS origin: ${value}`,
+      `OCI registry authority must be an exact HTTPS origin: ${echoed(value)}`,
     );
   return url.origin;
 }
@@ -120,7 +121,7 @@ export function parseOciPurl(value: string): OciRepositoryReference {
   if (parsed.type !== 'oci')
     throw new ProviderError(
       'INVALID_PURL',
-      `Not an OCI PURL: ${value} (expected pkg:oci/...)`,
+      `Not an OCI PURL: ${echoed(value)} (expected pkg:oci/...)`,
     );
 
   const repositoryUrl = parsed.qualifiers.repository_url;
@@ -135,17 +136,17 @@ export function parseOciPurl(value: string): OciRepositoryReference {
       : `https://${repositoryUrl}`;
     let url: URL;
     try {
-      url = new URL(withScheme);
+      url = parseUntrustedUrl(withScheme);
     } catch {
       throw new ProviderError(
         'INVALID_PURL',
-        `repository_url is not a valid registry reference: ${repositoryUrl}`,
+        `repository_url is not a valid registry reference: ${echoed(repositoryUrl)}`,
       );
     }
     if (url.protocol !== 'https:')
       throw new ProviderError(
         'INVALID_PURL',
-        `OCI registries must be HTTPS: ${repositoryUrl}`,
+        `OCI registries must be HTTPS: ${echoed(repositoryUrl)}`,
       );
     if (url.username || url.password)
       throw new ProviderError(
@@ -173,18 +174,21 @@ export function parseOciPurl(value: string): OciRepositoryReference {
   if (!/^[a-z0-9]+(?:(?:[._-]|\/)[a-z0-9]+)*$/u.test(repository))
     throw new ProviderError(
       'INVALID_PURL',
-      `Not a valid OCI repository name: ${repository}`,
+      `Not a valid OCI repository name: ${echoed(repository)}`,
     );
 
   const tag = parsed.qualifiers.tag;
   if (tag !== undefined && !/^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/u.test(tag))
-    throw new ProviderError('INVALID_PURL', `Not a valid OCI tag: ${tag}`);
+    throw new ProviderError(
+      'INVALID_PURL',
+      `Not a valid OCI tag: ${echoed(tag)}`,
+    );
 
   const digest = parsed.version;
   if (digest !== undefined && !/^sha256:[0-9a-f]{64}$/u.test(digest))
     throw new ProviderError(
       'INVALID_PURL',
-      `An OCI version must be a manifest digest: ${digest}`,
+      `An OCI version must be a manifest digest: ${echoed(digest)}`,
     );
 
   return {
@@ -346,7 +350,7 @@ export class OciRegistryProvider implements CatalogProvider {
     if (target === undefined)
       throw new ProviderError(
         'INVALID_PURL',
-        `${exactPurl} names neither a tag nor a digest`,
+        `${echoed(exactPurl)} names neither a tag nor a digest`,
       );
 
     const client = this.#client(reference);
@@ -471,7 +475,7 @@ export class OciRegistryProvider implements CatalogProvider {
     if (target === undefined)
       throw new ProviderError(
         'INVALID_PURL',
-        `${exactPurl} names neither a tag nor a digest`,
+        `${echoed(exactPurl)} names neither a tag nor a digest`,
       );
 
     const client = this.#client(reference);
@@ -536,7 +540,7 @@ export class OciRegistryProvider implements CatalogProvider {
     if (!isIndexMediaType(pulled.descriptor.mediaType))
       throw new ProviderError(
         'INVALID_PROVIDER_METADATA',
-        `Unsupported OCI media type ${pulled.descriptor.mediaType}`,
+        `Unsupported OCI media type ${echoed(pulled.descriptor.mediaType)}`,
       );
 
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -558,7 +562,7 @@ export class OciRegistryProvider implements CatalogProvider {
     if (!isImageMediaType(image.descriptor.mediaType))
       throw new ProviderError(
         'INVALID_PROVIDER_METADATA',
-        `Platform entry ${selected.digest} is not an image manifest`,
+        `Platform entry ${echoed(selected.digest)} is not an image manifest`,
       );
     return {
       digest: image.descriptor.digest,
@@ -592,7 +596,7 @@ export class OciRegistryProvider implements CatalogProvider {
       if (previous && previous.size !== size)
         throw new ProviderError(
           'INVALID_PROVIDER_METADATA',
-          `OCI digest ${digest} has contradictory sizes`,
+          `OCI digest ${echoed(digest)} has contradictory sizes`,
         );
       if (!previous) files.set(path, { path, size, body });
     };

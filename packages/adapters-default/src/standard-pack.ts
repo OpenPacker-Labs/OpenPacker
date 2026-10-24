@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { NormalizedPackInput } from '@openpacker/adapter-core';
-import { ProviderError } from '@openpacker/adapter-core';
+import { ProviderError, parseUntrustedUrl } from '@openpacker/adapter-core';
 import { canonicalBytes, compareCanonicalStrings } from '@openpacker/canonical';
 import type { JsonValue } from '@openpacker/contracts';
 import { packTar, packTarGzip, packZip } from '@openpacker/project-io';
@@ -372,7 +372,7 @@ function validateWingetInstallers(
       invalidWinget(`${path} contains an incomplete installer`);
     try {
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      const url = new URL(installer.InstallerUrl as string);
+      const url = parseUntrustedUrl(installer.InstallerUrl as string);
       if (!['https:', 'http:'].includes(url.protocol)) throw new Error();
     } catch {
       invalidWinget(`${path} contains an invalid InstallerUrl`);

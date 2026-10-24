@@ -186,3 +186,12 @@ Limits, stated rather than hidden.
 - A runtime dependency written as git, URL, alias or dist-tag is refused.
 - A packument over 8 MiB is refused by the adapter's bound.
 - The `os`/`cpu`/`libc` predicate is evaluated for npm only.
+
+## Amendment (2026-10-17)
+
+§1's list of specifiers that are never read as the registry's package of that
+name, and the limit "A runtime dependency written as git, URL, alias or dist-tag
+is refused", now hold for git, URL and file specifiers only. An `npm:` alias is
+followed since ADR 0054, and a plain dist-tag since ADR 0054's amendment of
+2026-10-17: both name the registry package exactly as a range on the same key
+does.

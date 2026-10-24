@@ -18,6 +18,8 @@
  * malformed lock is refused rather than read generously.
  */
 
+import { echoed } from '@openpacker/adapter-core';
+import { quoted } from './layout-plan.js';
 import {
   chainOfLockPath,
   readEntry,
@@ -108,7 +110,7 @@ export function readPackageLock(lock: unknown): PackageLockTree {
     );
   if (version !== 2 && version !== 3)
     throw invalid(
-      `Expected package-lock v2 or v3, received ${String(version)}`,
+      `Expected package-lock v2 or v3, received ${echoed(String(version))}`,
     );
   const packages = lock.packages;
   if (!isRecord(packages))
@@ -127,8 +129,7 @@ export function readPackageLock(lock: unknown): PackageLockTree {
   const foreignRecords = new Map<string, Record<string, unknown>>();
   for (const path of keys.sort()) {
     const record = packages[path];
-    const where =
-      path === '' ? 'packages[""]' : `packages[${JSON.stringify(path)}]`;
+    const where = path === '' ? 'packages[""]' : `packages[${quoted(path)}]`;
     if (!isRecord(record)) throw invalid(`${where} must be an object`);
     if (path === '') {
       root = readRoot(record, where);
@@ -136,7 +137,7 @@ export function readPackageLock(lock: unknown): PackageLockTree {
     }
     if (hasUnsafeSegments(path))
       throw invalid(
-        `The lock path ${JSON.stringify(path)} is not a relative path inside the project`,
+        `The lock path ${quoted(path)} is not a relative path inside the project`,
       );
     const chain = chainOfLockPath(path);
     if (chain === undefined) {
@@ -202,14 +203,14 @@ export function parsePackageLockText(text: string): PackageLockTree {
   const duplicate = findDuplicateJsonKey(text);
   if (duplicate !== undefined)
     throw invalid(
-      `package-lock.json lists the key ${JSON.stringify(duplicate)} twice in one object`,
+      `package-lock.json lists the key ${quoted(duplicate)} twice in one object`,
     );
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch (error) {
     throw invalid(
-      `package-lock.json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `package-lock.json is not valid JSON: ${echoed(error instanceof Error ? error.message : String(error))}`,
     );
   }
   return readPackageLock(parsed);

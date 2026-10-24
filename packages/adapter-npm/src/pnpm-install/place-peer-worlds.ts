@@ -4,6 +4,8 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect } from 'vitest';
 import { MAXIMUM_PLANNED_LAYOUTS, planPlacement } from './place.js';
 import { peerSplitProblems, resolutionProblems } from './place-check.js';
@@ -14,10 +16,12 @@ import type {
   PlannedPlacement,
 } from './place-types.js';
 
+const HERE = dirname(fileURLToPath(import.meta.url));
+
 /** A world of `test/fixtures/peer-worlds`. */
 export function peerWorld(name: string): PlaceInput {
   const text = readFileSync(
-    new URL(`../../test/fixtures/peer-worlds/${name}`, import.meta.url),
+    join(HERE, '../../test/fixtures/peer-worlds', name),
     'utf8',
   );
   const world = JSON.parse(text) as {

@@ -84,5 +84,5 @@ export async function readMemberPackage(
     await handle.close();
   }
   if ((await realpath(current)) !== current) throw refuseLink(current);
-  return readPackageText(file, text);
+  return await readPackageText(file, text);
 }

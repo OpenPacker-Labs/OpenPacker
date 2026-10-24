@@ -5,10 +5,13 @@
  * in @openpacker/policy (evaluatePolicy) and are bound via policyDigest.
  */
 
-import type {
-  CatalogProvider,
-  ProviderAttestation,
-  ProviderInspection,
+import {
+  echoed,
+  isDocumentRefusal,
+  parseUntrustedUrl,
+  type CatalogProvider,
+  type ProviderAttestation,
+  type ProviderInspection,
 } from '@openpacker/adapter-core';
 import type {
   Digest,
@@ -223,10 +226,9 @@ export function captureFactsFromInspection(
     facts.trustLevel = facts.sourceKind === 'registry' ? 'unsigned' : 'unknown';
   if (facts.sourceScheme === undefined && inspection.record.endpoint) {
     try {
-      facts.sourceScheme = new URL(inspection.record.endpoint).protocol.replace(
-        ':',
-        '',
-      );
+      facts.sourceScheme = parseUntrustedUrl(
+        inspection.record.endpoint,
+      ).protocol.replace(':', '');
     } catch {
       // leave absent
     }
@@ -312,7 +314,7 @@ function sourceFactsFromUri(uri: string): Partial<PolicyFacts> {
       ...(!(scheme === undefined) && { sourceScheme: scheme }),
     };
   try {
-    const url = new URL(uri);
+    const url = parseUntrustedUrl(uri);
     const protocol = url.protocol.replace(':', '');
     return { sourceKind: 'tarball', sourceScheme: protocol };
   } catch {
@@ -383,14 +385,14 @@ function lockPackageProvider(pkg: LockPackage): string {
   if (pkg.ecosystem !== provider)
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${pkg.alias}" ecosystem does not match its PURL`,
+      `Package "${echoed(pkg.alias)}" ecosystem does not match its PURL`,
     );
   return provider;
 }
 
 function uriScheme(uri: string): string | undefined {
   try {
-    return new URL(uri).protocol.replace(':', '');
+    return parseUntrustedUrl(uri).protocol.replace(':', '');
   } catch {
     return undefined;
   }
@@ -496,6 +498,10 @@ export async function capturePublishTime(
     );
   } catch (error) {
     if (options.signal?.aborted) throw error;
+    // A registry document the client refused (too large, too many values, not
+    // JSON) is the reason there is no time, and the policy says so beside the
+    // "not captured". An outage or an error status stays silent, as before.
+    if (isDocumentRefusal(error)) facts.publishTimeUnavailable = error.message;
     return;
   }
   if (evidence?.publishedAt !== undefined)

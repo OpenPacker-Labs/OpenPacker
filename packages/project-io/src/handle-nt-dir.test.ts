@@ -7,7 +7,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { listNtDirectory, type NtQueryDirectory } from './handle-nt-dir.js';
+import {
+  listNtDirectory,
+  scanNtDirectory,
+  type NtQueryDirectory,
+} from './handle-nt-dir.js';
 
 const DIRECTORY = 0x10;
 const NORMAL = 0x80;
@@ -43,6 +47,37 @@ function directory(entries: [string, number][]): NtQueryDirectory {
         offset += entry.length;
       });
       return 0;
+    },
+  };
+}
+
+/**
+ * A directory that answers each query with the next page of `pages`, then with
+ * no more files, and counts the queries made.
+ */
+function paged(pages: [string, number][][]): {
+  api: NtQueryDirectory;
+  queries: () => number;
+} {
+  let queries = 0;
+  return {
+    queries: () => queries,
+    api: {
+      getOsFHandle: (fd) => ({ fd }),
+      NtQueryDirectoryFile: (...args: never[]) => {
+        const buffer = (args as unknown[])[5] as Buffer;
+        const page = pages[queries];
+        queries += 1;
+        if (page === undefined) return NO_MORE_FILES;
+        let offset = 0;
+        page.forEach(([name, attributes], index) => {
+          const entry = record(name, attributes);
+          if (index < page.length - 1) entry.writeUInt32LE(entry.length, 0);
+          entry.copy(buffer, offset);
+          offset += entry.length;
+        });
+        return 0;
+      },
     },
   };
 }
@@ -116,5 +151,91 @@ describe('listNtDirectory', () => {
     expect(() => listNtDirectory(failing, 7, never)).toThrow(
       'unexpected NT status 0xc0000022 for <directory>',
     );
+  });
+});
+
+describe('scanNtDirectory', () => {
+  const names = (entries: { name: string }[]) =>
+    entries.map((entry) => entry.name);
+  const fiveInThreePages = (): [string, number][][] => [
+    [
+      ['.', DIRECTORY],
+      ['a', NORMAL],
+      ['b', NORMAL],
+    ],
+    [
+      ['c', NORMAL],
+      ['d', DIRECTORY],
+    ],
+    [['e', NORMAL]],
+  ];
+
+  it('stops asking the system for entries once the bound is passed', () => {
+    const { api, queries } = paged(fiveInThreePages());
+
+    const listing = scanNtDirectory(api, 7, never, 3);
+
+    expect(
+      [listing.exceeded, names(listing.entries)],
+      'bound 3 over a, b, c, d, e: [exceeded, entries kept]',
+    ).toEqual([true, ['a', 'b', 'c']]);
+    expect(
+      queries(),
+      'NtQueryDirectoryFile calls made before it stopped (the third page is never asked for)',
+    ).toBe(2);
+  });
+
+  it('returns a directory that exactly fills the bound whole, and says it is not exceeded', () => {
+    const { api } = paged(fiveInThreePages());
+
+    const listing = scanNtDirectory(api, 7, never, 5);
+
+    expect([listing.exceeded, names(listing.entries)]).toEqual([
+      false,
+      ['a', 'b', 'c', 'd', 'e'],
+    ]);
+  });
+
+  it('types what it keeps the way the whole listing does', () => {
+    const { api } = paged(fiveInThreePages());
+
+    const listing = scanNtDirectory(api, 7, never, 4);
+
+    expect(
+      listing.entries.map((entry) => [entry.name, entry.isDirectory()]),
+    ).toEqual([
+      ['a', false],
+      ['b', false],
+      ['c', false],
+      ['d', true],
+    ]);
+  });
+
+  it('does not count . and .. against the bound', () => {
+    const empty = paged([
+      [
+        ['.', DIRECTORY],
+        ['..', DIRECTORY],
+      ],
+    ]);
+    expect(scanNtDirectory(empty.api, 7, never, 0)).toEqual({
+      entries: [],
+      exceeded: false,
+    });
+    const one = paged([
+      [
+        ['.', DIRECTORY],
+        ['..', DIRECTORY],
+        ['only', NORMAL],
+      ],
+    ]);
+    const listing = scanNtDirectory(one.api, 7, never, 0);
+    expect([listing.exceeded, listing.entries]).toEqual([true, []]);
+  });
+
+  it('is what listNtDirectory reads when there is no bound', () => {
+    expect(
+      names(listNtDirectory(paged(fiveInThreePages()).api, 7, never)),
+    ).toEqual(['a', 'b', 'c', 'd', 'e']);
   });
 });

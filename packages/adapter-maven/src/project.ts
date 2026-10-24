@@ -19,6 +19,7 @@ import type {
   ProjectionResult,
   WriteManifestOptions,
 } from '@openpacker/adapter-core';
+import { echoed } from '@openpacker/adapter-core';
 import type { SemanticLoss } from '@openpacker/contracts';
 import {
   applySpanEdits,
@@ -393,9 +394,7 @@ function assertXml(path: string, text: string): void {
     throw new ProjectIoError(
       'INVALID_XML',
       path,
-      `Editing ${path} produced XML that does not parse: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      `Editing ${path} produced XML that does not parse: ${echoed(error instanceof Error ? error.message : String(error))}`,
     );
   }
 }

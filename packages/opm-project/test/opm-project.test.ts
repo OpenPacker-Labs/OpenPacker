@@ -1939,8 +1939,9 @@ describe('environment generations', () => {
     const legacy = { ...body, generationDigest: generationDigest(body) };
 
     const state = await activateGeneration({ root, generation: legacy });
+    // The lock's one spelling of the scope, though the add typed `@`.
     expect(state.packages['demo-tool']?.purl).toBe(
-      'pkg:npm/@openpacker/demo-tool@1.1.0',
+      'pkg:npm/%40openpacker/demo-tool@1.1.0',
     );
   });
 

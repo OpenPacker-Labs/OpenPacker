@@ -13,6 +13,7 @@ import { availableParallelism } from 'node:os';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { realpath } from 'node:fs/promises';
 import type { WorkspaceError, WorkspaceGraph } from '@openpacker/adapter-core';
+import { plainLine } from '@openpacker/canonical';
 import type { RunContext } from './run-context.js';
 import { RunError } from './run-error.js';
 import { memberLabel, type OutputMode } from './run-output.js';
@@ -158,7 +159,8 @@ function orderDirs(
       after.set(waiter, list);
     }
   const dirs = select.reverse ? [...order.order].reverse() : [...order.order];
-  const names = (dir: string) => graph.index.byDir.get(dir)?.name ?? dir;
+  const names = (dir: string) =>
+    plainLine(graph.index.byDir.get(dir)?.name ?? dir);
   const warnings = order.cycles.map(
     (cycle) =>
       `opm: warning: cyclic workspace dependencies ${cycle.path.map(names).join(' -> ')}${cycle.runtime ? '' : ' (closed by devDependencies)'}; these members run together`,

@@ -47,20 +47,6 @@ export function writeToolRan(io: Io, exactPurl: string, cached: boolean): void {
   say(io.stderr, `opmx: ${exactPurl}${cached ? ' (cached)' : ''}\n`);
 }
 
-/** `opm run` with no script: each script of a `package.json` and its command, on one line. */
-export function writeScripts(
-  scripts: Iterable<readonly [string, unknown]>,
-  io: Io,
-): void {
-  let listed = 0;
-  for (const [name, command] of scripts)
-    if (typeof command === 'string') {
-      say(io.stdout, `${name}\t${command.replace(/\r?\n/gu, '\\n')}\n`);
-      listed += 1;
-    }
-  if (listed === 0) io.stdout.write('(no scripts)\n');
-}
-
 /**
  * Report the ecosystem project files opm maintained, and anything it could not
  * promise about them. Silence here would hide edits to files the user tracks

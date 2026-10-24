@@ -12,6 +12,7 @@
  * and later verified to be the same document.
  */
 
+import { echoed } from '@openpacker/adapter-core';
 import {
   canonicalBytes,
   canonicalDigest,
@@ -249,7 +250,7 @@ function parseDigestString(value: string): Digest {
   if (!match)
     throw new OpmError(
       'INVALID_DIGEST',
-      `Expected a sha256 digest, got "${value}"`,
+      `Expected a sha256 digest, got "${echoed(value)}"`,
     );
   const digest: Digest = { algorithm: 'sha256', value: match[1]! };
   // Round-trips through the canonical formatter so an invalid pair cannot be
