@@ -1,6 +1,6 @@
 /**
  * The numeric fields node-tar decodes and the other two readers do not
- * (ADR 0057 §8): which fields, under what magic, and which base-256 numbers it
+ * (ADR 0058 §8): which fields, under what magic, and which base-256 numbers it
  * can read. The archives that show npm and pnpm part over them are in
  * test/tar-oracle (tar-end.test.ts).
  */

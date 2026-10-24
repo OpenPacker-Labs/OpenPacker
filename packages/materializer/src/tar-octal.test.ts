@@ -1,5 +1,5 @@
 /**
- * The octal fields pnpm, node-tar and opm must read as one number (ADR 0057
+ * The octal fields pnpm, node-tar and opm must read as one number (ADR 0058
  * §8). `pnpmOctal` is pnpm 10.28.0's `parseOctal`; the expected values below
  * were taken from running pnpm's `parseTarball` and node-tar's `Header` on the
  * same bytes (the archives are in test/tar-oracle, tar-end.test.ts).

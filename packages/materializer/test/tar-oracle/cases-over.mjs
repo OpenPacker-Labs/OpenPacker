@@ -6,7 +6,7 @@
  * file) with a checksum or a number node-tar cannot read, a sized directory
  * whose span holds nothing, a path that an extended header gives a directory,
  * a prefix that a pax path overrides, a newline in a pax record that
- * changes nothing, and a link name on a global header, which node-tar drops. ADR 0057 section 8 lists them.
+ * changes nothing, and a link name on a global header, which node-tar drops. ADR 0058 section 8 lists them.
  */
 
 import {

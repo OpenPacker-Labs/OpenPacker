@@ -1,6 +1,6 @@
 /**
  * `limits` carries the option that has an npm archive read as npm and pnpm
- * read it (`requireNpmReaderAgreement`, ADR 0057 §8). The two shared-store
+ * read it (`requireNpmReaderAgreement`, ADR 0058 §8). The two shared-store
  * functions that extract take it as a required argument, so a call that forgets
  * it does not compile. The fixture is type-checked by tsc here: its
  * `@ts-expect-error` lines are errors themselves if `limits` is optional.

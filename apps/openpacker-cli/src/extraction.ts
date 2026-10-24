@@ -10,7 +10,7 @@ const NPM_PACKAGE_ARTIFACT = /^application\/vnd\.openpacker\.npm\.package\./u;
 /**
  * What `openpacker materialize --install-prefix` extracts an artifact under.
  * An npm package is read the way npm and pnpm read it, and refused where they
- * would install different files (ADR 0057 §8); any other artifact keeps the
+ * would install different files (ADR 0058 §8); any other artifact keeps the
  * materializer's general rule. The type is the adapter's own, not a guess from
  * the bytes.
  */

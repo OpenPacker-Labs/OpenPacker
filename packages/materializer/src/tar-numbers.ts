@@ -1,5 +1,5 @@
 /**
- * The numeric header fields only node-tar reads (ADR 0057 §8). npm's node-tar
+ * The numeric header fields only node-tar reads (ADR 0058 §8). npm's node-tar
  * decodes uid, gid and mtime in every header, devmajor and devminor under
  * `ustar\0` `00` magic, and atime and ctime there too when byte 475 is zero. A
  * field whose first byte has its high bit set is a base-256 number, and node-tar

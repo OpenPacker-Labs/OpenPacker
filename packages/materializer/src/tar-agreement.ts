@@ -1,6 +1,6 @@
 /**
  * Where npm's and pnpm's tar readers would install different files from the
- * same archive, opm refuses it rather than choose one (ADR 0057 §8). npm reads
+ * same archive, opm refuses it rather than choose one (ADR 0058 §8). npm reads
  * with node-tar 6.2.1, pnpm 10.28.0 with its own `parseTarball`, and opm with
  * the materializer's `parseTar`; each rule below is where they part.
  *
@@ -123,7 +123,7 @@ function endsHere(bytes: Uint8Array, offset: number): boolean {
   return true;
 }
 
-/** Refuse a header field the readers read differently (ADR 0057 §8). */
+/** Refuse a header field the readers read differently (ADR 0058 §8). */
 export function assertHeaderAgrees(header: Uint8Array, at: number): void {
   const ustar = hasUstarMagic(header);
   assertChecksumAgrees(header, at);
@@ -224,7 +224,7 @@ function assertPaxRecordsAgree(data: Uint8Array, at: number): void {
 }
 
 /**
- * Refuse a pax header (`x` or `g`) the readers cannot read alike (ADR 0057 §8):
+ * Refuse a pax header (`x` or `g`) the readers cannot read alike (ADR 0058 §8):
  * a record with a newline in it, a linkpath record, or a header of more than one
  * block with a byte past 0x7f from offset 511 on. node-tar decodes a header
  * piece by piece as it is fed (`this[META] += chunk`); the first piece of a body

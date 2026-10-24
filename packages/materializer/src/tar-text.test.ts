@@ -1,6 +1,6 @@
 /**
  * Which text fields of a header must hold only NULs after their first NUL
- * (ADR 0057 §8), and how long node-tar reads the prefix. The archives that show
+ * (ADR 0058 §8), and how long node-tar reads the prefix. The archives that show
  * the readers part over it are in test/tar-oracle (tar-end.test.ts).
  */
 

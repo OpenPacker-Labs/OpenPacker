@@ -1,4 +1,4 @@
-# ADR 0057: A gzip stream may end in zero padding
+# ADR 0058: A gzip stream may end in zero padding
 
 - Status: Accepted
 - Date: 2026-10-17

@@ -1,5 +1,5 @@
 /**
- * What `assertPaxAgrees` refuses in a pax header's body (ADR 0057 §8): a newline
+ * What `assertPaxAgrees` refuses in a pax header's body (ADR 0058 §8): a newline
  * inside a record, and a header of more than one block (512 bytes) with a byte
  * past 0x7f. The archives that show the readers part over it are in
  * test/tar-oracle (tar-end.test.ts).

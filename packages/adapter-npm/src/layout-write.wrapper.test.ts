@@ -3,7 +3,7 @@
  * path component of every entry, so a directory entry of its own (`other/`,
  * with no file in it) installs nothing and must not change where the package
  * is read from. Two top-level directories that both hold files stay a layout
- * difference ADR 0057 section 8 pins.
+ * difference ADR 0058 section 8 pins.
  */
 
 import { lstat, mkdir, writeFile } from 'node:fs/promises';

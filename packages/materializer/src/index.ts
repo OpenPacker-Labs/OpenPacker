@@ -47,7 +47,7 @@ export interface MaterializationLimits {
   acceptRedundantEntries?: boolean;
   /**
    * Refuse a tar that npm's node-tar and pnpm's `parseTarball` would read
-   * differently (ADR 0057 §8): where it ends, its headers, entry types and
+   * differently (ADR 0058 §8): where it ends, its headers, entry types and
    * paths. The npm adapter asks for it, for the archives those two read. Off
    * by default: any other archive ends at two zero blocks in a row or the end
    * of the data, and a lone zero block with data after it is refused.

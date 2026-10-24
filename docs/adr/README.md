@@ -58,7 +58,7 @@ Accepted decisions:
 54. [Aliases and several versions of one package in the closure](0054-aliases-and-several-versions-in-the-closure.md)
 55. [`opm ci` installs a pnpm lock](0055-opm-ci-installs-a-pnpm-lock.md)
 56. [`opm ci` applies a pnpm lock's patches](0056-opm-ci-applies-pnpm-patches.md)
-57. [A gzip stream may end in zero padding](0057-a-gzip-stream-may-end-in-zero-padding.md)
+58. [A gzip stream may end in zero padding](0058-a-gzip-stream-may-end-in-zero-padding.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

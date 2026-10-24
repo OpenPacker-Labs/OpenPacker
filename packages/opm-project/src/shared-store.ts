@@ -78,7 +78,7 @@ export async function materializeThroughSharedStore(input: {
   /** Already resolved by the caller; skips resolving it again. */
   sharedRoot?: string;
   linkFile?: (existingPath: string, newPath: string) => Promise<void>;
-  /** Required: it carries `requireNpmReaderAgreement` (ADR 0057 §8). */
+  /** Required: it carries `requireNpmReaderAgreement` (ADR 0058 §8). */
   limits: MaterializationLimits;
 }): Promise<{ path: string; shared: boolean; treeDigest?: string }> {
   const digest = assertDigest(input.digest);

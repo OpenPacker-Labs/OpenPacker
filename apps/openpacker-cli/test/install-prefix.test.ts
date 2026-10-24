@@ -1,6 +1,6 @@
 /**
  * `openpacker materialize --install-prefix` extracts the artifact on this
- * machine, so it reads an npm package the way npm and pnpm do (ADR 0057 §8):
+ * machine, so it reads an npm package the way npm and pnpm do (ADR 0058 §8):
  * the npm adapter's artifacts are extracted with `requireNpmReaderAgreement`,
  * every other artifact under the materializer's general rule. The daemon only
  * returns the descriptor; it extracts nothing.

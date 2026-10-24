@@ -1,6 +1,6 @@
 /**
  * Octal fields (size, checksum) as pnpm and node-tar read them, against opm's
- * `tarNumber` (ADR 0057 §8). The three cut a field differently: pnpm skips
+ * `tarNumber` (ADR 0058 §8). The three cut a field differently: pnpm skips
  * leading spaces, stops at the first space, then skips leading NULs; node-tar
  * cuts at the first NUL and trims. A NUL before the digits (pnpm reads them,
  * the others read 0) or a control whitespace before a space (pnpm's `parseInt`

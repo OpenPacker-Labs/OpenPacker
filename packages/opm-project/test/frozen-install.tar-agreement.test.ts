@@ -1,6 +1,6 @@
 /**
  * The archives of a pnpm lock are read under npm's and pnpm's agreement (ADR
- * 0057 §8): one whose tar the two would end differently is refused, under the
+ * 0058 §8): one whose tar the two would end differently is refused, under the
  * package's name, before node_modules is written. Here the tar has no zero
  * block at its end: npm installs it, pnpm fails.
  */

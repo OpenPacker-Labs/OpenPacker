@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * A differential fuzz of `requireNpmReaderAgreement` (ADR 0057 section 8):
+ * A differential fuzz of `requireNpmReaderAgreement` (ADR 0058 section 8):
  * every archive of a family (families.mjs) is read by node-tar 6.2.1 (npm) as one
  * buffer and in pieces of 1, 1,460, 16,384 and 65,536 bytes, by pnpm 10.28.0's
  * `parseTarball`, and by opm in npm mode (the limits the npm adapter sets), and

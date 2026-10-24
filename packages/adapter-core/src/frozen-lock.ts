@@ -182,7 +182,7 @@ export interface FrozenExtraction {
   /**
    * npm's node-tar and pnpm's `parseTarball` are this ecosystem's tar readers:
    * an archive they would read differently is refused, not extracted one way
-   * (ADR 0057 §8).
+   * (ADR 0058 §8).
    */
   requireNpmReaderAgreement?: boolean;
 }
