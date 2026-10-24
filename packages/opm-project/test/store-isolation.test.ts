@@ -1,9 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { assertResolvedStores } from '../../../tests/support/store-guard.js';
@@ -16,6 +16,17 @@ import { assertResolvedStores } from '../../../tests/support/store-guard.js';
  */
 
 const packageRoot = fileURLToPath(new URL('..', import.meta.url));
+
+/** What the guard's resolvers read. */
+const GUARDED = [
+  'OPM_STORE_HOME',
+  'OPM_TOOL_CACHE',
+  'OPM_PLUGIN_HOME',
+  'XDG_CACHE_HOME',
+  'XDG_DATA_HOME',
+  'HOME',
+  'USERPROFILE',
+] as const;
 const insideTmp = (path: string) => {
   const rel = relative(tmpdir(), path);
   return rel !== '' && !rel.startsWith('..');
@@ -61,26 +72,60 @@ describe('a test run and the caller stores', () => {
     }
   }, 120_000);
 
+  // Each resolver the guard asks, refused on its own, by name. The location
+  // outside is a sibling of the temporary directory, so it is outside however
+  // the machine's temporary directory and this checkout are placed (a checkout
+  // under /tmp put the old probe, beside the package, inside it).
   it('fails a test whose environment resolves a store outside the temporary directory', () => {
-    const cache = process.env.XDG_CACHE_HOME;
-    const outside = join(packageRoot, '.store-guard-probe');
-    const refused = "a test must never read or write the caller's store";
-    try {
-      expect(() => assertResolvedStores()).not.toThrow();
-      process.env.OPM_STORE_HOME = outside;
-      expect(() => assertResolvedStores()).toThrow(refused);
-      delete process.env.OPM_STORE_HOME;
-      process.env.OPM_TOOL_CACHE = outside;
-      expect(() => assertResolvedStores()).toThrow(refused);
-      delete process.env.OPM_TOOL_CACHE;
-      // No XDG_CACHE_HOME: the default store and the tool cache are ~/.cache's.
-      delete process.env.XDG_CACHE_HOME;
-      expect(() => assertResolvedStores()).toThrow(refused);
-    } finally {
-      delete process.env.OPM_STORE_HOME;
-      delete process.env.OPM_TOOL_CACHE;
-      process.env.XDG_CACHE_HOME = cache;
-    }
+    const saved = Object.fromEntries(
+      GUARDED.map((name) => [name, process.env[name]]),
+    );
+    const temporary = realpathSync(tmpdir());
+    const outside = join(
+      dirname(temporary),
+      `${basename(temporary)}-outside-${process.pid}`,
+    );
+    const refusal = (what: string) =>
+      new RegExp(
+        `^${what} resolves to .*: a test must never read or write the caller's store$`,
+        'u',
+      );
+    const refused = (change: Record<string, string | undefined>) => {
+      for (const [name, value] of Object.entries(change))
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      try {
+        assertResolvedStores();
+        return undefined;
+      } catch (error) {
+        return (error as Error).message;
+      } finally {
+        for (const name of GUARDED)
+          if (saved[name] === undefined) delete process.env[name];
+          else process.env[name] = saved[name];
+      }
+    };
+    expect(relative(temporary, outside).startsWith('..')).toBe(true);
+    expect(refused({})).toBeUndefined();
+    expect(refused({ OPM_STORE_HOME: outside })).toMatch(
+      refusal('OPM_STORE_HOME'),
+    );
+    expect(refused({ OPM_TOOL_CACHE: outside })).toMatch(
+      refusal('The tool cache'),
+    );
+    expect(refused({ OPM_PLUGIN_HOME: outside })).toMatch(
+      refusal('The plugin store'),
+    );
+    // The home directory is HOME's, or USERPROFILE's on Windows.
+    const home = { HOME: outside, USERPROFILE: outside };
+    // No XDG_CACHE_HOME: the default store and the tool cache are home's.
+    expect(refused({ XDG_CACHE_HOME: undefined, ...home })).toMatch(
+      refusal('The default shared store'),
+    );
+    // No XDG_DATA_HOME: the plugin store is home's, and only it moves.
+    expect(refused({ XDG_DATA_HOME: undefined, ...home })).toMatch(
+      refusal('The plugin store'),
+    );
     expect(existsSync(outside)).toBe(false);
   });
 });
