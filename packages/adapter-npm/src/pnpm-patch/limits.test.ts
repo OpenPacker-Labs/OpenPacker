@@ -1,5 +1,5 @@
 /**
- * The bounds a patch is held to (ADR 0056 §13): the paths it names meet the
+ * The bounds a patch is held to (ADR 0057 §13): the paths it names meet the
  * bounds of a path in an archive, 128 segments and 4,096 UTF-8 bytes, and it
  * names at most the 100,000 files a package's archive may hold. pnpm has none
  * of them; a path past them is refused when the patch is read, so `opm ci

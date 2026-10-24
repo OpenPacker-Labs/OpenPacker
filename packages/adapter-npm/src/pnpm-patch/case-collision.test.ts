@@ -1,6 +1,6 @@
 /**
  * The files a patch creates are held to the archive's CASE_COLLISION rule
- * against the files of the package (ADR 0056 §13). A patch that created
+ * against the files of the package (ADR 0057 §13). A patch that created
  * `lib/X.js` beside the package's `lib/x.js` applied, and the entry it made
  * held a pair that an archive refuses and one case-insensitive file system
  * would make one file (the second written over the first). The key is the

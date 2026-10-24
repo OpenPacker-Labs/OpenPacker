@@ -63,7 +63,7 @@ const DEFAULT_CONCURRENCY = 8;
  * of onnxruntime is 287 MB unpacked, some packages ship tens of thousands of
  * files), and no larger than a tree opm can then hash and link. Files, depth
  * and path length are `PACKAGE_TREE_LIMITS`, which a pnpm patch's paths are
- * held to as well (ADR 0056).
+ * held to as well (ADR 0057).
  */
 export function frozenArchiveLimits(extraction: {
   acceptRedundantEntries: boolean;

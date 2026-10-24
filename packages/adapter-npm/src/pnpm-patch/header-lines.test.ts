@@ -1,6 +1,6 @@
 /**
  * `indexHashes` and `diffLinePaths` give the match pnpm's two regexes give
- * (ADR 0056), and take a line in time linear in its length. The regexes are
+ * (ADR 0057), and take a line in time linear in its length. The regexes are
  * kept here, as the reference, and run over short lines only: over a long one
  * they are the quadratic reading this module replaces.
  */

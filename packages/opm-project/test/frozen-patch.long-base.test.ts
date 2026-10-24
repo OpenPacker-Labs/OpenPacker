@@ -1,7 +1,7 @@
 /**
  * A patched package is made in a directory 120 bytes deeper than the archive's
  * entry it is copied from, and the store the system sees is the canonical one
- * (ADR 0056 §13). A package that already holds a long path, or a store behind a
+ * (ADR 0057 §13). A package that already holds a long path, or a store behind a
  * symlink, used to meet an `ENAMETOOLONG` the check of the patch's own paths
  * could not see: a plain error, exit 9. It is a refusal now: `UNSAFE_PATH`,
  * naming the numbers, with nothing published and the temporary removed.

@@ -1,4 +1,4 @@
-/** A shared store and a format, for the tests of publishing a patched entry (ADR 0056 §11). */
+/** A shared store and a format, for the tests of publishing a patched entry (ADR 0057 §11). */
 
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';

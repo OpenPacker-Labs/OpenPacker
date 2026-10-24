@@ -1,6 +1,6 @@
 /**
  * Which patch each package of a pnpm lock takes, by pnpm 10.28's rules for the
- * keys of `patchedDependencies` (ADR 0056), and what the lock says of its
+ * keys of `patchedDependencies` (ADR 0057), and what the lock says of its
  * patches that is refused before any file is read.
  */
 

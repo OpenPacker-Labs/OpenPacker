@@ -1,5 +1,5 @@
 /**
- * Applying a patch's effects as pnpm applies them (ADR 0056).
+ * Applying a patch's effects as pnpm applies them (ADR 0057).
  *
  * A port of `@pnpm/patch-package@0.0.1`'s `dist/patch/apply.js`
  * (`executeEffects`, `applyPatch`, `evaluateHunk`) and of `applyPatch` in
@@ -88,7 +88,7 @@ type Modification =
  * each change one line of one large file cost K times that file: a 146 KB
  * patch of 2,000 such sections ran for a minute, and a 16 MiB one would run
  * for an hour. A real patch changes a file in one section; the largest of the
- * measured ones (ADR 0056 §9) spends a fraction of a percent of this.
+ * measured ones (ADR 0057 §9) spends a fraction of a percent of this.
  */
 export const PATCH_WORK_BUDGET = 256 * 1024 * 1024;
 

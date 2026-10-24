@@ -108,12 +108,12 @@ export async function collectSharedStore(
     .filter(
       (entry) =>
         entry.isDirectory() &&
-        // An archive's files, or a patched copy of them (ADR 0056).
+        // An archive's files, or a patched copy of them (ADR 0057).
         /^sha256-[0-9a-f]{64}(?:-patch-[0-9a-f]{64})?$/u.test(entry.name),
     )
     .map((entry) => entry.name)
     .sort();
-  // A patched copy is judged before the entry it was made from (ADR 0056):
+  // A patched copy is judged before the entry it was made from (ADR 0057):
   // while the copy is kept, so is that entry, which an install proves to be
   // the package its lock names before it adopts the copy, offline too.
   const needed = new Set<string>();

@@ -108,7 +108,7 @@ export async function installFrozen(
     const fetched = now();
     // The archives are proved to be the lock's packages before any is patched,
     // and what declares a script is read from what is installed: the patched
-    // files, where there is a patch (ADR 0056).
+    // files, where there is a patch (ADR 0057).
     await checkArchiveIdentities(lock.packages, stored.byPath);
     const { byPath, patched } = await patchArchives({
       lock,

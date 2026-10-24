@@ -205,7 +205,7 @@ function leftOut(result: Pick<FrozenPlan, 'skipped'>): string | undefined {
     .join(', ');
 }
 
-/** The packages a lock patches, when it patches any (ADR 0056). */
+/** The packages a lock patches, when it patches any (ADR 0057). */
 function writePatched(
   patched: { packages: number; patches: number },
   io: CommandIo,

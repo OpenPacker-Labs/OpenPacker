@@ -24,7 +24,7 @@ const DIGEST = `sha256:${'a'.repeat(64)}`;
 const PATCH = 'b'.repeat(64);
 
 /**
- * `opm gc --shared` treats a patched entry (ADR 0056) as it treats an
+ * `opm gc --shared` treats a patched entry (ADR 0057) as it treats an
  * archive's: kept while a project links one of its files, kept while it is
  * younger than the age rule, removed with its tree record otherwise, and its
  * half-written temporary cleared once it is old.

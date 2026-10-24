@@ -1,5 +1,5 @@
 /**
- * What opm refuses of a patch that pnpm would apply (ADR 0056): a path that
+ * What opm refuses of a patch that pnpm would apply (ADR 0057): a path that
  * leaves the package, a link in the package, a directory renamed or made
  * executable. pnpm follows each of them; the oracle cannot show them, so they
  * are written here.

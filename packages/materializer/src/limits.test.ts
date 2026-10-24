@@ -1,7 +1,7 @@
 /**
  * The bounds of a path in an archive and the names an archive refuses are one
  * definition, in `@openpacker/adapter-core`, shared with the store's limits
- * and with the paths a pnpm patch may name (ADR 0056 §13). The materializer
+ * and with the paths a pnpm patch may name (ADR 0057 §13). The materializer
  * took 128 and 4,096 into a literal of its own, where the two could drift
  * apart silently; these tests fail when the two differ.
  */

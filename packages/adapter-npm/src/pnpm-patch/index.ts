@@ -1,6 +1,6 @@
 /**
  * A `patchedDependencies` patch, read and applied as pnpm 10.28 does (ADR
- * 0056): `parse.ts` reads it, `apply.ts` applies it, `tree.ts` holds what it
+ * 0057): `parse.ts` reads it, `apply.ts` applies it, `tree.ts` holds what it
  * touches until it has applied whole, `hash.ts` is the hash a lock records.
  */
 

@@ -1,5 +1,5 @@
 /**
- * A patch file that grows after it was sized (ADR 0056 §13). Each patch file
+ * A patch file that grows after it was sized (ADR 0057 §13). Each patch file
  * is sized with a no-follow open before any is read, and read once sized; a
  * file another process is writing can be larger when it is read than when it
  * was sized. It is read to at most one byte past the bound of one file, so a

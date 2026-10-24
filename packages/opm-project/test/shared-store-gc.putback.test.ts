@@ -17,7 +17,7 @@ import { sameRecord } from '../src/shared-store-gc.js';
 
 /**
  * `opm gc --shared` and an old orphan `<key>.tree` record whose key a publish
- * writes again while gc is judging it (ADR 0056 §11). gc moves a record aside
+ * writes again while gc is judging it (ADR 0057 §11). gc moves a record aside
  * before it removes it, and puts it back when what it moved is not the inode
  * it judged (a publish's atomic replace is a new inode). A publish that lands
  * before the move aside is put back; one that lands after it is left alone;

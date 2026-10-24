@@ -1,6 +1,6 @@
 /**
  * A patched package's paths, held to what the system takes before anything is
- * fetched (ADR 0056 §13).
+ * fetched (ADR 0057 §13).
  *
  * The files of a patch are made in `.<key>.materialize-<uuid>/package/` below
  * the store, and a system call takes 4,095 bytes of path, the store's own

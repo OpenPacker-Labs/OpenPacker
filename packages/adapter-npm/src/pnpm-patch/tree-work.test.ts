@@ -1,5 +1,5 @@
 /**
- * The work a patch's paths cost (ADR 0056 §9). The budget counted the
+ * The work a patch's paths cost (ADR 0057 §9). The budget counted the
  * characters of the files a patch reads, compares and writes, and nothing the
  * tree does with the paths themselves: every lookup walks the ancestors of its
  * path, `ensureDir` does that for every ancestor again, and every named path

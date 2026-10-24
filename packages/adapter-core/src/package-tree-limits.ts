@@ -2,7 +2,7 @@
  * The bounds a package's files are held to in opm's store, whatever put them
  * there: an archive `opm ci` or `opm add` extracts (opm-project's
  * `frozenArchiveLimits` and `installArchiveLimits`), and the paths a pnpm patch
- * names (ADR 0056 §13), which become files of a store entry too. In depth and
+ * names (ADR 0057 §13), which become files of a store entry too. In depth and
  * length they are the materializer's own; in files they are a dependency
  * tree's, where some packages ship tens of thousands.
  */
@@ -28,7 +28,7 @@ export interface SegmentProblem {
 /**
  * What is wrong with one segment of a path in a package, or undefined: the
  * names an archive refuses on every platform, the materializer's rule and the
- * one a pnpm patch's paths are held to (ADR 0056 §13), so that no path of a
+ * one a pnpm patch's paths are held to (ADR 0057 §13), so that no path of a
  * patched entry is one an archive could not hold.
  *
  * Windows device names are reserved at every directory level and stay
@@ -72,7 +72,7 @@ export const PACKAGE_ROOT = 'package';
  * case-insensitive file system would make one file (`CASE_COLLISION`). The
  * materializer refuses an archive with two entries of one key, and the files
  * a pnpm patch creates are held to the same key against the files of the
- * package (ADR 0056 §13). A pair that differs only in Unicode normalization
+ * package (ADR 0057 §13). A pair that differs only in Unicode normalization
  * (an NFC name beside an NFD one) has two keys, in an archive and in a patch.
  */
 export const collisionKey = (path: string): string => path.toLowerCase();

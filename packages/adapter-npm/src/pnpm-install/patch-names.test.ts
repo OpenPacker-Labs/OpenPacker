@@ -1,6 +1,6 @@
 /**
  * A patch that creates a name an archive refuses is refused where the lock is
- * read, so `opm ci --plan` says so before anything is fetched (ADR 0056 §13).
+ * read, so `opm ci --plan` says so before anything is fetched (ADR 0057 §13).
  */
 
 import { describe, expect, it } from 'vitest';

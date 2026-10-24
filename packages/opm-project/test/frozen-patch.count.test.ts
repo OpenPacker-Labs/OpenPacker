@@ -15,7 +15,7 @@ afterEach(cleanStores);
 
 /**
  * The files of a patched entry are held to the files an archive may hold, as
- * the files of the archive it was made from were (ADR 0056 §13): the patch's
+ * the files of the archive it was made from were (ADR 0057 §13): the patch's
  * own paths and their directories are counted at --plan, and this counts the
  * entry once the patch is applied, because a package at the limit and a patch
  * that adds files to it came to twice the limit. The unpatched entry here has

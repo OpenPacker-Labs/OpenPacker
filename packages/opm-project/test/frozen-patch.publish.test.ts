@@ -14,7 +14,7 @@ import {
 } from './frozen-patch-fixture.js';
 
 /**
- * Publishing a patched entry (ADR 0056 §11) when two installs make the same
+ * Publishing a patched entry (ADR 0057 §11) when two installs make the same
  * one at once: whichever tree wins the rename into place is the one its
  * `<key>.tree` record names, so the entry always verifies afterwards. Here the
  * format makes a different tree each time it is called, which a real patch

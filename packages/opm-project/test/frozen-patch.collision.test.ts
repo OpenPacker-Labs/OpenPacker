@@ -16,7 +16,7 @@ afterEach(async () => {
 
 /**
  * A patch that creates `LIB.js` beside the package's `lib.js` leaves a pair an
- * archive refuses as CASE_COLLISION (ADR 0056 §13). `opm ci` stops with
+ * archive refuses as CASE_COLLISION (ADR 0057 §13). `opm ci` stops with
  * UNSAFE_PATH (exit 7) and the message names the archive's code, the install
  * writes nothing, and no patched entry is left in the store.
  */

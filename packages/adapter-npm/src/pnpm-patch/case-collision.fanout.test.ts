@@ -1,6 +1,6 @@
 /**
  * The twin search follows each case variant of a directory once per parent and
- * charges every step (ADR 0056 §9): a hostile package that holds a directory
+ * charges every step (ADR 0057 §9): a hostile package that holds a directory
  * in every case of one name cannot make a patch's creations cost more CPU than
  * the budget counts.
  */

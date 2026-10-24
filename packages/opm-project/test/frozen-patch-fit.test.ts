@@ -29,7 +29,7 @@ afterEach(async () => {
 
 /**
  * The directory a patched package is made in is part of every path in it, and
- * a system call takes 4,095 bytes of path (ADR 0056 §13). A path of 3,900
+ * a system call takes 4,095 bytes of path (ADR 0057 §13). A path of 3,900
  * bytes below a store directory of 210 passed every bound of its own and was
  * `ENAMETOOLONG` from an `lstat`, an internal error naming a store temporary.
  * `opm ci --plan` now says so before anything is fetched, from the longest

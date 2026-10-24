@@ -9,7 +9,7 @@ import { onPosix } from './frozen-workspace-fixture.js';
 afterEach(cleanup);
 
 /**
- * `installFrozen` over a pnpm lock with `patchedDependencies` (ADR 0056): the
+ * `installFrozen` over a pnpm lock with `patchedDependencies` (ADR 0057): the
  * patch is applied to a copy of the archive's files, which is a store entry of
  * its own, so the project that patches `x@1.0.0` and a project on the same
  * store that installs it unpatched never share a patched or an unpatched

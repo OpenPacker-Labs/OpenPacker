@@ -1,6 +1,6 @@
 /**
  * The files a patch touches, held in memory while it is applied, and written
- * to the package only when the whole patch applied (ADR 0056).
+ * to the package only when the whole patch applied (ADR 0057).
  *
  * pnpm applies a patch in the package's own directory, path by path, and a
  * patch that fails half way leaves the half it did. opm reads every path the

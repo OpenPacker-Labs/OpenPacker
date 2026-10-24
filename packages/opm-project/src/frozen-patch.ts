@@ -1,5 +1,5 @@
 /**
- * A patched package is a package of its own (ADR 0056).
+ * A patched package is a package of its own (ADR 0057).
  *
  * pnpm applies a `patchedDependencies` patch to the package's files in its
  * virtual store, in a directory whose name carries the patch's hash

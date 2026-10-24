@@ -1,4 +1,4 @@
-# ADR 0056: `opm ci` applies a pnpm lock's patches
+# ADR 0057: `opm ci` applies a pnpm lock's patches
 
 - Status: Accepted
 - Date: 2026-10-17

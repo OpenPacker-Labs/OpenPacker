@@ -1,6 +1,6 @@
 /**
  * A pnpm lock's `patchedDependencies` held to the project's patch files, as
- * `pnpm install --frozen-lockfile` holds them (ADR 0056): the hash of either
+ * `pnpm install --frozen-lockfile` holds them (ADR 0057): the hash of either
  * pnpm, the path, the keys; and what opm refuses that pnpm would read.
  */
 

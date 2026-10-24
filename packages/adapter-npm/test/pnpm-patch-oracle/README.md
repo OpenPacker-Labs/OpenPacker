@@ -1,6 +1,6 @@
 # pnpm's own code, as the oracle of the patch applier
 
-ADR 0056: `opm ci` applies a pnpm lock's `patchedDependencies` with a port of
+ADR 0057: `opm ci` applies a pnpm lock's `patchedDependencies` with a port of
 the code pnpm 10.28 applies them with (`src/pnpm-patch/`). `oracle.json` is what
 pnpm's own code does with every case of `cases.mjs`, and
 `src/pnpm-patch/oracle.test.ts` holds the port to it.

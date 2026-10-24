@@ -177,7 +177,7 @@ snapshots:
     expect(refused.length).toBeGreaterThan(0);
     // The importers' own settings: nothing about a package is said until the
     // lock can be installed as written, and its two patches (braces and
-    // node-forge, each carried by its snapshot) are not refused (ADR 0056).
+    // node-forge, each carried by its snapshot) are not refused (ADR 0057).
     for (const item of refused)
       expect(item.path).toMatch(
         /^(?:importers\[".*"\]\.(?:dependenciesMeta|publishDirectory)|ignoredOptionalDependencies)$/u,

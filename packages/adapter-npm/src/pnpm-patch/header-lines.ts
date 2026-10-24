@@ -1,6 +1,6 @@
 /**
  * The two header lines of a patch that pnpm reads with a regex that backtracks
- * (ADR 0056), read here in one pass over the line, and the bound on a header
+ * (ADR 0057), read here in one pass over the line, and the bound on a header
  * line.
  *
  * pnpm's `parse.js` reads `index abc..def` with `/(\w+)\.\.(\w+)/` and

@@ -1,5 +1,5 @@
 /**
- * A patch file read as pnpm reads one (ADR 0056).
+ * A patch file read as pnpm reads one (ADR 0057).
  *
  * pnpm 10.28 applies `patchedDependencies` with its fork of patch-package,
  * `@pnpm/patch-package@0.0.1`, bundled in `pnpm.cjs` as

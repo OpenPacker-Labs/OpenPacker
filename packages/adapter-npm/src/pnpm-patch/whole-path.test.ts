@@ -1,5 +1,5 @@
 /**
- * A path a patch names is held to what the system takes WHOLE (ADR 0056 §13):
+ * A path a patch names is held to what the system takes WHOLE (ADR 0057 §13):
  * the directories the host keeps the package in count against the 4,096 bytes
  * of `PATH_MAX`, so a path that passes every bound of its own can still be one
  * the install cannot make. A path of 3,900 bytes below a store directory of 210

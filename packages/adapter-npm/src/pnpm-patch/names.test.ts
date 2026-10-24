@@ -1,5 +1,5 @@
 /**
- * The names a patch may create are the names an archive may hold (ADR 0056
+ * The names a patch may create are the names an archive may hold (ADR 0057
  * §13). `aux.js`, `CON`, `nul.txt`, `a:b`, `trailing.` and `com1.json` were
  * taken by `opm ci --plan` and created by the install, where an archive
  * refuses them (the materializer's rule, now the one in

@@ -1,6 +1,6 @@
 /**
  * A patch a lock applies to a package before it is installed (pnpm's
- * `patchedDependencies`, ADR 0056), and the format hook that applies it.
+ * `patchedDependencies`, ADR 0057), and the format hook that applies it.
  */
 
 /** A patch file a lock applies to a package, read once by the adapter. */

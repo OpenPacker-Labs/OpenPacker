@@ -1,5 +1,5 @@
 /**
- * A path a patch may name is a path an archive may hold (ADR 0056 §13): the
+ * A path a patch may name is a path an archive may hold (ADR 0057 §13): the
  * patch's bounds count what the archive's count. `validateArchivePath` is
  * given `package/<path>` (an npm tarball's root is a directory of the
  * archive), so a path 128 segments below the package is 129 for the archive,

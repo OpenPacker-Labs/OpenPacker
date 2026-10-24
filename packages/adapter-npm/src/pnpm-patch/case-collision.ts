@@ -1,6 +1,6 @@
 /**
  * The files a patch creates, held to the archive's CASE_COLLISION rule against
- * the package's files (ADR 0056 §13).
+ * the package's files (ADR 0057 §13).
  *
  * An archive is refused when two of its entries have one `collisionKey`, the
  * whole path lowercased: one case-insensitive file system would make them one

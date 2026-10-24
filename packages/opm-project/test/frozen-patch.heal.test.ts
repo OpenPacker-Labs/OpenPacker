@@ -22,7 +22,7 @@ import {
 
 /**
  * A patched entry whose publisher died between the rename that put it in
- * place and the write of its `<key>.tree` record (ADR 0056 §11). An archive's
+ * place and the write of its `<key>.tree` record (ADR 0057 §11). An archive's
  * record is written before its rename, so a publisher that dies leaves at most
  * an orphan record; a patched entry's follows the rename (so that it names the
  * tree that won), and a publisher killed in between left an entry that every

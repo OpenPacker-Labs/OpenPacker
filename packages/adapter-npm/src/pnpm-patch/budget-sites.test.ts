@@ -1,5 +1,5 @@
 /**
- * Where the work budget is charged in the applier (ADR 0056 §9), one number
+ * Where the work budget is charged in the applier (ADR 0057 §9), one number
  * for a small patch, worked out by hand, so that a charge dropped from any
  * site changes it; and that the forward run and the reverse run that asks
  * whether the package already has the change spend one budget between them.

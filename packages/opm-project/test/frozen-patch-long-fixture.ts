@@ -1,4 +1,4 @@
-/** Paths of a given length, and a store behind a symlink, for the tests of ADR 0056 §13's whole-path rule. */
+/** Paths of a given length, and a store behind a symlink, for the tests of ADR 0057 §13's whole-path rule. */
 
 import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

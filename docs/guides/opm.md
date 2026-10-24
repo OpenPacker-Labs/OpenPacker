@@ -478,7 +478,7 @@ naming the importer and the dependency:
   reads it.
 
 **Patches** (`patchedDependencies`,
-[ADR 0056](../adr/0056-opm-ci-applies-pnpm-patches.md)) are applied as pnpm
+[ADR 0057](../adr/0057-opm-ci-applies-pnpm-patches.md)) are applied as pnpm
 10.28 applies them, after each archive is proved to be the package the lock
 names and before anything is linked. The project's patches are read from
 `package.json`'s `pnpm.patchedDependencies` (or, when it has none,

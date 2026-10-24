@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-12; amended 2026-10-17 after the independent review of #179 (§1,
   §7, §11, §15, §18, §19, §20, §23 and Costs); amended 2026-10-17 by
-  [ADR 0056](0056-opm-ci-applies-pnpm-patches.md): a lock's patches are applied
+  [ADR 0057](0057-opm-ci-applies-pnpm-patches.md): a lock's patches are applied
 - Amends [ADR 0052](0052-pnpm-lockfile-model.md): "Not done: the mapping" and
   the plan in §15 to §18 are built, with the changes listed under each point
   below. [ADR 0051](0051-opm-ci-installs-workspace-locks.md): "pnpm or yarn
@@ -309,7 +309,7 @@ design:
     touched** (ADR 0046 §6: what looks only at the lock comes first, then what
     needs the project's files, then what needs the target, then the places):
     1. The lock itself: refusals of the reader (ADR 0052), a source this does
-       not install (§20), what is wrong with its `patchedDependencies` (ADR 0056
+       not install (§20), what is wrong with its `patchedDependencies` (ADR 0057
        §13), an `excludeLinksFromLockfile` lock, an importer with
        `dependenciesMeta` or `publishDirectory`, a lock written with
        `ignoredOptionalDependencies`.
@@ -434,7 +434,7 @@ design:
 
 20. By name, whole, with nothing installed or removed (a lock's
     `patchedDependencies` are applied as pnpm applies them, and what of them is
-    refused is ADR 0056 §13's):
+    refused is ADR 0057 §13's):
     - A package from a git repository, a directory, a `file:` archive or a
       runtime; and an `http(s)` tarball without an integrity. A tarball with one
       is installed from its URL, as a `tarball` source.
@@ -461,7 +461,7 @@ design:
     Only the refusals of a stale lock (§18.3, §18.4's overrides, §18.5's
     project-side `ignoredOptionalDependencies`, §18.6, and
     `publishConfig.directory`) say that `pnpm install --frozen-lockfile` would
-    refuse too: the review of #179 saw real pnpm refuse each (ADR 0056 adds a
+    refuse too: the review of #179 saw real pnpm refuse each (ADR 0057 adds a
     patch file that changed). Every other refusal here is opm's own rule and
     says so.
 
@@ -523,7 +523,7 @@ tree on disk (`require.resolve.paths`, `package.json` read at the place found).
 | that tree, resolved by Node                                    | 579 edges, **0 mismatches**; the two vitest variants load the `@types/node` of their own member                                                                                                                                                                                                             |
 | HoBo's scripts through `opm`                                   | `typecheck` of `provider-config` and of `adapter-better-auth` (after `opm run build` of `@hobo/core`, so through the link), 95 + 3 tests with `opm exec vitest run`. The `test` script runs `pnpm exec turbo` in its `pretest`, so it needs pnpm and is not run                                             |
 | ts-autocode and gitlang, npm locks                             | 438 and 758 packages, the figures of ADRs 0051 and 0054; `build:grounding`, `tsc --noEmit` and 50 tests, `build:libs` and the 312 node tests pass through `opm`. (Run with the shell's `GITHUB_TOKEN` set, 7 gitlang tests fail with or without opm: they assume no ambient token)                          |
-| OpenSesame                                                     | was refused by name for its 4 `patchedDependencies` (exit 3); with ADR 0056 it plans with them (1,758 packages, 4 patched), and installs except one member, whose `sylvester@0.0.21` archive the materializer cannot extract (ADR 0056, Consequences); its `.deepsec` lock plans (287 packages, 288 places) |
+| OpenSesame                                                     | was refused by name for its 4 `patchedDependencies` (exit 3); with ADR 0057 it plans with them (1,758 packages, 4 patched), and installs except one member, whose `sylvester@0.0.21` archive the materializer cannot extract (ADR 0057, Consequences); its `.deepsec` lock plans (287 packages, 288 places) |
 | a stale lock                                                   | `zod` edited in `packages/sdk/package.json`: `packages/sdk: zod is "^9.9.9" in package.json and "^4.6.5" in pnpm-lock.yaml`, exit 3, the previous `node_modules` as it was                                                                                                                                  |
 
 **After §9's amendment (2026-10-17)**, the same runs give one real path per
@@ -577,7 +577,7 @@ Costs and limits, stated so nobody finds them by surprise.
 - **Not pnpm's layout.** A tool that expects `node_modules/.pnpm` finds none; a
   package that reaches a dependency it does not declare may find it (hoisting)
   or not (pnpm's own isolation). Node resolves every declared edge.
-- **No scripts, no `.npmrc`.** A lock's patches are applied (ADR 0056); a
+- **No scripts, no `.npmrc`.** A lock's patches are applied (ADR 0057); a
   package whose install script is needed is installed as it is and says so; a
   registry or auth in `.npmrc` is not read (`opm auth` and `OPM_REGISTRY_NPM`
   are how opm is told).

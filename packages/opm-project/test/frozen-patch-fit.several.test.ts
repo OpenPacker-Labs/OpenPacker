@@ -1,6 +1,6 @@
 /**
  * `assertPatchesFit` checks every distinct patch of a lock, not the first
- * (ADR 0056 §13): a lock patches several packages, and the one whose patch
+ * (ADR 0057 §13): a lock patches several packages, and the one whose patch
  * names the too long path may be any of them.
  */
 
