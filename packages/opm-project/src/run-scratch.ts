@@ -23,9 +23,12 @@ import {
  * made, and what the run uses in `tree`, the one thing a sandbox binds: the
  * owner is never in what a tool can see. The next run that makes one in the
  * same place, and `opm gc` for views, removes those whose owner has ended, by
- * the one rule opm judges every holder by (`process-owner.ts`): one the owner
- * may still be running, or that another machine, boot or PID namespace made,
- * is never touched.
+ * the one rule opm judges every holder by (`process-owner.ts`). One whose
+ * owner may still be running is never touched, nor one another machine or PID
+ * namespace made. One this machine made in an earlier boot is removed whatever
+ * its pid where the machine id says it is this machine; with no machine id it
+ * is kept. Off Linux nothing but the host name and the pid is read, so those
+ * two decide, whichever boot made it.
  */
 
 /** What a run made: the directory it removes, and the tree inside it it uses. */

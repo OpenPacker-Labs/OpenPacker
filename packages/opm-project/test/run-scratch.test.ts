@@ -241,6 +241,35 @@ describe('the owner rule, as the sweep applies it', () => {
     });
   });
 
+  describe('on a host that reads nothing of itself but its name and pid (macOS, Windows)', () => {
+    // `owner-system.ts` reads the boot, machine, namespace and start time from
+    // Linux files only. Unread on both sides they agree, so a leftover there is
+    // judged by host name and pid alone, whichever boot made it.
+    const unread = async () => undefined;
+    const reads: OwnerReads = {
+      pid: process.pid,
+      hostname: () => 'mac',
+      stat: unread,
+      pidNamespace: unread,
+      bootId: unread,
+      machineId: unread,
+    };
+
+    it('removes what a run whose pid is unused left, and keeps what a running one made', async () => {
+      const host = await makeCurrentOwner(reads)();
+      expect(host).toEqual({ pid: process.pid, host: 'mac' });
+      const dir = await scratchDir();
+      const gone = (
+        await makeScratch(dir, PREFIX, { ...host, pid: await ended() })
+      ).path;
+      const child = await running();
+      const live = (await makeScratch(dir, PREFIX, { ...host, pid: child.pid }))
+        .path;
+      await sweepAbandoned(dir, PREFIX, { reader: host });
+      expect(left([gone, live])).toEqual([false, true]);
+    });
+  });
+
   describe('a pid another user’s process holds (EPERM)', () => {
     /** The system as it answers for a pid this process may not signal. */
     const otherUser = (startTime: string): OwnerProbe => ({

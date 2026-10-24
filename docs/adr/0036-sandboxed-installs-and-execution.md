@@ -231,15 +231,22 @@ Decision:
      macOS (ADR 0045). `run-scratch-removal.test.ts` swaps a directory for a
      link as it is listed, during a sweep and during each removal a run makes;
      with `rm` the file behind the link was removed.
-   - A host with no readable machine id (`/etc/machine-id` and
-     `/var/lib/dbus/machine-id` both absent: minimal container images, macOS,
-     Windows) removes what a run of its own boot left once that run's pid has
-     ended: the machine id is needed only to tell an earlier boot. After a
-     reboot such a host cannot place the earlier boot's leftovers, and keeps
-     them. Before this rule (`run-owner.ts`, its own) such a host removed no
-     leftover at all; measured then with both files masked in a mount namespace,
-     a leftover of a dead pid was removed with the machine id readable and kept
-     with it masked.
+   - A Linux host with no readable machine id (`/etc/machine-id` and
+     `/var/lib/dbus/machine-id` both absent: minimal container images) removes
+     what a run of its own boot left once that run's pid has ended: the machine
+     id is needed only to tell an earlier boot. After a reboot such a host
+     cannot place the earlier boot's leftovers (the boot ids differ, and nothing
+     says the machine is the same), and keeps them. Before this rule
+     (`run-owner.ts`, its own) such a host removed no leftover at all; measured
+     then with both files masked in a mount namespace, a leftover of a dead pid
+     was removed with the machine id readable and kept with it masked.
+   - macOS and Windows read no machine id, boot id, PID namespace or start time
+     (`owner-system.ts` reads them from Linux files only). Unread on both sides
+     they agree, so there a leftover is judged by host name and pid alone,
+     whichever boot made it: it is removed once its pid is unused, an earlier
+     boot's included, and kept while any process holds that pid, one that reused
+     it included. Containment is withdrawn on both (amendment of 2026-08-19), so
+     a view or layout exists there only until its run is refused.
    - `opm gc` does not count a view as a store path (`isStoreView`).
    - While a view exists, each entry it shows has files with a second name, so
      the shared store's `opm gc --shared` counts that entry as in use, and keeps
@@ -291,8 +298,11 @@ Limits:
 - What a run killed outright leaves on another machine or in another PID
   namespace is never removed from here, by a run or by `opm gc`: whether its
   owner still runs cannot be told. A later run on that machine, or in that
-  namespace, removes it. On a host with no machine id, what an earlier boot left
-  is never removed by a run.
+  namespace, removes it. On a Linux host with no machine id, what an earlier
+  boot left is never removed by a run.
+- Off Linux the place is the host name alone: two machines with one host name
+  sharing a store are taken for one, and a run on one removes what a live run on
+  the other left once that pid is unused on its own side.
 - Two machines with the same machine id and host name are taken for one, as
   machine-id(5) requires the id to be unique: a clone that kept its original's
   id, sharing a store with it, would have a live run's leftovers taken for an
