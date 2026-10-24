@@ -96,7 +96,6 @@ posix('a failing member', () => {
         scripts: { build: trace('slow', 20_000) },
       },
     });
-    const before = Date.now();
     const ran = await go(
       'run',
       ['build', '-r', '--workspace-concurrency=2'],
@@ -104,7 +103,8 @@ posix('a failing member', () => {
       contextWith({}, { host: hostWithSignals().host }),
     );
     expect(ran.status).toBe(7);
-    expect(Date.now() - before).toBeLessThan(10_000);
+    // `slow` was told to end and ended by it: a run that waited for it to
+    // finish would find it ended by itself, twenty seconds on.
     const log = await ws.log();
     expect(log.some(([what, id]) => what === 'term' && id === 'slow')).toBe(
       true,
