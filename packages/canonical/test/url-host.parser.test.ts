@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { hasOverlongHost } from '../src/url-host.js';
 
 /**
+ * Hands the event loop a turn. A test that computes for a minute without one
+ * starves its vitest worker's answer to the runner (the worker gives up after
+ * 60 s: "Timeout calling onTaskUpdate"), which a loaded machine reaches.
+ */
+const breathe = (): Promise<void> =>
+  new Promise((resolve) => setImmediate(resolve));
+
+/**
  * Milliseconds of CPU this process has spent, user and system: what the work
  * under test costs. A busy machine stretches the wall clock by every time slice
  * it takes away; it does not add to this.
@@ -149,12 +157,13 @@ function* grid(): Generator<string> {
 }
 
 describe('the helper, held to the parser that runs', () => {
-  it('withholds, or the parser reads in linear time, every address of the grid', () => {
+  it('withholds, or the parser reads in linear time, every address of the grid', async () => {
     const slow: string[] = [];
     let withheld = 0;
     let total = 0;
     for (const address of grid()) {
       total += 1;
+      if (total % 200 === 0) await breathe();
       if (hasOverlongHost(address)) {
         withheld += 1;
         continue;
