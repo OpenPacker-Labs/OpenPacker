@@ -1,4 +1,4 @@
-import { isIPv4 } from 'node:net';
+import { BlockList, isIPv4, isIPv6 } from 'node:net';
 import { resolve } from 'node:path';
 import { Verifier } from '@pact-foundation/pact';
 import {
@@ -58,6 +58,12 @@ let hidden: { holders: number; saved: Record<string, string> } | undefined;
  * when `url` is a loopback address, and puts it back once the last such run
  * ends. A proxy elsewhere cannot reach this host's loopback, so a loopback
  * provider is asked directly; any other provider keeps the proxy.
+ *
+ * The hiding lasts exactly as long as a verification of a loopback provider,
+ * and only those variables, but it is the process's environment: the verifier
+ * reads them when it sends each request, through no option a caller can set,
+ * so they cannot be hidden from it alone. Nothing else in this process should
+ * send through the proxy while such a verification runs.
  */
 export async function withoutProxyForLoopback<T>(
   url: string,
@@ -86,13 +92,24 @@ export async function withoutProxyForLoopback<T>(
   }
 }
 
+/** 127.0.0.0/8 and ::1; an IPv4 address inside IPv6 is checked as IPv4. */
+const LOOPBACK = new BlockList();
+LOOPBACK.addSubnet('127.0.0.0', 8, 'ipv4');
+LOOPBACK.addAddress('::1', 'ipv6');
+
+/**
+ * Whether `url` names this host's loopback, however it is spelled: `localhost`
+ * (also with its root dot), 127.0.0.0/8, ::1, or 127.0.0.0/8 inside IPv6
+ * (`[::ffff:127.0.0.1]`, which the URL parser writes as `[::ffff:7f00:1]`).
+ */
 function isLoopback(url: string): boolean {
-  const host = new URL(url).hostname.replace(/^\[(.*)\]$/u, '$1');
-  return (
-    host === 'localhost' ||
-    host === '::1' ||
-    (isIPv4(host) && host.startsWith('127.'))
-  );
+  const host = new URL(url).hostname
+    .replace(/^\[(.*)\]$/u, '$1')
+    .replace(/\.$/u, '');
+  if (host === 'localhost') return true;
+  if (isIPv4(host)) return LOOPBACK.check(host, 'ipv4');
+  if (isIPv6(host)) return LOOPBACK.check(host, 'ipv6');
+  return false;
 }
 
 if (
