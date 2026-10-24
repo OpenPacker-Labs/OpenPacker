@@ -20,8 +20,14 @@ node packages/opm-project/test/harness/kill-sweep.mjs step                 # a s
 node packages/opm-project/test/harness/kill-sweep.mjs locked               # the same under the real lock
 ```
 
+A recovery sweep can be resumed at call `k` with `SWEEP_START=k`. Do not rebuild
+the package (or run anything that does, such as `npm run demo`) while a sweep
+runs: a child that loads a half-written file fails by itself, and the sweep
+stops there and says so instead of counting it as the end.
+
 The mount layouts run under `unshare --mount` (as root, or through a user
 namespace) and fail, never skip, on a machine that refuses both. They are not in
-`npm test`: a sweep takes minutes. Run them before changing
-`rollback-restore.ts`, `rollback-files.ts`, `rollback-recovery.ts` or
-`project-rollback.ts`.
+`npm test`: the plain layout takes minutes, and a mount layout, whose recovery
+copies `node_modules` file by file (about 4,000 calls), takes hours. Run them
+before changing `rollback-restore.ts`, `rollback-files.ts`,
+`rollback-recovery.ts` or `project-rollback.ts`.

@@ -6,6 +6,10 @@
 //   node kill-sweep.mjs step [scratch]      a step killed at sampled calls
 //   node kill-sweep.mjs locked [scratch]    the same step under the real lock
 //
+// SWEEP_START=<k> starts a recovery sweep at call k. Do not rebuild the
+// package while a sweep runs: a child that loads a half-written file fails by
+// itself, and the sweep stops there and says so.
+//
 // The layouts other than `plain` put the project on mounts (node_modules as a
 // volume, opm.toml bind-mounted, .opm on a volume of its own) and run in a
 // mount namespace (`unshare --mount`, as root or through a user namespace). A
@@ -258,6 +262,8 @@ const log = join(scratch, 'kill.log');
 const { recoverInterruptedSteps } = await load('project-step.js');
 let bad = 0;
 let tried = 0;
+/** The call a recovery that failed by itself stopped the sweep at. */
+let stopped;
 const kinds = { restored: 0, removed: 0, none: 0 };
 
 /** A fresh project in this layout; the digest to come back to. */
@@ -290,6 +296,16 @@ async function point(k) {
     } else
       killed = spawnChild(mode === 'step' ? 'step' : 'locked', work, k, log);
     const reached = killed.signal === 'SIGKILL' && existsSync(log);
+    if (mode === 'recovery' && !reached && killed.status !== 0) {
+      // Neither killed by the hook nor run to the end: the run says nothing
+      // about call k (a dist rebuilt under it, a machine out of something).
+      bad += 1;
+      stopped = k;
+      console.log(
+        `k=${k}: the recovery failed by itself (status ${killed.status}, signal ${killed.signal}): ${String(killed.stderr).slice(-400)}`,
+      );
+      return false;
+    }
     if (mode === 'recovery' && !reached) {
       // Ran to the end: the project is already as it was.
       const d = diff(before, await digest(work));
@@ -334,10 +350,12 @@ async function point(k) {
 }
 
 if (mode === 'recovery') {
-  let k = 1;
+  // SWEEP_START resumes a sweep at that call.
+  const start = Number(process.env.SWEEP_START ?? 1);
+  let k = start;
   while (await point(k)) k += 1;
   console.log(
-    `${layout}: ${tried} kill points of the recovery; ${bad === 0 ? 'every kill point recovered exactly' : `${bad} wrong`}`,
+    `${layout}: ${tried} kill points of the recovery (calls ${start} to ${start + tried - 1}); ${bad === 0 ? 'every kill point recovered exactly' : `${bad} wrong`}${stopped === undefined ? '' : `; stopped at ${stopped}, resume with SWEEP_START=${stopped}`}`,
   );
 } else {
   let k = 1;
