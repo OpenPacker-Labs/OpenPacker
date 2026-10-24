@@ -38,7 +38,7 @@ const linuxOnly: Readonly<Record<string, string>> = {
     'reopens an executable snapshot for its own offset; refused off Linux first',
   'platform.ts': 'names the paths in the refusal message',
   'listen-watch.ts':
-    "reads a bwrap run's processes and sockets under /proc/<pid>, never a descriptor; bwrap is Linux's",
+    "reads a bwrap run's processes and sockets under /proc/<pid>, through /proc/self/fd/N of one handle of it; bwrap is Linux's",
 };
 
 describe('descriptor paths in the sandbox', () => {

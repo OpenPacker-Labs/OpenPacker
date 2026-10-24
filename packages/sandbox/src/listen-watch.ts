@@ -1,4 +1,10 @@
-import { readFileSync, readlinkSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  openSync,
+  readFileSync,
+  readlinkSync,
+} from 'node:fs';
 
 /**
  * A process run without network (bwrap's `--unshare-net`) has a network
@@ -13,6 +19,11 @@ import { readFileSync, readlinkSync } from 'node:fs';
  * that shares the host's network is never reported. Anything that cannot be
  * read (another kernel, no `children` file, a process that ended meanwhile)
  * reports nothing.
+ *
+ * A child's namespace and its socket table are read through one handle of
+ * its `/proc/<pid>` directory: a handle names the process it was opened on,
+ * so a pid that ends and is given to another process between the two reads
+ * gives nothing, never the other process's table.
  */
 
 /** TCP's LISTEN state, as `/proc/<pid>/net/tcp` writes it. */
@@ -26,19 +37,19 @@ function read(path: string): string | undefined {
   }
 }
 
-function namespaceOf(pid: number | 'self'): string | undefined {
+function ownNamespace(): string | undefined {
   try {
-    return readlinkSync(`/proc/${pid}/ns/net`);
+    return readlinkSync('/proc/self/ns/net');
   } catch {
     return undefined;
   }
 }
 
-/** The ports listened on in the namespace `pid` is in, lowest first. */
-function listeningPorts(pid: number): number[] {
+/** The ports listened on in the namespace of the process `dir` is the `/proc` directory of. */
+function listeningPorts(dir: string): number[] {
   const ports = new Set<number>();
   for (const table of ['tcp', 'tcp6']) {
-    const rows = read(`/proc/${pid}/net/${table}`)?.split('\n').slice(1) ?? [];
+    const rows = read(`${dir}/net/${table}`)?.split('\n').slice(1) ?? [];
     for (const row of rows) {
       const [, local, , state] = row.trim().split(/\s+/u);
       if (state !== LISTEN || local === undefined) continue;
@@ -54,15 +65,35 @@ function listeningPorts(pid: number): number[] {
  * namespace other than the caller's, if there is one.
  */
 export function isolatedListenPort(rootPid: number): number | undefined {
-  const own = namespaceOf('self');
+  const own = ownNamespace();
   if (own === undefined) return undefined;
   const children = read(`/proc/${rootPid}/task/${rootPid}/children`);
   for (const child of children?.trim().split(/\s+/u) ?? []) {
     const pid = Number(child);
     if (!Number.isSafeInteger(pid) || pid <= 0) continue;
-    const namespace = namespaceOf(pid);
-    if (namespace === undefined || namespace === own) continue;
-    return listeningPorts(pid)[0];
+    let handle: number;
+    try {
+      handle = openSync(
+        `/proc/${pid}`,
+        constants.O_RDONLY | constants.O_DIRECTORY,
+      );
+    } catch {
+      continue;
+    }
+    try {
+      // Both reads through the one handle: the same process, or nothing.
+      const dir = `/proc/self/fd/${handle}`;
+      let namespace: string;
+      try {
+        namespace = readlinkSync(`${dir}/ns/net`);
+      } catch {
+        continue;
+      }
+      if (namespace === own) continue;
+      return listeningPorts(dir)[0];
+    } finally {
+      closeSync(handle);
+    }
   }
   return undefined;
 }
