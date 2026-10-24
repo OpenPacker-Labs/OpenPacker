@@ -28,6 +28,8 @@ export const REFUSED: ExpectedCodes = {
   'a node-tar null block between entries': 'TAR_AMBIGUOUS_END',
   'an 8-digit checksum with no terminator, typeflag 0 after it':
     'TAR_AMBIGUOUS_CHECKSUM',
+  'two zero blocks and nothing else': 'TAR_AMBIGUOUS_END',
+  'two zero blocks before the entries': 'TAR_AMBIGUOUS_END',
   'a prefix in a header without ustar magic': 'TAR_AMBIGUOUS_PREFIX',
   'a prefix in a GNU header (magic "ustar  ")': 'TAR_AMBIGUOUS_PREFIX',
   'a prefix under magic "ustar" and a version that is not "00"':

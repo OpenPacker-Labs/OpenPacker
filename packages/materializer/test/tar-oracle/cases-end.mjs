@@ -44,6 +44,8 @@ export const END_CASES = {
     Z,
     Z,
   ],
+  'two zero blocks and nothing else': [Z, Z],
+  'two zero blocks before the entries': [Z, Z, a, b, Z, Z],
   'a prefix in a header without ustar magic': [
     a,
     file('noprefix.js', 'p', {

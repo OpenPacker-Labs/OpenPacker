@@ -104,6 +104,20 @@ export function nextHeader(
 }
 
 /**
+ * Refuse an archive in which no header was read. npm's `tar.x` fails on it
+ * ("Unrecognized archive format", TAR_BAD_ARCHIVE) where pnpm and opm would
+ * read nothing: two zero blocks first end the archive for all three, so what
+ * follows them is never read.
+ */
+export function assertSomethingRead(headers: number): void {
+  if (headers === 0)
+    throw unsafe(
+      'TAR_AMBIGUOUS_END',
+      'the archive holds no header before its end: npm fails on it (TAR_BAD_ARCHIVE), pnpm installs nothing',
+    );
+}
+
+/**
  * Whether the archive ends at `offset`, a header position, where npm and pnpm
  * agree that it does; false where both read a header there. Anything else is
  * refused as TAR_AMBIGUOUS_END.

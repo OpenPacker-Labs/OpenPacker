@@ -530,6 +530,7 @@ function parseTar(
     }
     offset = dataStart + Math.ceil(size / 512) * 512;
   }
+  if (npmReaders) agree.assertSomethingRead(count);
   if (pending !== undefined)
     throw unsafe(
       'INVALID_PAX_HEADER',
