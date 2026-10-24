@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { createReadStream, readFileSync, writeFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
-import { join, relative, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import {
@@ -65,6 +65,28 @@ import { chromium } from 'playwright';
 import { chromiumLaunchOptions } from './chromium.mjs';
 
 const root = resolve(import.meta.dirname, '..');
+/** Where the universe says the demo's output is; generate-goldens.mjs uses it too. */
+const PORTABLE_OUTPUT = 'file:///OPENPACKER_DEMO_OUTPUT';
+
+/** A materialization with the portable output location made the real one. */
+function realLocations(materialized, output) {
+  const real = pathToFileURL(output).href;
+  return {
+    ...materialized,
+    descriptor: {
+      ...materialized.descriptor,
+      locations: materialized.descriptor.locations.map((location) =>
+        typeof location !== 'string' &&
+        location.uri.startsWith(`${PORTABLE_OUTPUT}/`)
+          ? {
+              ...location,
+              uri: real + location.uri.slice(PORTABLE_OUTPUT.length),
+            }
+          : location,
+      ),
+    },
+  };
+}
 const require = createRequire(import.meta.url);
 const text = new TextEncoder();
 const source = {
@@ -306,10 +328,13 @@ async function fixtureUniverse(output) {
     'openpacker-demo.tar.gz',
     'tool-payload',
   );
+  // The universe names the archive by a location that is the same in every
+  // checkout: the solve, the proof and everything digested from them hold it.
+  // A client that fetches the archive is handed the real file (realLocations).
   tool.locations = [
     {
       transport: 'file',
-      uri: pathToFileURL(toolArchive).href,
+      uri: `${PORTABLE_OUTPUT}/${basename(toolArchive)}`,
       priority: 0,
       rangeSupported: false,
     },
@@ -1038,7 +1063,11 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
     },
   });
   const daemon = await startOpenPackerDaemon({
-    operations,
+    operations: {
+      ...operations,
+      materialize: async (...input) =>
+        realLocations(await operations.materialize(...input), output),
+    },
     store,
     port: 0,
     clock: { now: () => evaluationTime },
@@ -1099,7 +1128,7 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
           if (location.uri.startsWith(pathToFileURL(output).href))
             location.uri = location.uri.replace(
               pathToFileURL(output).href,
-              'file:///OPENPACKER_DEMO_OUTPUT',
+              PORTABLE_OUTPUT,
             );
     await refreshUniverseDigest(goldenUniverse);
     const sdkSolved = (await client.solve(request)).data;
