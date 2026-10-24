@@ -122,14 +122,14 @@ const EXEMPT: ReadonlyArray<{
   },
   {
     file: 'opmx-spawn.ts',
-    starts: 'if (outcome.stdout) outRaw(io, outcome.stdout)',
+    starts: 'passing.out(outcome.stdout)',
     reason:
-      "reads the tool's captured stdout, a string, to hand it on (the call is named below)",
+      "what the sandbox says after the tool, through the writer that hands on the tool's own (the call is named below)",
   },
   {
     file: 'opmx-spawn.ts',
     starts: 'outRaw',
-    reason: "the tool's own stdout, passed through as it wrote it",
+    reason: "the tool's own stdout, passed through as it writes it",
   },
 ];
 

@@ -82,11 +82,6 @@ const EXEMPT: ReadonlyArray<{
     reason: 'a constant sentence around an exit status',
   },
   {
-    file: 'opmx-spawn.ts',
-    starts: 'outcome.stderr',
-    reason: "the tool's own stderr, passed through as it wrote it",
-  },
-  {
     file: 'commands/auth.ts',
     starts: '`Unknown auth subcommand: ${sub',
     reason: "the person's own argument, and the usage text",
@@ -190,13 +185,13 @@ const EXEMPT: ReadonlyArray<{
   },
   {
     file: 'opmx-spawn.ts',
-    starts: 'if (outcome.stderr) io.stderr.write(outcome.stderr)',
-    reason: "the tool's own captured stderr (the write is named above)",
+    starts: 'written',
+    reason: "the tool's own stderr, handed on as it writes it (`passedOn`)",
   },
   {
     file: 'opmx-spawn.ts',
-    starts: 'io.stderr.write(outcome.stderr)',
-    reason: "the tool's own captured stderr (the write is named above)",
+    starts: 'passing.err(outcome.stderr)',
+    reason: 'what the sandbox says after the tool, through the same writer',
   },
 ];
 
