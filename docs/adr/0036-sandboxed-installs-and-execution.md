@@ -287,12 +287,13 @@ Limits:
   `store-view-confinement.test.ts`, `store-view-swap.test.ts`,
   `store-view-gc.test.ts`, `store-view-handles.test.ts`,
   `store-view-dispose.test.ts`, `run-scratch.test.ts`,
-  `tool-pinned-version.test.ts`, `tool-layout-versions.test.ts` and
-  `tool-peer.test.ts` (opm-project), `opmx-signals.test.ts`,
-  `opmx-run-signals.test.ts` and `opmx-bin-path.test.ts` (apps/opm), and
-  `root-capabilities.test.ts`, `handles.test.ts` and `handles-oracle.test.ts`
-  (sandbox) cover it. The sandboxed ones are skipped where bwrap is absent. The
-  automatic CI lane does not run these suites; the manual one (`ci.yml`) runs
-  them on GitHub's `ubuntu-latest` with no step that installs bubblewrap, and
-  whether that image has it was not checked. The root-only ones (capabilities, a
-  sweep in another PID namespace) are skipped for any other user.
+  `tool-pinned-version.test.ts`, `fetch-tool-closure.test.ts`,
+  `tool-layout-versions.test.ts` and `tool-peer.test.ts` (opm-project),
+  `opmx-signals.test.ts`, `opmx-run-signals.test.ts` and `opmx-bin-path.test.ts`
+  (apps/opm), and `root-capabilities.test.ts`, `handles.test.ts` and
+  `handles-oracle.test.ts` (sandbox) cover it. The sandboxed ones are skipped
+  where bwrap is absent. The automatic CI lane does not run these suites; the
+  manual one (`ci.yml`) runs them on GitHub's `ubuntu-latest` with no step that
+  installs bubblewrap, and whether that image has it was not checked. The
+  root-only ones (capabilities, a sweep in another PID namespace) are skipped
+  for any other user.
