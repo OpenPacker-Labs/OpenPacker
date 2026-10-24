@@ -128,11 +128,14 @@ describe('a dependency the package cannot resolve', () => {
       'demo@1.0.0 depends on bar as "github:user/bar", a git specifier that ' +
         'is not a registry version range',
     );
+    // A plain dist-tag is followed since ADR 0054's amendment of 2026-10-17
+    // (#182), so the second ordinary refusal is a file specifier.
     expect(
-      (await refusal({ peerDependencies: { '@scope/bar': 'latest' } })).message,
+      (await refusal({ peerDependencies: { '@scope/bar': 'file:../bar' } }))
+        .message,
     ).toBe(
-      'demo@1.0.0 depends on @scope/bar as "latest", a tag specifier that is ' +
-        'not a registry version range',
+      'demo@1.0.0 depends on @scope/bar as "file:../bar", a file specifier ' +
+        'that is not a registry version range',
     );
   });
 });

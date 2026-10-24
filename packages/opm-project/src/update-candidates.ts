@@ -1,4 +1,4 @@
-import { parsePurl } from '@openpacker/adapter-core';
+import { echoed, parsePurl } from '@openpacker/adapter-core';
 import type { OpmLockfile, OpmManifest, PackageRequirement } from './types.js';
 import { OpmError } from './types.js';
 import { canonicalCatalogPurl } from './catalog.js';
@@ -84,7 +84,7 @@ export async function newestEligibleVersion(input: {
     if (input.offline)
       throw new OpmError(
         'UNRESOLVABLE',
-        `Cannot update "${input.req.alias}" offline without catalog versions`,
+        `Cannot update "${echoed(input.req.alias)}" offline without catalog versions`,
       );
     return undefined;
   }

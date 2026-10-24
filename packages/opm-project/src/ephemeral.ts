@@ -94,11 +94,19 @@ export async function fetchTool(input: {
   purl: string;
   offline?: boolean;
   cacheRoot?: string;
+  /**
+   * Network used for registry metadata and artifact bytes. Production leaves
+   * it unset and dials the pinned, classified address of each registry; a
+   * caller that hands one in (a test serving a fixture registry) is
+   * responsible for what it reaches, so no address is resolved or pinned.
+   */
+  fetch?: typeof fetch;
   /** Transport / endpoint overrides for hosts and tests. */
   registryOptions?: RegistryOptions;
 }): Promise<EphemeralTool> {
   const ecosystem = ecosystemFromPurl(input.purl);
-  const options = input.registryOptions ?? {};
+  const options: RegistryOptions = { ...input.registryOptions };
+  if (input.fetch !== undefined) options.fetch = input.fetch;
   if (!requireAdapterRegistry().has(ecosystem))
     throw new OpmError(
       'UNSUPPORTED_ECOSYSTEM',
