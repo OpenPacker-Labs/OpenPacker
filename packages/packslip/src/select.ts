@@ -1,5 +1,6 @@
 import { PackslipError } from './errors.js';
 import type { Artifact } from './types.js';
+import { shown } from './shown.js';
 
 /** The machine a consumer installs for. An unknown `libc` is left out. */
 export interface HostPlatform {
@@ -129,7 +130,7 @@ export function selectArtifact(
     'NO_ARTIFACT',
     `No artifact fits ${request.host.os}/${request.host.arch}` +
       `${request.host.libc === undefined ? '' : `/${request.host.libc}`}` +
-      `${request.variant === undefined ? '' : ` (variant ${request.variant})`}` +
+      `${request.variant === undefined ? '' : ` (variant ${shown(request.variant)})`}` +
       ` in a format opm can unpack (${request.formats.join(', ')})`,
   );
 }
@@ -137,6 +138,6 @@ export function selectArtifact(
 function ambiguous(names: readonly string[]): PackslipError {
   return new PackslipError(
     'AMBIGUOUS_ARTIFACT',
-    `Artifacts ${names.join(', ')} fit equally; the vendor must scope or name them differently`,
+    `Artifacts ${names.map((name) => shown(name)).join(', ')} fit equally; the vendor must scope or name them differently`,
   );
 }

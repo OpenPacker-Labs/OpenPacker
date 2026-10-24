@@ -1,7 +1,9 @@
+import { echoed } from '@openpacker/adapter-core';
+import { plainLine } from '@openpacker/canonical';
 import type { PackageInstance } from '@openpacker/contracts';
 import { binDeclarationsFromExecutables } from './bins.js';
 import { requireAdapterRegistry } from './adapters.js';
-import { codecFor } from './codecs.js';
+import { rootRangeFor } from './closure-roots.js';
 import {
   bindVerifiedArtifactBytes,
   digestOf,
@@ -42,29 +44,6 @@ import { OpmError } from './types.js';
  * another name), and a name selected at more than one version has an entry per
  * version (ADR 0054).
  */
-
-/**
- * The manifest constraint for a package, when its ecosystem can read it.
- *
- * `version` in opm.toml is whatever the user wrote, and an exact pin is not
- * always a valid range: PyPI wants `==1.0.0`, so a bare `1.0.0` fails to parse
- * and the whole closure comes back empty. Probe the codec and drop a range it
- * cannot read — candidate enumeration is bounded either way, and the solver is
- * pinned to the locked version regardless.
- */
-function nativeRangeFor(
-  pkg: LockPackage,
-  manifest: OpmManifest,
-): string | undefined {
-  const declared = manifest.packages[pkg.alias]?.version;
-  if (declared === undefined) return undefined;
-  try {
-    codecFor(pkg.ecosystem).parseNativeRange(declared);
-    return declared;
-  } catch {
-    return undefined;
-  }
-}
 
 /** What the closure of the direct entries adds to a lock. */
 export interface TransitiveLock {
@@ -111,8 +90,8 @@ export async function resolveTransitive(input: {
           : undefined,
       roots: resolvable.map((pkg) => ({
         purl: stripPurlVersion(pkg.purl),
-        ...(!(nativeRangeFor(pkg, input.manifest) === undefined) && {
-          range: nativeRangeFor(pkg, input.manifest)!,
+        ...(!(rootRangeFor(pkg, input.manifest) === undefined) && {
+          range: rootRangeFor(pkg, input.manifest)!,
         }),
       })),
     });
@@ -201,14 +180,14 @@ export async function resolveTransitive(input: {
       if (actual !== artifact.digest)
         throw new OpmError(
           'DIGEST_MISMATCH',
-          `Registry digest mismatch for ${artifact.exactPurl}: ` +
-            `the ${instance.identity.purlType} provider reported ${artifact.digest}, ` +
+          `Registry digest mismatch for ${echoed(artifact.exactPurl)}: ` +
+            `the ${echoed(instance.identity.purlType)} provider reported ${echoed(artifact.digest)}, ` +
             `the bytes hash to ${actual}`,
         );
       if (artifact.size > 0 && artifact.bytes.byteLength !== artifact.size)
         throw new OpmError(
           'SIZE_MISMATCH',
-          `Registry size mismatch for ${artifact.exactPurl}: ` +
+          `Registry size mismatch for ${echoed(artifact.exactPurl)}: ` +
             `expected ${artifact.size} bytes, got ${artifact.bytes.byteLength}`,
         );
 
@@ -299,7 +278,7 @@ export async function resolveTransitive(input: {
       if (key === undefined)
         throw new OpmError(
           'UNRESOLVABLE',
-          `Selected package ${instance.identity.exactPurl} has no unique lock entry`,
+          `Selected package ${echoed(String(instance.identity.exactPurl))} has no unique lock entry`,
         );
       dependencies[key] ??= [];
     }
@@ -349,7 +328,7 @@ export async function resolveTransitive(input: {
     const reason = error instanceof Error ? error.message : String(error);
     throw new OpmError(
       error instanceof OpmError ? error.code : 'UNRESOLVABLE',
-      `Cannot lock the dependency closure of ${resolvable.map((pkg) => pkg.purl).join(', ')}: ${reason}${unresolvedNote(unresolved, gated)}`,
+      `Cannot lock the dependency closure of ${resolvable.map((pkg) => echoed(pkg.purl)).join(', ')}: ${reason}${unresolvedNote(unresolved, gated)}`,
     );
   }
   return { packages: out, dependencies, aliases };
@@ -384,7 +363,7 @@ function unresolvedNote(
       .slice(0, 5)
       .map(
         (item) =>
-          `\n  - ${item.purl}: ${item.reason}${askedBy(item.requiredBy)}`,
+          `\n  - ${echoed(item.purl)}: ${plainLine(item.reason)}${askedBy(item.requiredBy)}`,
       )
       .join('') +
     (items.length > 5 ? `\n  - and ${items.length - 5} more` : '');

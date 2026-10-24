@@ -4,6 +4,7 @@ import {
   header,
   json,
   parsePurl,
+  parseUntrustedUrl,
   ProviderError,
   type Clock,
   type CredentialResolver,
@@ -49,7 +50,7 @@ export class SonatypeProvider implements EnrichmentProvider {
     private readonly endpoint: string,
     private readonly secretReference: string,
   ) {
-    const protocol = new URL(endpoint).protocol;
+    const protocol = parseUntrustedUrl(endpoint).protocol;
     if (protocol !== 'https:')
       throw new ProviderError(
         'INVALID_PROVIDER_ENDPOINT',

@@ -269,8 +269,7 @@ describe('dependency specifiers', () => {
 
   it.each([
     ['dependencies', { dependencies: { bar: 'github:user/bar' } }],
-    ['dependencies', { dependencies: { bar: 'latest' } }],
-    ['peerDependencies', { peerDependencies: { bar: 'next' } }],
+    ['peerDependencies', { peerDependencies: { bar: 'file:../bar' } }],
   ])('refuses %s it would have to guess at', async (_field, metadata) => {
     // Resolving "github:user/bar" as the registry's "bar" is how a dependency
     // confusion attack lands, so these fail by name instead.

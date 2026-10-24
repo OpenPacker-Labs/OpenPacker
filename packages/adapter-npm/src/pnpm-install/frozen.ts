@@ -15,6 +15,7 @@ import type {
   FrozenLock,
   FrozenLockOptions,
   FrozenLockPackage,
+  FrozenLockPeers,
   FrozenLockRefusal,
   FrozenLockWorkspace,
   WorkspaceMember,
@@ -33,13 +34,11 @@ import { npmPurl } from '../purl.js';
 import { readPnpmLock } from '../pnpm-lock/index.js';
 import { isSemver } from '../pnpm-lock/source.js';
 import { buildPnpmModel, type PnpmInstance, type PnpmModel } from './model.js';
+import { quote } from './quote.js';
 import { planPlacement } from './place.js';
+import type { PlannedPlacement } from './place-types.js';
 import { placeInputOf } from './place-input.js';
-import {
-  directPlaces,
-  peerSplitProblems,
-  resolutionProblems,
-} from './place-check.js';
+import { directPlaces, resolutionProblems } from './place-check.js';
 import {
   importerRefusals,
   lockRefusals,
@@ -159,14 +158,11 @@ export async function readFrozenPnpmLock(
     return refuse(
       placement.problems.map((reason) => ({ path: 'node_modules', reason })),
     );
-  const unresolved = [
-    ...resolutionProblems(input, placement),
-    ...peerSplitProblems(input, placement),
-  ];
+  const unresolved = resolutionProblems(input, placement);
   if (unresolved.length > 0)
     throw new ProviderError(
       'INVALID_LOCKFILE',
-      `the layout opm planned for ${project.root} does not resolve every dependency to the instance the lock names, one copy of each peer a package shares with its dependent, which is a defect in the planner and not in the lock; nothing was installed: ${unresolved.slice(0, 5).join('; ')}${unresolved.length > 5 ? `; and ${unresolved.length - 5} more` : ''}`,
+      `the layout opm planned for ${project.root} does not resolve every dependency, which is a defect in the planner and not in the lock; nothing was installed: ${unresolved.slice(0, 5).join('; ')}${unresolved.length > 5 ? `; and ${unresolved.length - 5} more` : ''}`,
     );
 
   const packages = placement.placed.map((place): FrozenLockPackage => {
@@ -196,13 +192,15 @@ export async function readFrozenPnpmLock(
       ...(patch !== undefined && { patch: declared.patches.get(patch)! }),
     };
   });
+  const direct = directPlaces(input, placement);
   const workspace = workspaceOf(model, tops, present, disk, {
     links: placement.links,
-    importers: [...directPlaces(input, placement)].map(([dir, places]) => ({
-      dir,
-      dependencies: places.map(({ place }) =>
+    importers: input.tops.map((top) => ({
+      dir: top.dir,
+      dependencies: (direct.get(top.dir) ?? []).map(({ place }) =>
         placePath(place.chain, place.base),
       ),
+      members: top.links.map((link) => link.memberDir),
     })),
   });
   return {
@@ -212,6 +210,39 @@ export async function readFrozenPnpmLock(
     skipped: [...selection.skipped],
     refused: [],
     ...(workspace !== undefined && { workspace }),
+    ...peersOf(model, placement),
+  };
+}
+
+/** What to say about the peers the places could not keep to one copy: nothing when they all are. */
+function peersOf(
+  model: PnpmModel,
+  placement: PlannedPlacement,
+): { peers: FrozenLockPeers } | undefined {
+  if (placement.splits === 0 && !placement.fallback) return undefined;
+  const instanceName = (key: string): string => {
+    const instance = model.instances.get(key);
+    return quote(
+      instance === undefined ? key : `${instance.name}@${instance.version}`,
+    );
+  };
+  const edge = placement.firstSplit;
+  return {
+    peers: {
+      splits: placement.splits,
+      withoutPeers: placement.fallback,
+      ...(edge !== undefined && {
+        first: {
+          dependency: instanceName(edge.dependency),
+          dependent:
+            edge.dependent !== undefined
+              ? instanceName(edge.dependent)
+              : edge.importer === ''
+                ? 'the project'
+                : `the member ${quote(edge.importer)}`,
+        },
+      }),
+    },
   };
 }
 

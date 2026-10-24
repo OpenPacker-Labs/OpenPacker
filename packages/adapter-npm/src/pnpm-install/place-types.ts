@@ -38,6 +38,12 @@ export interface PlaceInput {
   /** The project first when it is installed, then the members. */
   readonly tops: readonly PlaceTop[];
   readonly maximumPlacements?: number;
+  /**
+   * The most places a layout made with peers in view may take; by default
+   * eight for each instance and importer, and 256 more. Past it the planner
+   * lays the lock out without peers in view instead.
+   */
+  readonly peerPlacements?: number;
 }
 
 /** One instance at one place. */
@@ -65,4 +71,32 @@ export interface Placement {
   readonly links: readonly PlacedLink[];
   /** Things that cannot be laid out; any one stops the install. */
   readonly problems: readonly string[];
+}
+
+/** An edge whose dependency loads another copy of a peer its dependent requires too. */
+export interface SplitEdge {
+  /** The importer (by directory, `''` for the project) whose subtree the dependent sits in. */
+  readonly importer: string;
+  /** The dependent's instance key; absent when the dependent is the importer itself. */
+  readonly dependent?: string;
+  /** The instance the edge points at, which loads the other copy. */
+  readonly dependency: string;
+}
+
+/** What the planner answers: the places, and how it came by them. */
+export interface PlannedPlacement extends Placement {
+  /**
+   * Layouts made, the one returned included: at most `MAXIMUM_LAYOUTS` for
+   * each way of sharing (two) under each way of pinning (two), and one more
+   * when the layout was made without peers in view.
+   */
+  readonly layouts: number;
+  /** Whether the layout was made without peers in view, because none with them could be written. */
+  readonly fallback: boolean;
+  /** The importers (by directory) whose packages the layout keeps in their own `node_modules`, because sharing left a split or no layout. */
+  readonly isolated: readonly string[];
+  /** Edges of the layout whose dependency loads another copy of a peer its dependent requires too. */
+  readonly splits: number;
+  /** The first of them, when there are any: what a notice about them names. */
+  readonly firstSplit?: SplitEdge;
 }

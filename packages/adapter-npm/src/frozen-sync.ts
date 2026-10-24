@@ -8,7 +8,7 @@
  * makes the lock describe a different tree.
  */
 
-import type { WorkspaceMember } from '@openpacker/adapter-core';
+import { echoedValue, type WorkspaceMember } from '@openpacker/adapter-core';
 import {
   resolveFromChain,
   type LockEntry,
@@ -52,7 +52,7 @@ function specProblem(found: Found, spec: string): string | undefined {
     const alias = /^npm:((?:@[^/@]+\/)?[^@/]+)(?:@(.+))?$/u.exec(range);
     if (alias === null) return undefined;
     if (alias[1] !== found.packageName)
-      return `package.json asks for ${spec}, the lock has ${found.packageName}@${found.version ?? '(no version)'}`;
+      return `package.json asks for ${echoedValue(spec)}, the lock has ${echoedValue(found.packageName)}@${echoedValue(found.version ?? '(no version)')}`;
     range = alias[2] ?? '*';
   }
   // Only a plain semver range can be checked against a version. A tag, a URL,
@@ -61,7 +61,7 @@ function specProblem(found: Found, spec: string): string | undefined {
   try {
     return npmSatisfies(found.version, range)
       ? undefined
-      : `package.json asks for ${spec}, the lock has ${found.version}`;
+      : `package.json asks for ${echoedValue(spec)}, the lock has ${echoedValue(found.version)}`;
   } catch {
     return undefined;
   }
@@ -80,23 +80,25 @@ function disagreements(
     for (const name of Object.keys(declared))
       if (!(name in inLock))
         problems.push(
-          `${label}${field}.${name} is in package.json and not in the lock`,
+          `${label}${field}.${echoedValue(name)} is in package.json and not in the lock`,
         );
     for (const name of Object.keys(inLock))
       if (!(name in declared))
         problems.push(
-          `${label}${field}.${name} is in the lock and no longer in package.json`,
+          `${label}${field}.${echoedValue(name)} is in the lock and no longer in package.json`,
         );
     for (const [name, spec] of Object.entries(declared)) {
       const found = lookup(name);
       if (found === undefined) {
         if (field === 'dependencies' || field === 'devDependencies')
-          problems.push(`${label}${name} (${field}) has no entry in the lock`);
+          problems.push(
+            `${label}${echoedValue(name)} (${field}) has no entry in the lock`,
+          );
         continue;
       }
       const problem = specProblem(found, spec);
       if (problem !== undefined)
-        problems.push(`${label}${field}.${name}: ${problem}`);
+        problems.push(`${label}${field}.${echoedValue(name)}: ${problem}`);
     }
   }
   return problems;
@@ -190,7 +192,7 @@ function listed(
 ): string {
   return members.length === 0
     ? '(none)'
-    : members.map((member) => member.dir).join(', ');
+    : members.map((member) => echoedValue(member.dir)).join(', ');
 }
 
 /**
@@ -209,24 +211,24 @@ export function memberListDisagreements(
   for (const member of lockMembers)
     if (!onDisk.has(member.dir))
       lines.push(
-        `${member.dir} (${member.name}) is a member in the lock and is not on disk`,
+        `${echoedValue(member.dir)} (${member.name}) is a member in the lock and is not on disk`,
       );
   for (const member of disk)
     if (!inLock.has(member.dir))
       lines.push(
-        `${member.dir} (${member.name ?? 'unnamed'}) is a member on disk and is not in the lock`,
+        `${echoedValue(member.dir)} (${member.name ?? 'unnamed'}) is a member on disk and is not in the lock`,
       );
   for (const member of lockMembers) {
     const there = onDisk.get(member.dir);
     if (there === undefined) continue;
     if (there.name !== member.name)
       lines.push(
-        `${member.dir} is named ${JSON.stringify(member.name)} in the lock and ${JSON.stringify(there.name ?? null)} on disk`,
+        `${echoedValue(member.dir)} is named ${JSON.stringify(member.name)} in the lock and ${JSON.stringify(there.name ?? null)} on disk`,
       );
     const version = there.manifest.version;
     if (version !== member.version)
       lines.push(
-        `${member.dir} is version ${JSON.stringify(member.version ?? null)} in the lock and ${JSON.stringify(version ?? null)} on disk`,
+        `${echoedValue(member.dir)} is version ${JSON.stringify(member.version ?? null)} in the lock and ${JSON.stringify(version ?? null)} on disk`,
       );
   }
   if (lines.length === 0) return [];

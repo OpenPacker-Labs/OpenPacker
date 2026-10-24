@@ -146,6 +146,57 @@ or trusted-publisher evidence exists, trust tier SHOULD be set from verified
 facts only. Exotic coordinates (git, direct URL) MUST set `sourceKind`
 accordingly so policy can block them.
 
+A provider reads registry metadata under a byte bound that is applied while the
+body arrives, so a missing or understated `Content-Length` does not lift it, and
+under a bound on the values the parsed document may hold, one per 16 bytes of
+the byte bound, which the parser enforces as it builds the tree: the first value
+past the limit is refused before it is built. npm's abbreviated packument is
+bounded at 64 MiB and the full one at 96 MiB, above the largest documents found
+on 2026-10-12 and below the 128 MiB an artifact may weigh. The abbreviated size
+was measured for 4,887 packages (the largest, 36.6 MiB); the full size only for
+the 400 of them with the largest abbreviated document (the largest, 73.0 MiB).
+That is a sample and it missed a package, `renovate` (33.8 MiB abbreviated, 68.6
+MiB full), which a second look found. Those are bytes held, per document. What
+parsing a hostile body costs is separate and measured, through the real
+transport and provider on a 4-CPU machine shared with other work, over fifteen
+shapes of document and one to five runs of each. For an abbreviated packument
+the shape that held the most took 2,169 to 2,683 MiB (2.1 to 2.6 GiB) of peak
+memory in 22.5 to 30.4 s, and the slowest, a different shape, took 52.2 to 60.8
+s at 1,412 to 1,547 MiB (1.4 to 1.5 GiB). For a full packument the same two
+shapes took 3,149 to 3,956 MiB (3.1 to 3.9 GiB) in 37.1 to 44.1 s, and 91.1 to
+100 s at 2,244 to 2,347 MiB (2.2 to 2.3 GiB). Counting values after the parse
+instead cost 7,442 MiB and 50.7 s for a 64 MiB body of `{},` in one `json()`
+call, and the parser stopping at the limit costs 1,108 to 1,121 MiB and 2.0 to
+4.4 s for the same body. Those are the heaviest shapes tried, not a proven
+maximum, and a later run can fall outside a range. The bound is on a document
+and not on a resolve: the provider keeps every packument it has read until the
+resolve ends, so a registry that makes a resolve visit many packages can make it
+hold more than one document's worth. A refusal names the package, the size seen
+and the limit, and a publish time that is missing because the registry's
+document was refused says so in the policy message; the text it repeats from the
+document is capped and made one line by the package that quotes it (the registry
+adapters, the OCI client, the materializer, the plugin store, npm and the
+policy), so a registry cannot add a line to what opm writes. The same holds for
+the values of a cloned repository's `package.json`, `package-lock.json`,
+`opm.toml` and `opm.lock.json` in what `opm ci` (after it has installed too),
+`install`, `sync`, `add`, `remove`, `uninstall`, `update`, `list`, `why`,
+`import --native`, `pack`, `manifest`, `gc`, `generations`, `rollback`,
+`resolve`, `run` and `exec` write on either stream: each value is on one line of
+its own, with no escape or control character, and `opm list`, `why`,
+`import --native`, `run` and `exec` print those values that way on stdout. The
+other commands (`search`, `versions`, `info`, `shell`, `env`, `system`,
+`plugin`, `auth`, `publish`, `yank`, `opmx`) were not driven with such files,
+and the ADR lists what else is not claimed. Some text still reaches the command
+line's writer unflattened: a plugin's own output and manifest, the paths
+`project-io` refuses, the standard packers' file names, and what a host
+installer, a tool or a script writes to its own stderr. The writer removes
+escape sequences and control characters from the errors and warnings it writes
+(a child process's own output is passed through), so none reaches a terminal,
+and it keeps the line breaks, because several errors are lists, so a line feed
+in that text starts a line. `openpacker-cli` and `openpackerd` are not covered.
+See the
+[amendment to ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md#amendment-2026-10-12-the-packument-bound).
+
 Host installers that only advertise `install` still participate: their plans
 emit irreversible / non-byte-verified loss, and policy can deny based on that
 loss (`deniedSemanticLossCodes` or severity caps).

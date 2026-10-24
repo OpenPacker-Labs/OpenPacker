@@ -13,6 +13,7 @@ import type {
 import {
   assertPackageIdentityMatchesRequest,
   compareCodePoints,
+  echoed,
   evaluateRange,
   formatPurl,
   header,
@@ -203,7 +204,7 @@ export function parsePep440(value: string): Pep440Version {
     if (localText === '' || !/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/i.test(localText))
       throw new ProviderError(
         'INVALID_NATIVE_VERSION',
-        `Invalid local version: ${value}`,
+        `Invalid local version: ${echoed(value)}`,
       );
     local = localText
       .split(/[._-]/)
@@ -217,14 +218,14 @@ export function parsePep440(value: string): Pep440Version {
   if (!publicMatch)
     throw new ProviderError(
       'INVALID_NATIVE_VERSION',
-      `Invalid PEP 440 version: ${value}`,
+      `Invalid PEP 440 version: ${echoed(value)}`,
     );
 
   const release = publicMatch[1]!.split('.').map((part) => Number(part));
   if (release.some((part) => !Number.isFinite(part)))
     throw new ProviderError(
       'INVALID_NATIVE_VERSION',
-      `Invalid PEP 440 version: ${value}`,
+      `Invalid PEP 440 version: ${echoed(value)}`,
     );
 
   let pre: Pep440Version['pre'] = null;
@@ -233,7 +234,7 @@ export function parsePep440(value: string): Pep440Version {
     if (letter === undefined)
       throw new ProviderError(
         'INVALID_NATIVE_VERSION',
-        `Invalid PEP 440 version: ${value}`,
+        `Invalid PEP 440 version: ${echoed(value)}`,
       );
     pre = { letter, number: Number(publicMatch[3] ?? 0) };
   }
@@ -282,7 +283,7 @@ export function parsePep440Loose(value: string): Pep440Version {
     if (localText === '')
       throw new ProviderError(
         'INVALID_NATIVE_VERSION',
-        `Invalid PEP 440 version: ${value}`,
+        `Invalid PEP 440 version: ${echoed(value)}`,
       );
     local = localText
       .split(/[._-]/)
@@ -293,7 +294,7 @@ export function parsePep440Loose(value: string): Pep440Version {
   if (parts.length === 0 || !/^\d+$/.test(parts[0]!))
     throw new ProviderError(
       'INVALID_NATIVE_VERSION',
-      `Invalid PEP 440 version: ${value}`,
+      `Invalid PEP 440 version: ${echoed(value)}`,
     );
 
   const release: number[] = [];
@@ -348,7 +349,7 @@ export function parsePep440Loose(value: string): Pep440Version {
     }
     throw new ProviderError(
       'INVALID_NATIVE_VERSION',
-      `Invalid PEP 440 version: ${value}`,
+      `Invalid PEP 440 version: ${echoed(value)}`,
     );
   }
 
@@ -477,7 +478,7 @@ function compatibleReleaseBounds(version: Pep440Version): RangeAst {
   if (version.release.length < 2)
     throw new ProviderError(
       'INVALID_NATIVE_RANGE',
-      `Compatible release requires at least two release segments: ${version.original}`,
+      `Compatible release requires at least two release segments: ${echoed(version.original)}`,
     );
   const lower = normalizePep440({
     ...version,
@@ -543,7 +544,7 @@ function parseSpecifierToken(token: string): ParsedSpecifier {
     (() => {
       throw new ProviderError(
         'INVALID_NATIVE_RANGE',
-        `Invalid PEP 440 specifier: ${token}`,
+        `Invalid PEP 440 specifier: ${echoed(token)}`,
       );
     })();
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -556,7 +557,7 @@ function parseSpecifierToken(token: string): ParsedSpecifier {
     if (operator !== '==' && operator !== '!=')
       throw new ProviderError(
         'INVALID_NATIVE_RANGE',
-        `Prefix matching is only valid with == or !=: ${token}`,
+        `Prefix matching is only valid with == or !=: ${echoed(token)}`,
       );
     const base = versionText.slice(0, -2);
     return {
@@ -689,7 +690,7 @@ export function parsePep508Requirement(value: string): ParsedRequirement {
   if (original === '' || original.length > 4096)
     throw new ProviderError(
       'INVALID_NATIVE_RANGE',
-      `Invalid PEP 508 requirement: ${value}`,
+      `Invalid PEP 508 requirement: ${echoed(value)}`,
     );
 
   let rest = original;
@@ -704,7 +705,7 @@ export function parsePep508Requirement(value: string): ParsedRequirement {
   if (!nameMatch)
     throw new ProviderError(
       'INVALID_NATIVE_COORDINATE',
-      `Invalid PEP 508 requirement name: ${value}`,
+      `Invalid PEP 508 requirement name: ${echoed(value)}`,
     );
   const rawName = nameMatch[1]!;
   rest = rest.slice(rawName.length).trim();
@@ -715,7 +716,7 @@ export function parsePep508Requirement(value: string): ParsedRequirement {
     if (end < 0)
       throw new ProviderError(
         'INVALID_NATIVE_RANGE',
-        `Unclosed extras in requirement: ${value}`,
+        `Unclosed extras in requirement: ${echoed(value)}`,
       );
     extras = rest
       .slice(1, end)
@@ -852,7 +853,7 @@ export class PypiCodec
       if (!match)
         throw new ProviderError(
           'INVALID_NATIVE_COORDINATE',
-          `Invalid PyPI coordinate: ${value}`,
+          `Invalid PyPI coordinate: ${echoed(value)}`,
         );
       return {
         ecosystem: 'pypi',
@@ -920,7 +921,7 @@ export class PypiCodec
             'pypi',
             'PYPI_ENVIRONMENT_MARKER',
             '/marker',
-            `Environment marker ${requirement.marker} is preserved and never silently evaluated`,
+            `Environment marker ${echoed(requirement.marker)} is preserved and never silently evaluated`,
             'Marker is retained in nativeSemantics; membership is not claimed without a marker evaluator',
             'error',
           ),
@@ -932,7 +933,7 @@ export class PypiCodec
             'pypi',
             'PYPI_EXTRAS_NOT_CAPABILITIES',
             '/extras',
-            `Extras [${requirement.extras.join(',')}] are native feature labels, not PREX capabilities`,
+            `Extras [${echoed(requirement.extras.join(','))}] are native feature labels, not PREX capabilities`,
           ),
         );
       }
@@ -956,7 +957,7 @@ export class PypiCodec
     if (tokens.length === 0)
       throw new ProviderError(
         'INVALID_NATIVE_RANGE',
-        `Invalid PEP 440 specifier set: ${value}`,
+        `Invalid PEP 440 specifier set: ${echoed(value)}`,
       );
 
     const parsedTokens = tokens.map(parseSpecifierToken);
@@ -1141,7 +1142,7 @@ export class PypiCodec
             'pypi',
             'PYPI_ENVIRONMENT_MARKER',
             `/requires_dist/${index}/marker`,
-            `Environment marker ${requirement.marker} is preserved and never silently evaluated`,
+            `Environment marker ${echoed(requirement.marker)} is preserved and never silently evaluated`,
             'Requirement remains open with respect to markers; do not treat as false',
             'error',
           ),
@@ -1153,7 +1154,7 @@ export class PypiCodec
             'pypi',
             'PYPI_EXTRAS_NOT_CAPABILITIES',
             `/requires_dist/${index}/extras`,
-            `Extras [${requirement.extras.join(',')}] are retained in nativeSemantics, not PREX capabilities`,
+            `Extras [${echoed(requirement.extras.join(','))}] are retained in nativeSemantics, not PREX capabilities`,
           ),
         );
       }
@@ -1199,7 +1200,7 @@ export class PypiCodec
           'pypi',
           'PYPI_REQUIRES_PYTHON_NATIVE',
           '/info/requires_python',
-          `requires_python=${info.requires_python} is Python interpreter compatibility, retained natively`,
+          `requires_python=${echoed(info.requires_python)} is Python interpreter compatibility, retained natively`,
           undefined,
           'error',
         ),
@@ -1220,7 +1221,7 @@ export class PypiCodec
             'pypi',
             'PYPI_SHA256_OR_SIZE_MISSING',
             `/files/${index}`,
-            `Distribution ${file.filename} lacks sha256 or size; native digests remain in raw metadata`,
+            `Distribution ${echoed(file.filename)} lacks sha256 or size; native digests remain in raw metadata`,
           ),
         );
     });
@@ -1297,7 +1298,7 @@ export class PypiCodec
     if (lock.version !== 1)
       throw new ProviderError(
         'INVALID_LOCKFILE',
-        `Expected uv.lock version 1, received ${String(lock.version)}`,
+        `Expected uv.lock version 1, received ${echoed(String(lock.version))}`,
       );
     if (!Array.isArray(lock.package))
       throw new ProviderError(
@@ -1312,7 +1313,7 @@ export class PypiCodec
           'pypi',
           'PYPI_LOCK_REQUIRES_PYTHON',
           '/requires-python',
-          `Lock requires-python=${lock['requires-python']} is retained; interpreter filtering is native`,
+          `Lock requires-python=${echoed(lock['requires-python'])} is retained; interpreter filtering is native`,
         ),
       );
 
@@ -1340,7 +1341,7 @@ export class PypiCodec
                   'pypi',
                   'PYPI_ENVIRONMENT_MARKER',
                   `/package/${entry.name}/dependencies/${dep.name}/marker`,
-                  `Lock dependency marker ${dep.marker} is preserved and never silently evaluated`,
+                  `Lock dependency marker ${echoed(dep.marker)} is preserved and never silently evaluated`,
                   undefined,
                   'error',
                 ),
@@ -1351,7 +1352,7 @@ export class PypiCodec
                   'pypi',
                   'PYPI_EXTRAS_NOT_CAPABILITIES',
                   `/package/${entry.name}/dependencies/${dep.name}/extra`,
-                  `Lock dependency extras [${dep.extra.join(',')}] retained natively`,
+                  `Lock dependency extras [${echoed(dep.extra.join(','))}] retained natively`,
                 ),
               );
           }
@@ -1459,7 +1460,7 @@ export class PypiJsonProvider implements CatalogProvider {
       if (match === undefined)
         throw new ProviderError(
           'VERSION_NOT_FOUND',
-          `${canonical} is absent from the project document`,
+          `${echoed(canonical)} is absent from the project document`,
         );
     }
     const versionKey =
@@ -1512,7 +1513,7 @@ export class PypiJsonProvider implements CatalogProvider {
     if (!artifact?.locations[0]?.uri)
       throw new ProviderError(
         'ARTIFACT_NOT_FOUND',
-        `No artifact descriptor for ${exactPurl}`,
+        `No artifact descriptor for ${echoed(exactPurl)}`,
       );
     const url = artifact.locations[0].uri;
     const response = await this.transport.request({
@@ -1650,7 +1651,7 @@ export class PypiJsonProvider implements CatalogProvider {
       if (!existing)
         throw new ProviderError(
           'STALE_METADATA',
-          `Received 304 without cached metadata for ${key}`,
+          `Received 304 without cached metadata for ${echoed(key)}`,
           304,
         );
       const revalidated = { ...existing, retrievedAt: this.clock.now() };

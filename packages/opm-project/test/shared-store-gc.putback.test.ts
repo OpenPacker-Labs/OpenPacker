@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { collectSharedStore } from '../src/index.js';
-import { sameRecord } from '../src/shared-store-gc.js';
+import { collectSharedStoreWith, sameRecord } from '../src/shared-store-gc.js';
 
 /**
  * `opm gc --shared` and an old orphan `<key>.tree` record whose key a publish
@@ -59,15 +59,17 @@ describe('gc and a publish of an orphan record’s key', () => {
   it('puts back a record written between its judgement and its move aside, and does not report it removed', async () => {
     const root = await store();
     let landed = false;
-    const result = await collectSharedStore({
-      env: { OPM_STORE_HOME: root },
-      steps: {
-        judged: async () => {
-          landed = true;
-          await publish(root);
+    const result = await collectSharedStoreWith(
+      { env: { OPM_STORE_HOME: root } },
+      {
+        orphan: {
+          judged: async () => {
+            landed = true;
+            await publish(root);
+          },
         },
       },
-    });
+    );
     expect(landed).toBe(true);
     expect(await readFile(join(root, `${KEY}.tree`), 'utf8')).toBe(NEW);
     expect(await collecting(root)).toEqual([]);
@@ -77,15 +79,17 @@ describe('gc and a publish of an orphan record’s key', () => {
   it('leaves a record written right after the old one was moved aside, and reports the old one removed', async () => {
     const root = await store();
     let landed = false;
-    const result = await collectSharedStore({
-      env: { OPM_STORE_HOME: root },
-      steps: {
-        movedAside: async () => {
-          landed = true;
-          await publish(root);
+    const result = await collectSharedStoreWith(
+      { env: { OPM_STORE_HOME: root } },
+      {
+        orphan: {
+          movedAside: async () => {
+            landed = true;
+            await publish(root);
+          },
         },
       },
-    });
+    );
     expect(landed).toBe(true);
     expect(await readFile(join(root, `${KEY}.tree`), 'utf8')).toBe(NEW);
     expect(await collecting(root)).toEqual([]);
@@ -95,16 +99,18 @@ describe('gc and a publish of an orphan record’s key', () => {
   it('puts back a record rewritten in place, which has the inode that was judged: an inode number can be reused', async () => {
     const root = await store();
     let landed = false;
-    const result = await collectSharedStore({
-      env: { OPM_STORE_HOME: root },
-      steps: {
-        judged: async () => {
-          landed = true;
-          // Same device, same inode, another file: what a reused inode number is.
-          await writeFile(join(root, `${KEY}.tree`), NEW);
+    const result = await collectSharedStoreWith(
+      { env: { OPM_STORE_HOME: root } },
+      {
+        orphan: {
+          judged: async () => {
+            landed = true;
+            // Same device, same inode, another file: what a reused inode number is.
+            await writeFile(join(root, `${KEY}.tree`), NEW);
+          },
         },
       },
-    });
+    );
     expect(landed).toBe(true);
     expect(await readFile(join(root, `${KEY}.tree`), 'utf8')).toBe(NEW);
     expect(await collecting(root)).toEqual([]);

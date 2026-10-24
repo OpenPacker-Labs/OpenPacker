@@ -11,10 +11,21 @@ import {
   read as readCb,
   write as writeCb,
   type BigIntStats,
+  type Dirent,
   type Stats,
 } from 'node:fs';
 import { type FileHandle } from 'node:fs/promises';
 import { promisify } from 'node:util';
+
+/**
+ * A directory listing that stops reading after `limit` entries. `exceeded`
+ * says the directory holds more than that; the entries kept are then the ones
+ * read so far, in no particular order: enough to refuse the directory.
+ */
+export interface BoundedListing {
+  readonly entries: Dirent[];
+  readonly exceeded: boolean;
+}
 
 export class StableHandleError extends Error {
   readonly code = 'UNSAFE_PATH';

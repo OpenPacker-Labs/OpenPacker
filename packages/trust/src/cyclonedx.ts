@@ -1,4 +1,7 @@
-import { compareCanonicalStrings } from '@openpacker/canonical';
+import {
+  compareCanonicalStrings,
+  parseUntrustedUrl,
+} from '@openpacker/canonical';
 
 export type LicenseEvidence =
   | { status: 'declared' | 'concluded'; expression: string }
@@ -95,7 +98,7 @@ export function extractCycloneDxEvidence(document: unknown): CycloneDxEvidence {
         return ref &&
           typeof ref.type === 'string' &&
           typeof ref.url === 'string'
-          ? [{ type: ref.type, url: new URL(ref.url).toString() }]
+          ? [{ type: ref.type, url: parseUntrustedUrl(ref.url).toString() }]
           : [];
       }),
     )

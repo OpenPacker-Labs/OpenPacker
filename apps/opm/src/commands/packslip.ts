@@ -1,3 +1,4 @@
+import { out, plainLine } from '@openpacker/canonical';
 import {
   OpmError,
   exactPurl,
@@ -5,6 +6,7 @@ import {
   listRegistryVersions,
   parsePackageSpec,
   projectPaths,
+  projectStep,
   providerFor,
   readLockfile,
   readManifestFile,
@@ -14,13 +16,10 @@ import {
   writeManifestFile,
   type OpmManifest,
   type RegistryOptions,
+  type StepOptions,
 } from '@openpacker/opm-project';
-import { say } from '../error-report.js';
-import {
-  writeDocument,
-  writeFacts,
-  writeWarnings,
-} from '../terminal-records.js';
+import { report } from '../error-report.js';
+import { cliStep } from './recover.js';
 
 export interface CommandArgs {
   positionals: string[];
@@ -172,11 +171,18 @@ async function verify(
     );
   const signer = signerOf(release);
   const executables = (inspection.executables ?? []).map((bin) => bin.name);
-  writeWarnings(inspection.warnings, io);
+  for (const warning of inspection.warnings)
+    io.stderr.write(
+      report(
+        'opm: ',
+        `${plainLine(warning.code)}: ${plainLine(warning.message)}`,
+      ),
+    );
 
   if (args.options.has('json')) {
-    writeDocument(
-      JSON.stringify(
+    out(
+      io,
+      `${JSON.stringify(
         {
           purl: release.purl,
           signer: attestation.signerIdentity,
@@ -192,8 +198,7 @@ async function verify(
         },
         null,
         2,
-      ),
-      io,
+      )}\n`,
     );
     return 0;
   }
@@ -220,7 +225,10 @@ async function verify(
     ['trust tier', attestation.trustTier],
     ['executables', executables.join(', ') || '(none declared)'],
   ];
-  writeFacts(release.purl, lines, io);
+  out(io, `${release.purl}\n`);
+  for (const [label, value] of lines)
+    if (value !== undefined && value !== '')
+      out(io, `  ${label.padEnd(12)}${value}\n`);
   return 0;
 }
 
@@ -247,28 +255,63 @@ async function pin(
     );
   const stanza = `[adapters.packslip.trust."${release.project}"]\npin = ["${fingerprint}"]\n`;
   if (write !== true) {
-    say(io.stdout, stanza);
+    out(io, stanza);
     io.stderr.write(
-      'opm: this fingerprint is what the release showed just now. Confirm it with the vendor ' +
-        'before relying on it; pass --write to record it in opm.toml.\n',
+      report(
+        'opm: ',
+        'this fingerprint is what the release showed just now. Confirm it with the vendor ' +
+          'before relying on it; pass --write to record it in opm.toml.',
+      ),
     );
     return 0;
   }
   const root = await requireOpmRoot(cwd);
-  const manifest =
-    release.manifest ?? (await readManifestFile(projectPaths(root).manifest));
+  return writePin(
+    root,
+    release.project,
+    fingerprint,
+    io,
+    cliStep(io, args.options),
+  );
+}
+
+/**
+ * Record a keyless signer's fingerprint in opm.toml, as one step on the
+ * project (`project-step.ts`): opm.toml is read again inside it, so it holds
+ * what a killed step left put back, and nothing else writes it meanwhile.
+ */
+export async function writePin(
+  root: string,
+  project: string,
+  fingerprint: string,
+  io: CommandIo,
+  step: StepOptions,
+): Promise<number> {
+  return projectStep(root, step, async () => {
+    const manifest = await readManifestFile(projectPaths(root).manifest);
+    return pinIn(root, manifest, project, fingerprint, io);
+  });
+}
+
+async function pinIn(
+  root: string,
+  manifest: OpmManifest,
+  project: string,
+  fingerprint: string,
+  io: CommandIo,
+): Promise<number> {
   const settings = { ...manifest.adapterSettings?.packslip };
   const trust: Table = isTable(settings.trust) ? { ...settings.trust } : {};
-  const existing = trust[release.project];
+  const existing = trust[project];
   const entry: Table = isTable(existing) ? { ...existing } : {};
   if (entry.public_key !== undefined)
     throw new OpmError(
       'INVALID_MANIFEST',
-      `${release.project} is already trusted by public_key; a fingerprint pin applies only to keyless signers`,
+      `${project} is already trusted by public_key; a fingerprint pin applies only to keyless signers`,
     );
   const held = Array.isArray(entry.pin) ? entry.pin : [];
   entry.pin = [...new Set([...held, fingerprint])].sort() as Json;
-  trust[release.project] = entry;
+  trust[project] = entry;
   await writeManifestFile(projectPaths(root).manifest, {
     ...manifest,
     adapterSettings: {
@@ -276,7 +319,7 @@ async function pin(
       packslip: { ...settings, trust },
     },
   });
-  say(io.stdout, `Pinned ${release.project} to ${fingerprint}\n`);
+  out(io, `Pinned ${project} to ${fingerprint}\n`);
   return 0;
 }
 
@@ -292,6 +335,16 @@ async function approve(
       'opm packslip approve requires the 16-character proposal id from the refusal message',
     );
   const root = await requireOpmRoot(cwd);
+  return projectStep(root, cliStep(io, args.options), () =>
+    approveIn(root, id, io),
+  );
+}
+
+async function approveIn(
+  root: string,
+  id: string,
+  io: CommandIo,
+): Promise<number> {
   const manifest = await readManifestFile(projectPaths(root).manifest);
   const settings = { ...manifest.adapterSettings?.packslip };
   const held = Array.isArray(settings.approvals)
@@ -300,7 +353,7 @@ async function approve(
       ? [settings.approvals]
       : [];
   if (held.includes(id)) {
-    io.stdout.write(`Proposal ${id} is already approved\n`);
+    out(io, `Proposal ${id} is already approved\n`);
     return 0;
   }
   await writeManifestFile(projectPaths(root).manifest, {
@@ -310,7 +363,8 @@ async function approve(
       packslip: { ...settings, approvals: [...held, id].sort() },
     },
   });
-  io.stdout.write(
+  out(
+    io,
     `Approved proposal ${id}. The next opm sync or opm update accepts exactly that change and nothing else.\n`,
   );
   return 0;

@@ -11,7 +11,7 @@
  * copy, and shared from above only when the copy above does so already.
  */
 
-import type { PlaceEdge, PlaceInstance } from './place-types.js';
+import type { PlaceEdge, PlaceInstance, SplitEdge } from './place-types.js';
 import { lookup, settle, type Node } from './place-tree.js';
 
 type Edge = PlaceEdge;
@@ -95,11 +95,15 @@ export interface HomeQuestion {
   readonly to: string;
   /** What Node finds for `as` from `from` now. */
   readonly found: Node | undefined;
-  /** Where a new copy goes when nothing is found and no peer is shared: the project, or `from`. */
+  /** Where a new copy goes when nothing is found and no peer is shared: the ceiling, or `from`. */
   readonly plain: Node;
+  /** The highest node a new copy may go in: the project, or an isolated importer's own. */
+  readonly ceiling: Node;
   readonly shared: readonly SharedPeer[];
   /** Whether a directory may take `as` (no name there differs from it only by case). */
   readonly fits: (at: Node) => boolean;
+  /** Another instance found under the name does not keep the new copy beside `from`: it goes as high as the peers allow. */
+  readonly climb?: boolean;
 }
 
 /**
@@ -112,9 +116,10 @@ export interface HomeQuestion {
  * relied on to find.
  */
 export function homeOf(question: HomeQuestion): Node | 'shared' {
-  const { from, as, to, found, plain, shared } = question;
-  if (found !== undefined && found.key !== to) return from;
-  if (found !== undefined && agrees(found, shared)) {
+  const { from, as, to, found, plain, ceiling, shared } = question;
+  if (found !== undefined && found.key !== to && question.climb !== true)
+    return from;
+  if (found?.key === to && agrees(found, shared)) {
     for (const peer of shared) settle(found, peer.name, peer.at.parent!);
     settle(from, as, found.parent!);
     return 'shared';
@@ -123,12 +128,13 @@ export function homeOf(question: HomeQuestion): Node | 'shared' {
     settle(from, as, plain);
     return plain;
   }
-  // Between `from` and whatever answers the name, as high as the peers allow.
+  // Between `from` and whatever answers the name, as high as the peers allow
+  // and no higher than the ceiling.
   let best = from;
   for (
-    let at = from.parent;
+    let at = from === ceiling ? undefined : from.parent;
     at !== undefined && at !== found?.parent && agrees(at, shared);
-    at = at.parent
+    at = at === ceiling ? undefined : at.parent
   )
     if (!at.passed.has(as) && !at.children.has(as) && question.fits(at))
       best = at;
@@ -136,12 +142,53 @@ export function homeOf(question: HomeQuestion): Node | 'shared' {
   return best;
 }
 
+/** A dependent and the edge whose dependency loads another copy of a peer the dependent requires too. */
+export interface PeerSplit extends SplitEdge {
+  /** `pinId` of the edge. */
+  readonly id: string;
+  /** How many directories down the dependent sits: 0 for an importer. */
+  readonly depth: number;
+  /** The name the edge finds its dependency by. */
+  readonly as: string;
+}
+
 /**
- * The edges whose dependency, found above its dependent, loads another copy of
- * a peer the dependent requires as the same instance. Each is answered beside
- * its dependent on the next plan; `edgeId` names an edge across plans.
+ * The instances to give the project's slots to when splits persist although
+ * their edges are pinned beside the dependent: the dependency of each, under
+ * the name the edge finds it by, so that it can be written above the
+ * dependent instead of beside it (a dependent that shadows a peer its
+ * dependency needs cannot be cured from inside). One for each name, and none
+ * for a name already given.
  */
-export function peerSplits(
+export function moves(
+  splits: readonly PeerSplit[],
+  elected: ReadonlyMap<string, string>,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const split of splits)
+    if (!elected.has(split.as) && !out.has(split.as))
+      out.set(split.as, split.dependency);
+  return out;
+}
+
+/**
+ * The splits whose dependent sits the fewest directories down. What a copy
+ * written for an outer edge changes can cure a split further in, so the outer
+ * ones are pinned first.
+ */
+export function outermost(splits: readonly PeerSplit[]): PeerSplit[] {
+  const shallowest = Math.min(...splits.map((split) => split.depth));
+  return splits.filter((split) => split.depth === shallowest);
+}
+
+/**
+ * Every edge whose dependency, wherever it is found, loads another copy of a
+ * peer the dependent requires as the same instance: the dependent and the
+ * dependency each look the peer up and find two nodes. A dependency written
+ * directly beside its dependent is looked at too, because a copy of it
+ * nested under it can hold the peer.
+ */
+export function findSplits(
   dependents: Iterable<{
     readonly node: Node;
     readonly mine: ReadonlyMap<string, string>;
@@ -149,17 +196,22 @@ export function peerSplits(
   }>,
   peersOf: (key: string) => readonly Edge[],
   edgeId: (node: Node, as: string) => string,
-  pinned: ReadonlySet<string>,
-): string[] {
-  const splits: string[] = [];
+): PeerSplit[] {
+  const splits: PeerSplit[] = [];
   for (const { node, mine, edges } of dependents)
     for (const edge of edges) {
-      const id = edgeId(node, edge.as);
-      if (pinned.has(id)) continue;
       const found = lookup(node, edge.as);
-      if (found?.key !== edge.to || found.parent === node) continue;
+      if (found?.key !== edge.to) continue;
       const shared = sharedPeers(node, mine, peersOf(edge.to));
-      if (!agrees(found, shared)) splits.push(id);
+      if (!agrees(found, shared))
+        splits.push({
+          id: edgeId(node, edge.as),
+          depth: node.chain.length,
+          as: edge.as,
+          importer: node.base,
+          ...(node.key !== undefined && { dependent: node.key }),
+          dependency: edge.to,
+        });
     }
   return splits;
 }

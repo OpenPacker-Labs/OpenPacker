@@ -7,6 +7,7 @@
  * authoritative after import (ADR 0034).
  */
 
+import { echoed } from '@openpacker/adapter-core';
 import { access } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { requireAdapterRegistry } from './adapters.js';
@@ -17,6 +18,7 @@ import {
   projectPaths,
 } from './paths.js';
 import { initProject, writeManifestFile } from './project.js';
+import { projectStep, type StepOptions } from './project-step.js';
 import { aliasFromNativeName, stripPurlVersion } from './spec.js';
 import { defaultManifest } from './toml.js';
 import type { OpmManifest, PackageRequirement } from './types.js';
@@ -34,6 +36,14 @@ export interface NativeImportResult {
 }
 
 export async function importNativeProject(input: {
+  root: string;
+  force?: boolean;
+  step?: StepOptions;
+}): Promise<NativeImportResult> {
+  return projectStep(input.root, input.step, () => importInStep(input));
+}
+
+async function importInStep(input: {
   root: string;
   force?: boolean;
 }): Promise<NativeImportResult> {
@@ -131,6 +141,6 @@ function uniqueAlias(
   if (!used.has(qualified)) return qualified;
   throw new OpmError(
     'INVALID_SPEC',
-    `Native import produced duplicate alias "${base}" for ${ecosystem} package "${nativeName}"`,
+    `Native import produced duplicate alias "${echoed(base)}" for ${ecosystem} package "${echoed(nativeName)}"`,
   );
 }

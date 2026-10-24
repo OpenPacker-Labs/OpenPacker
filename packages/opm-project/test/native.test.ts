@@ -502,7 +502,8 @@ describe('package manifest', () => {
     expect(npm?.registryId).toBe('urn:openpacker:registry:npmjs-org');
     expect(npm?.requirements).toContainEqual({
       identifier: '@openpacker/demo-tool',
-      purl: 'pkg:npm/@openpacker/demo-tool',
+      // The lock's spelling of the scope, though the add typed `@`.
+      purl: 'pkg:npm/%40openpacker/demo-tool',
       range: '1.1.0',
       scope: 'runtime',
     });

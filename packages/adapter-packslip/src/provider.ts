@@ -14,6 +14,7 @@ import {
   ProviderError,
   assertPackageIdentityMatchesRequest,
   compareCodePoints,
+  echoed,
   type CatalogProvider,
   type Clock,
   type ProviderAttestation,
@@ -343,7 +344,7 @@ export class PackslipProvider implements CatalogProvider {
       if (artifact.size > MAX_ARCHIVE_BYTES)
         throw new ProviderError(
           'ARTIFACT_TOO_LARGE',
-          `${artifact.name} is ${artifact.size} bytes; opm unpacks archives of at most ${MAX_ARCHIVE_BYTES}`,
+          `${echoed(artifact.name)} is ${artifact.size} bytes; opm unpacks archives of at most ${MAX_ARCHIVE_BYTES}`,
         );
       let artifactUrl = artifact.url;
       if (artifactUrl === undefined) {
@@ -353,7 +354,7 @@ export class PackslipProvider implements CatalogProvider {
         )
           throw new PackslipError(
             'UNAVAILABLE',
-            `${artifact.name} declares no download URL and none can be derived for ${parsed.project.name}`,
+            `${echoed(artifact.name)} declares no download URL and none can be derived for ${parsed.project.name}`,
           );
         artifactUrl = githubAssetUrl(
           parsed.project,
@@ -442,7 +443,7 @@ export class PackslipProvider implements CatalogProvider {
           ? [
               {
                 code: 'PACKSLIP_NO_EXECUTABLES',
-                message: `${artifact.name} declares no executables, so opm will install it without any command to run`,
+                message: `${echoed(artifact.name)} declares no executables, so opm will install it without any command to run`,
               },
             ]
           : []),

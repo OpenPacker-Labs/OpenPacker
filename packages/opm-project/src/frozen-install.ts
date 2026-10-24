@@ -27,6 +27,8 @@
 
 import { join } from 'node:path';
 import type {
+  FrozenLockPackage,
+  FrozenLockPeers,
   FrozenLockSkip,
   NativeLockEntry,
   NativeTarget,
@@ -42,13 +44,33 @@ import {
 import { checkArchiveIdentities } from './frozen-identity.js';
 import { patchArchives } from './frozen-patch.js';
 import { installScriptFlags, scriptedPackages } from './frozen-scripts.js';
+import { layOutFromStore } from './frozen-layout.js';
+import { projectStep } from './project-step.js';
 import {
   frozenArchiveLimits,
+  labelOf,
   openStore,
   storeArchives,
 } from './frozen-store.js';
+import {
+  holdSharedStore,
+  type HoldOptions,
+  type StoreHold,
+} from './shared-store-lease.js';
 
 export type { FrozenInstallInput };
+
+/**
+ * Points inside an install where a test runs what may happen meanwhile, such
+ * as a concurrent `opm gc --shared`. Not part of the package's API: only
+ * `installFrozenWith` takes them, and `index.ts` does not export it.
+ */
+export interface FrozenInstallSeams {
+  /** Once every archive is in the store, before any is linked into `node_modules`. */
+  beforeLayout?: () => Promise<void>;
+  /** How the install's hold on the shared store waits, and where it steps. */
+  hold?: HoldOptions;
+}
 
 export interface FrozenInstallResult {
   ecosystem: string;
@@ -73,12 +95,31 @@ export interface FrozenInstallResult {
   installScripts: readonly { name: string; version: string; path: string }[];
   /** For a workspace lock: the members the lock holds, and the ones linked here. */
   workspace?: { members: number; linked: number };
+  /** Present when the places do not keep every shared peer to one copy of it. */
+  peers?: FrozenLockPeers;
   layout: ProjectionResult;
   milliseconds: { read: number; fetch: number; layout: number; total: number };
 }
 
-export async function installFrozen(
+export function installFrozen(
   input: FrozenInstallInput,
+): Promise<FrozenInstallResult> {
+  return installFrozenWith(input, {});
+}
+
+/** `installFrozen` with the seams a test runs inside it. */
+export async function installFrozenWith(
+  input: FrozenInstallInput,
+  seams: FrozenInstallSeams,
+): Promise<FrozenInstallResult> {
+  return projectStep(input.root, input.step, () =>
+    installFrozenInStep(input, seams),
+  );
+}
+
+async function installFrozenInStep(
+  input: FrozenInstallInput,
+  seams: FrozenInstallSeams,
 ): Promise<FrozenInstallResult> {
   const {
     started,
@@ -94,9 +135,17 @@ export async function installFrozen(
   } = await prepareFrozen(input);
 
   const store = await openStore(root, env);
+  let hold: StoreHold | undefined;
   try {
-    const stored = await storeArchives({
-      lock,
+    // Every entry is claimed before it is looked up, and the claims last until
+    // node_modules links them, so `opm gc --shared` cannot take one between
+    // (ADR 0048, amendment 2026-10-17).
+    if (store.shared)
+      hold = await holdSharedStore(store.root, {
+        ...seams.hold,
+        ...(input.signal !== undefined && { signal: input.signal }),
+      });
+    const from = {
       claims,
       storeRoot: store.root,
       shared: store.shared,
@@ -104,18 +153,24 @@ export async function installFrozen(
       offline,
       ecosystem,
       options: input,
-    });
+      ...(hold !== undefined && { hold }),
+    };
+    const stored = await storeArchives({ lock, ...from });
     const fetched = now();
     // The archives are proved to be the lock's packages before any is patched,
     // and what declares a script is read from what is installed: the patched
     // files, where there is a patch (ADR 0057).
     await checkArchiveIdentities(lock.packages, stored.byPath);
-    const { byPath, patched } = await patchArchives({
-      lock,
-      byPath: stored.byPath,
+    const patching = {
       storeRoot: store.root,
       shared: store.shared,
       format,
+      ...(hold !== undefined && { hold }),
+    };
+    const { byPath, patched } = await patchArchives({
+      lock,
+      byPath: stored.byPath,
+      ...patching,
     });
     const declares = await installScriptFlags(lock.packages, byPath);
     const entries = lock.packages.map((pkg): NativeLockEntry => {
@@ -146,18 +201,49 @@ export async function installFrozen(
     for (const dir of lock.workspace?.memberDirs ?? [])
       await removeBelow(root, `${dir}/node_modules`);
     await removeTree(join(root, 'node_modules'));
-    let layout: ProjectionResult;
-    try {
-      layout = await format.writeLayout!(
-        detected,
-        entries,
-        lock.workspace === undefined
-          ? undefined
-          : { workspace: lock.workspace.layout },
-      );
-    } catch (error) {
-      throw adapterFailure(error);
-    }
+    await seams.beforeLayout?.();
+    const write = async (): Promise<ProjectionResult> => {
+      try {
+        return await format.writeLayout!(
+          detected,
+          entries,
+          lock.workspace === undefined
+            ? undefined
+            : { workspace: lock.workspace.layout },
+        );
+      } catch (error) {
+        throw adapterFailure(error);
+      }
+    };
+    // What node_modules links from: the patched copy, where there is a patch.
+    const pathOf = (pkg: FrozenLockPackage) => byPath.get(pkg.path)!.path;
+    const layout = !store.shared
+      ? await write()
+      : await layOutFromStore({
+          sources: lock.packages.map((pkg) => ({
+            storePath: pathOf(pkg),
+            label: labelOf(pkg),
+          })),
+          write,
+          restore: async (gone) => {
+            const packages = lock.packages.filter((pkg) =>
+              gone.has(pathOf(pkg)),
+            );
+            const again = await storeArchives({
+              lock: { ...lock, packages },
+              ...from,
+            });
+            stored.fetched += again.fetched;
+            stored.fetchedBytes += again.fetchedBytes;
+            // A patched copy is made again, at its own key, from the archive
+            // put back (ADR 0057).
+            await patchArchives({
+              lock: { packages },
+              byPath: again.byPath,
+              ...patching,
+            });
+          },
+        });
     const done = now();
     return {
       ecosystem,
@@ -170,6 +256,7 @@ export async function installFrozen(
       shared: store.shared,
       skipped: lock.skipped,
       ...(lock.targets !== undefined && { targets: lock.targets }),
+      ...(lock.peers !== undefined && { peers: lock.peers }),
       installScripts: scriptedPackages(lock.packages, declares, byPath),
       patched,
       layout,
@@ -187,6 +274,7 @@ export async function installFrozen(
       },
     };
   } finally {
+    await hold?.release();
     await store.dispose();
   }
 }

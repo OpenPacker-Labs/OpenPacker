@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { formatPurl, parsePurl } from '@openpacker/adapter-core';
+import { echoed, formatPurl, parsePurl } from '@openpacker/adapter-core';
 import type { CatalogPackage, OpmCatalog } from './types.js';
 import { OpmError } from './types.js';
 
@@ -16,7 +16,7 @@ export async function loadCatalogFile(
   } catch (error) {
     throw new OpmError(
       'INVALID_CATALOG',
-      `Catalog ${path} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `Catalog ${path} is not valid JSON: ${echoed(error instanceof Error ? error.message : String(error))}`,
     );
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -60,7 +60,7 @@ export async function loadCatalogFile(
     ) {
       throw new OpmError(
         'INVALID_CATALOG',
-        `Catalog entry ${key} is incomplete in ${path}`,
+        `Catalog entry ${echoed(key)} is incomplete in ${path}`,
       );
     }
     if (
@@ -70,18 +70,18 @@ export async function loadCatalogFile(
     ) {
       throw new OpmError(
         'INVALID_CATALOG',
-        `Catalog entry ${key} has bad format`,
+        `Catalog entry ${echoed(key)} has bad format`,
       );
     }
     const bins = Array.isArray(pkg.bins)
       ? pkg.bins.map((b) => {
           if (typeof b !== 'object' || b === null) {
-            throw new OpmError('INVALID_CATALOG', `Bad bins in ${key}`);
+            throw new OpmError('INVALID_CATALOG', `Bad bins in ${echoed(key)}`);
           }
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const bin = b as Record<string, unknown>;
           if (typeof bin.name !== 'string' || typeof bin.path !== 'string') {
-            throw new OpmError('INVALID_CATALOG', `Bad bins in ${key}`);
+            throw new OpmError('INVALID_CATALOG', `Bad bins in ${echoed(key)}`);
           }
           return { name: bin.name, path: bin.path };
         })
@@ -99,18 +99,18 @@ export async function loadCatalogFile(
     if (canonicalKey !== entry.purl)
       throw new OpmError(
         'INVALID_CATALOG',
-        `Catalog key ${key} does not match body PURL ${pkg.purl} in ${path}`,
+        `Catalog key ${echoed(key)} does not match body PURL ${echoed(pkg.purl)} in ${path}`,
       );
     const parsed = parsePurl(entry.purl);
     if (parsed.version === undefined || parsed.version !== entry.version)
       throw new OpmError(
         'INVALID_CATALOG',
-        `Catalog entry ${key} version does not match its exact PURL in ${path}`,
+        `Catalog entry ${echoed(key)} version does not match its exact PURL in ${path}`,
       );
     if (canonicalKeys.has(canonicalKey))
       throw new OpmError(
         'INVALID_CATALOG',
-        `Catalog ${path} contains duplicate canonical PURL ${canonicalKey}`,
+        `Catalog ${path} contains duplicate canonical PURL ${echoed(canonicalKey)}`,
       );
     canonicalKeys.add(canonicalKey);
     if (bins !== undefined) entry.bins = bins;
@@ -133,7 +133,7 @@ export async function loadCatalogs(paths: readonly string[]): Promise<{
         if (packages.has(key))
           throw new OpmError(
             'INVALID_CATALOG',
-            `Catalog ${path} duplicates canonical PURL ${key}`,
+            `Catalog ${path} duplicates canonical PURL ${echoed(key)}`,
           );
         const resolvedSource = resolveSource(entry.source, baseDir);
         packages.set(key, { ...entry, resolvedSource });
@@ -160,7 +160,7 @@ export function canonicalCatalogPurl(value: string, path = 'catalog'): string {
   } catch (error) {
     throw new OpmError(
       'INVALID_CATALOG',
-      `Invalid package URL ${value} in ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      `Invalid package URL ${echoed(value)} in ${path}: ${echoed(error instanceof Error ? error.message : String(error))}`,
     );
   }
 }

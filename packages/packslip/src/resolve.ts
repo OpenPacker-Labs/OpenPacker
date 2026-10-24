@@ -27,6 +27,7 @@ import {
   type VerifyBundleInput,
 } from './verify.js';
 import type { VersionRequest } from './version.js';
+import { shown } from './shown.js';
 
 /** What the consumer has chosen to trust, never taken from a document. */
 export interface SignerConfig {
@@ -154,7 +155,7 @@ function checkSigner(
     if (statementProject !== requested.name)
       throw new PackslipError(
         'PROJECT_MISMATCH',
-        `The release is for ${statementProject}, not the requested ${requested.name}`,
+        `The release is for ${shown(statementProject)}, not the requested ${requested.name}`,
       );
     return;
   }
@@ -164,14 +165,14 @@ function checkSigner(
     if (signer.repositoryUri.toLowerCase() !== expectedUri.toLowerCase())
       throw new PackslipError(
         'PROJECT_MISMATCH',
-        `The certificate records source repository ${signer.repositoryUri}, but the statement names ${statementProject}`,
+        `The certificate records source repository ${shown(signer.repositoryUri)}, but the statement names ${shown(statementProject)}`,
       );
   } else if (
     !signer.identity.toLowerCase().startsWith(`${expectedUri.toLowerCase()}/`)
   ) {
     throw new PackslipError(
       'PROJECT_MISMATCH',
-      `The certificate names no source repository and the signer ${signer.identity} is not a workflow of ${statementProject}`,
+      `The certificate names no source repository and the signer ${shown(signer.identity)} is not a workflow of ${shown(statementProject)}`,
     );
   }
   const outcome = checkForge(
@@ -196,12 +197,12 @@ function checkSigner(
         ? 'SIGNER_MISMATCH'
         : 'PROJECT_MISMATCH',
       outcome.reason === 'different-repository'
-        ? `${requested.name} is now served by a different repository than the one pinned (repository ID ${signer.repositoryId ?? 'unknown'}); a recreated name is not the same project`
-        : `The release is for ${statementProject}, which nothing shows is ${requested.name}`,
+        ? `${requested.name} is now served by a different repository than the one pinned (repository ID ${shown(signer.repositoryId ?? 'unknown')}); a recreated name is not the same project`
+        : `The release is for ${shown(statementProject)}, which nothing shows is ${requested.name}`,
     );
   if (outcome.outcome === 'renamed')
     notes.push(
-      `${requested.name} is now ${statementProject}; the repository ID matches the pinned one`,
+      `${requested.name} is now ${shown(statementProject)}; the repository ID matches the pinned one`,
     );
 }
 
@@ -321,7 +322,7 @@ export async function resolveRelease(
   const ranking = rankCandidates(discovery.candidates, request, recommendation);
   if (ranking.skipped !== undefined)
     notes.push(
-      `Skipped the ${ranking.skipped.recommendation.source === 'signed-list' ? 'vendor' : 'GitHub'}-recommended ${ranking.skipped.recommendation.version}: ${ranking.skipped.reason}`,
+      `Skipped the ${ranking.skipped.recommendation.source === 'signed-list' ? 'vendor' : 'GitHub'}-recommended ${shown(ranking.skipped.recommendation.version)}: ${ranking.skipped.reason}`,
     );
   if (ranking.ordered.length === 0)
     throw new PackslipError(
@@ -339,7 +340,7 @@ export async function resolveRelease(
     if (response.status !== 200)
       throw new PackslipError(
         'UNAVAILABLE',
-        `${candidate.bundleUrl} answered ${response.status} for ${project.name} ${candidate.version}`,
+        `${shown(candidate.bundleUrl)} answered ${response.status} for ${project.name} ${shown(candidate.version)}`,
       );
     const bundle = response.bytes;
     if (candidate.bundleSha256 !== undefined)
@@ -354,7 +355,7 @@ export async function resolveRelease(
     if (statement.version !== candidate.version)
       throw new PackslipError(
         'PROJECT_MISMATCH',
-        `${candidate.tag ?? candidate.bundleUrl} names version ${candidate.version}, but the signed release is ${statement.version}`,
+        `${shown(candidate.tag ?? candidate.bundleUrl)} names version ${shown(candidate.version)}, but the signed release is ${shown(statement.version)}`,
       );
     checkSigner(project, statement.project, verified, input.memory, notes);
 
@@ -392,7 +393,7 @@ export async function resolveRelease(
     });
     if (selected.fallback !== undefined)
       notes.push(
-        `No exact build for this host; using ${selected.artifact.name} (${selected.fallback})`,
+        `No exact build for this host; using ${shown(selected.artifact.name)} (${selected.fallback})`,
       );
     const requirements = checkRequirements(selected.artifact, input.host.facts);
     if (
@@ -401,7 +402,8 @@ export async function resolveRelease(
     )
       throw new PackslipError(
         'HOST_INCOMPATIBLE',
-        `${selected.artifact.name} cannot run here:\n${requirements.refusals.map((line) => `  - ${line}`).join('\n')}`,
+        `${shown(selected.artifact.name)} cannot run here:`,
+        requirements.refusals,
       );
     return {
       project,

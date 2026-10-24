@@ -54,6 +54,7 @@ import {
   recordTreeDigest,
   sealTreeReadOnly,
 } from './shared-store.js';
+import type { StoreHold } from './shared-store-lease.js';
 import { OpmError } from './types.js';
 
 /** An archive (or a patched copy of one) in a store. */
@@ -144,6 +145,8 @@ interface PublishInput {
   recordWaitMs?: number;
   /** The most files the patched entry may hold; an archive's, if absent. */
   maximumFiles?: number;
+  /** The install's hold on the shared store: the entry is claimed before it is looked up. */
+  hold?: StoreHold;
 }
 
 /**
@@ -249,6 +252,9 @@ async function recordUnrecorded(
 async function publishPatched(input: PublishInput): Promise<string> {
   const key = patchedStoreKey(input.unpatched.digest, input.patch.digest);
   const path = join(input.storeRoot, key);
+  // As an archive's entry is (ADR 0048, amendment 2026-10-17): claimed before
+  // it is looked up, so `opm gc --shared` leaves it until node_modules links it.
+  await input.hold?.claim(key);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (input.shared) {
       await recordedOrGone(path, input.recordWaitMs ?? RECORD_WAIT_MS);
@@ -295,6 +301,7 @@ export async function patchArchives(input: {
   format: PatchFormat;
   recordWaitMs?: number;
   maximumFiles?: number;
+  hold?: StoreHold;
 }): Promise<{
   byPath: Map<string, StoredEntry>;
   patched: { packages: number; patches: number };
@@ -329,6 +336,7 @@ export async function patchArchives(input: {
         ...(input.maximumFiles !== undefined && {
           maximumFiles: input.maximumFiles,
         }),
+        ...(input.hold !== undefined && { hold: input.hold }),
       });
       made.set(id, entry);
     }

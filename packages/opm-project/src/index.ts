@@ -28,10 +28,55 @@ export {
   emptyLockfile,
   parseLockfile,
   readLockfile,
-  reproducibleLockForm,
   serializeLockfile,
   writeLockfile,
 } from './lock.js';
+export { reproducibleLockForm } from './lock-reproducible.js';
+export {
+  environmentScript,
+  environmentVariables,
+  shellQuote,
+} from './environment-script.js';
+export { describeRecovery, type RecoveredStep } from './rollback-recovery.js';
+export {
+  abandonStep,
+  type AbandonOptions,
+  type AbandonedStep,
+} from './step-abandon.js';
+export {
+  DEFAULT_STEP_WAIT_MS,
+  MAX_STEP_WAIT_MS,
+  parseStepWait,
+  projectStep,
+  recoverInterruptedSteps,
+  type StepOptions,
+} from './project-step.js';
+export type { RemovedLock, StepLockHolder } from './step-lock.js';
+export {
+  currentOwner,
+  describeProcessOwner,
+  isOwnerAlive,
+  makeCurrentOwner,
+  ownerKey,
+  ownerPlace,
+  parseProcessOwner,
+  placeDigest,
+  systemProbe,
+  type OwnerPlace,
+  type OwnerProbe,
+  type OwnerReads,
+  type PlaceOptions,
+  type ProcessOwner,
+} from './process-owner.js';
+export {
+  OWNER_FILE,
+  ownerFileProblem,
+  readOwnerFile,
+  writeOwnerFile,
+  type OwnerFileProblem,
+} from './owner-file.js';
+export { printable } from './fs-reason.js';
+export { snapshotProject } from './project-rollback.js';
 
 export {
   assertDigest,
@@ -147,9 +192,6 @@ export {
   collectGarbage,
   collectableStorePaths,
   environmentPaths,
-  environmentScript,
-  environmentVariables,
-  shellQuote,
   generationDigest,
   listGenerations,
   mergeStoreReferences,
