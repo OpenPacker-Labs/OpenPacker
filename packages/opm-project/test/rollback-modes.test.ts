@@ -14,7 +14,7 @@ configureDefaultAdapters();
  * by the kill sweep over a volume, round 5).
  */
 
-const SHAPES = [
+const DIRECTORY_MODES = [
   ['group-writable', 0o775],
   ['world-writable', 0o777],
   ['setgid', 0o2755],
@@ -32,31 +32,31 @@ describe.runIf(process.platform !== 'win32')(
         const modules = join(root, 'node_modules');
         const generations = join(root, '.opm', 'generations');
         for (const dir of [modules, generations])
-          for (const [name, mode] of SHAPES) {
+          for (const [name, mode] of DIRECTORY_MODES) {
             await mkdir(join(dir, name));
             await writeFile(join(dir, name, 'file'), 'bytes\n');
             await chmod(join(dir, name), mode);
           }
         await chmod(modules, 0o775);
-        const shape = async () => [
+        const modesOnDisk = async () => [
           ...[...(await tree(modules))].map((entry) => entry.join(' ')),
           ...[...(await tree(generations))].map((entry) => entry.join(' ')),
           `node_modules ${(await lstat(modules)).mode.toString(8)}`,
         ];
-        const before = await shape();
+        const before = await modesOnDisk();
         expect((await lstat(join(modules, 'setgid'))).mode & 0o7777).toBe(
           0o2755,
         );
         await deadCopy(root);
         for (const dir of [modules, generations])
-          for (const [name] of SHAPES)
+          for (const [name] of DIRECTORY_MODES)
             await rm(join(dir, name), { recursive: true });
         await chmod(modules, 0o755);
         await writeFile(join(modules, 'stray.js'), 'half\n');
         expect(await recoverInterruptedSteps(root)).toEqual([
           expect.objectContaining({ restored: true }),
         ]);
-        expect(await shape()).toEqual(before);
+        expect(await modesOnDisk()).toEqual(before);
       } finally {
         process.umask(previous);
       }
