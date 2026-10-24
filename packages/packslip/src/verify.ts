@@ -12,18 +12,19 @@ import {
   type SignedEntity,
   type TrustMaterial,
 } from '@sigstore/verify';
-import { parseCanonicalJson } from '@openpacker/canonical';
 import { checkFingerprint, fingerprintOf } from './fingerprint.js';
 import { workflowPath } from './forge.js';
 import { ObjectReader } from './json.js';
 import { PackslipError } from './errors.js';
+import {
+  MAX_BUNDLE_BYTES,
+  SignedPayloadCostError,
+  parseSignedPayload,
+} from './payload.js';
 import { parseMinisignPublicKey } from './minisign.js';
 import { SIGSTORE_PUBLIC_GOOD_ROOT } from './sigstore-root.js';
 import type { SignatureScheme } from './types.js';
 import { PAYLOAD_TYPE } from './types.js';
-
-/** A packslip is a statement plus a signature; a megabyte is far beyond either. */
-export const MAX_BUNDLE_BYTES = 4 * 1024 * 1024;
 
 const OID_SOURCE_REPOSITORY_URI = '1.3.6.1.4.1.57264.1.12';
 const OID_SOURCE_REPOSITORY_ID = '1.3.6.1.4.1.57264.1.15';
@@ -298,13 +299,16 @@ function assertDeclaredSigner(payload: string, signer: VerifiedSigner): void {
   let identity: ObjectReader;
   try {
     identity = new ObjectReader(
-      parseCanonicalJson(payload),
+      parseSignedPayload(payload),
       '',
       'INVALID_STATEMENT',
     )
       .object('predicate')
       .object('identity');
-  } catch {
+  } catch (error) {
+    // A payload refused for what it would cost says so; any other one does not
+    // declare its signer.
+    if (error instanceof SignedPayloadCostError) throw error;
     throw fail(
       'INVALID_STATEMENT',
       'The signed statement does not declare its signer',
