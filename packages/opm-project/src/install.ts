@@ -35,6 +35,7 @@ import {
   materializeThroughSharedStore,
   usableSharedRoot,
 } from './shared-store.js';
+import { holdSharedStore } from './shared-store-lease.js';
 import { installArchiveLimits } from './install-limits.js';
 export { inferFormat, mediaTypeForEcosystem } from './artifact-format.js';
 import { OpmError } from './types.js';
@@ -989,35 +990,44 @@ export async function installFromLock(input: {
       treeDigest: string;
     }
   >();
-  for (const alias of aliases) {
-    const safeAlias = assertSafeSegment(alias, 'package alias');
-    const pkg = selectedPackages.get(alias);
-    if (!pkg) {
-      throw new OpmError(
-        'NOT_FOUND',
-        `Lock entry missing for ${echoed(alias)}`,
-      );
+  // One hold on the shared store for the closure, not one per package; each
+  // package still claims its own entry (shared-store-lease.ts).
+  const sharedRoot = await usableSharedRoot(paths.store);
+  const hold =
+    sharedRoot === undefined ? undefined : await holdSharedStore(sharedRoot);
+  try {
+    for (const alias of aliases) {
+      const safeAlias = assertSafeSegment(alias, 'package alias');
+      const pkg = selectedPackages.get(alias);
+      if (!pkg) {
+        throw new OpmError(
+          'NOT_FOUND',
+          `Lock entry missing for ${echoed(alias)}`,
+        );
+      }
+      const {
+        storePath,
+        bins,
+        lifecycleScriptsExecuted,
+        sandboxOutcomes,
+        treeDigest,
+      } = await materializeLockPackage({
+        root,
+        pkg,
+        offline,
+        ...(!(policy === undefined) && { policy }),
+      });
+      materialised.set(safeAlias, {
+        storePath,
+        bins,
+        pkg,
+        lifecycleScriptsExecuted,
+        sandboxOutcomes,
+        treeDigest,
+      });
     }
-    const {
-      storePath,
-      bins,
-      lifecycleScriptsExecuted,
-      sandboxOutcomes,
-      treeDigest,
-    } = await materializeLockPackage({
-      root,
-      pkg,
-      offline,
-      ...(!(policy === undefined) && { policy }),
-    });
-    materialised.set(safeAlias, {
-      storePath,
-      bins,
-      pkg,
-      lifecycleScriptsExecuted,
-      sandboxOutcomes,
-      treeDigest,
-    });
+  } finally {
+    await hold?.release();
   }
 
   await input.beforeLinking?.();
