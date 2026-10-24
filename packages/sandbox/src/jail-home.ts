@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-  abandonedByOwner,
+  abandonedByOwnerAt,
   openStablePath,
   readDirChildWithTypes,
   removeChild,
@@ -98,6 +98,8 @@ export async function removeJailHome(jail: JailHome): Promise<void> {
 export async function sweepJailHomes(
   root: string,
   judge: AbandonJudge = {},
+  /** Test seam: called with each home's name before it is judged. */
+  seams: { beforeJudging?: (name: string) => Promise<void> } = {},
 ): Promise<void> {
   const parent = await openStablePath(root).catch(() => undefined);
   if (parent === undefined) return;
@@ -112,8 +114,11 @@ export async function sweepJailHomes(
         continue;
       }
       if (!name.startsWith(JAIL_HOME_PREFIX)) continue;
-      const abandoned = await abandonedByOwner(
-        join(root, name),
+      await seams.beforeJudging?.(name);
+      // Judged through a handle of it, opened without following a link.
+      const abandoned = await abandonedByOwnerAt(
+        parent,
+        name,
         UNOWNED_JAIL_HOME_MS,
         judge,
       ).catch(() => false);

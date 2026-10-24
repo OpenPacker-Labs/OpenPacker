@@ -411,7 +411,13 @@ export {
   OWNER_FILE,
   ownerFileProblem,
   readOwnerFile,
+  readOwnerFileAt,
   writeOwnerFile,
   type OwnerFileProblem,
+  type OwnerFileRead,
 } from './owner-file.js';
-export { abandonedByOwner, type AbandonJudge } from './owner-abandoned.js';
+export {
+  abandonedByOwner,
+  abandonedByOwnerAt,
+  type AbandonJudge,
+} from './owner-abandoned.js';

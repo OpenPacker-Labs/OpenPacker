@@ -1,7 +1,8 @@
 import { constants } from 'node:fs';
-import { open, rename, rm } from 'node:fs/promises';
+import { open, rename, rm, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { openChild } from './handle-path.js';
 import {
   currentOwner,
   parseProcessOwner,
@@ -61,16 +62,39 @@ export async function writeOwnerFile(
   }
 }
 
+/** How an owner file is read: no link followed, a FIFO never waited on. */
+const OWNER_FILE_FLAGS =
+  constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | constants.O_NONBLOCK;
+
+/** What an owner file says: an owner, or why not ({@link OwnerFileProblem}). */
+export type OwnerFileRead =
+  | { owner: ProcessOwner }
+  | { problem: OwnerFileProblem };
+
 /** What is in the owner file of `dir`: an owner, or why not ({@link OwnerFileProblem}). */
-async function readOwnerFileOf(
-  dir: string,
-): Promise<{ owner: ProcessOwner } | { problem: OwnerFileProblem }> {
+async function readOwnerFileOf(dir: string): Promise<OwnerFileRead> {
+  return await readOwnerFileFrom(
+    async () => await open(join(dir, OWNER_FILE), OWNER_FILE_FLAGS),
+  );
+}
+
+/**
+ * What is in the owner file of the directory `dir` is a handle of, read
+ * through that handle: the directory judged is the one opened, whatever its
+ * name has come to name since.
+ */
+export async function readOwnerFileAt(dir: FileHandle): Promise<OwnerFileRead> {
+  return await readOwnerFileFrom(
+    async () => await openChild(dir, OWNER_FILE, OWNER_FILE_FLAGS),
+  );
+}
+
+async function readOwnerFileFrom(
+  opened: () => Promise<FileHandle>,
+): Promise<OwnerFileRead> {
   let text: string;
   try {
-    const file = await open(
-      join(dir, OWNER_FILE),
-      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | constants.O_NONBLOCK,
-    );
+    const file = await opened();
     try {
       const info = await file.stat();
       if (!info.isFile() || info.size > OWNER_FILE_BYTES)

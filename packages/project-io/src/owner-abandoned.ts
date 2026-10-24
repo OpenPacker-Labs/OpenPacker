@@ -1,5 +1,12 @@
-import { lstat } from 'node:fs/promises';
-import { ownerFileProblem, readOwnerFile } from './owner-file.js';
+import { constants } from 'node:fs';
+import { lstat, type FileHandle } from 'node:fs/promises';
+import { O_DIRECTORY, openChild } from './handle-path.js';
+import {
+  ownerFileProblem,
+  readOwnerFile,
+  readOwnerFileAt,
+  type OwnerFileRead,
+} from './owner-file.js';
 import {
   isOwnerAlive,
   type OwnerProbe,
@@ -37,12 +44,63 @@ export async function abandonedByOwner(
   judge: AbandonJudge = {},
 ): Promise<boolean> {
   const owner = await readOwnerFile(path);
-  if (owner !== undefined)
-    return !(await isOwnerAlive(owner, judge.reader, judge.probe));
-  if ((await ownerFileProblem(path)) !== 'missing') return false;
+  const read: OwnerFileRead =
+    owner !== undefined
+      ? { owner }
+      : { problem: (await ownerFileProblem(path)) ?? 'unreadable' };
   const info = await lstat(path).catch(() => undefined);
+  return await judged(
+    read,
+    info?.isDirectory() === true ? info.mtimeMs : undefined,
+    unownedAfterMs,
+    judge,
+  );
+}
+
+/**
+ * {@link abandonedByOwner} for the entry `name` of the directory `parent` is a
+ * handle of, judged through a handle of it opened without following a link:
+ * a link, or anything not a directory, is never abandoned, and a directory
+ * swapped in after it was listed is judged as what is opened, not by a path.
+ */
+export async function abandonedByOwnerAt(
+  parent: FileHandle,
+  name: string,
+  unownedAfterMs: number,
+  judge: AbandonJudge = {},
+): Promise<boolean> {
+  const dir = await openChild(
+    parent,
+    name,
+    constants.O_RDONLY | O_DIRECTORY | (constants.O_NOFOLLOW ?? 0),
+  ).catch(() => undefined);
+  if (dir === undefined) return false;
+  try {
+    const info = await dir.stat();
+    if (!info.isDirectory()) return false;
+    return await judged(
+      await readOwnerFileAt(dir),
+      info.mtimeMs,
+      unownedAfterMs,
+      judge,
+    );
+  } finally {
+    await dir.close().catch(() => undefined);
+  }
+}
+
+async function judged(
+  read: OwnerFileRead,
+  mtimeMs: number | undefined,
+  unownedAfterMs: number,
+  judge: AbandonJudge,
+): Promise<boolean> {
+  if ('owner' in read)
+    return !(await isOwnerAlive(read.owner, judge.reader, judge.probe));
+  // An owner file that says nothing opm can read is judged by nobody.
+  if (read.problem !== 'missing') return false;
   return (
-    info?.isDirectory() === true &&
-    (judge.now ?? Date.now)() - info.mtimeMs > unownedAfterMs
+    mtimeMs !== undefined &&
+    (judge.now ?? Date.now)() - mtimeMs > unownedAfterMs
   );
 }

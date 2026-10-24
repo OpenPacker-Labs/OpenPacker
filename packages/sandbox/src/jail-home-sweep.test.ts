@@ -1,8 +1,11 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
+  lstat,
   mkdir,
   readdir,
+  rename,
+  symlink,
   readFile,
   realpath,
   rm,
@@ -279,6 +282,29 @@ describe('a home whose owner is another process, alive', () => {
     await writeFile(fifo, 'go\n');
     expect(await exited).toBe(0);
     expect(await readdir(defaultJailHomeRoot())).toEqual([]);
+  });
+});
+
+describe('a home swapped for a link after it was listed', () => {
+  it('is judged as what is opened, never by where the link points', async () => {
+    const dir = await ownTmpdir();
+    const me = await currentOwner();
+    const home = await leftHome('home-swapped', me);
+    // What the link points at: a directory whose owner has ended.
+    const decoy = await leftHome('decoy', { ...me, pid: await ended() });
+    await sweepJailHomes(
+      defaultJailHomeRoot(),
+      {},
+      {
+        beforeJudging: async (name) => {
+          if (name !== 'home-swapped') return;
+          await rename(home, join(dir, 'moved-away'));
+          await symlink(decoy, home);
+        },
+      },
+    );
+    expect((await lstat(home)).isSymbolicLink()).toBe(true);
+    expect(present([join(decoy, OWNER_FILE)])).toEqual([true]);
   });
 });
 
