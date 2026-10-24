@@ -55,7 +55,7 @@ import {
   redactSource,
   storeArchives,
 } from './frozen-store.js';
-import { layOutFromStore } from './frozen-layout.js';
+import { layOutFromStore, type FrozenInstallSeams } from './frozen-layout.js';
 import {
   prepareFrozenWorkspace,
   type FrozenWorkspaceRequest,
@@ -64,13 +64,11 @@ import { strongestClaims, type IntegrityClaim } from './integrity.js';
 import { MANIFEST_NAME, projectPaths } from './paths.js';
 import { readManifestFile } from './project.js';
 import { projectStep, type StepOptions } from './project-step.js';
-import {
-  holdSharedStore,
-  type HoldOptions,
-  type StoreHold,
-} from './shared-store-lease.js';
+import { holdSharedStore, type StoreHold } from './shared-store-lease.js';
 import type { OpmManifest } from './types.js';
 import { OpmError } from './types.js';
+
+export type { FrozenInstallSeams };
 
 export interface FrozenInstallInput extends FrozenFetchOptions {
   /** The project directory: where the manifest, the lock and `node_modules` are. */
@@ -93,18 +91,6 @@ export interface FrozenInstallInput extends FrozenFetchOptions {
   /** Archives read at the same time. */
   concurrency?: number;
   signal?: AbortSignal;
-}
-
-/**
- * Points inside an install where a test runs what may happen meanwhile, such
- * as a concurrent `opm gc --shared`. Not part of the package's API: only
- * `installFrozenWith` takes them, and `index.ts` does not export it.
- */
-export interface FrozenInstallSeams {
-  /** Once every archive is in the store, before any is linked into `node_modules`. */
-  beforeLayout?: () => Promise<void>;
-  /** How the install's hold on the shared store waits, and where it steps. */
-  hold?: HoldOptions;
 }
 
 export interface FrozenInstallResult {
