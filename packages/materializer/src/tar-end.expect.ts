@@ -127,6 +127,12 @@ export const OVER_REFUSED: ExpectedCodes = {
     'TAR_AMBIGUOUS_PREFIX',
   'a comment record with a newline in its value': 'TAR_AMBIGUOUS_PAX',
   'a record with a newline in its key': 'TAR_AMBIGUOUS_PAX',
+  'a mode field with a byte after its NUL': 'TAR_AMBIGUOUS_SPELLING',
+  'a uid with a byte after its NUL': 'TAR_AMBIGUOUS_SPELLING',
+  'an mtime with a letter after its digits': 'TAR_AMBIGUOUS_SPELLING',
+  'a devmajor of letters, under ustar magic': 'TAR_AMBIGUOUS_SPELLING',
+  'magic "ustar" with the version "0 " and no prefix': 'TAR_AMBIGUOUS_SPELLING',
+  'a header with bytes in its last 12': 'TAR_AMBIGUOUS_SPELLING',
   'a global header with a link name': 'TAR_AMBIGUOUS_LINK',
 };
 

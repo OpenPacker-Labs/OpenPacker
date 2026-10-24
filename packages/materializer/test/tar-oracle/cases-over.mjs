@@ -6,7 +6,9 @@
  * file) with a checksum or a number node-tar cannot read, a sized directory
  * whose span holds nothing, a path that an extended header gives a directory,
  * a prefix that a pax path overrides, a newline in a pax record that
- * changes nothing, and a link name on a global header, which node-tar drops. ADR 0058 section 8 lists them.
+ * changes nothing, a link name on a global header, which node-tar drops, and
+ * numeric or magic fields spelled in a way no known writer spells them, which
+ * the readers happen to read alike. ADR 0058 section 8 lists them.
  */
 
 import {
@@ -20,6 +22,12 @@ import {
   paxBody,
   paxRecord,
 } from './blocks.mjs';
+
+/** A file whose header has `text` (Latin-1) written over the field at `offset`. */
+const spelled = (name, offset, text) =>
+  file(name, 'S', {
+    edit: (header) => Buffer.from(text, 'latin1').copy(header, offset),
+  });
 
 /** A checksum field node-tar reads over 12 bytes as a base-256 number it cannot use. */
 const base256 = (sum) => {
@@ -102,6 +110,48 @@ export const OVER_CASES = {
   'a record with a newline in its key': [
     a,
     paxBody(paxRecord('co\nmment', 'c')),
+    b,
+    Z,
+    Z,
+  ],
+  'a mode field with a byte after its NUL': [
+    a,
+    spelled('package/m.js', 100, '000644\0x'),
+    b,
+    Z,
+    Z,
+  ],
+  'a uid with a byte after its NUL': [
+    a,
+    spelled('package/u.js', 108, '000000\0x'),
+    b,
+    Z,
+    Z,
+  ],
+  'an mtime with a letter after its digits': [
+    a,
+    spelled('package/t.js', 136, '0000000000z\0'),
+    b,
+    Z,
+    Z,
+  ],
+  'a devmajor of letters, under ustar magic': [
+    a,
+    spelled('package/d.js', 329, 'zzzzzzz\0'),
+    b,
+    Z,
+    Z,
+  ],
+  'magic "ustar" with the version "0 " and no prefix': [
+    a,
+    spelled('package/v.js', 263, '0 '),
+    b,
+    Z,
+    Z,
+  ],
+  'a header with bytes in its last 12': [
+    a,
+    spelled('package/l.js', 500, 'tail'),
     b,
     Z,
     Z,

@@ -21,6 +21,7 @@
 import { unsafe } from './errors.js';
 import { assertNumbersAgree } from './tar-numbers.js';
 import { assertOctalAgrees, pnpmOctal } from './tar-octal.js';
+import { assertSpellingKnown } from './tar-spelling.js';
 import { assertTextAgrees } from './tar-text.js';
 
 const BLOCK = 512;
@@ -123,7 +124,11 @@ function endsHere(bytes: Uint8Array, offset: number): boolean {
   return true;
 }
 
-/** Refuse a header field the readers read differently (ADR 0058 §8). */
+/**
+ * Refuse a header field the readers read differently (ADR 0058 §8): the
+ * targeted checks, each a difference found by reading the three decoders, then
+ * the spelling classes of tar-spelling.ts as a second layer.
+ */
 export function assertHeaderAgrees(header: Uint8Array, at: number): void {
   const ustar = hasUstarMagic(header);
   assertChecksumAgrees(header, at);
@@ -133,6 +138,9 @@ export function assertHeaderAgrees(header: Uint8Array, at: number): void {
   assertOctalAgrees(header, at, 'mode');
   assertNumbersAgree(header, at, ustar);
   assertLinkNameAgrees(header, at);
+  // Last, so the targeted checks above keep their codes; then any spelling
+  // outside the classes real writers use, whether or not a check names it.
+  assertSpellingKnown(header, at, ustar);
 }
 
 /** node-tar reads the fields after the magic only under `ustar\0` `00`. */
