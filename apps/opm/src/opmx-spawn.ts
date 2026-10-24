@@ -39,6 +39,8 @@ export interface SandboxContext {
   signal?: AbortSignal;
   /** Directories put first on the tool's PATH (its layout's `.bin`). */
   pathPrefix?: readonly string[];
+  /** `--timeout`: wall-clock milliseconds, 0 for none; else the project's. */
+  timeoutMs?: number;
 }
 
 /**
@@ -52,7 +54,7 @@ export async function runTool(
   args: readonly string[],
   io: CliIo,
   cwd: string,
-  signal?: AbortSignal,
+  context: Pick<SandboxContext, 'signal' | 'timeoutMs'> = {},
 ): Promise<number> {
   return runLaidOut(
     await ephemeralNodeRun(tool, bin),
@@ -60,10 +62,7 @@ export async function runTool(
     args,
     io,
     cwd,
-    {
-      packageId: tool.exactPurl,
-      ...(!(signal === undefined) && { signal }),
-    },
+    { ...context, packageId: tool.exactPurl },
   );
 }
 
@@ -266,6 +265,9 @@ async function spawnProcess(
       ...(!(sandbox?.signal === undefined) && { signal: sandbox.signal }),
       ...(!(sandbox?.pathPrefix === undefined) && {
         pathPrefix: sandbox.pathPrefix,
+      }),
+      ...(!(sandbox?.timeoutMs === undefined) && {
+        timeoutMs: sandbox.timeoutMs,
       }),
       // The tool's output reaches the terminal as the tool writes it: a
       // server prints that it listens and then serves until it is stopped.

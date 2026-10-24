@@ -72,20 +72,29 @@ export interface SandboxPolicy {
    * Package id / purl / glob → grants.
    */
   packages?: Readonly<Record<string, PackageGrants>>;
-  /** Max wall-clock ms for a sandboxed process (default 600_000). 0 = none. */
+  /**
+   * Max wall-clock ms for a sandboxed process (default 600_000). 0 = none.
+   * A caller that runs a tool someone started (opmx) sets its own: none
+   * unless one was asked for.
+   */
   timeoutMs?: number;
-  /** Raw stdout byte limit (default 1 MiB). */
+  /**
+   * Raw stdout byte limit (default 1 MiB). The byte limits bound output kept
+   * in the outcome; output handed to an `output` sink is not kept, and has
+   * none.
+   */
   maximumStdoutBytes?: number;
-  /** Raw stderr byte limit (default 1 MiB). */
+  /** Raw stderr byte limit (default 1 MiB), for output kept. */
   maximumStderrBytes?: number;
-  /** Combined raw output byte limit (default 2 MiB). */
+  /** Combined raw output byte limit (default 2 MiB), for output kept. */
   maximumOutputBytes?: number;
 }
 
 /**
  * Where a process's output goes as it is written, instead of into the
  * outcome: a caller that shows a tool to a person (opmx) passes its own
- * streams. Each chunk is the bytes as read, within the policy's byte limits.
+ * streams. Each chunk is the bytes as read; none is kept, and the policy's
+ * byte limits, which bound what is kept, do not apply.
  */
 export interface OutputSink {
   stdout(chunk: Uint8Array): void;
@@ -110,10 +119,11 @@ export interface RunInSandboxInput {
   stdin?: Uint8Array;
   /**
    * Hand the process's output on as it is written. The outcome's `stdout` and
-   * `stderr` then hold only what the sandbox itself says (a limit reached, a
-   * run stopped), and nothing of the output is kept. The policy's byte limits
-   * still end the process tree when the output passes them. Absent, the output
-   * is kept, within those limits, and returned when the process ends.
+   * `stderr` then hold only what the sandbox itself says (a run stopped), and
+   * nothing of the output is kept, so the policy's byte limits, which bound
+   * what is kept, do not apply. Absent, the output is kept, within those
+   * limits, and returned when the process ends; past them the process tree is
+   * ended.
    */
   output?: OutputSink;
   policy: SandboxPolicy;

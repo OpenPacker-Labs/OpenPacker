@@ -9,6 +9,7 @@ import {
 } from '@openpacker/sandbox';
 import type { PolicyInput } from '@openpacker/contracts';
 import { platformNote, sandboxPolicyFromProject } from './lifecycle.js';
+import { parseRunTimeout } from './run-timeout.js';
 import { storeViews } from './store-view.js';
 import { OpmError } from './types.js';
 
@@ -17,6 +18,12 @@ import { OpmError } from './types.js';
  *
  * Default: project + store RO, jail temp RW, network deny, fail-closed.
  * Set policy.projectWrite / sandbox.project_write to allow project mutation.
+ *
+ * A tool runs for as long as it runs, as one started by `npx` does: someone
+ * started it and stops it, and a server is meant to keep running. Its limit
+ * is `timeoutMs` when given (`opmx --timeout`), else the project's
+ * `[sandbox] opmx_timeout_ms`, else none. The project's `timeout_ms` bounds
+ * what runs unattended, an install's lifecycle scripts, and not this.
  */
 export async function runSandboxedPackageProcess(input: {
   argv: readonly string[];
@@ -31,6 +38,8 @@ export async function runSandboxedPackageProcess(input: {
   signal?: AbortSignal;
   /** Directories put first on the process's PATH (a layout's `.bin`). */
   pathPrefix?: readonly string[];
+  /** Wall-clock limit in whole milliseconds, 0 for none (`opmx --timeout`). */
+  timeoutMs?: number;
   /**
    * Hand the output on as the process writes it, rather than return it in the
    * outcome (`@openpacker/sandbox`'s `RunInSandboxInput.output`).
@@ -42,7 +51,19 @@ export async function runSandboxedPackageProcess(input: {
   if (input.argv.length === 0) {
     throw new OpmError('USAGE', 'runSandboxedPackageProcess requires argv');
   }
-  const policy: SandboxPolicy = sandboxPolicyFromProject(input.policy);
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const ext = input.policy as
+    | (PolicyInput & { opmxTimeoutMs?: number })
+    | undefined;
+  const policy: SandboxPolicy = {
+    ...sandboxPolicyFromProject(input.policy),
+    timeoutMs: parseRunTimeout(
+      String(input.timeoutMs ?? ext?.opmxTimeoutMs ?? 0),
+      input.timeoutMs === undefined
+        ? 'sandbox.opmx_timeout_ms'
+        : 'The run timeout',
+    ),
+  };
   const projectWrite = policy.projectWrite === true;
 
   const projectRoot = input.projectRoot;

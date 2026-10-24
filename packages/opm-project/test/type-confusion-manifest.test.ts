@@ -84,6 +84,7 @@ const FULL_MANIFEST = [
   'allow_dangerous_grants = false',
   'legacy_fat_root = false',
   'timeout_ms = 60000',
+  'opmx_timeout_ms = 0',
   '',
   '[sandbox.packages."pkg:npm/sharp"]',
   'network = true',

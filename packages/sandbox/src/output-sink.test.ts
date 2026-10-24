@@ -15,7 +15,8 @@ import type { SandboxBackend } from './types.js';
  * A caller that shows a tool to a person (opmx) is handed its output as the
  * tool writes it, through `output`, rather than all of it once the tool ends:
  * a server that prints a line and keeps running showed nothing. Nothing is
- * kept in the outcome, and the policy's byte limits still end the tree.
+ * kept in the outcome, so the policy's byte limits, which bound what is kept,
+ * do not end a tree whose output is handed on.
  */
 
 const roots: string[] = [];
@@ -90,35 +91,57 @@ describe.each(backends)(
       expect(outcome.stderr).toBe('\nopenpacker sandbox: process aborted\n');
     }, 30_000);
 
-    it('hands on what the limits let through, and ends the tree past them', async () => {
+    it('hands on all of it, past the byte limits, and lets the process run on', async () => {
+      // More than the default limits of what is kept: 1 MiB a stream, 2 MiB
+      // in all. They bound memory, and output handed on is not kept.
       const root = project();
-      const { seen, output } = decoder();
+      const counted = { stdout: 0, stderr: 0 };
       const outcome = await runInSandbox({
-        argv: ['/bin/sh', '-c', 'printf "%3000s" x; exec sleep 600'],
+        argv: [
+          '/bin/sh',
+          '-c',
+          'head -c 3145728 /dev/zero; head -c 1572864 /dev/zero >&2; echo end',
+        ],
         cwd: root,
-        policy: {
-          enabled: true,
-          mode: 'fail-closed',
-          required: true,
-          maximumStdoutBytes: 1024,
-        },
+        policy: { enabled: true, mode: 'fail-closed', required: true },
         readwritePaths: [],
         readonlyPaths: [root],
         backend: backend(),
-        output,
+        output: {
+          stdout: (chunk) => (counted.stdout += chunk.byteLength),
+          stderr: (chunk) => (counted.stderr += chunk.byteLength),
+        },
       });
-      expect(seen.stdout).toBe(' '.repeat(1024));
-      expect(outcome).toMatchObject({
-        exitCode: 125,
-        stdout: '',
-        stderr: '\nopenpacker sandbox: stdout output limit exceeded\n',
-        outputLimitExceeded: 'stdout',
-      });
+      expect(counted).toEqual({ stdout: 3_145_728 + 4, stderr: 1_572_864 });
+      expect(outcome).toMatchObject({ exitCode: 0, stdout: '', stderr: '' });
+      expect(outcome.outputLimitExceeded).toBeUndefined();
     }, 30_000);
   },
 );
 
 describe('output kept in the outcome', () => {
+  it('is cut at the byte limits, and the tree is ended past them', async () => {
+    const outcome = await runInSandbox({
+      argv: ['/bin/sh', '-c', 'printf "%3000s" x; exec sleep 600'],
+      cwd: project(),
+      policy: {
+        enabled: true,
+        mode: 'fail-closed',
+        required: true,
+        maximumStdoutBytes: 1024,
+      },
+      readwritePaths: [],
+      readonlyPaths: [],
+      backend: createMockBackend(),
+    });
+    expect(outcome).toMatchObject({
+      exitCode: 125,
+      stdout: ' '.repeat(1024),
+      stderr: '\nopenpacker sandbox: stdout output limit exceeded\n',
+      outputLimitExceeded: 'stdout',
+    });
+  }, 30_000);
+
   it('is what a caller with no sink gets, as before', async () => {
     const outcome = await runInSandbox({
       argv: ['/bin/sh', '-c', 'echo kept; echo also >&2'],

@@ -111,7 +111,12 @@ export async function runOpmx(
       );
       // An npm script runs from a node_modules of its closure, bound whole.
       return await holdingSignals((signal) =>
-        runTool(tool, bin, passthrough, io, cwd, signal),
+        runTool(tool, bin, passthrough, io, cwd, {
+          signal,
+          ...(!(flags.timeoutMs === undefined) && {
+            timeoutMs: flags.timeoutMs,
+          }),
+        }),
       );
     }
 
@@ -174,6 +179,7 @@ export async function runOpmx(
       projectRoot: root,
       ...(!(pkgId === undefined) && { packageId: pkgId }),
       ...(!(projectPolicy === undefined) && { policy: projectPolicy }),
+      ...(!(flags.timeoutMs === undefined) && { timeoutMs: flags.timeoutMs }),
     };
     const storePaths = Object.values(state.packages).map(
       (pkg) => pkg.storePath,

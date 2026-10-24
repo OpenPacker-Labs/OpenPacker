@@ -116,7 +116,11 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
         network: {
           allowOutbound: input.network,
         },
-        timeoutMs: input.timeoutMs ?? 600_000,
+        // Omitted, MXC sets no limit of its own; the sandbox's own signal
+        // carries the policy's.
+        ...(!(input.timeoutMs === undefined) && {
+          timeoutMs: input.timeoutMs,
+        }),
       });
 
       // commandLine as joined argv — MXC expects a command line string on

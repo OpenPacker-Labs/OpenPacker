@@ -139,7 +139,7 @@ async function signalledRun(
      ${PLAIN_NODE}
      const tool = ${JSON.stringify(tool)};
      process.exitCode = await holdingSignals((signal) =>
-       runTool(tool, tool.bins[0], [${JSON.stringify(marker)}], process, ${JSON.stringify(work)}, signal),
+       runTool(tool, tool.bins[0], [${JSON.stringify(marker)}], process, ${JSON.stringify(work)}, { signal }),
      );
     `,
   });

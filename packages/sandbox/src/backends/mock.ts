@@ -120,9 +120,11 @@ export function assertSnapshot(fd?: number): void {
 export type OutputLimitKind = 'stdout' | 'stderr' | 'combined';
 
 /**
- * A process's output within the policy's byte limits: kept, or handed to
- * `sink` as it arrives and not kept. Past a limit nothing more is kept or
- * handed on, and `push` says the process tree is to be ended.
+ * A process's output: kept within the policy's byte limits, or handed to
+ * `sink` as it arrives. Kept output past a limit is not kept, and `push` says
+ * the process tree is to be ended. Output handed on is not kept, so it has no
+ * limit: a tool someone watches (a server's log) writes for as long as it
+ * runs.
  */
 export class BoundedOutput {
   readonly #stdout: Buffer[] = [];
@@ -144,6 +146,10 @@ export class BoundedOutput {
   push(kind: 'stdout' | 'stderr', chunk: unknown): boolean {
     if (this.exceeded) return false;
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    if (this.sink !== undefined) {
+      this.sink[kind](bytes);
+      return true;
+    }
     const channelBytes =
       kind === 'stdout' ? this.#stdoutBytes : this.#stderrBytes;
     const channelLimit =
@@ -158,12 +164,10 @@ export class BoundedOutput {
         this.limits.maximumOutputBytes - this.#totalBytes,
       ),
     );
-    if (retained > 0) {
-      const within = bytes.subarray(0, retained);
-      if (this.sink === undefined)
-        (kind === 'stdout' ? this.#stdout : this.#stderr).push(within);
-      else this.sink[kind](within);
-    }
+    if (retained > 0)
+      (kind === 'stdout' ? this.#stdout : this.#stderr).push(
+        bytes.subarray(0, retained),
+      );
     if (kind === 'stdout') this.#stdoutBytes += bytes.byteLength;
     else this.#stderrBytes += bytes.byteLength;
     this.#totalBytes += bytes.byteLength;

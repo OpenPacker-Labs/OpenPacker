@@ -1,4 +1,4 @@
-import { OpmError } from '@openpacker/opm-project';
+import { OpmError, parseRunTimeout } from '@openpacker/opm-project';
 
 /** opmx's command line: its arguments, its granted environment and its help. */
 
@@ -31,6 +31,7 @@ export function parse(argv: string[]) {
   const plugins: string[] = [];
   const allowEnv: string[] = [];
   let offline = false;
+  let timeoutMs: number | undefined;
   let i = 0;
   let seenSelector = false;
   while (i < argv.length) {
@@ -87,6 +88,22 @@ export function parse(argv: string[]) {
       i += 1;
       continue;
     }
+    if (arg === '--timeout') {
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith('--'))
+        throw new OpmError(
+          'USAGE',
+          'opmx --timeout requires a number of milliseconds (0 for none)',
+        );
+      timeoutMs = parseRunTimeout(value, '--timeout');
+      i += 2;
+      continue;
+    }
+    if (arg.startsWith('--timeout=')) {
+      timeoutMs = parseRunTimeout(arg.slice('--timeout='.length), '--timeout');
+      i += 1;
+      continue;
+    }
     if (arg === '--offline') {
       offline = true;
       i += 1;
@@ -130,6 +147,7 @@ export function parse(argv: string[]) {
     plugins,
     allowEnv,
     offline,
+    ...(timeoutMs !== undefined && { timeoutMs }),
   };
 }
 
@@ -156,6 +174,11 @@ The plugin answers metadata only; the host downloads the tool bytes from the
 location the plugin publishes and digest-verifies them before anything runs.
 A plugin's declared environment stays unforwarded unless each name is granted
 with --allow-env NAME (repeatable). --offline refuses an ephemeral resolve.
+
+A tool runs until it ends or is stopped (Ctrl-C), as with npx, and all it
+writes reaches the terminal. --timeout <ms> ends it after that many
+milliseconds (0: never); a project sets one with [sandbox] opmx_timeout_ms.
+--timeout wins over the project's; timeout_ms bounds lifecycle scripts only.
 
 Tool files are kept once per machine in the shared package store
 (OPM_STORE_HOME, default ~/.cache/openpacker/store; OPM_STORE_HOME=off opts out).

@@ -13,6 +13,7 @@ import type {
   RegistrySource,
   RequirementScope,
 } from './types.js';
+import { parseRunTimeout } from './run-timeout.js';
 import { OpmError } from './types.js';
 import { assertDigest, MANIFEST_NAME } from './paths.js';
 import { defaultSupplyChainPolicyInput } from './supply-chain.js';
@@ -211,6 +212,7 @@ export function serializeManifest(manifest: OpmManifest): string {
         allowDangerousGrants?: boolean;
         legacyFatRoot?: boolean;
         timeoutMs?: number;
+        opmxTimeoutMs?: number;
       })
     | undefined;
   if (
@@ -224,6 +226,7 @@ export function serializeManifest(manifest: OpmManifest): string {
     pePreview?.allowDangerousGrants !== undefined ||
     pePreview?.legacyFatRoot !== undefined ||
     pePreview?.timeoutMs !== undefined ||
+    pePreview?.opmxTimeoutMs !== undefined ||
     (manifest.policy?.sandboxPackageGrants &&
       Object.keys(manifest.policy.sandboxPackageGrants).length > 0)
   ) {
@@ -250,6 +253,7 @@ export function serializeManifest(manifest: OpmManifest): string {
       allowDangerousGrants?: boolean;
       legacyFatRoot?: boolean;
       timeoutMs?: number;
+      opmxTimeoutMs?: number;
     };
     if (pe.projectWrite !== undefined)
       lines.push(`project_write = ${pe.projectWrite ? 'true' : 'false'}`);
@@ -266,6 +270,8 @@ export function serializeManifest(manifest: OpmManifest): string {
     if (pe.legacyFatRoot !== undefined)
       lines.push(`legacy_fat_root = ${pe.legacyFatRoot ? 'true' : 'false'}`);
     if (pe.timeoutMs !== undefined) lines.push(`timeout_ms = ${pe.timeoutMs}`);
+    if (pe.opmxTimeoutMs !== undefined)
+      lines.push(`opmx_timeout_ms = ${pe.opmxTimeoutMs}`);
     lines.push('');
     for (const id of Object.keys(p.sandboxPackageGrants ?? {}).sort()) {
       const grant = p.sandboxPackageGrants![id]!;
@@ -989,6 +995,7 @@ const SANDBOX_FIELD_TYPES: Readonly<
   allow_dangerous_grants: 'boolean',
   legacy_fat_root: 'boolean',
   timeout_ms: 'number',
+  opmx_timeout_ms: 'number',
 };
 
 const SANDBOX_KEYS = new Set(Object.keys(SANDBOX_FIELD_TYPES));
@@ -1064,6 +1071,12 @@ function sandboxFromScratch(
     ext.legacyFatRoot = scratch.legacy_fat_root;
   if (typeof scratch.timeout_ms === 'number')
     ext.timeoutMs = scratch.timeout_ms;
+  if (typeof scratch.opmx_timeout_ms === 'number')
+    ext.opmxTimeoutMs = parseRunTimeout(
+      String(scratch.opmx_timeout_ms),
+      'sandbox.opmx_timeout_ms',
+      'INVALID_MANIFEST',
+    );
 
   if (packages.size > 0) {
     const grants: NonNullable<PolicyInput['sandboxPackageGrants']> = {};

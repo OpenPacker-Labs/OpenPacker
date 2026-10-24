@@ -396,7 +396,49 @@ runs, by the mock backend and by bwrap, and the limits ending a tree whose
 output is handed on; `opmx-stream.test.ts` (apps/opm) shows the same through
 `opmx`'s spawn, and a split character written whole.
 
-## Amendment (2026-10-24) — a tool someone runs: what stopped it
+## Amendment (2026-10-24) — a tool someone runs: how long, how much, and what stopped it
+
+`opmx` runs a tool a person started, as `npx` does: a server, a watcher, a REPL.
+Since the amendment above its output reaches the terminal as it is written, and
+two limits made for what runs unattended still ended it:
+
+- The policy's `timeout_ms`, ten minutes unless the project set one, and always
+  ten minutes for `opmx pkg:...`, which has no project. MXC set ten minutes of
+  its own when it was given none.
+- The byte limits, 1 MiB a stream and 2 MiB in all, which bound the output the
+  sandbox keeps in memory. Handed on as it is written, the output is not kept,
+  and a server was ended by its own log.
+
+Decision:
+
+1. **A tool `opmx` runs has no wall-clock limit unless one is asked for.**
+   `opmx --timeout <ms>` sets one for the run, else `[sandbox] opmx_timeout_ms`
+   in `opm.toml`, else there is none (`runSandboxedPackageProcess`). Both take
+   whole milliseconds, 0 for none, up to 2^31 - 1, what a timer can wait
+   (`parseRunTimeout`); anything else is refused, the key by `INVALID_MANIFEST`.
+   `timeout_ms` keeps bounding what runs unattended, an install's lifecycle
+   scripts, ten minutes by default, and no longer bounds `opmx`: a project that
+   set it for its lifecycle scripts does not end its servers with it. MXC is
+   given no limit of its own (its SDK sets none when it is omitted); the
+   sandbox's own signal carries the policy's.
+2. **Output handed to a sink has no byte limit** (`BoundedOutput`): nothing of
+   it is kept. Output kept in the outcome, which is what a caller with no sink
+   gets (lifecycle scripts, host installers), keeps the limits, and the process
+   tree is still ended past them, exit 125.
+
+What a run is still bounded by: the person who started it (Ctrl-C, SIGTERM,
+SIGHUP, as the amendment of 2026-10-17 says), and the limit they ask for.
+
+`opmx-long-run.test.ts` (apps/opm) runs, through bwrap, an installed tool that
+writes 3 MiB to stdout and 1.5 MiB to stderr and runs on for 1.5 s, in a project
+whose `timeout_ms` is 200, and finds all of it written and exit 0; and a tool
+that never ends, ended by `opmx_timeout_ms = 500` and by `--timeout 400` over
+the project's. `opmx-timeout.test.ts` (opm-project) pins which limit a run gets,
+and the key's round trip and refusals; `output-sink.test.ts` (sandbox) hands 4.5
+MiB to a sink through the mock backend and bwrap, and still cuts kept output at
+its limit.
+
+### What stopped it
 
 `opmx http-server` stopped by Ctrl-C said "openpacker sandbox: process aborted
 or timed out". The sandbox ended the process tree on an abort of the signal it

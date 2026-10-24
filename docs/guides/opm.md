@@ -1185,9 +1185,13 @@ Resolution order: explicit `--bin` → package primary bin → bin name in
 `.opm/bin`.
 
 A tool's stdout and stderr reach `opmx`'s as the tool writes them, so a server
-shows that it listens while it serves. The sandbox's byte limits and its
-`timeout_ms` (ten minutes unless the project sets one) still end a tool that
-passes them (ADR 0036). When a tool is ended, the sandbox says what ended it:
+shows that it listens while it serves. A tool runs until it ends or is stopped,
+as with `npx`, however long it runs and however much it writes. `--timeout <ms>`
+ends it after that many milliseconds (0 for never), and a project sets one for
+every `opmx` run with `[sandbox] opmx_timeout_ms`; the flag wins. `timeout_ms`
+bounds an install's lifecycle scripts only (ten minutes unless the project sets
+one), and so do the sandbox's byte limits, which bound the output it keeps (ADR
+0036). When a tool is ended, the sandbox says what ended it:
 `process stopped by SIGINT` (Ctrl-C; `opmx` then ends by the same signal),
 `process timed out after 600000 ms`, or `process aborted`.
 
@@ -1426,6 +1430,8 @@ mode = "fail-closed"   # fail-closed | degrade-warn | off
 prefer = "auto"        # auto | mxc | native
 project_write = false  # opmx cannot rewrite project source unless true
 minimal_path = true
+timeout_ms = 600000    # lifecycle scripts: wall-clock limit (0: none)
+opmx_timeout_ms = 0    # opmx: wall-clock limit (0, the default: none)
 
 # Prefer allowlists (strict mode rejects allow_lifecycle_scripts alone):
 # [policy]
