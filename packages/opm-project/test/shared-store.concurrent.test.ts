@@ -35,41 +35,52 @@ async function tempDir(prefix: string): Promise<string> {
 }
 
 describe('the shared store under concurrent installs', () => {
-  it('publishes each new package once however many installs race for it', async () => {
-    for (let round = 0; round < 30; round += 1) {
-      const bytes = packTarGzip([
-        {
-          path: 'package/package.json',
-          contents: new TextEncoder().encode(
-            '{"name":"demo","version":"1.0.0"}',
+  // Thirty rounds of six installs, each extracting a 64 KiB archive and
+  // linking a tree: work whose time is the machine's, and nothing here asserts
+  // it; the bound is there to end a hang. On four cores it took 12.7 s at a
+  // load of 27, 22 s at 38, 72 to 75 s beside eight busy loops, and went past
+  // the shared 30 s under strace, so it has 300 s of its own.
+  it(
+    'publishes each new package once however many installs race for it',
+    {
+      timeout: 300_000,
+    },
+    async () => {
+      for (let round = 0; round < 30; round += 1) {
+        const bytes = packTarGzip([
+          {
+            path: 'package/package.json',
+            contents: new TextEncoder().encode(
+              '{"name":"demo","version":"1.0.0"}',
+            ),
+          },
+          { path: 'package/big.bin', contents: randomBytes(64 * 1024) },
+        ]);
+        const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+        const key = storeKeyFromDigest(digest);
+        const shared = await tempDir('opm-shared-');
+        const projects = await Promise.all(
+          Array.from({ length: 6 }, () => tempDir('opm-proj-')),
+        );
+        const results = await Promise.allSettled(
+          projects.map((project) =>
+            materializeThroughSharedStore({
+              digest,
+              projectStorePath: join(project, key),
+              bytes,
+              format: 'tar+gzip',
+              env: { OPM_STORE_HOME: shared },
+            }),
           ),
-        },
-        { path: 'package/big.bin', contents: randomBytes(64 * 1024) },
-      ]);
-      const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
-      const key = storeKeyFromDigest(digest);
-      const shared = await tempDir('opm-shared-');
-      const projects = await Promise.all(
-        Array.from({ length: 6 }, () => tempDir('opm-proj-')),
-      );
-      const results = await Promise.allSettled(
-        projects.map((project) =>
-          materializeThroughSharedStore({
-            digest,
-            projectStorePath: join(project, key),
-            bytes,
-            format: 'tar+gzip',
-            env: { OPM_STORE_HOME: shared },
-          }),
-        ),
-      );
-      expect(
-        results.filter((result) => result.status === 'rejected'),
-        `round ${round}`,
-      ).toEqual([]);
-      expect((await readdir(shared)).sort()).toEqual(
-        [key, `${key}.tree`].sort(),
-      );
-    }
-  });
+        );
+        expect(
+          results.filter((result) => result.status === 'rejected'),
+          `round ${round}`,
+        ).toEqual([]);
+        expect((await readdir(shared)).sort()).toEqual(
+          [key, `${key}.tree`].sort(),
+        );
+      }
+    },
+  );
 });
