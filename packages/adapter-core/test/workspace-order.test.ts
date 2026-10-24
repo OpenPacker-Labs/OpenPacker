@@ -91,11 +91,13 @@ describe('dependency order', () => {
     expect(result.order.indexOf(dir(0))).toBeLessThan(
       result.order.indexOf(dir(3999)),
     );
-    // Linear: twice the chain costs at most twice the reads of what each
-    // member depends on (a quadratic walk would quadruple them), and a few per
-    // member at most.
-    expect(reads).toBeLessThanOrEqual(2 * order(2000).reads);
-    expect(reads).toBeLessThanOrEqual(4 * 4000);
+    // Exactly three reads of what each node (the members and the root) depends
+    // on: one by each of the two component searches (every list, then the
+    // runtime lists) and one for the layers. A pin, not a margin: a fourth
+    // read per member, or a walk that is quadratic, fails it, and so does a
+    // change that makes the walk cheaper, which then updates the number.
+    expect(reads).toBe(3 * 4001);
+    expect(order(2000).reads).toBe(3 * 2001);
   });
 });
 
