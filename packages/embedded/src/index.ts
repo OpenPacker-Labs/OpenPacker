@@ -68,7 +68,10 @@ function decode<T>(value: string): T {
  * What the engine refused, whichever binding it came through. The wasm
  * binding throws the engine's message as a string (wasm-bindgen's `JsValue`)
  * and the Node-API addon as an `Error`; {@link EmbeddedResolver} turns both
- * into this, with the message unchanged and the thrown value as its `cause`.
+ * into this, with the message unchanged. It has no `cause`: what was thrown
+ * says nothing the message does not (the addon's `code` is always
+ * GenericFailure), and a reporter that prints a cause chain, as opm's does for
+ * an unexpected failure, would print the same line twice.
  */
 export class EmbeddedRefusal extends Error {
   override readonly name = 'EmbeddedRefusal';
@@ -79,8 +82,8 @@ export class EmbeddedRefusal extends Error {
    */
   readonly refusal: string | undefined;
 
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
+  constructor(message: string) {
+    super(message);
     this.refusal = /^([A-Z][A-Z_]*[A-Z]):/u.exec(message)?.[1];
   }
 }
@@ -93,7 +96,6 @@ function engine<T>(call: () => T): T {
     if (thrown instanceof EmbeddedRefusal) throw thrown;
     throw new EmbeddedRefusal(
       thrown instanceof Error ? thrown.message : String(thrown),
-      { cause: thrown },
     );
   }
 }

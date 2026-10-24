@@ -11,8 +11,8 @@ import {
 /**
  * The wasm binding throws the engine's refusal as a string and the Node-API
  * addon as an Error. Through the resolver both are an EmbeddedRefusal with the
- * engine's message unchanged and its leading code in `refusal`, so a caller
- * reads one shape whichever binding it was given.
+ * engine's message unchanged, its leading code in `refusal` and no `cause`, so
+ * a caller reads one shape whichever binding it was given.
  */
 
 const UNSATISFIABLE =
@@ -82,8 +82,10 @@ describe('a refusal from either binding', () => {
       name: 'EmbeddedRefusal',
       message: code === 'UNSATISFIABLE' ? UNSATISFIABLE : RESOURCE_LIMIT,
       refusal: code,
-      cause: thrown,
     });
+    // The message is the whole of it: a cause would be printed as a second,
+    // identical line by a reporter that walks the cause chain.
+    expect(error).not.toHaveProperty('cause');
   });
 
   it('is an EmbeddedRefusal from every call, with no code when the message has none', () => {
@@ -139,8 +141,8 @@ describe('the wasm binding this package builds', () => {
     expect(error).toMatchObject({
       message: problem.message,
       refusal: 'UNSATISFIABLE',
-      cause: problem.message,
     });
+    expect(error).not.toHaveProperty('cause');
   });
 
   it('refuses an input it cannot read with an EmbeddedRefusal', () => {
