@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { echoed } from '@openpacker/adapter-core';
 import type {
   OpmLockfile,
   OpmManifest,
@@ -65,7 +66,7 @@ async function updateInStep(input: {
       if (manifest.packages[alias] === undefined)
         throw new OpmError(
           'NOT_FOUND',
-          `Package "${alias}" is not in ${MANIFEST_NAME}`,
+          `Package "${echoed(alias)}" is not in ${MANIFEST_NAME}`,
         );
     }
   }
@@ -108,14 +109,14 @@ async function updateInStep(input: {
     if (req === undefined)
       throw new OpmError(
         'NOT_FOUND',
-        `Package "${alias}" is not in ${MANIFEST_NAME}`,
+        `Package "${echoed(alias)}" is not in ${MANIFEST_NAME}`,
       );
     if (req.source !== undefined) continue;
     if (isExactPin(req) && !latest) {
       if (input.aliases !== undefined && input.aliases.length > 0)
         throw new OpmError(
           'UNRESOLVABLE',
-          `Package "${alias}" is an exact pin; pass --latest to change the manifest`,
+          `Package "${echoed(alias)}" is an exact pin; pass --latest to change the manifest`,
         );
       continue;
     }
@@ -141,7 +142,7 @@ async function updateInStep(input: {
     if (version === undefined)
       throw new OpmError(
         'UNRESOLVABLE',
-        `No eligible version found for "${alias}" (${req.purl}${req.version ? `@${req.version}` : ''})`,
+        `No eligible version found for "${echoed(alias)}" (${echoed(req.purl)}${req.version ? `@${echoed(req.version)}` : ''})`,
       );
     picked[alias] = version;
   }
