@@ -439,6 +439,12 @@ offline = false
 layout = "opm"
 ```
 
+`version` is text, never PURL syntax. Where the line itself is what is locked (a
+package from an explicit `source`, or one a plugin without a codec serves), the
+lock's `purl` carries it as the PURL's version, percent-encoded where a PURL
+needs it: `1.2.3+build.5` is locked as `@1.2.3%2Bbuild.5`, the same version once
+read, and a lock that spells it bare still matches.
+
 ### Specs for `opm add`
 
 | Spec                         | Notes                                    |
