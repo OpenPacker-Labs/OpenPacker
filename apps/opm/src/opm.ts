@@ -56,6 +56,7 @@ import {
   type AdapterRegistry,
 } from '@openpacker/opm-project';
 import { asksForHelp } from './commands/run-args.js';
+import { cliStep, runRecoverCommand } from './commands/recover.js';
 import { COMMANDS } from './commands/command-names.js';
 import { routeRun, unknownCommandHint } from './commands/run-route.js';
 import { RunError } from './commands/run-error.js';
@@ -683,6 +684,8 @@ export async function runOpm(
         const { runAuthCommand } = await import('./commands/auth.js');
         return await runAuthCommand(args, io);
       }
+      case 'recover':
+        return await runRecoverCommand(args, io, cwd, step);
       case 'generations': {
         const root = await requireOpmRoot(cwd);
         const state = await readEnvironmentState(root);
@@ -712,6 +715,9 @@ export async function runOpm(
         );
       }
       case 'gc': {
+        const { runGcCommand, runSharedGcCommand } = await import(
+          './commands/generations.js'
+        );
         // The shared store belongs to the user, not to a project, so this
         // needs no project and never runs as part of a project's own gc.
         if (args.options.has('shared'))
