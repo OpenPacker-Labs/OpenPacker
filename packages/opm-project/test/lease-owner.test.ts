@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   asProcessOwner,
+  leaseMachine,
   ownerPlace,
   UNKNOWN,
   type LeaseOwner,
@@ -12,7 +13,8 @@ import { ownerPlace as sharedPlace } from '../src/process-owner.js';
  * fields mapped onto that rule's record, and the lease's file names are what
  * they were. The rule a lease was placed by before is kept below, as written in
  * `lease-owner.ts` then, and every combination of what the two sides read is
- * placed the same by both.
+ * placed the same by both. It also places the leases of an opm that wrote the
+ * machine id itself where this one writes its keyed digest, as that opm did.
  */
 
 /** The lease's own place rule, before it used the shared one. */
@@ -89,5 +91,48 @@ describe('a lease owner', () => {
     expect(differ).toEqual([]);
     // Each answer is reached, so the table tells the rules apart.
     expect([...seen].sort()).toEqual(['elsewhere', 'ended', 'here']);
+  });
+
+  describe('across the machine id an earlier opm wrote and its digest', () => {
+    /** Every owner of the table, its machine the id itself. */
+    const owners: LeaseOwner[] = [];
+    for (const machine of ['a'.repeat(32), 'd'.repeat(32)])
+      for (const host of ['c'.repeat(16), 'e'.repeat(16)])
+        for (const boot of ['b'.repeat(32), 'f'.repeat(32), UNKNOWN])
+          for (const namespace of ['4026531836', '4026532000', UNKNOWN])
+            owners.push({ ...reader, pid: 7, machine, host, boot, namespace });
+    const digested = (owner: LeaseOwner): LeaseOwner => ({
+      ...owner,
+      machine: leaseMachine(owner.machine),
+    });
+
+    it('names a machine by 32 hex digits that are not the id', () => {
+      expect(leaseMachine('a'.repeat(32))).toMatch(/^[0-9a-f]{32}$/u);
+      expect(leaseMachine('a'.repeat(32))).not.toBe('a'.repeat(32));
+      expect(leaseMachine('a'.repeat(32))).toBe(leaseMachine('a'.repeat(32)));
+      expect(leaseMachine('d'.repeat(32))).not.toBe(
+        leaseMachine('a'.repeat(32)),
+      );
+    });
+
+    it("places an earlier opm's owner as that opm placed it", () => {
+      const differ: string[] = [];
+      for (const owner of owners)
+        for (const by of owners) {
+          const before = placedBefore(owner, by);
+          const now = ownerPlace(owner, digested(by));
+          const both = ownerPlace(digested(owner), digested(by));
+          if (now !== before || both !== before)
+            differ.push(JSON.stringify({ owner, by, before, now, both }));
+        }
+      expect(differ).toEqual([]);
+    });
+
+    it("is read by an earlier opm as another machine's, so that it never removes a live lease of this one", () => {
+      const seen = new Set<string>();
+      for (const owner of owners)
+        for (const by of owners) seen.add(placedBefore(digested(owner), by));
+      expect([...seen]).toEqual(['elsewhere']);
+    });
   });
 });

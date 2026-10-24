@@ -6,6 +6,14 @@
  * machine id and its host name). A lease's file names spell it in these
  * fields (`store-lease.ts`), `0` for one the process could not read.
  *
+ * The machine id is spelled as a keyed digest (`leaseMachine`), never as the
+ * id: machine-id(5) calls it confidential, and `.leases` sits in a store that
+ * users, containers and machines may share. An opm before this one wrote the
+ * id itself; a reader takes an owner whose machine digests to its own for one
+ * of its machine (`asRead`), so such a lease is judged as it was. An opm that
+ * writes the id reads this one's digest as another machine's, and so never
+ * removes a lease of this one.
+ *
  * It is judged by the one rule every holder opm records is judged by
  * (`process-owner.ts`), each side mapped onto that rule's record
  * (`asProcessOwner`). Where it runs (`ownerPlace`): an owner whose machine id
@@ -21,6 +29,7 @@
 import { createHash } from 'node:crypto';
 import { readFile, readlink } from 'node:fs/promises';
 import { hostname } from 'node:os';
+import { placeHex } from './owner-digest.js';
 import {
   isOwnerAlive as aliveBy,
   ownerPlace as placeOf,
@@ -42,7 +51,11 @@ export interface LeaseOwner {
   namespace: string;
   /** The kernel's boot id without dashes (Linux); `0` elsewhere. */
   boot: string;
-  /** `/etc/machine-id`, or a digest of the host name where there is none. */
+  /**
+   * A keyed digest of `/etc/machine-id` (`leaseMachine`), or a digest of the
+   * host name where there is none; 32 hex digits. An earlier opm wrote the id
+   * itself, which a reader takes for its digest (`asRead`).
+   */
   machine: string;
   /** A digest of the host name: 16 hex digits. */
   host: string;
@@ -55,10 +68,19 @@ async function readTrimmed(path: string): Promise<string> {
   );
 }
 
-async function machineId(): Promise<string> {
+/**
+ * The machine a lease names for the machine id `id`: its keyed digest, the one
+ * an owner record holds (`placeDigest` of `owner-digest.ts`) without its `d1-`,
+ * so that it is 32 hex digits as the id was.
+ */
+export function leaseMachine(id: string): string {
+  return placeHex('machine', id);
+}
+
+async function readMachine(): Promise<string> {
   for (const path of ['/etc/machine-id', '/var/lib/dbus/machine-id']) {
     const text = await readTrimmed(path);
-    if (/^[0-9a-f]{32}$/u.test(text)) return text;
+    if (/^[0-9a-f]{32}$/u.test(text)) return leaseMachine(text);
   }
   return createHash('sha256').update(hostname()).digest('hex').slice(0, 32);
 }
@@ -98,7 +120,7 @@ export function currentOwner(): Promise<LeaseOwner> {
     startTime(process.pid),
     pidNamespace(),
     bootId(),
-    machineId(),
+    readMachine(),
   ]).then(([start, namespace, boot, machine]) => ({
     pid: process.pid,
     start,
@@ -134,6 +156,18 @@ export function asProcessOwner(owner: LeaseOwner): ProcessOwner {
   };
 }
 
+/**
+ * `owner` as `reader` compares it: an owner whose machine is the id itself,
+ * as an earlier opm wrote it, and digests to `reader`'s machine is of
+ * `reader`'s machine. Any other owner is as it was written.
+ */
+export function asRead(owner: LeaseOwner, reader: LeaseOwner): LeaseOwner {
+  return owner.machine !== reader.machine &&
+    leaseMachine(owner.machine) === reader.machine
+    ? { ...owner, machine: reader.machine }
+    : owner;
+}
+
 /** The one owner rule, as a holder with a lock file of its own asks it. */
 const RULE: PlaceOptions = { unreadableNamespaceIsForeign: true };
 
@@ -144,7 +178,11 @@ const RULE: PlaceOptions = { unreadableNamespaceIsForeign: true };
  * namespace, or a namespace that could not be read), or `here`.
  */
 export function ownerPlace(owner: LeaseOwner, reader: LeaseOwner): OwnerPlace {
-  return placeOf(asProcessOwner(owner), asProcessOwner(reader), RULE);
+  return placeOf(
+    asProcessOwner(asRead(owner, reader)),
+    asProcessOwner(reader),
+    RULE,
+  );
 }
 
 /**
@@ -169,5 +207,10 @@ export async function isOwnerAlive(
   probe: OwnerProbe = systemProbe,
 ): Promise<boolean> {
   const by = reader ?? (await currentOwner());
-  return aliveBy(asProcessOwner(owner), asProcessOwner(by), probe, RULE);
+  return aliveBy(
+    asProcessOwner(asRead(owner, by)),
+    asProcessOwner(by),
+    probe,
+    RULE,
+  );
 }
