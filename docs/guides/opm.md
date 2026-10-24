@@ -791,7 +791,8 @@ another container, counts until it is removed from `<store>/.leases/` (ADR 0048,
 amendment 2026-10-17). An install waits for a collection that is deciding on an
 entry it wants, for 45 seconds at most; it then warns, naming the collection's
 lease, and goes on. Entries younger than ten minutes are left alone too, for an
-older opm that does not claim.
+older opm that does not claim; an entry's age is that of the newer of its
+`.tree` record and the entry directory itself.
 
 An install that has to make its claim in a store with no room left fails with
 the disk error (`ENOSPC`, `EDQUOT`); a store it may only read is adopted from
