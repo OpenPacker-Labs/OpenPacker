@@ -135,18 +135,20 @@ before it.
    manifest wrote after `@`, a `^` or `~` range or a tag included, is sent to
    the plugin as written (`targetAsWritten`), as the PURL's version. The hint is
    text, not PURL syntax: the request is built from the manifest's parsed `purl`
-   with the hint as its version (`purlAtVersion`; `^1.0.0` is asked for as
-   `@%5E1.0.0`), read back, and must name the same type, namespace, name and
-   qualifiers, no subpath, and the hint as its version, so an `@`, `/`, `?` or
-   `#` in the hint cannot name another package, a qualifier or a subpath, and a
-   hint no PURL can carry is refused before the plugin is asked. The identity
-   the plugin answers with must carry that same package and version, so a plugin
-   cannot turn a range into another release: it accepts the hint as the version
-   it names, or the resolve fails. A version line for an ecosystem with a codec
-   that reads it as a version (Maven's reads any text without a space) is built
-   the same way. Only a requirement with no hint lists the plugin's releases and
-   takes the newest the policy's minimum release age allows. The policy, digest
-   and size refusals propagated before and still do.
+   (its type, namespace, name and qualifiers, no subpath) with the hint as its
+   version (`purlAtVersion`; `^1.0.0` is asked for as `@%5E1.0.0`) and read
+   back, and the version read back must be the hint. The hint is the only text
+   in it the manifest's version line supplies, so an `@`, `/`, `?` or `#` of it
+   that escaped the version would change the version read back: it cannot name
+   another package, a qualifier or a subpath, and a hint no PURL can carry is
+   refused before the plugin is asked. The identity the plugin answers with must
+   carry that same package and version, so a plugin cannot turn a range into
+   another release: it accepts the hint as the version it names, or the resolve
+   fails. A version line for an ecosystem with a codec that reads it as a
+   version (Maven's reads any text without a space) is built the same way. Only
+   a requirement with no hint lists the plugin's releases and takes the newest
+   the policy's minimum release age allows. The policy, digest and size refusals
+   propagated before and still do.
 
 8. **One provider per ecosystem per resolve**, over a transport that answers a
    repeated read of the same document from memory (never an artifact download),
