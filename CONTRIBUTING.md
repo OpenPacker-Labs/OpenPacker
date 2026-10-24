@@ -52,3 +52,10 @@ check.
 
 The detailed contract and release checklist is
 [`docs/operations/contributing-releasing.md`](docs/operations/contributing-releasing.md).
+
+## AI-assisted contributions
+
+Contributions may be built with coding agents under human direction and review.
+Disclose significant AI-generated content in the pull request description.
+Commits made with an agent should name the tool or model in the commit message
+or in the pull request body.

@@ -2,6 +2,7 @@ import { echoed } from '@openpacker/adapter-core';
 import { parseCanonicalJson, printable } from '@openpacker/canonical';
 import type { JsonValue } from '@openpacker/contracts';
 import { isSourceKind, isTrustTier } from '@openpacker/policy';
+import { canonicalLockPurl } from './lock-purl.js';
 import { readStableFile, writeStableFile } from './paths.js';
 import type {
   BinDeclaration,
@@ -33,6 +34,7 @@ export function serializeLockfile(lock: OpmLockfile): string {
     if (!pkg) continue;
     packages[alias] = {
       ...pkg,
+      purl: canonicalLockPurl(pkg.purl),
       bins: [...pkg.bins].sort((a, b) => a.name.localeCompare(b.name)),
     };
   }
@@ -48,41 +50,6 @@ export function serializeLockfile(lock: OpmLockfile): string {
     null,
     2,
   )}\n`;
-}
-
-/**
- * A lock reduced to what a fresh resolution of the same manifest must
- * reproduce.
- *
- * Attestation state that advances by itself — a signed list's sequence rises
- * with every release the vendor publishes — differs between resolutions
- * without the release changing, so it is left out. Which keys advance is taken
- * from `reference`, the fresh resolution, never from the lock under
- * verification: an edited lock cannot excuse its own differences.
- */
-export function reproducibleLockForm(
-  lock: OpmLockfile,
-  reference: OpmLockfile,
-): JsonValue {
-  const packages = Object.fromEntries(
-    Object.entries(lock.packages).map(([alias, pkg]) => {
-      if (pkg.attestation === undefined) return [alias, pkg];
-      const skipped = new Set(
-        reference.packages[alias]?.attestation?.advancing ?? [],
-      );
-      const record = Object.fromEntries(
-        Object.entries(pkg.attestation.record).filter(
-          ([key]) => !skipped.has(key),
-        ),
-      );
-      // The list of advancing keys is the provider's description of its own
-      // record, not a fact about the release, so it is not compared either.
-      const { advancing: _described, ...attestation } = pkg.attestation;
-      return [alias, { ...pkg, attestation: { ...attestation, record } }];
-    }),
-  );
-  // SAFETY: serializeLockfile writes JSON.
-  return JSON.parse(serializeLockfile({ ...lock, packages })) as JsonValue;
 }
 
 export function parseLockfile(text: string): OpmLockfile {
@@ -286,7 +253,7 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   const installName = parseInstallName(alias, pkg.installName);
   const built: LockPackage = {
     alias,
-    purl: requiredString('purl'),
+    purl: canonicalLockPurl(requiredString('purl')),
     version: requiredString('version'),
     digest: requiredString('digest'),
     size,

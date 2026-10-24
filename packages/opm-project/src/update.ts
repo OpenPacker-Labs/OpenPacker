@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { echoed, parsePurl } from '@openpacker/adapter-core';
+import { echoed } from '@openpacker/adapter-core';
 import type {
   OpmLockfile,
   OpmManifest,
@@ -7,15 +7,10 @@ import type {
   ProjectState,
 } from './types.js';
 import { OpmError } from './types.js';
-import { loadCatalogs, canonicalCatalogPurl } from './catalog.js';
-import { codecFor } from './codecs.js';
-import {
-  digestOf,
-  installFromLock,
-  readProjectState,
-  uninstallPackages,
-} from './install.js';
-import { readLockfile, writeLockfile } from './lock.js';
+import { projectStep, type StepOptions } from './project-step.js';
+import { loadCatalogs } from './catalog.js';
+import { digestOf, readProjectState } from './install.js';
+import { readLockfile } from './lock.js';
 import { projectNativeFormats, type NativeProjectionReport } from './native.js';
 import {
   CATALOG_NAME,
@@ -23,22 +18,13 @@ import {
   parentDirs,
   projectPaths,
 } from './paths.js';
-import {
-  readManifestFile,
-  resolveManifestToLock,
-  writeManifestFile,
-} from './project.js';
-import {
-  listRegistryVersions,
-  providerFor,
-  registryOptionsForEcosystem,
-  type RegistryOptions,
-} from './registry.js';
+import { readManifestFile, resolveManifestToLock } from './project.js';
+import type { RegistryOptions } from './registry.js';
+import { isPinnedVersion } from './registry-target.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
 import { serializeManifest } from './toml.js';
-
-/** Exact pin test used by install's lock↔manifest binding. */
-const EXACT_VERSION = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u;
+import { commitInstall } from './install-commit.js';
+import { newestEligibleVersion } from './update-candidates.js';
 
 export async function updateProject(input: {
   root: string;
@@ -48,6 +34,7 @@ export async function updateProject(input: {
   catalogPaths?: readonly string[];
   /** Transport / endpoint overrides for hosts and tests. */
   registryOptions?: RegistryOptions;
+  step?: StepOptions;
 }): Promise<{
   manifest: OpmManifest;
   lock: OpmLockfile;
@@ -55,6 +42,17 @@ export async function updateProject(input: {
   native?: NativeProjectionReport;
   updated: readonly string[];
 }> {
+  return projectStep(input.root, input.step, () => updateInStep(input));
+}
+
+async function updateInStep(input: {
+  root: string;
+  aliases?: readonly string[];
+  latest?: boolean;
+  offline?: boolean;
+  catalogPaths?: readonly string[];
+  registryOptions?: RegistryOptions;
+}) {
   const paths = projectPaths(input.root);
   const manifest = await readManifestFile(paths.manifest);
   const offline = input.offline ?? manifest.options.offline;
@@ -91,6 +89,7 @@ export async function updateProject(input: {
       lock,
       offline,
       Object.keys(manifest.packages),
+      false,
     );
   }
 
@@ -163,7 +162,8 @@ export async function updateProject(input: {
         version: selectedVersion,
       };
     }
-    await writeManifestFile(paths.manifest, committed);
+    // Written with the lock, once the closure is installed (`commitInstall`):
+    // an update that fails leaves opm.toml as it was.
   }
 
   const resolutionManifest: OpmManifest = {
@@ -204,7 +204,7 @@ export async function updateProject(input: {
     })
     .sort();
 
-  return finish(input.root, committed, lock, offline, updated);
+  return finish(input.root, committed, lock, offline, updated, latest);
 }
 
 async function unchanged(
@@ -239,6 +239,7 @@ async function finish(
   lock: OpmLockfile,
   offline: boolean,
   updated: readonly string[],
+  writeManifest: boolean,
 ): Promise<{
   manifest: OpmManifest;
   lock: OpmLockfile;
@@ -246,22 +247,13 @@ async function finish(
   native?: NativeProjectionReport;
   updated: readonly string[];
 }> {
-  const paths = projectPaths(root);
-  await writeLockfile(paths.lock, lock);
-  const previous = await readProjectState(paths.projectState);
-  if (previous) {
-    const stale = Object.keys(previous.packages).filter(
-      (alias) => !lock.packages[alias],
-    );
-    if (stale.length > 0) await uninstallPackages({ root, aliases: stale });
-  }
-  const state = await installFromLock({
+  const { state, native } = await commitInstall({
     root,
+    manifest,
     lock,
     offline,
-    ...(!(manifest.policy === undefined) && { policy: manifest.policy }),
+    writeManifest,
   });
-  const native = await projectNativeFormats({ root, manifest, lock });
   return {
     manifest,
     lock,
@@ -273,7 +265,10 @@ async function finish(
 
 function isExactPin(req: PackageRequirement): boolean {
   if (stripPurlVersion(req.purl) !== req.purl) return true;
-  return req.version !== undefined && EXACT_VERSION.test(req.version);
+  return (
+    req.version !== undefined &&
+    isPinnedVersion(ecosystemFromPurl(req.purl), req.version)
+  );
 }
 
 function collectCatalogPaths(
@@ -305,112 +300,4 @@ async function assertLockStillPresent(
   const current = await readLockfile(lockPath);
   if (current === undefined)
     throw new OpmError('INPUT_CHANGED', 'Lock file was removed during update');
-}
-
-async function newestEligibleVersion(input: {
-  req: PackageRequirement;
-  catalog: Map<string, { purl: string; version: string }>;
-  manifest: OpmManifest;
-  offline: boolean;
-  latest: boolean;
-  registryOptions?: RegistryOptions;
-  previousLock?: OpmLockfile | undefined;
-}): Promise<string | undefined> {
-  const ecosystem = ecosystemFromPurl(input.req.purl);
-  const codec = codecFor(ecosystem);
-  const candidates = new Map<string, string>();
-  const base = canonicalCatalogPurl(stripPurlVersion(input.req.purl));
-  for (const entry of input.catalog.values()) {
-    if (canonicalCatalogPurl(stripPurlVersion(entry.purl)) !== base) continue;
-    candidates.set(entry.version, entry.purl);
-  }
-
-  if (!input.offline) {
-    try {
-      const options = registryOptionsForEcosystem(
-        ecosystem,
-        input.manifest,
-        input.registryOptions ?? {},
-        input.previousLock,
-      );
-      const listed = await listRegistryVersions(
-        ecosystem,
-        stripPurlVersion(input.req.purl),
-        options,
-      );
-      for (const exact of listed) {
-        const version = parsePurl(exact).version;
-        if (version !== undefined) candidates.set(version, exact);
-      }
-    } catch (error) {
-      if (
-        !(error instanceof OpmError && error.code === 'OFFLINE') &&
-        candidates.size === 0
-      )
-        throw error;
-    }
-  }
-
-  if (candidates.size === 0) {
-    if (input.offline)
-      throw new OpmError(
-        'UNRESOLVABLE',
-        `Cannot update "${echoed(input.req.alias)}" offline without catalog versions`,
-      );
-    return undefined;
-  }
-
-  const range = input.latest ? undefined : input.req.version;
-  const ranked = [...candidates.keys()].sort((left, right) =>
-    codec.compareNativeVersions(left, right),
-  );
-  for (let i = ranked.length - 1; i >= 0; i -= 1) {
-    const version = ranked[i]!;
-    if (range !== undefined && !versionSatisfies(codec, version, range))
-      continue;
-    const exact = candidates.get(version) ?? `${base}@${version}`;
-    if (await isYankedOrIneligible(ecosystem, exact, input)) continue;
-    return version;
-  }
-  return undefined;
-}
-
-function versionSatisfies(
-  codec: ReturnType<typeof codecFor>,
-  version: string,
-  range: string,
-): boolean {
-  try {
-    codec.parseNativeRange(range);
-    return codec.satisfies(version, range);
-  } catch {
-    return false;
-  }
-}
-
-async function isYankedOrIneligible(
-  ecosystem: string,
-  exactPurl: string,
-  input: {
-    manifest: OpmManifest;
-    offline: boolean;
-    registryOptions?: RegistryOptions;
-  },
-): Promise<boolean> {
-  if (input.offline) return false;
-  try {
-    const options = registryOptionsForEcosystem(
-      ecosystem,
-      input.manifest,
-      input.registryOptions ?? {},
-    );
-    const provider = await providerFor(ecosystem, options, [
-      'prex.registry.package-metadata/1',
-    ]);
-    const inspection = await provider.inspect(exactPurl);
-    const lifecycle = inspection.package.lifecycle;
-    return lifecycle.status === 'yanked' || lifecycle.eligible === false;
-  } catch {
-    return false;
-  }
 }

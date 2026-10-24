@@ -144,6 +144,7 @@ export {
   type NpmDependencySpecKind,
 } from './dependency-spec.js';
 import { classifyDependencySpec } from './dependency-spec.js';
+import { nonRangeRequirement } from './spec-requirement.js';
 
 function npmPackagePurl(name: string): string {
   const coordinate = new NpmCodec().parseNativeCoordinate(name);
@@ -200,49 +201,23 @@ function npmRequirement(
           ? new NpmCodec().parseNativeRange(alias.spec)
           : undefined,
     });
-  if (specKind !== 'range') {
-    // An install walks into `dependencies` and required peers. Reading
-    // "github:user/repo" as "any version of the registry package with that
-    // name" would be a dependency-confusion door, so those fail here, by name.
-    // The fields an install does not walk (development, optional peers) are
-    // kept as what they say, with no version constraint attached, so inspecting
-    // a package never depends on its dev-time tooling.
-    if (enforced)
-      throw new ProviderError(
-        'UNSUPPORTED_DEPENDENCY_SPEC',
-        dependencyText.unsupportedSpec(
-          owner,
-          name,
-          range,
-          specKind,
-          aliasProblem,
-        ),
-      );
-    return {
-      id: `${dependerNodeId}:${kind}:${name}`,
+  if (specKind !== 'range')
+    return nonRangeRequirement({
       dependerNodeId,
-      expression: { type: 'package', purl: npmPackagePurl(name) },
+      name,
+      spec: range,
+      specKind,
       kind,
-      optional: true,
-      source: sourceRef('npm', endpoint),
-      authority: 'native',
-      raw: { path, range },
-      nativeSemantics: {
-        version: 'npm-v1',
-        data: { dependencyField, range, specKind },
-      },
-      semanticLoss: [
-        semanticLoss(
-          'npm',
-          'NPM_DEPENDENCY_SPEC_NOT_A_RANGE',
-          path,
-          dependencyText.specifierNotARange(specKind, range),
-          'The package is named without a version constraint and the specifier is retained verbatim',
-          'info',
-        ),
-      ],
-    };
-  }
+      optional,
+      endpoint,
+      path,
+      dependencyField,
+      owner,
+      enforced,
+      followed,
+      purl: () => npmPackagePurl(name),
+      aliasProblem,
+    });
   const parsed = new NpmCodec().parseNativeRange(range);
   const vers = parsed.vers ?? npmRangeVers(parsed.ast);
   return {

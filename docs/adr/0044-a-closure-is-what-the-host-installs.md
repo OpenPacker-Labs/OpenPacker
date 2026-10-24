@@ -2369,3 +2369,12 @@ archive's bound on what it expands to and is not touched here.
 - `opm add` of `@prisma/client` and `@wix/wix-code-types` stops at their
   tarballs on the archive's expanded-size bound (64 MiB), a different limit that
   is not changed here.
+
+## Amendment (2026-10-17)
+
+§1's list of specifiers that are never read as the registry's package of that
+name, and the limit "A runtime dependency written as git, URL, alias or dist-tag
+is refused", now hold for git, URL and file specifiers only. An `npm:` alias is
+followed since ADR 0054, and a plain dist-tag since ADR 0054's amendment of
+2026-10-17: both name the registry package exactly as a range on the same key
+does.

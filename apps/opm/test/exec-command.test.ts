@@ -287,7 +287,7 @@ describe('opm exec: against a real layout, offline', () => {
       const cap = capture();
       expect(await runOpm(['exec', 'demo-tool'], cap.io, root)).toBe(4);
       expect(cap.err).toContain(
-        'demo-tool (pkg:npm/@openpacker/demo-tool@1.1.0), a direct requirement, declares it',
+        'demo-tool (pkg:npm/%40openpacker/demo-tool@1.1.0), a direct requirement, declares it',
       );
       expect(cap.err).toContain('native_projection = "layout"');
       expect(cap.err).toContain('opmx demo-tool');

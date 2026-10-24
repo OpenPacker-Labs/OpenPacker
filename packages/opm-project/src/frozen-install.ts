@@ -32,6 +32,7 @@ import {
   echoedValue,
   type DetectedProject,
   type FrozenLock,
+  type FrozenLockPackage,
   type FrozenLockSkip,
   type FrozenOmit,
   type NativeLockEntry,
@@ -54,6 +55,7 @@ import {
   redactSource,
   storeArchives,
 } from './frozen-store.js';
+import { layOutFromStore, type FrozenInstallSeams } from './frozen-layout.js';
 import {
   prepareFrozenWorkspace,
   type FrozenWorkspaceRequest,
@@ -61,8 +63,12 @@ import {
 import { strongestClaims, type IntegrityClaim } from './integrity.js';
 import { MANIFEST_NAME, projectPaths } from './paths.js';
 import { readManifestFile } from './project.js';
+import { projectStep, type StepOptions } from './project-step.js';
+import { holdSharedStore, type StoreHold } from './shared-store-lease.js';
 import type { OpmManifest } from './types.js';
 import { OpmError } from './types.js';
+
+export type { FrozenInstallSeams };
 
 export interface FrozenInstallInput extends FrozenFetchOptions {
   /** The project directory: where the manifest, the lock and `node_modules` are. */
@@ -80,6 +86,8 @@ export interface FrozenInstallInput extends FrozenFetchOptions {
   target?: NativeTarget;
   /** The time policy is evaluated at. */
   now?: () => string;
+  /** Told what a killed step left and this one finished first. */
+  step?: StepOptions;
   /** Archives read at the same time. */
   concurrency?: number;
   signal?: AbortSignal;
@@ -183,8 +191,25 @@ function adapterFailure(error: unknown): Error {
     : new OpmError(mapped, error.message, { cause: error });
 }
 
-export async function installFrozen(
+export function installFrozen(
   input: FrozenInstallInput,
+): Promise<FrozenInstallResult> {
+  return installFrozenWith(input, {});
+}
+
+/** `installFrozen` with the seams a test runs inside it. */
+export async function installFrozenWith(
+  input: FrozenInstallInput,
+  seams: FrozenInstallSeams,
+): Promise<FrozenInstallResult> {
+  return projectStep(input.root, input.step, () =>
+    installFrozenInStep(input, seams),
+  );
+}
+
+async function installFrozenInStep(
+  input: FrozenInstallInput,
+  seams: FrozenInstallSeams,
 ): Promise<FrozenInstallResult> {
   const started = now();
   const root = resolve(input.root);
@@ -237,9 +262,17 @@ export async function installFrozen(
   const read = now();
 
   const store = await openStore(root, env);
+  let hold: StoreHold | undefined;
   try {
-    const stored = await storeArchives({
-      lock,
+    // Every entry is claimed before it is looked up, and the claims last until
+    // node_modules links them, so `opm gc --shared` cannot take one between
+    // (ADR 0048, amendment 2026-10-17).
+    if (store.shared)
+      hold = await holdSharedStore(store.root, {
+        ...seams.hold,
+        ...(input.signal !== undefined && { signal: input.signal }),
+      });
+    const from = {
       claims,
       storeRoot: store.root,
       shared: store.shared,
@@ -247,7 +280,9 @@ export async function installFrozen(
       offline,
       ecosystem,
       options: input,
-    });
+      ...(hold !== undefined && { hold }),
+    };
+    const stored = await storeArchives({ lock, ...from });
     const fetched = now();
     const entries = lock.packages.map((pkg): NativeLockEntry => {
       const archive = stored.byPath.get(pkg.path)!;
@@ -277,18 +312,42 @@ export async function installFrozen(
     for (const dir of lock.workspace?.memberDirs ?? [])
       await removeBelow(root, `${dir}/node_modules`);
     await removeTree(join(root, 'node_modules'));
-    let layout: ProjectionResult;
-    try {
-      layout = await format.writeLayout!(
-        detected,
-        entries,
-        lock.workspace === undefined
-          ? undefined
-          : { workspace: lock.workspace.layout },
-      );
-    } catch (error) {
-      throw adapterFailure(error);
-    }
+    await seams.beforeLayout?.();
+    const write = async (): Promise<ProjectionResult> => {
+      try {
+        return await format.writeLayout!(
+          detected,
+          entries,
+          lock.workspace === undefined
+            ? undefined
+            : { workspace: lock.workspace.layout },
+        );
+      } catch (error) {
+        throw adapterFailure(error);
+      }
+    };
+    const pathOf = (pkg: FrozenLockPackage) =>
+      stored.byPath.get(pkg.path)!.path;
+    const layout = !store.shared
+      ? await write()
+      : await layOutFromStore({
+          sources: lock.packages.map((pkg) => ({
+            storePath: pathOf(pkg),
+            label: labelOf(pkg),
+          })),
+          write,
+          restore: async (gone) => {
+            const again = await storeArchives({
+              lock: {
+                ...lock,
+                packages: lock.packages.filter((pkg) => gone.has(pathOf(pkg))),
+              },
+              ...from,
+            });
+            stored.fetched += again.fetched;
+            stored.fetchedBytes += again.fetchedBytes;
+          },
+        });
     const done = now();
     return {
       ecosystem,
@@ -322,6 +381,7 @@ export async function installFrozen(
       },
     };
   } finally {
+    await hold?.release();
     await store.dispose();
   }
 }

@@ -1,4 +1,5 @@
 import { mkdir } from 'node:fs/promises';
+import { policyDocumentFromPolicyInput } from '@openpacker/policy';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { OpmError, type BinDeclaration, type LockPackage } from './types.js';
@@ -18,6 +19,7 @@ import {
   resolveRegistryArtifactDeferred,
   type RegistryOptions,
 } from './registry.js';
+import { defaultRelease } from './default-release.js';
 import { resolveGraph } from './resolve.js';
 import { solveGraph } from './solve.js';
 import { requireAdapterRegistry } from './adapters.js';
@@ -80,7 +82,7 @@ export interface EphemeralTool {
  * in the tool cache.
  *
  * Resolution mirrors `opm add`: an exact version is used as given, and a bare
- * package takes the newest the registry publishes. There is no lockfile here,
+ * package takes what `opm add` would (`default-release.ts`). There is no lockfile here,
  * so the version that ran is reported back rather than assumed — an unpinned
  * ephemeral run is a different thing tomorrow and should say so.
  */
@@ -95,8 +97,12 @@ export async function fetchTool(input: {
    * responsible for what it reaches, so no address is resolved or pinned.
    */
   fetch?: typeof fetch;
+  /** Transport / endpoint overrides for hosts and tests. */
+  registryOptions?: RegistryOptions;
 }): Promise<EphemeralTool> {
   const ecosystem = ecosystemFromPurl(input.purl);
+  const options: RegistryOptions = { ...input.registryOptions };
+  if (input.fetch !== undefined) options.fetch = input.fetch;
   if (!requireAdapterRegistry().has(ecosystem))
     throw new OpmError(
       'UNSUPPORTED_ECOSYSTEM',
@@ -109,18 +115,23 @@ export async function fetchTool(input: {
         'Install the tool into a project instead.',
     );
 
-  const registry: RegistryOptions =
-    input.fetch === undefined ? {} : { fetch: input.fetch };
-
   const exact = input.purl.includes('@', 'pkg:'.length)
     ? input.purl
     : await (async () => {
-        const versions = await listRegistryVersions(
+        const base = stripPurlVersion(input.purl);
+        // The policy the run is held to below, so that a `latest` inside
+        // its minimum release age gives way to the release before it, as an
+        // add does, rather than being chosen and then refused.
+        const newest = await defaultRelease({
           ecosystem,
-          stripPurlVersion(input.purl),
-          registry,
-        );
-        const newest = versions[versions.length - 1];
+          basePurl: base,
+          published: await listRegistryVersions(ecosystem, base, options),
+          provider: await providerFor(ecosystem, options),
+          policy: policyDocumentFromPolicyInput(
+            defaultSupplyChainPolicyInput(),
+          ),
+          evaluationTime: new Date().toISOString(),
+        });
         if (!newest)
           throw new OpmError(
             'UNRESOLVABLE',
@@ -132,7 +143,7 @@ export async function fetchTool(input: {
   const cacheRoot = input.cacheRoot ?? toolCacheRoot();
   await mkdir(cacheRoot, { recursive: true });
 
-  const primary = await materialiseExact(ecosystem, exact, cacheRoot, registry);
+  const primary = await materialiseExact(ecosystem, exact, cacheRoot, options);
 
   // Runtime closure: everything the tool needs at run time. Soft-fail if the
   // walk cannot complete — a tool that declares no dependencies must still
@@ -142,7 +153,7 @@ export async function fetchTool(input: {
   try {
     const graph = await resolveGraph({
       roots: [{ purl: stripPurlVersion(primary.exactPurl) }],
-      options: registry,
+      options,
     });
     if (graph.packages.length > 0) {
       const solved = await solveGraph({
@@ -158,7 +169,7 @@ export async function fetchTool(input: {
           depEco,
           depExact,
           cacheRoot,
-          registry,
+          options,
         );
         if (!runtimePaths.includes(dep.storePath))
           runtimePaths.push(dep.storePath);
@@ -182,7 +193,7 @@ async function materialiseExact(
   ecosystem: string,
   exact: string,
   cacheRoot: string,
-  registry: RegistryOptions,
+  options: RegistryOptions,
 ): Promise<{
   exactPurl: string;
   digest: string;
@@ -197,15 +208,18 @@ async function materialiseExact(
   const resolved = await resolveRegistryArtifactDeferred(
     ecosystem,
     exact,
-    registry,
+    options,
   );
   const policyInput = defaultSupplyChainPolicyInput();
   const { facts } = await captureFactsFromCatalog(
-    await providerFor(ecosystem, registry),
+    await providerFor(ecosystem, options),
     resolved.exactPurl,
     {
       evaluationTime: new Date().toISOString(),
       registryId: resolved.registryId,
+      // Without it no publish time is captured, and the policy's minimum
+      // release age is indeterminate for every package.
+      minimumReleaseAgeMinutes: policyInput.minimumReleaseAgeMinutes,
     },
   );
   const pkg: LockPackage = {

@@ -35,7 +35,9 @@ import {
   materializeThroughSharedStore,
   usableSharedRoot,
 } from './shared-store.js';
+import { holdSharedStore } from './shared-store-lease.js';
 import { installArchiveLimits } from './install-limits.js';
+export { inferFormat, mediaTypeForEcosystem } from './artifact-format.js';
 import { OpmError } from './types.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
 import { restoreSharedBins } from './bin-restore.js';
@@ -907,6 +909,12 @@ export async function installFromLock(input: {
   only?: readonly string[];
   policy?: PolicyInput;
   expectedManifestDigest?: string;
+  /**
+   * Run once every package is in the store and before anything outside it
+   * changes, so that a package that cannot be fetched, verified or extracted
+   * stops the install before it: how `opm add` leaves a project as it was.
+   */
+  beforeLinking?: () => Promise<void>;
 }): Promise<ProjectState> {
   const root = input.root;
   const offline = input.offline;
@@ -947,11 +955,6 @@ export async function installFromLock(input: {
   await ensureStableDirectory(paths.bin);
   await ensureStableDirectory(paths.links);
 
-  const state = (await readProjectState(paths.projectState)) ?? {
-    schemaVersion: 1 as const,
-    packages: {},
-  };
-
   // Evaluate the complete closure before the first package can fetch or
   // mutate disk. A denied transitive entry must not leave earlier packages
   // partially installed.
@@ -987,37 +990,51 @@ export async function installFromLock(input: {
       treeDigest: string;
     }
   >();
-  for (const alias of aliases) {
-    const safeAlias = assertSafeSegment(alias, 'package alias');
-    const pkg = selectedPackages.get(alias);
-    if (!pkg) {
-      throw new OpmError(
-        'NOT_FOUND',
-        `Lock entry missing for ${echoed(alias)}`,
-      );
+  // One hold on the shared store for the closure, not one per package; each
+  // package still claims its own entry (shared-store-lease.ts).
+  const sharedRoot = await usableSharedRoot(paths.store);
+  const hold =
+    sharedRoot === undefined ? undefined : await holdSharedStore(sharedRoot);
+  try {
+    for (const alias of aliases) {
+      const safeAlias = assertSafeSegment(alias, 'package alias');
+      const pkg = selectedPackages.get(alias);
+      if (!pkg) {
+        throw new OpmError(
+          'NOT_FOUND',
+          `Lock entry missing for ${echoed(alias)}`,
+        );
+      }
+      const {
+        storePath,
+        bins,
+        lifecycleScriptsExecuted,
+        sandboxOutcomes,
+        treeDigest,
+      } = await materializeLockPackage({
+        root,
+        pkg,
+        offline,
+        ...(!(policy === undefined) && { policy }),
+      });
+      materialised.set(safeAlias, {
+        storePath,
+        bins,
+        pkg,
+        lifecycleScriptsExecuted,
+        sandboxOutcomes,
+        treeDigest,
+      });
     }
-    const {
-      storePath,
-      bins,
-      lifecycleScriptsExecuted,
-      sandboxOutcomes,
-      treeDigest,
-    } = await materializeLockPackage({
-      root,
-      pkg,
-      offline,
-      ...(!(policy === undefined) && { policy }),
-    });
-    materialised.set(safeAlias, {
-      storePath,
-      bins,
-      pkg,
-      lifecycleScriptsExecuted,
-      sandboxOutcomes,
-      treeDigest,
-    });
+  } finally {
+    await hold?.release();
   }
 
+  await input.beforeLinking?.();
+  const state = (await readProjectState(paths.projectState)) ?? {
+    schemaVersion: 1 as const,
+    packages: {},
+  };
   const pythonStoreRoots = [...materialised.values()]
     .filter(({ pkg }) => pkg.ecosystem === 'pypi')
     .map(({ storePath }) => storePath);
@@ -1257,52 +1274,4 @@ export function lockPackageFromSource(input: {
   bindVerifiedArtifactBytes(pkg, bytes, 'direct', facts);
   sealVerifiedArtifactBinding(pkg);
   return pkg;
-}
-
-export function inferFormat(source: string, mediaType?: string): ArchiveFormat {
-  const lower = source.toLowerCase();
-  // Gzip first: media types like "...+gzip" also contain "zip" and must not
-  // be classified as zip archives. Plain `.tar` / `...layout.v1.tar` is
-  // uncompressed — matching on the substring "tar" alone would mis-label an
-  // OCI image layout as gzip and fail extraction.
-  if (
-    mediaType?.includes('gzip') ||
-    lower.endsWith('.tgz') ||
-    lower.endsWith('.tar.gz') ||
-    lower.endsWith('.crate')
-  )
-    return 'tar+gzip';
-  if (
-    mediaType === 'application/x-tar' ||
-    mediaType === 'application/vnd.oci.image.layout.v1.tar' ||
-    (mediaType?.includes('tar') && !mediaType.includes('gzip')) ||
-    (lower.endsWith('.tar') && !lower.endsWith('.tar.gz'))
-  )
-    return 'tar';
-  if (
-    mediaType === 'application/zip' ||
-    mediaType?.includes('zip') ||
-    lower.endsWith('.zip') ||
-    lower.endsWith('.nupkg') ||
-    lower.endsWith('.whl')
-  )
-    return 'zip';
-  return 'tar';
-}
-
-export function mediaTypeForEcosystem(ecosystem: string): string {
-  switch (ecosystem) {
-    case 'npm':
-      return 'application/vnd.npm.package+gzip';
-    case 'cargo':
-      return 'application/vnd.crates.io.crate+gzip';
-    case 'nuget':
-      return 'application/vnd.nuget.package+zip';
-    case 'pypi':
-      return 'application/zip';
-    case 'oci':
-      return 'application/vnd.oci.image.layout.v1.tar';
-    default:
-      return 'application/octet-stream';
-  }
 }

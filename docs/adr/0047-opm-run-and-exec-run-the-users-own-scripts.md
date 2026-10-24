@@ -47,7 +47,9 @@ own repository.
    fetches anything and never searches `PATH`: a program that is not in a `.bin`
    directory is not found. `<bin>` is a name, not a path. Everything after the
    bin goes to the bin, with or without `--`, so `opm exec vitest --help` is
-   vitest's help; only a flag before the bin name is `opm`'s.
+   vitest's help; only a flag before the bin name is `opm`'s. _Amended
+   2026-10-17:_ a `--path <dir>` straight after the bin is `opm`'s too (see the
+   amendment below).
 4. A bin that is not found exits 4 and says why, from the lock data `opm why`
    reads: the locked package that declares it (a direct requirement's `bins` are
    recorded in `opm.lock.json`), or one whose own name is the bin's name (npm's
@@ -217,3 +219,23 @@ Limits, stated so nobody finds them by surprise:
 
 Not changed: `opmx`, the sandbox funnel for everything else, the default
 projection level, and the exit-code table.
+
+## Amendment (2026-10-17) — `--path` after the bin
+
+`--help` has always shown `opm exec <bin> [--path <dir>] [-- <args...>]`, and
+point 3 handed everything after the bin to the bin, so
+`opm exec tsc --path pkg -- -b` ran `tsc --path pkg -- -b` ("error TS5025:
+Unknown compiler option '--path'") while `opm exec --path pkg tsc -- -b` worked.
+The help is the grammar now:
+
+- A `--path <dir>` or `--path=<dir>` straight after the bin is `opm`'s, as it is
+  before the bin. Only `opm`'s own spelling: `-C`, `--dir` and `--prefix` are
+  read before the bin alone, since programs use those names (`make -C`).
+- The program's arguments are what follows: from the first other token, or after
+  a `--`, of which one straight after the bin and its `--path` is dropped.
+  `opm exec vitest --version` still reaches vitest, and a `--path` after the
+  program's first argument is the program's.
+- An argument the program itself calls `--path` is written after `--`:
+  `opm exec tool -- --path x`, or `opm exec tool --path <dir> -- --path x`.
+- `--path` given twice (before and after the bin) is a usage error, not one of
+  the two dropped (point 5).

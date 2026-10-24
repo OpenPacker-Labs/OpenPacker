@@ -18,7 +18,7 @@ import { tarballOf } from './npm-tarball-fixture.js';
 
 export const NPM_ORIGIN = 'https://registry.npmjs.org';
 
-export { rawTarball, tarball } from './npm-tarball-fixture.js';
+export { rawTarball, tarball, tarEntry } from './npm-tarball-fixture.js';
 
 export interface FixtureVersion {
   dependencies?: Record<string, string>;
@@ -40,6 +40,12 @@ export interface FixtureVersion {
   files?: Record<string, string | Uint8Array>;
   /** `bin` for the package.json inside the archive. */
   bin?: string | Record<string, string>;
+  /** The tarball's bytes exactly, instead of an archive made from the above. */
+  archive?: Uint8Array;
+  /** `dist.integrity` is of these bytes, not of the tarball served. */
+  integrityOf?: Uint8Array;
+  /** The tarball request fails as a dropped connection does. */
+  tarballFails?: boolean;
 }
 
 export interface FixturePackage {
@@ -49,8 +55,11 @@ export interface FixturePackage {
   time?: Record<string, string>;
   /** Last change to the packument; defaults to the same old date. */
   modified?: string;
-  /** Dist-tags besides `latest`, which is the last version listed. */
-  distTags?: Record<string, string>;
+  /**
+   * Dist-tags besides `latest`, which is the last version listed unless this
+   * names it; a tag given as `undefined` is left out of the document.
+   */
+  distTags?: Record<string, string | undefined>;
   /** Makes the packument as heavy as a real one with many versions. */
   padding?: Padding;
   /** The full document served as exactly this text, whatever it is. */
@@ -94,15 +103,23 @@ function tarballUrl(name: string, version: string): string {
 
 function distFor(name: string, version: string, value?: FixtureVersion) {
   const bytes = tarballOf(name, version, value);
+  const claimed = value?.integrityOf ?? bytes;
   return {
     tarball: tarballUrl(name, version),
-    integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}`,
+    integrity: `sha512-${createHash('sha512').update(claimed).digest('base64')}`,
     size: bytes.byteLength,
   };
 }
 
 function fullVersion(name: string, version: string, value: FixtureVersion) {
-  const { files: _files, bin: _bin, ...document } = value;
+  const {
+    files: _files,
+    bin: _bin,
+    archive: _archive,
+    integrityOf: _integrityOf,
+    tarballFails: _tarballFails,
+    ...document
+  } = value;
   return { name, version, ...document, dist: distFor(name, version, value) };
 }
 
@@ -166,12 +183,18 @@ export class NpmRegistryFixture implements HttpTransport {
   readonly #packages = new Map<string, FixturePackage>();
 
   readonly #serveFull: boolean;
+  readonly #abbreviatedTime: boolean;
 
+  /**
+   * `abbreviatedTime`: publish times in the abbreviated document too, which
+   * some registries send and registry.npmjs.org does not.
+   */
   constructor(
     packages: readonly FixturePackage[],
-    options: { serveFull?: boolean } = {},
+    options: { serveFull?: boolean; abbreviatedTime?: boolean } = {},
   ) {
     this.#serveFull = options.serveFull ?? true;
+    this.#abbreviatedTime = options.abbreviatedTime ?? false;
     for (const item of packages) this.#packages.set(item.name, item);
   }
 
@@ -214,6 +237,8 @@ export class NpmRegistryFixture implements HttpTransport {
       const match = /^(.+)\/-\/[^/]+-(\d[^/]*)\.tgz$/u.exec(
         decodeURIComponent(request.url.slice(NPM_ORIGIN.length + 1)),
       );
+      if (this.#packages.get(match![1]!)?.versions[match![2]!]?.tarballFails)
+        throw new ProviderError('UPSTREAM_ERROR', 'connection reset');
       return {
         status: 200,
         headers: { 'content-type': 'application/octet-stream' },
@@ -268,7 +293,7 @@ export class NpmRegistryFixture implements HttpTransport {
       'dist-tags': { latest: newest, ...found.distTags },
       versions,
       modified,
-      ...(!abbreviated && {
+      ...((!abbreviated || this.#abbreviatedTime) && {
         time: {
           created: OLD,
           modified,

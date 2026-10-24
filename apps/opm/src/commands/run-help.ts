@@ -8,6 +8,9 @@ export const RUN_HELP = `Run your own scripts and installed executables (no regi
   package.json at the opm project root (--path <dir>: that directory). A hook
   that fails stops the rest. Arguments after -- are appended to the script.
   --if-present exits 0 when the script is not defined.
+  A --path straight after <bin> is opm's, as it is before <bin>; the program's
+  own arguments are what follows, or what follows --. An argument the program
+  calls --path goes after --: opm exec tool --path <dir> -- --path x.
   exec starts <bin> from node_modules/.bin only: the project root's and each
   parent's. It never fetches anything and never searches PATH (node alone is the
   Node that runs opm). When the bin is missing it names the locked package that
