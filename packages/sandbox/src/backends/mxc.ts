@@ -1,4 +1,4 @@
-import type { BackendProbe, SandboxBackend } from '../types.js';
+import type { BackendProbe, OutputSink, SandboxBackend } from '../types.js';
 import {
   BoundedOutput,
   SandboxBackendError,
@@ -174,6 +174,8 @@ export async function collectMxcChild(
     maximumStdoutBytes: number;
     maximumStderrBytes: number;
     maximumOutputBytes: number;
+    /** Hand output on as it is written instead of keeping it. */
+    output?: OutputSink;
   },
   signal?: AbortSignal,
 ): Promise<{
@@ -183,7 +185,7 @@ export async function collectMxcChild(
   outputLimitExceeded?: OutputLimitKind;
 }> {
   return await new Promise((resolve, reject) => {
-    const output = new BoundedOutput(limits);
+    const output = new BoundedOutput(limits, limits.output);
     let aborted = false;
     let terminationTimer: ReturnType<typeof setTimeout> | undefined;
     const terminate = () => {

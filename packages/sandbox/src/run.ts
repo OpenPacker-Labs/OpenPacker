@@ -227,6 +227,7 @@ export async function runInSandbox(
           maximumOutputBytes: resolved.maximumOutputBytes,
           directoryAuthorities: authorities,
           ...(!(input.stdin === undefined) && { stdin: input.stdin }),
+          ...(!(input.output === undefined) && { output: input.output }),
           ...(!(input.executableAuthority === undefined) && {
             executableAuthority: input.executableAuthority,
           }),
@@ -242,8 +243,11 @@ export async function runInSandbox(
       let active = backend;
       let result = await runOnce(active);
 
+      // Output already handed on cannot be taken back, so a run that has
+      // shown it is not run again.
       if (
         result.exitCode !== 0 &&
+        input.output === undefined &&
         active.id === 'mxc' &&
         resolved.prefer === 'auto' &&
         !input.backend

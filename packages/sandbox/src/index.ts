@@ -8,6 +8,7 @@ export {
   DEFAULT_SANDBOX_POLICY,
   SANDBOX_LOSS,
   type BackendProbe,
+  type OutputSink,
   type PackageGrants,
   type RunInSandboxInput,
   type SandboxBackend,
