@@ -34,6 +34,19 @@ describe('the directory of a tarball that is the package', () => {
     expect(await exists(join(p.modules, 'dep', 'other'))).toBe(false);
   });
 
+  it('is still the store root where a file sits beside it: the pinned ./ shape', async () => {
+    const p = await project();
+    const dep = await p.store('dep');
+    await writeFile(join(dep.storePath!, 'README.md'), 'R');
+
+    await p.write([dep], []);
+
+    expect(await exists(join(p.modules, 'dep', 'README.md'))).toBe(true);
+    expect(await exists(join(p.modules, 'dep', 'package', 'index.js'))).toBe(
+      true,
+    );
+  });
+
   it('is still the store root where a second top-level directory holds a file deeper down', async () => {
     const p = await project();
     const dep = await p.store('dep');
