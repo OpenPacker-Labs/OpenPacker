@@ -3,19 +3,28 @@
  *
  * An owner is a pid and where it runs: the process's start time (a reused pid
  * starts later), its pid namespace, the machine's boot, and the machine (its
- * machine id and its host name). An owner whose machine id and host name are
- * this machine's and whose boot is not this one ran in a boot that has ended,
- * and is dead. Any other owner in another pid namespace, another boot or on
+ * machine id and its host name). A lease's file names spell it in these
+ * fields (`store-lease.ts`), `0` for one the process could not read.
+ *
+ * Where it runs is judged by the one rule every holder opm records is judged
+ * by (`ownerPlace` of `process-owner.ts`), each side mapped onto that rule's
+ * record (`asProcessOwner`): an owner whose machine id and host name are this
+ * machine's and whose boot is not this one ran in a boot that has ended, and
+ * is dead. Any other owner in another pid namespace, another boot or on
  * another machine cannot be judged from here, and counts as alive; so does one
  * in this process's namespace when that cannot be read (on Linux, where every
- * process has one). Who an owner is and this rule are kept in this one file
- * (`currentOwner`, `isOwnerAlive`), so that other owners opm records (a step's
- * rollback copy) can be judged by the same one.
+ * process has one: `unreadableNamespaceIsForeign`, as a holder that has a lock
+ * file of its own to be reclaimed by may ask).
  */
 
 import { createHash } from 'node:crypto';
 import { readFile, readlink } from 'node:fs/promises';
 import { hostname } from 'node:os';
+import {
+  ownerPlace as placeOf,
+  type OwnerPlace,
+  type ProcessOwner,
+} from './process-owner.js';
 
 /** What a process could not read about itself. */
 export const UNKNOWN = '0';
@@ -97,35 +106,51 @@ export function currentOwner(): Promise<LeaseOwner> {
 }
 
 /**
- * Where `owner` runs, seen from `reader`: on this machine in a boot that has
- * ended (`ended`), where `reader` cannot judge it (`elsewhere`: another
- * machine, another boot it cannot place, another pid namespace, or a
- * namespace that could not be read), or `here`.
+ * A lease's owner as the one owner rule's record: `0` is a field that was not
+ * read, every other field is compared as the lease wrote it. The machine is
+ * always read (a digest of the host name stands for it where there is no
+ * machine id), so it is the record's machine on both sides, as
+ * `process-owner.ts` asks of a holder that keeps its own codec.
  */
-export function ownerPlace(
-  owner: LeaseOwner,
-  reader: LeaseOwner,
-): 'ended' | 'elsewhere' | 'here' {
-  const sameMachine =
-    owner.machine === reader.machine && owner.host === reader.host;
-  if (
-    sameMachine &&
-    owner.boot !== UNKNOWN &&
-    reader.boot !== UNKNOWN &&
-    owner.boot !== reader.boot
-  )
-    return 'ended';
-  if (!sameMachine || owner.boot !== reader.boot) return 'elsewhere';
-  if (owner.namespace !== reader.namespace) return 'elsewhere';
-  if (process.platform === 'linux' && reader.namespace === UNKNOWN)
-    return 'elsewhere';
-  return 'here';
+export function asProcessOwner(owner: LeaseOwner): ProcessOwner {
+  const read = (value: string) => (value === UNKNOWN ? undefined : value);
+  const [startTime, pidNamespace, bootId] = [
+    read(owner.start),
+    read(owner.namespace),
+    read(owner.boot),
+  ];
+  return {
+    pid: owner.pid,
+    host: owner.host,
+    machineId: owner.machine,
+    ...(!(startTime === undefined) && { startTime }),
+    ...(!(pidNamespace === undefined) && { pidNamespace }),
+    ...(!(bootId === undefined) && { bootId }),
+  };
+}
+
+/**
+ * Where `owner` runs, seen from `reader`, by the one owner rule: on this
+ * machine in a boot that has ended (`ended`), where `reader` cannot judge it
+ * (`elsewhere`: another machine, another boot it cannot place, another pid
+ * namespace, or a namespace that could not be read), or `here`.
+ */
+export function ownerPlace(owner: LeaseOwner, reader: LeaseOwner): OwnerPlace {
+  return placeOf(asProcessOwner(owner), asProcessOwner(reader), {
+    unreadableNamespaceIsForeign: true,
+  });
 }
 
 /**
  * Whether `owner` may still be running: false only when it ran in a boot of
  * this machine that has ended, or when no process here has its pid, or the
  * one that has it started at another time.
+ *
+ * The pid is judged as the lease always judged it, not by `isOwnerAlive` of
+ * `process-owner.ts`, which says more: a pid whose process is dead (`X`) or a
+ * zombie whose threads it lists and finds none but the leader is gone there
+ * and alive here, and a reader that cannot read its own start time takes
+ * every pid here for alive there and compares the owner's here.
  */
 export async function isOwnerAlive(
   owner: LeaseOwner,
