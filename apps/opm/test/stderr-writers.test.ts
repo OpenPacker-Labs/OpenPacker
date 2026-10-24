@@ -63,7 +63,7 @@ const EXEMPT: ReadonlyArray<{
   },
   {
     file: 'opm.ts',
-    starts: '`\\n${help()}\\n`',
+    starts: '`\\n${helpText()}\\n`',
     reason: "opm's own usage text, after the usage error has been written",
   },
   {
