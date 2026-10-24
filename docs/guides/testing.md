@@ -35,14 +35,27 @@ package-manager lanes stay opt-in and never substitute for offline failure.
 ## One package's tests at a time
 
 `npm test`, `npm run check:contracts` and `npm run check:generated` run turbo
-with `--concurrency=1`. Each package's suite is one `vitest run`, and Vitest
-starts a worker per CPU but one; with turbo's default of ten tasks at once the
-verify alone put about 30 runnable test threads on a 4-CPU machine. A test that
-takes half a second alone then took over five, past Vitest's 5 s default,
-although nothing in it was wrong. One package at a time keeps the threads within
-the CPUs on a dedicated 4-CPU machine, and the tests' own timeouts stay as they
-are. The lanes that run one Vitest process across many packages
-(`npm run coverage` and the `run-gate.mjs` gates) already did.
+through [`scripts/turbo-run.mjs`](../../scripts/turbo-run.mjs), one package at a
+time unless `OPENPACKER_TURBO_CONCURRENCY` says otherwise. Each package's suite
+is one `vitest run`, and Vitest starts a worker per CPU but one; with turbo's
+default of ten tasks at once the verify alone put about 30 runnable test threads
+on a 4-CPU machine. A test that takes half a second alone then took over five,
+past Vitest's 5 s default, although nothing in it was wrong. One package at a
+time keeps the threads within the CPUs on a dedicated 4-CPU machine, and the
+tests' own timeouts stay as they are. The lanes that run one Vitest process
+across many packages (`npm run coverage` and the `run-gate.mjs` gates) already
+did.
+
+A machine with CPUs to spare runs more at once by naming a number of tasks or a
+share of its CPUs, as turbo's `--concurrency` takes them:
+
+```sh
+OPENPACKER_TURBO_CONCURRENCY=4 npm test
+OPENPACKER_TURBO_CONCURRENCY=50% npm run check:contracts
+```
+
+Unset or empty means 1, and so does CI, which sets nothing. A value turbo would
+not take is refused before turbo starts.
 
 A one-time cost belongs outside a test's budget too: a file whose first test
 would compile the PREX schemas (Ajv) compiles them while the file is collected,
