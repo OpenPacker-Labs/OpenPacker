@@ -4,7 +4,12 @@ import {
   semanticLoss,
   sourceRef,
 } from '@openpacker/adapter-core';
-import { isNpmTagName, type NpmDependencySpecKind } from './dependency-spec.js';
+import {
+  isNpmTagName,
+  specifierNotARange,
+  unsupportedSpec,
+  type NpmDependencySpecKind,
+} from './dependency-spec.js';
 
 /**
  * A dependency whose specifier is not a version range: a dist-tag, git, a URL,
@@ -72,16 +77,14 @@ export function nonRangeRequirement(input: {
   if (input.enforced)
     throw new ProviderError(
       'UNSUPPORTED_DEPENDENCY_SPEC',
-      `${input.owner} depends on ${name} as "${spec}", a ${specKind} specifier ` +
-        `that is not a registry version range` +
-        (input.aliasProblem === undefined ? '' : ` (${input.aliasProblem})`),
+      unsupportedSpec(input.owner, name, spec, specKind, input.aliasProblem),
     );
   return requirement(true, { dependencyField, range: spec, specKind }, [
     semanticLoss(
       'npm',
       'NPM_DEPENDENCY_SPEC_NOT_A_RANGE',
       path,
-      `The ${specKind} specifier "${spec}" is not a registry version range`,
+      specifierNotARange(specKind, spec),
       'The package is named without a version constraint and the specifier is retained verbatim',
       'info',
     ),
