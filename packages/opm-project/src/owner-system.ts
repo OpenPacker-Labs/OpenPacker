@@ -106,6 +106,12 @@ async function readOwner(
 const onLinux = <T>(read: () => Promise<T>): Promise<T | undefined> =>
   process.platform === 'linux' ? read() : Promise.resolve(undefined);
 
+/** The machine id in the text of `/etc/machine-id`: 32 lower-case hex digits, or none. */
+export function parseMachineId(text: string): string | undefined {
+  const id = text.trim();
+  return /^[0-9a-f]{32}$/u.test(id) ? id : undefined;
+}
+
 async function readMachineId(): Promise<string | undefined> {
   for (const path of ['/etc/machine-id', '/var/lib/dbus/machine-id']) {
     let text: string;
@@ -117,8 +123,8 @@ async function readMachineId(): Promise<string | undefined> {
       if (code !== undefined && ABSENT.has(code)) continue;
       throw error;
     }
-    const id = text.trim();
-    if (/^[0-9a-f]{32}$/u.test(id)) return id;
+    const id = parseMachineId(text);
+    if (id !== undefined) return id;
   }
   return undefined;
 }
