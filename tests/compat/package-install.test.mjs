@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {
-  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -9,9 +8,10 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative, resolve, sep } from 'node:path';
+import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { copyWithoutScripts } from './pack-installed.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -61,24 +61,16 @@ function run(command, arguments_, cwd, environment = {}) {
 
 /**
  * Pack an installed dependency as the tarball its files make, without running
- * anything it declares. `npm pack <directory>` runs the directory's `prepare`
- * even under `--ignore-scripts` (npm 10.9), and an installed package's `prepare`
- * is its author's build step, which needs their dev tools (`tshy` for
+ * any lifecycle script it declares. `npm pack <directory>` runs the directory's
+ * `prepare` even under `--ignore-scripts` (npm 10.9), and an installed package's
+ * `prepare` is its author's build step, which needs their dev tools (`tshy` for
  * minimatch) and was never meant to run from `node_modules`. So the files are
- * packed from a copy whose manifest has no scripts.
+ * packed from a copy whose manifest has no scripts (pack-installed.mjs), made
+ * through any link so the installed manifest is never written.
  */
 function packInstalled(directory, tarballs, scratch, index, environment) {
   const copy = join(scratch, String(index));
-  cpSync(directory, copy, {
-    recursive: true,
-    filter: (source) =>
-      !relative(directory, source).split(sep).includes('node_modules'),
-  });
-  const manifestPath = join(copy, 'package.json');
-  const { scripts: _scripts, ...manifest } = JSON.parse(
-    readFileSync(manifestPath, 'utf8'),
-  );
-  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  copyWithoutScripts(directory, copy);
   run(
     npm,
     ['pack', '--silent', '--pack-destination', tarballs, copy],
