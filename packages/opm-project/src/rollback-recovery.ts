@@ -236,13 +236,13 @@ export async function foreignCopy(
   made: string,
   shared: boolean,
 ): Promise<OpmError> {
-  const copy = join('.opm', name);
+  const copy = opmEntry(name);
   const there = printable(made);
   const here = printable((await projectIdentity(root)).path);
   return new OpmError(
     'INVALID_ROLLBACK',
     shared
       ? `${copy} was made by the project at ${there}, which shares this .opm directory with ${here}. It is that project's own copy, and opm will not put it back here or remove it from here. opm made no change; run opm recover in ${there}.`
-      : `${copy} was made in another project, ${there}, and this one is ${here}. Putting it back would replace this project's files with that one's, so opm made no change. If it came along by accident (a copied .opm, a cache), run: opm recover --abandon-step ${copyId(name)} (it only removes the copy), or remove ${copy}.`,
+      : `${copy} was made in the project at ${there}, and this project is at ${here}, so opm will not put it back here: it holds the files of that project's step. opm made no change. If this project is that one moved or restored from a backup (another volume, another path), the step that made the copy was never finished: run opm recover --abandon-step ${printable(copyId(name))} (it only removes the copy, as removing ${copy} does) and then opm sync to finish it. If the copy only came along by accident (a copied .opm, a cache), the same command removes it and nothing else is needed.`,
   );
 }

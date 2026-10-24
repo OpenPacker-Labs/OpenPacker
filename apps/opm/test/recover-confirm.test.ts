@@ -182,7 +182,8 @@ describe('opm recover with a copy made in another project', () => {
     const id = name!.split('-').slice(2).join('-');
     const refused = await opm(other, 'recover');
     expect(refused.code).toBe(3);
-    expect(refused.err).toMatch(/was made in another project/u);
+    expect(refused.err).toMatch(/was made in the project at/u);
+    expect(refused.err).toMatch(/then opm sync/u);
     expect(refused.err).toContain(`opm recover --abandon-step ${id}`);
     expect(await readFile(join(other, 'opm.toml'), 'utf8')).toBe(
       'the other one\n',
