@@ -11,8 +11,10 @@
  * entry replacing an earlier one at its path) with their execute bits. The
  * readers agree when every node-tar reading is pnpm's.
  *
- * Classes: `agree, opm extracts the same`; `over-refused <code>` (they agree,
- * opm refuses); `refused <code>` (they differ, opm refuses); `inconclusive: ...`
+ * Classes: `agree, opm extracts the same`; `over-refused <code>` (the `Parse`
+ * readings and pnpm agree, opm refuses; `tar.x` is run only on what opm
+ * extracts, so an archive only `tar.x` fails on, such as an empty one, is
+ * counted here); `refused <code>` (they differ, opm refuses); `inconclusive: ...`
  * (pnpm missed its deadline, or node-tar never ended: the archive was not
  * judged); and the failures, `UNSAFE-ACCEPTED` (they differ and opm extracts),
  * `UNSAFE-SET` (they agree and opm extracts something else) and `UNSAFE-TARX`

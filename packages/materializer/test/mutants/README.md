@@ -14,15 +14,16 @@ node run.mjs all --dry      # only check that every `find` still matches once
 ```
 
 `run.mjs` edits the checkout it is in and writes each file back from what it
-read; run it on a clean tree and check `git status` after. The 2026-10-24 run
-(Node 22.22.0, with `OPENPACKER_PNPM_DIR=/nonexistent`, so the fuzz test in the
-suite was skipped) is in `results.tsv`: 122 killed and 7 not. `R19b`, `M14` and
-`PX3` did not die in that run and were killed by tests added for them (an oracle
-case of a mode field that is a NUL, six zeros and a last digit; `tarNumber`
-refusing an 8 or a 9; a three-byte character whose first byte is at body offset
-510, its later bytes 0x80, which the guard from offset 511 sees only as 0x80).
-`PX3` was equivalent while the guard looked at the whole body, and stopped being
-so when it began at offset 511.
+read; run it on a clean tree and check `git status` after. `results.tsv` holds
+the 2026-10-24 run (Node 22.22.0, with `OPENPACKER_PNPM_DIR=/nonexistent`, so
+the fuzz test in the suite was skipped): 122 killed and 7 not. Three of the 122,
+`R19b`, `M14` and `PX3`, survived the first pass and were killed by tests added
+for them, and their rows give the suite with those tests (an oracle case of a
+mode field that is a NUL, six zeros and a last digit; `tarNumber` refusing an 8
+or a 9; a three-byte character whose first byte is at body offset 510, its later
+bytes 0x80, which the guard from offset 511 sees only as 0x80). `PX3` was
+equivalent while the guard looked at the whole body, and stopped being so when
+it began at offset 511.
 
 ## The seven that are not killed
 
