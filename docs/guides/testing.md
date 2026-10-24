@@ -32,6 +32,22 @@ least one live oracle. A type that loses its last oracle fails the gate.
 `npm run verify` runs every mandatory lane. Live registry and native
 package-manager lanes stay opt-in and never substitute for offline failure.
 
+## One package's tests at a time
+
+`npm test`, `npm run check:contracts` and `npm run check:generated` run turbo
+with `--concurrency=1`. Each package's suite is one `vitest run`, and Vitest
+starts a worker per CPU but one; with turbo's default of ten tasks at once the
+verify alone put about 30 runnable test threads on a 4-CPU machine. A test that
+takes half a second alone then took over five, past Vitest's 5 s default,
+although nothing in it was wrong. One package at a time keeps the threads within
+the CPUs on a dedicated 4-CPU machine, and the tests' own timeouts stay as they
+are. The lanes that run one Vitest process across many packages
+(`npm run coverage` and the `run-gate.mjs` gates) already did.
+
+A one-time cost belongs outside a test's budget too: a file whose first test
+would compile the PREX schemas (Ajv) compiles them while the file is collected,
+and a test that times its work measures the CPU it spent, not the wall clock.
+
 ## Coverage policy
 
 [`scripts/coverage-policy.mjs`](../../scripts/coverage-policy.mjs) requires 100%
