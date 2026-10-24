@@ -36,6 +36,29 @@ describeNamespaced('a project laid out over mounts', mountNamespace, () => {
     expect(report.copies).toEqual([]);
   }, 60_000);
 
+  it('gives a volume back the mode it had (a tmpfs root is 1777), and the directories in it theirs', async () => {
+    const report = await inMounts(`
+        ${VOLUME}
+        await chmod(join(root, 'node_modules', 'base'), 0o775);
+        const modes = async (dir: string, name = '.'): Promise<string[]> => {
+          const out = [name + ' ' + (await lstat(dir)).mode.toString(8)];
+          for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name)))
+            if (entry.isDirectory()) out.push(...(await modes(join(dir, entry.name), name + '/' + entry.name)));
+          return out;
+        };
+        report.before = await modes(join(root, 'node_modules'));
+        await snapshotProject(root);
+        await rm(join(root, 'node_modules', 'base'), { recursive: true });
+        await dead();
+        report.recovered = await recoverInterruptedSteps(root);
+        report.after = await modes(join(root, 'node_modules'));
+      `);
+    expect(report.error).toBeUndefined();
+    expect(report.before?.[0]).toBe('. 41777');
+    expect(report.before).toContain('./base 40775');
+    expect(report.after).toEqual(report.before);
+  }, 60_000);
+
   it('puts node_modules back when it is a volume and the step undoes itself', async () => {
     const report = await inMounts(`
         ${VOLUME}
