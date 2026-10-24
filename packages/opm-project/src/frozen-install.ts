@@ -99,18 +99,6 @@ export interface FrozenInstallInput extends FrozenFetchOptions {
   signal?: AbortSignal;
 }
 
-/**
- * Points inside an install where a test runs what may happen meanwhile, such
- * as a concurrent `opm gc --shared`. Not part of the package's API: only
- * `installFrozenWith` takes them, and `index.ts` does not export it.
- */
-export interface FrozenInstallSeams {
-  /** Once every archive is in the store, before any is linked into `node_modules`. */
-  beforeLayout?: () => Promise<void>;
-  /** How the install's hold on the shared store waits, and where it steps. */
-  hold?: HoldOptions;
-}
-
 export interface FrozenInstallResult {
   ecosystem: string;
   lockPath: string;
