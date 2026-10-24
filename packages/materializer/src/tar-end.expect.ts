@@ -63,6 +63,8 @@ export const REFUSED: ExpectedCodes = {
   'a checksum field that is a line feed, a space and digits':
     'TAR_AMBIGUOUS_CHECKSUM',
   'a mode field that is a NUL, then digits': 'TAR_AMBIGUOUS_NUMBER',
+  'a mode field that is a NUL, six zeros and a last digit':
+    'TAR_AMBIGUOUS_NUMBER',
   'a mode field that is a line feed, a space and digits':
     'TAR_AMBIGUOUS_NUMBER',
   'a mode field that is a tab, a space and digits': 'TAR_AMBIGUOUS_NUMBER',
@@ -98,6 +100,8 @@ export const REFUSED: ExpectedCodes = {
   'a link name of a NUL and a line feed hides a forged entry':
     'TAR_AMBIGUOUS_TEXT',
   'an extended header with a character across offset 512 of its body':
+    'TAR_AMBIGUOUS_PAX',
+  'an extended header with a three-byte character across offset 512, its first byte at 510':
     'TAR_AMBIGUOUS_PAX',
   'an extended header with a character across offset 16,384':
     'TAR_AMBIGUOUS_PAX',

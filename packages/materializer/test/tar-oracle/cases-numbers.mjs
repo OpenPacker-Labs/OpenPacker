@@ -133,6 +133,13 @@ export const NUMBER_CASES = {
     Z,
     Z,
   ],
+  'a mode field that is a NUL, six zeros and a last digit': [
+    a,
+    moded('last', '\0' + '000000' + '7'),
+    b,
+    Z,
+    Z,
+  ],
   'a mode field that is a line feed, a space and digits': [
     a,
     moded('lf', '\n 00755\0'),

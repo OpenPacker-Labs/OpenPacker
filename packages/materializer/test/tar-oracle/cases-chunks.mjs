@@ -14,16 +14,22 @@ const benign = file('package/index.js', 'BENIGN');
 const payload = file('package/index.js', 'PAYLOAD');
 const accent = '\u00e9';
 
-/** The body of an `x` header that starts `bodyStart` bytes into the archive: a comment, then a path whose first accent straddles the offset `boundary`. */
-function straddling(bodyStart, boundary) {
+/**
+ * The body of an `x` header that starts `bodyStart` bytes into the archive: a
+ * comment, then a path whose first `character` (é unless given) starts `before`
+ * bytes ahead of the offset `boundary`, so a cut there splits it.
+ */
+function straddling(bodyStart, boundary, character = accent, before = 1) {
   for (let n = 1; n < 40_000; n += 1) {
     const comment = paxRecord('comment', 'x'.repeat(n));
-    const path = paxRecord('path', `package/${accent.repeat(40)}.js`);
-    const accentAt =
-      bodyStart + comment.length + path.slice(0, path.indexOf(accent)).length;
-    if (accentAt === boundary - 1) return comment + path;
+    const path = paxRecord('path', `package/${character.repeat(40)}.js`);
+    const at =
+      bodyStart +
+      Buffer.byteLength(comment) +
+      Buffer.byteLength(path.slice(0, path.indexOf(character)));
+    if (at === boundary - before) return comment + path;
   }
-  throw new Error(`no body puts an accent across ${boundary}`);
+  throw new Error(`no body puts ${character} across ${boundary}`);
 }
 
 /** One comment record whose first accent starts at body offset `offset`, with `after` bytes of padding behind it. */
@@ -73,6 +79,8 @@ export const CHUNK_CASES = {
   'an extended header with a character across offset 512 of its body': named(
     straddling(1536, 2048),
   ),
+  'an extended header with a three-byte character across offset 512, its first byte at 510':
+    named(straddling(1536, 2048, '\u1000', 2)),
   'an extended header with a character across offset 16,384': named(
     straddling(1536, 16_384),
   ),

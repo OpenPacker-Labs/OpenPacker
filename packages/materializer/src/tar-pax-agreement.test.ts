@@ -31,14 +31,19 @@ const rawRecord = (key: string, value: string): string => {
   return `${length}${line}`;
 };
 /**
- * One comment record of exactly `total` bytes whose first accent (two bytes) is
- * at body offset `offset`: `<total> comment=` is 9 bytes and the digits, then
- * padding, the accent, padding and the newline.
+ * One comment record of exactly `total` bytes whose first `character` (é unless
+ * given) starts at body offset `offset`: `<total> comment=` is 9 bytes and the
+ * digits, then padding, the character, padding and the newline.
  */
-const accentAt = (offset: number, total: number): Uint8Array => {
+const accentAt = (
+  offset: number,
+  total: number,
+  character = 'é',
+): Uint8Array => {
   const digits = String(total).length;
+  const after = total - offset - Buffer.byteLength(character) - 1;
   const record = Buffer.from(
-    `${total} comment=${'x'.repeat(offset - digits - 9)}é${'y'.repeat(total - offset - 3)}\n`,
+    `${total} comment=${'x'.repeat(offset - digits - 9)}${character}${'y'.repeat(after)}\n`,
   );
   if (record.byteLength !== total) throw new Error(`${record.byteLength}`);
   return record;
@@ -89,6 +94,12 @@ describe('a pax header body', () => {
       ).toBe('TAR_AMBIGUOUS_PAX');
     expect(refused(body(513, 'é'))).toBe('TAR_AMBIGUOUS_PAX');
     expect(refused(body(4096, 'é'))).toBe('TAR_AMBIGUOUS_PAX');
+  });
+
+  it('may not hold a character whose later bytes reach offset 511, however they are spelled', () => {
+    // U+1000 is E1 80 80: from offset 510 its bytes at 511 and 512 are 0x80.
+    expect(refused(accentAt(510, 900, '\u1000'))).toBe('TAR_AMBIGUOUS_PAX');
+    expect(refused(accentAt(508, 900, '\u1000'))).toBeUndefined();
   });
 
   it('may not hold a linkpath record, in any of its records', () => {

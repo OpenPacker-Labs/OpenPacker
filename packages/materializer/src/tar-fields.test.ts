@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_MATERIALIZATION_LIMITS, inspectArchive } from './index.js';
 import { MaterializationError } from './errors.js';
-import { tarText } from './tar-fields.js';
+import { tarNumber, tarText } from './tar-fields.js';
 
 /** The code a call refuses with, or what it threw if that is no MaterializationError. */
 const refusal = (run: () => string): string | undefined => {
@@ -76,5 +76,18 @@ describe('a header whose text is not UTF-8', () => {
         name: 'MaterializationError',
         code: 'INVALID_TAR_TEXT',
       });
+  });
+});
+
+describe('tarNumber', () => {
+  it('reads octal digits, and refuses a field with an 8 or a 9 in it', () => {
+    const field = (text: string) =>
+      Buffer.from(text.padEnd(12, '\0'), 'latin1');
+    expect(tarNumber(field('00000000017'))).toBe(0o17);
+    for (const text of ['00000000018', '00000000009', '9'])
+      expect(
+        refusal(() => String(tarNumber(field(text)))),
+        text,
+      ).toBe('INVALID_TAR_NUMBER');
   });
 });
