@@ -105,16 +105,16 @@ jobs:
         # Directory junctions made relative to the parent handle
         # (NtCreateFile RootDirectory, FSCTL_SET_REPARSE_POINT, one rename),
         # how a junction is recognised (lstat answers from the reparse point,
-        # because fstat never says "link"), and the link suite the other
-        # platforms run, against NTFS.
+        # because fstat never says "link"), the set-up those suites share, and
+        # the link suite the other platforms run, against NTFS.
         if: runner.os == 'Windows'
         run:
           npm run test -w @openpacker/project-io --
           src/handle-windows-link.test.ts src/handle-windows-link.read.test.ts
-          src/handle-link.test.ts src/handle-link.prefix.test.ts
-          src/handle-link.read.test.ts src/handle-link.remove.test.ts
-          src/member-link.test.ts src/member-link.prefix.test.ts
-          src/member-link.tree.test.ts
+          src/handle-windows-link-support.test.ts src/handle-link.test.ts
+          src/handle-link.prefix.test.ts src/handle-link.read.test.ts
+          src/handle-link.remove.test.ts src/member-link.test.ts
+          src/member-link.prefix.test.ts src/member-link.tree.test.ts
       - run: npm run build
       - name: Test the publishable CLI bundle
         run: npm test --workspace @openpacker/cli -- test/release-bundle.test.ts
