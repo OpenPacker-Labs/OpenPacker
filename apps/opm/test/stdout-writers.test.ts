@@ -128,8 +128,9 @@ const EXEMPT: ReadonlyArray<{
   },
   {
     file: 'opmx-spawn.ts',
-    starts: 'outRaw',
-    reason: "the tool's own stdout, passed through as it writes it",
+    starts: 'const toOut = (written: string) =>',
+    reason:
+      "the tool's own stdout, passed through as it writes it, and whether stdout asks the tool to wait until it drains (`whenTaken`)",
   },
 ];
 

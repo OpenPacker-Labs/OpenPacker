@@ -377,7 +377,9 @@ describe('runs at the same time', () => {
       {
         env: { STOP: stop },
         output: {
-          stdout: (chunk) => (said += Buffer.from(chunk).toString('utf8')),
+          stdout: (chunk) => {
+            said += Buffer.from(chunk).toString('utf8');
+          },
           stderr: () => undefined,
         },
       },
@@ -453,7 +455,9 @@ describe.runIf(bwrapReady)('the owner of a run’s home', () => {
         readonlyPaths: [work],
         cwd: work,
         output: {
-          stdout: (chunk) => (said += Buffer.from(chunk).toString('utf8')),
+          stdout: (chunk) => {
+            said += Buffer.from(chunk).toString('utf8');
+          },
           stderr: () => undefined,
         },
       },

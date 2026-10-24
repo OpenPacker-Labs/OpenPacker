@@ -94,11 +94,15 @@ export interface SandboxPolicy {
  * Where a process's output goes as it is written, instead of into the
  * outcome: a caller that shows a tool to a person (opmx) passes its own
  * streams. Each chunk is the bytes as read; none is kept, and the policy's
- * byte limits, which bound what is kept, do not apply.
+ * byte limits, which bound what is kept, do not apply. A sink that cannot take
+ * more yet (a terminal or pipe that is behind) returns a promise: that stream
+ * of the process is not read again until it settles, so the process waits on
+ * its own writes, as it would writing to the terminal itself, and nothing piles
+ * up in memory meanwhile.
  */
 export interface OutputSink {
-  stdout(chunk: Uint8Array): void;
-  stderr(chunk: Uint8Array): void;
+  stdout(chunk: Uint8Array): void | Promise<void>;
+  stderr(chunk: Uint8Array): void | Promise<void>;
 }
 
 export interface RunInSandboxInput {

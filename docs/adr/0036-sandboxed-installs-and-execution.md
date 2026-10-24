@@ -428,7 +428,12 @@ Decision:
 2. **Output handed to a sink has no byte limit** (`BoundedOutput`): nothing of
    it is kept. Output kept in the outcome, which is what a caller with no sink
    gets (lifecycle scripts, host installers), keeps the limits, and the process
-   tree is still ended past them, exit 125.
+   tree is still ended past them, exit 125. Nor does it pile up anywhere: a sink
+   that cannot take more returns a promise, and the sandbox reads no more of
+   that stream of the process until it settles (`handOn`), so the process waits
+   on its own writes as it would writing to the terminal itself. `opmx`'s sink
+   returns one when its stdout or stderr `write` returns false, settled when
+   that stream drains, closes or fails (`whenTaken`, `passedOn`).
 
 What a run is still bounded by: the person who started it (Ctrl-C, SIGTERM,
 SIGHUP, as the amendment of 2026-10-17 says), and the limit they ask for.

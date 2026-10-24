@@ -2,6 +2,7 @@ import { stopMessage } from '../stop.js';
 import type { BackendProbe, OutputSink, SandboxBackend } from '../types.js';
 import {
   BoundedOutput,
+  handOn,
   SandboxBackendError,
   type OutputLimitKind,
 } from './mock.js';
@@ -219,12 +220,8 @@ export async function collectMxcChild(
       terminate();
     };
     signal?.addEventListener('abort', onAbort, { once: true });
-    child.stdout?.on('data', (d: unknown) => {
-      if (!output.push('stdout', d)) terminate();
-    });
-    child.stderr?.on('data', (d: unknown) => {
-      if (!output.push('stderr', d)) terminate();
-    });
+    handOn(child.stdout, 'stdout', output, terminate);
+    handOn(child.stderr, 'stderr', output, terminate);
     child.on('error', (err: unknown) => {
       signal?.removeEventListener('abort', onAbort);
       if (terminationTimer) clearTimeout(terminationTimer);

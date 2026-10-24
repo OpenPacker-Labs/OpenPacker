@@ -51,7 +51,9 @@ describe.runIf(bwrapReady)('a process run without network', () => {
       readonlyPaths: [root],
       backend: nativeBackend!,
       output: {
-        stdout: (chunk) => (printed += Buffer.from(chunk).toString('utf8')),
+        stdout: (chunk) => {
+          printed += Buffer.from(chunk).toString('utf8');
+        },
         stderr: () => undefined,
       },
       onIsolatedListen: (port) => told.push(port),

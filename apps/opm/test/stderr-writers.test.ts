@@ -190,6 +190,12 @@ const EXEMPT: ReadonlyArray<{
   },
   {
     file: 'opmx-spawn.ts',
+    starts: 'const toErr = (written: string) =>',
+    reason:
+      'whether stderr asks the tool to wait until it drains (`whenTaken`), beside the write named above',
+  },
+  {
+    file: 'opmx-spawn.ts',
     starts: 'passing.err(outcome.stderr)',
     reason: 'what the sandbox says after the tool, through the same writer',
   },

@@ -51,7 +51,9 @@ function waiting(
     readonlyPaths: [root],
     backend,
     output: {
-      stdout: (chunk) => (seen += Buffer.from(chunk).toString('utf8')),
+      stdout: (chunk) => {
+        seen += Buffer.from(chunk).toString('utf8');
+      },
       stderr: () => undefined,
     },
     ...(!(options.signal === undefined) && { signal: options.signal }),

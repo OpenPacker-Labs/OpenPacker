@@ -36,10 +36,12 @@ const decoder = () => {
   return {
     seen,
     output: {
-      stdout: (chunk: Uint8Array) =>
-        (seen.stdout += Buffer.from(chunk).toString('utf8')),
-      stderr: (chunk: Uint8Array) =>
-        (seen.stderr += Buffer.from(chunk).toString('utf8')),
+      stdout: (chunk: Uint8Array) => {
+        seen.stdout += Buffer.from(chunk).toString('utf8');
+      },
+      stderr: (chunk: Uint8Array) => {
+        seen.stderr += Buffer.from(chunk).toString('utf8');
+      },
     },
   };
 };
@@ -108,8 +110,12 @@ describe.each(backends)(
         readonlyPaths: [root],
         backend: backend(),
         output: {
-          stdout: (chunk) => (counted.stdout += chunk.byteLength),
-          stderr: (chunk) => (counted.stderr += chunk.byteLength),
+          stdout: (chunk) => {
+            counted.stdout += chunk.byteLength;
+          },
+          stderr: (chunk) => {
+            counted.stderr += chunk.byteLength;
+          },
         },
       });
       expect(counted).toEqual({ stdout: 3_145_728 + 4, stderr: 1_572_864 });

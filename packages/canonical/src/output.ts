@@ -102,8 +102,10 @@ export function outJson(io: Output, document: string): void {
 
 /**
  * What a child process wrote to its own standard output, passed through as it
- * wrote it: a script's output is the script's, and a tool's the tool's.
+ * wrote it: a script's output is the script's, and a tool's the tool's. What
+ * the stream's `write` returns is returned: false asks the writer to wait for
+ * the stream to drain before it writes more.
  */
-export function outRaw(io: Output, chunk: string): void {
-  io.stdout.write(chunk);
+export function outRaw(io: Output, chunk: string): boolean {
+  return io.stdout.write(chunk);
 }

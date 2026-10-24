@@ -216,32 +216,50 @@ export async function spawnTool(
  * `end` writes what a last chunk left. `out` and `err` write text there too:
  * what the sandbox itself says, after the tool.
  */
-function passedOn(io: CliIo): {
-  sink: { stdout(chunk: Uint8Array): void; stderr(chunk: Uint8Array): void };
+export function passedOn(io: CliIo): {
+  sink: {
+    stdout(chunk: Uint8Array): Promise<void> | undefined;
+    stderr(chunk: Uint8Array): Promise<void> | undefined;
+  };
   end(): void;
   out(text: string): void;
   err(text: string): void;
 } {
   const out = new StringDecoder('utf8');
   const err = new StringDecoder('utf8');
-  const toOut = (written: string) => {
-    if (written !== '') outRaw(io, written);
-  };
-  const toErr = (written: string) => {
-    if (written !== '') io.stderr.write(written);
-  };
+  const toOut = (written: string) =>
+    written === '' ? undefined : whenTaken(io.stdout, outRaw(io, written));
+  const toErr = (written: string) =>
+    written === '' ? undefined : whenTaken(io.stderr, io.stderr.write(written));
   return {
     sink: {
       stdout: (chunk) => toOut(out.write(chunk)),
       stderr: (chunk) => toErr(err.write(chunk)),
     },
     end: () => {
-      toOut(out.end());
-      toErr(err.end());
+      void toOut(out.end());
+      void toErr(err.end());
     },
-    out: toOut,
-    err: toErr,
+    out: (text) => void toOut(text),
+    err: (text) => void toErr(text),
   };
+}
+
+/**
+ * Nothing when `stream` took what was written (`wrote`); when it asked to wait,
+ * a promise that settles once it drains, or once it closes or fails, after
+ * which nothing more will wait on it. A stream that is not an event emitter
+ * (a test's) is never waited on.
+ */
+function whenTaken(stream: unknown, wrote: boolean): Promise<void> | undefined {
+  if (wrote !== false) return undefined;
+  // SAFETY: only `once` is used, and only where the stream has it.
+  const once = (stream as { once?: unknown }).once;
+  if (typeof once !== 'function') return undefined;
+  return new Promise<void>((resolve) => {
+    for (const event of ['drain', 'close', 'error', 'finish'])
+      once.call(stream, event, () => resolve());
+  });
 }
 
 async function spawnProcess(

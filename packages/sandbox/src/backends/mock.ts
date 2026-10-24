@@ -143,12 +143,16 @@ export class BoundedOutput {
     readonly sink?: OutputSink,
   ) {}
 
-  push(kind: 'stdout' | 'stderr', chunk: unknown): boolean {
+  /**
+   * Keep or hand on `chunk`: false past a limit (end the tree), true when it
+   * was taken, or the promise of a sink that cannot take more until it settles.
+   */
+  push(kind: 'stdout' | 'stderr', chunk: unknown): boolean | Promise<void> {
     if (this.exceeded) return false;
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
     if (this.sink !== undefined) {
-      this.sink[kind](bytes);
-      return true;
+      const full = this.sink[kind](bytes);
+      return full instanceof Promise ? full : true;
     }
     const channelBytes =
       kind === 'stdout' ? this.#stdoutBytes : this.#stderrBytes;
@@ -199,6 +203,30 @@ export class BoundedOutput {
       ...(this.exceeded && { outputLimitExceeded: this.exceeded }),
     };
   }
+}
+
+/**
+ * Hand what `stream` reads to `output` as `kind`: past a limit `exceeded` is
+ * called, and while the sink cannot take more the stream is paused, so the
+ * process is not read (and blocks on its own writes) until the sink settles.
+ */
+export function handOn(
+  stream: NodeJS.ReadableStream | null | undefined,
+  kind: 'stdout' | 'stderr',
+  output: BoundedOutput,
+  exceeded: () => void,
+): void {
+  stream?.on('data', (chunk: unknown) => {
+    const taken = output.push(kind, chunk);
+    if (taken === false) exceeded();
+    else if (taken !== true) {
+      stream.pause();
+      void taken.then(
+        () => stream.resume(),
+        () => stream.resume(),
+      );
+    }
+  });
 }
 
 export async function spawnCapture(input: {
@@ -317,12 +345,8 @@ export async function spawnCapture(input: {
           input.treeContainment!,
         ));
       };
-      child.stdout?.on('data', (chunk: unknown) => {
-        if (!output.push('stdout', chunk)) void terminateTree('limit');
-      });
-      child.stderr?.on('data', (chunk: unknown) => {
-        if (!output.push('stderr', chunk)) void terminateTree('limit');
-      });
+      handOn(child.stdout, 'stdout', output, () => void terminateTree('limit'));
+      handOn(child.stderr, 'stderr', output, () => void terminateTree('limit'));
       const onAbort = () => void terminateTree('abort');
       signal?.addEventListener('abort', onAbort, { once: true });
       if (signal?.aborted) onAbort();
