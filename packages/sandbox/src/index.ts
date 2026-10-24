@@ -34,6 +34,13 @@ export {
 export { packageExecRoRoots } from './backends/native.js';
 
 export {
+  stopMessage,
+  stoppedBySignal,
+  stoppedByTimeout,
+  type RunStop,
+} from './stop.js';
+
+export {
   containmentWithdrawnNote,
   executableAuthorityRefusal,
 } from './platform.js';

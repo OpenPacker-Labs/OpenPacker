@@ -87,9 +87,7 @@ describe.each(backends)(
       expect(before).toEqual({ stdout: 'ready\n', stderr: 'warm\n' });
       expect(outcome.exitCode).toBe(124);
       expect(outcome.stdout).toBe('');
-      expect(outcome.stderr).toBe(
-        '\nopenpacker sandbox: process aborted or timed out\n',
-      );
+      expect(outcome.stderr).toBe('\nopenpacker sandbox: process aborted\n');
     }, 30_000);
 
     it('hands on what the limits let through, and ends the tree past them', async () => {

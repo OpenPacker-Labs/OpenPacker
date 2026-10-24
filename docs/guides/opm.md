@@ -1187,7 +1187,9 @@ Resolution order: explicit `--bin` → package primary bin → bin name in
 A tool's stdout and stderr reach `opmx`'s as the tool writes them, so a server
 shows that it listens while it serves. The sandbox's byte limits and its
 `timeout_ms` (ten minutes unless the project sets one) still end a tool that
-passes them (ADR 0036).
+passes them (ADR 0036). When a tool is ended, the sandbox says what ended it:
+`process stopped by SIGINT` (Ctrl-C; `opmx` then ends by the same signal),
+`process timed out after 600000 ms`, or `process aborted`.
 
 An installed npm bin runs from a `node_modules` of its package's closure,
 written for the run under `.opm/runs/` beside the project's store and removed

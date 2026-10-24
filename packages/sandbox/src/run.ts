@@ -9,6 +9,7 @@ import {
 import { createNativeBackend, probeNativeBackends } from './backends/native.js';
 import { defaultJailHomeRoot, scrubEnvironment } from './env.js';
 import { boundPaths, pathsToOpen } from './handles.js';
+import { stoppedByTimeout } from './stop.js';
 import { containmentWithdrawnNote } from './platform.js';
 import {
   assertSafeJailPath,
@@ -205,7 +206,10 @@ export async function runInSandbox(
       let timer: ReturnType<typeof setTimeout> | undefined;
       const ac = new AbortController();
       if (timeoutMs > 0) {
-        timer = setTimeout(() => ac.abort(), timeoutMs);
+        timer = setTimeout(
+          () => ac.abort(stoppedByTimeout(timeoutMs)),
+          timeoutMs,
+        );
         signal =
           input.signal === undefined
             ? ac.signal

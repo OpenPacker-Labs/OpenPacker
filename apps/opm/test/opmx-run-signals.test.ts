@@ -109,13 +109,20 @@ describe.runIf(canSandbox)(
   'opmx stopped while it runs an installed tool',
   () => {
     it('ends a declared bin and removes its layout, by SIGHUP', async () => {
-      const { how, left } = await killedRun('idler', 'SIGHUP', 'layout');
+      const { how, left, output } = await killedRun(
+        'idler',
+        'SIGHUP',
+        'layout',
+      );
       expect([how, left]).toEqual(['SIGHUP', []]);
+      // What ended the tool is said by its name.
+      expect(output).toContain('openpacker sandbox: process stopped by SIGHUP');
     }, 120_000);
 
     it('ends a bin no package owns and removes the store view, by SIGINT', async () => {
-      const { how, left } = await killedRun('direct', 'SIGINT', 'view');
+      const { how, left, output } = await killedRun('direct', 'SIGINT', 'view');
       expect([how, left]).toEqual(['SIGINT', []]);
+      expect(output).toContain('openpacker sandbox: process stopped by SIGINT');
     }, 120_000);
   },
 );
@@ -167,6 +174,9 @@ describe.runIf(canSandbox)(
       const { how, layouts, output } = await killedRegistryRun('SIGTERM');
       expect([how, layouts]).toEqual(['SIGTERM', []]);
       expect(output).toContain('opmx: pkg:npm/idler@1.0.0');
+      expect(output).toContain(
+        'openpacker sandbox: process stopped by SIGTERM',
+      );
     }, 120_000);
   },
 );

@@ -1,3 +1,4 @@
+import { stopMessage } from '../stop.js';
 import type { BackendProbe, OutputSink, SandboxBackend } from '../types.js';
 import {
   BoundedOutput,
@@ -206,8 +207,11 @@ export async function collectMxcChild(
         5_000,
       );
     };
+    // What ended the run, as the abort's reason says.
+    let stoppedBy: unknown;
     const onAbort = () => {
       aborted = true;
+      stoppedBy = signal?.reason;
       terminate();
     };
     signal?.addEventListener('abort', onAbort, { once: true });
@@ -225,8 +229,13 @@ export async function collectMxcChild(
     child.on('close', (code: unknown) => {
       signal?.removeEventListener('abort', onAbort);
       if (terminationTimer) clearTimeout(terminationTimer);
+      const result = output.result(
+        aborted ? 124 : typeof code === 'number' ? code : 1,
+      );
       resolve(
-        output.result(aborted ? 124 : typeof code === 'number' ? code : 1),
+        aborted
+          ? { ...result, stderr: `${result.stderr}\n${stopMessage(stoppedBy)}` }
+          : result,
       );
     });
     if (signal?.aborted) onAbort();

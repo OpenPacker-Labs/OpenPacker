@@ -159,6 +159,8 @@ export {
 } from './lifecycle.js';
 
 export { runSandboxedPackageProcess } from './sandbox-run.js';
+// How opmx tells the sandbox that a signal it holds ended a run.
+export { stoppedBySignal } from '@openpacker/sandbox';
 export {
   ephemeralNodeRun,
   layOutTool,

@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { readSync } from 'node:fs';
 import { MAX_INHERITED_HANDLES } from '../handles.js';
 import { executableAuthorityRefusal } from '../platform.js';
+import { stopMessage, stoppedByTimeout } from '../stop.js';
 import type { OutputSink, SandboxBackend } from '../types.js';
 
 /**
@@ -248,7 +249,7 @@ export async function spawnCapture(input: {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const ac = new AbortController();
   if (timeoutMs > 0) {
-    timer = setTimeout(() => ac.abort(), timeoutMs);
+    timer = setTimeout(() => ac.abort(stoppedByTimeout(timeoutMs)), timeoutMs);
     timeoutSignal = ac.signal;
   }
 
@@ -291,9 +292,15 @@ export async function spawnCapture(input: {
       );
       let termination: Promise<void> | undefined;
       let aborted = false;
+      // What ended the run, as the abort's reason says: a signal the caller
+      // received, the timeout, or an abort.
+      let stoppedBy: unknown;
       let settled = false;
       const terminateTree = (reason: 'limit' | 'abort') => {
-        aborted ||= reason === 'abort';
+        if (reason === 'abort' && !aborted) {
+          aborted = true;
+          stoppedBy = signal?.reason;
+        }
         return (termination ??= terminateProcessTree(
           child,
           input.treeContainment!,
@@ -323,7 +330,7 @@ export async function spawnCapture(input: {
           aborted
             ? {
                 ...result,
-                stderr: `${result.stderr}\nopenpacker sandbox: process aborted or timed out\n`,
+                stderr: `${result.stderr}\n${stopMessage(stoppedBy)}`,
               }
             : result,
         );

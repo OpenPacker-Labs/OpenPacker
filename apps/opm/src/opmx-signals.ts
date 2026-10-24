@@ -1,3 +1,5 @@
+import { stoppedBySignal } from '@openpacker/opm-project';
+
 /** The signals that stop a run from a terminal or a service manager. */
 const HELD = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
 
@@ -29,7 +31,8 @@ export async function holdingSignals<T>(
     const handler = () => {
       if (received === undefined) {
         received = name;
-        controller.abort();
+        // The sandbox says what ended the run by this reason.
+        controller.abort(stoppedBySignal(name));
         return;
       }
       escalated = true;

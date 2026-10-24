@@ -395,3 +395,24 @@ limits above still end a tool that runs or writes past them, a server included.
 runs, by the mock backend and by bwrap, and the limits ending a tree whose
 output is handed on; `opmx-stream.test.ts` (apps/opm) shows the same through
 `opmx`'s spawn, and a split character written whole.
+
+## Amendment (2026-10-24) — a tool someone runs: what stopped it
+
+`opmx http-server` stopped by Ctrl-C said "openpacker sandbox: process aborted
+or timed out". The sandbox ended the process tree on an abort of the signal it
+was given, and the policy's timeout aborted the same signal, so it could not
+tell the two apart, nor say which signal it was.
+
+Decision: what ended a run is the reason of the AbortSignal that ended it
+(`RunStop`, `stop.ts`). `opmx` aborts with the signal it holds
+(`stoppedBySignal`, `opmx-signals.ts`), the sandbox aborts its own signal with
+the timeout (`stoppedByTimeout`), and the backends (bwrap, MXC and the mock) say
+which on a line of their own: `process stopped by SIGINT`,
+`process timed out after 600000 ms`, or `process aborted` for any other reason.
+The exit status is 124 for all three, as before; `opmx` then ends by the signal
+itself, so a shell sees 130 for SIGINT.
+
+`stop.test.ts` (sandbox) ends a run by each of the three signals, by the
+timeout, and by a bare abort, through the mock backend and bwrap, and an MXC run
+by a signal; `opmx-run-signals.test.ts` (apps/opm) finds the signal named when
+`opmx` is sent SIGHUP, SIGINT and SIGTERM.
