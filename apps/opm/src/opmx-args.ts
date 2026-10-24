@@ -184,8 +184,8 @@ with --allow-env NAME (repeatable). --offline refuses an ephemeral resolve.
 
 A tool runs until it ends or is stopped (Ctrl-C), as with npx, and all it
 writes reaches the terminal. --timeout <ms> ends it after that many
-milliseconds (0: never); a project sets one with [sandbox] opmx_timeout_ms.
---timeout wins over the project's; timeout_ms bounds lifecycle scripts only.
+milliseconds (0: never). Without it, a project's [sandbox] opmx_timeout_ms
+applies, else a [sandbox] timeout_ms it sets, else no limit.
 
 A tool has no network unless it is granted one: it reaches nothing outside
 its sandbox, and nothing outside reaches it, a server included.

@@ -6,16 +6,17 @@ import { canSandbox } from './signal-fixture.js';
 /**
  * opmx runs a tool someone started, as npx does: it runs until it ends or is
  * stopped, and all it writes reaches the terminal. The sandbox ended every
- * tool after ten minutes (the project's `timeout_ms`, which is for an
- * install's lifecycle scripts), and after 1 MiB of stdout or 2 MiB of output
- * in all, so a server was ended by its own log.
+ * tool after ten minutes (the default `timeout_ms`, which is for what runs
+ * unattended), and after 1 MiB of stdout or 2 MiB of output in all, so a
+ * server was ended by its own log. A limit the project or the command line
+ * sets still holds: `--timeout`, else `opmx_timeout_ms`, else `timeout_ms`.
  */
 
 const MiB = 1024 * 1024;
 
 /**
  * `chatty` writes 3 MiB to stdout and 1.5 MiB to stderr, waiting for each
- * write to be taken, then runs on for 1.5 s and says it is done.
+ * write to be taken, and says it is done.
  */
 const chatty = binPackage(
   'chatty',
@@ -23,8 +24,7 @@ const chatty = binPackage(
 const write = (stream, left, then) =>
   left === 0 ? then() : stream.write(line, () => write(stream, left - 1, then));
 write(process.stdout, 3 * 1024, () =>
-  write(process.stderr, 1536, () =>
-    setTimeout(() => process.stdout.write('done\\n'), 1500)));
+  write(process.stderr, 1536, () => process.stdout.write('done\\n')));
 `,
 );
 
@@ -35,12 +35,9 @@ const forever = binPackage(
 );
 
 describe.runIf(canSandbox)('opmx runs a tool for as long as it runs', () => {
-  it('past the timeout lifecycle scripts get, writing past the byte limits', async () => {
-    // What used to end it within a fifth of a second.
-    const root = await installedProject(
-      [chatty],
-      '[sandbox]\ntimeout_ms = 200',
-    );
+  it('writing past the byte limits, to its end', async () => {
+    // What used to end it at 1 MiB, exit 125.
+    const root = await installedProject([chatty]);
     const cap = capture();
     expect(await runOpmx(['chatty'], cap.io, root), cap.seen.err).toBe(0);
     expect(cap.seen.out.length).toBe(3 * MiB + 'done\n'.length);
@@ -56,10 +53,23 @@ describe.runIf(canSandbox)('opmx runs a tool for as long as it runs', () => {
     );
     const cap = capture();
     expect(await runOpmx(['forever'], cap.io, root)).toBe(124);
-    expect(cap.seen).toEqual({
-      out: 'up\n',
-      err: '\nopenpacker sandbox: process timed out after 500 ms\n',
-    });
+    // Whether the tool had started by then is the machine's business.
+    expect(cap.seen.err).toBe(
+      '\nopenpacker sandbox: process timed out after 500 ms\n',
+    );
+  }, 120_000);
+
+  it('until the project’s timeout_ms, when it sets that and no opmx_timeout_ms', async () => {
+    const root = await installedProject(
+      [forever],
+      '[sandbox]\ntimeout_ms = 400',
+    );
+    const cap = capture();
+    expect(await runOpmx(['forever'], cap.io, root)).toBe(124);
+    // Whether the tool had started by then is the machine's business.
+    expect(cap.seen.err).toBe(
+      '\nopenpacker sandbox: process timed out after 400 ms\n',
+    );
   }, 120_000);
 
   it('until --timeout, which wins over the project’s', async () => {
@@ -71,10 +81,10 @@ describe.runIf(canSandbox)('opmx runs a tool for as long as it runs', () => {
     expect(await runOpmx(['--timeout', '400', 'forever'], cap.io, root)).toBe(
       124,
     );
-    expect(cap.seen).toEqual({
-      out: 'up\n',
-      err: '\nopenpacker sandbox: process timed out after 400 ms\n',
-    });
+    // Whether the tool had started by then is the machine's business.
+    expect(cap.seen.err).toBe(
+      '\nopenpacker sandbox: process timed out after 400 ms\n',
+    );
   }, 120_000);
 });
 

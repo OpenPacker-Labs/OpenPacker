@@ -76,6 +76,7 @@ async function lock(dir: string): Promise<true | undefined> {
 /** Run node in the sandbox over `entries`, cwd outside the store. */
 const run = (entries: readonly string[], work: string, program: string) =>
   runSandboxedPackageProcess({
+    timeoutMs: 0,
     argv: [process.execPath, '-e', program],
     cwd: work,
     storePaths: entries,

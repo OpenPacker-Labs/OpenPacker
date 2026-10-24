@@ -5,16 +5,20 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { SandboxBackend } from '@openpacker/sandbox';
 import {
   OpmError,
+  opmxRunTimeout,
   parseManifest,
   runSandboxedPackageProcess,
   serializeManifest,
 } from '../src/index.js';
 
 /**
- * A tool opmx runs has no wall-clock limit unless one is asked for: `opmx
- * --timeout <ms>`, else `[sandbox] opmx_timeout_ms`. The project's
- * `timeout_ms` bounds an install's lifecycle scripts, and opmx used to take it
- * too, ten minutes when unset, which ended any server run that long.
+ * A tool opmx runs has no wall-clock limit unless one is asked for:
+ * `opmx --timeout <ms>`, else `[sandbox] opmx_timeout_ms`, else a
+ * `[sandbox] timeout_ms` the project sets (a project that bounds its runs in
+ * CI keeps that bound), else none. Only the default ten minutes, which is for
+ * what runs unattended, stops applying; it ended any server run that long.
+ * The library leaves the choice to its caller: `runSandboxedPackageProcess`
+ * takes the limit it is to apply, and applies no project setting of its own.
  */
 
 const temps: string[] = [];
@@ -42,48 +46,74 @@ const policyOf = (sandbox: string) =>
     `[project]\nname = "timeout"\necosystems = ["npm"]\n\n[sandbox]\n${sandbox}\n`,
   ).policy;
 
-async function limitFor(input: {
-  sandbox?: string;
-  timeoutMs?: number;
-}): Promise<number | undefined> {
+/** The limit the backend is given for a run that asks for `timeoutMs`. */
+async function given(timeoutMs: number, sandbox?: string) {
   const { backend, given } = recording();
-  const policy =
-    input.sandbox === undefined ? undefined : policyOf(input.sandbox);
+  const policy = sandbox === undefined ? undefined : policyOf(sandbox);
   const cwd = await mkdtemp(join(tmpdir(), 'opm-opmx-timeout-'));
   temps.push(cwd);
   await runSandboxedPackageProcess({
     argv: ['/bin/true'],
     cwd,
     backend,
+    timeoutMs,
     ...(!(policy === undefined) && { policy }),
-    ...(!(input.timeoutMs === undefined) && { timeoutMs: input.timeoutMs }),
   });
   return given[0];
 }
 
+/** What opmx asks for, with `sandbox` in opm.toml and `flag` given. */
+const opmxLimit = (sandbox?: string, flag?: number) =>
+  opmxRunTimeout(sandbox === undefined ? undefined : policyOf(sandbox), flag);
+
 describe('the wall-clock limit of a tool opmx runs', () => {
-  it('is none by default, with or without a project', async () => {
-    expect(await limitFor({})).toBeUndefined();
-    expect(await limitFor({ sandbox: 'project_write = false' })).toBe(
-      undefined,
-    );
+  it('is none by default, with or without a project', () => {
+    expect(opmxLimit()).toBe(0);
+    expect(opmxLimit('project_write = false')).toBe(0);
   });
 
-  it('is not the timeout_ms lifecycle scripts get', async () => {
-    expect(await limitFor({ sandbox: 'timeout_ms = 200' })).toBeUndefined();
+  it('is the project’s timeout_ms when it sets one', () => {
+    expect(opmxLimit('timeout_ms = 200')).toBe(200);
   });
 
-  it('is the project’s opmx_timeout_ms', async () => {
-    expect(await limitFor({ sandbox: 'opmx_timeout_ms = 300000' })).toBe(
+  it('is the project’s opmx_timeout_ms over its timeout_ms', () => {
+    expect(opmxLimit('timeout_ms = 200\nopmx_timeout_ms = 300000')).toBe(
       300_000,
     );
-    expect(await limitFor({ sandbox: 'opmx_timeout_ms = 0' })).toBeUndefined();
+    expect(opmxLimit('timeout_ms = 200\nopmx_timeout_ms = 0')).toBe(0);
   });
 
-  it('is --timeout over the project’s, 0 included', async () => {
-    const sandbox = 'opmx_timeout_ms = 300000';
-    expect(await limitFor({ sandbox, timeoutMs: 400 })).toBe(400);
-    expect(await limitFor({ sandbox, timeoutMs: 0 })).toBeUndefined();
+  it('is --timeout over both, 0 included', () => {
+    const sandbox = 'timeout_ms = 200\nopmx_timeout_ms = 300000';
+    expect(opmxLimit(sandbox, 400)).toBe(400);
+    expect(opmxLimit(sandbox, 0)).toBe(0);
+  });
+
+  it('refuses a timeout_ms that is not whole milliseconds, naming it', () => {
+    expect(() => opmxLimit('timeout_ms = -1')).toThrow(/sandbox\.timeout_ms/u);
+  });
+});
+
+describe('runSandboxedPackageProcess', () => {
+  it('applies the limit its caller gives, whatever the project sets', async () => {
+    const sandbox = 'timeout_ms = 200\nopmx_timeout_ms = 300000';
+    expect(await given(400, sandbox)).toBe(400);
+    expect(await given(0, sandbox)).toBeUndefined();
+  });
+
+  it('refuses a run whose caller chose no limit', async () => {
+    const { backend, given: seen } = recording();
+    await expect(
+      runSandboxedPackageProcess(
+        // SAFETY: a caller that leaves out the required limit, as JavaScript can.
+        {
+          argv: ['/bin/true'],
+          cwd: tmpdir(),
+          backend,
+        } as unknown as Parameters<typeof runSandboxedPackageProcess>[0],
+      ),
+    ).rejects.toThrow(/The run timeout/u);
+    expect(seen).toEqual([]);
   });
 });
 

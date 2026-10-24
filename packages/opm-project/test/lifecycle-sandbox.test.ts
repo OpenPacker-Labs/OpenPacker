@@ -204,6 +204,7 @@ describe('lifecycle jail execution', () => {
     // project tree stays RO. Either way the file stays good.
     try {
       await runSandboxedPackageProcess({
+        timeoutMs: 0,
         argv: [
           process.execPath,
           '-e',
@@ -223,6 +224,7 @@ describe('lifecycle jail execution', () => {
     const project = await scratch('opm-run-unenforced-');
     await expect(
       runSandboxedPackageProcess({
+        timeoutMs: 0,
         argv: [process.execPath, '-e', 'process.exit(0)'],
         cwd: project,
         projectRoot: project,
@@ -337,6 +339,7 @@ describe('containment withdrawn off Linux', () => {
     const project = await scratch('opm-run-macos-');
     spoofPlatform('darwin');
     const failure = await runSandboxedPackageProcess({
+      timeoutMs: 0,
       argv: [process.execPath, '-e', 'process.exit(0)'],
       cwd: project,
       projectRoot: project,

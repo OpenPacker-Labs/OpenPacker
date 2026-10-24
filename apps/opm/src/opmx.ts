@@ -14,6 +14,7 @@ import {
   resolveExecutable,
   fetchTool,
   installedNodeRun,
+  opmxRunTimeout,
   selectToolBin,
   readManifestFile,
   parsePackageSpec,
@@ -180,7 +181,9 @@ export async function runOpmx(
       projectRoot: root,
       ...(!(pkgId === undefined) && { packageId: pkgId }),
       ...(!(projectPolicy === undefined) && { policy: projectPolicy }),
-      ...(!(flags.timeoutMs === undefined) && { timeoutMs: flags.timeoutMs }),
+      // --timeout, else the project's opmx_timeout_ms, else a timeout_ms it
+      // sets, else none (`opmxRunTimeout`).
+      timeoutMs: opmxRunTimeout(projectPolicy, flags.timeoutMs),
       ...(flags.allowNetwork && { network: true }),
     };
     const storePaths = Object.values(state.packages).map(

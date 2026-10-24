@@ -39,7 +39,10 @@ export interface SandboxContext {
   signal?: AbortSignal;
   /** Directories put first on the tool's PATH (its layout's `.bin`). */
   pathPrefix?: readonly string[];
-  /** `--timeout`: wall-clock milliseconds, 0 for none; else the project's. */
+  /**
+   * Wall-clock milliseconds, 0 or absent for none: what `opmxRunTimeout` says
+   * for a project's tool, `--timeout` for one straight from a registry.
+   */
   timeoutMs?: number;
   /** `--allow-network`: the run shares the host's network. */
   network?: boolean;
@@ -268,9 +271,7 @@ async function spawnProcess(
       ...(!(sandbox?.pathPrefix === undefined) && {
         pathPrefix: sandbox.pathPrefix,
       }),
-      ...(!(sandbox?.timeoutMs === undefined) && {
-        timeoutMs: sandbox.timeoutMs,
-      }),
+      timeoutMs: sandbox?.timeoutMs ?? 0,
       ...(sandbox?.network === true && { network: true }),
       // Without network the tool has a namespace of its own: a server it
       // starts is reached by nothing outside, and says nothing of it.

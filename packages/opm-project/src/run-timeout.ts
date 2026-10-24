@@ -1,3 +1,4 @@
+import type { PolicyInput } from '@openpacker/contracts';
 import { OpmError } from './types.js';
 
 /**
@@ -25,4 +26,36 @@ export function parseRunTimeout(
       `${source} takes whole milliseconds from 0 (no limit) to ${MAX_RUN_TIMEOUT_MS}, not ${JSON.stringify(text)}`,
     );
   return value;
+}
+
+/**
+ * The wall-clock limit of a tool `opmx` runs from a project, in whole
+ * milliseconds, 0 for none: `--timeout` (`flag`) when given, else the
+ * project's `[sandbox] opmx_timeout_ms`, else its `timeout_ms` when it sets one
+ * (a project that bounds every sandboxed run, in CI say, keeps that bound),
+ * else none. Only the default of `timeout_ms`, ten minutes, which is for what
+ * runs unattended, does not apply to a tool someone started.
+ */
+export function opmxRunTimeout(
+  policy: PolicyInput | undefined,
+  flag?: number,
+): number {
+  if (flag !== undefined) return parseRunTimeout(String(flag), '--timeout');
+  // SAFETY: the extended sandbox knobs live on PolicyInput untyped (toml.ts).
+  const ext = policy as
+    | (PolicyInput & { opmxTimeoutMs?: number; timeoutMs?: number })
+    | undefined;
+  if (ext?.opmxTimeoutMs !== undefined)
+    return parseRunTimeout(
+      String(ext.opmxTimeoutMs),
+      'sandbox.opmx_timeout_ms',
+      'INVALID_MANIFEST',
+    );
+  if (ext?.timeoutMs !== undefined)
+    return parseRunTimeout(
+      String(ext.timeoutMs),
+      'sandbox.timeout_ms',
+      'INVALID_MANIFEST',
+    );
+  return 0;
 }

@@ -1877,6 +1877,7 @@ describe('native interpreter', () => {
       });
       const target = join(tool.storePath, 'bin', 'demo');
       const outcome = await runSandboxedPackageProcess({
+        timeoutMs: 0,
         argv: [target, 'hello'],
         cwd: tool.storePath,
         storePaths: [tool.storePath],

@@ -22,11 +22,10 @@ import { OpmError } from './types.js';
  * project grants it to the package (`[sandbox.packages."<purl>"] network`);
  * otherwise the tool has a network of its own, which nothing else reaches.
  *
- * A tool runs for as long as it runs, as one started by `npx` does: someone
- * started it and stops it, and a server is meant to keep running. Its limit
- * is `timeoutMs` when given (`opmx --timeout`), else the project's
- * `[sandbox] opmx_timeout_ms`, else none. The project's `timeout_ms` bounds
- * what runs unattended, an install's lifecycle scripts, and not this.
+ * The caller says how long the tool may run (`timeoutMs`), since only it
+ * knows whether a person started it and stops it (opmx: `opmxRunTimeout`,
+ * none unless asked for) or nobody watches it; the project policy's
+ * `timeout_ms` is not applied behind its back.
  */
 export async function runSandboxedPackageProcess(input: {
   argv: readonly string[];
@@ -41,8 +40,11 @@ export async function runSandboxedPackageProcess(input: {
   signal?: AbortSignal;
   /** Directories put first on the process's PATH (a layout's `.bin`). */
   pathPrefix?: readonly string[];
-  /** Wall-clock limit in whole milliseconds, 0 for none (`opmx --timeout`). */
-  timeoutMs?: number;
+  /**
+   * Wall-clock limit in whole milliseconds, 0 for none; required, so that no
+   * caller gets a limit, or none, without choosing it (`opmxRunTimeout`).
+   */
+  timeoutMs: number;
   /**
    * Told the port the tool listens on while it has no network, where nothing
    * outside its sandbox reaches it (`RunInSandboxInput.onIsolatedListen`).
@@ -59,18 +61,9 @@ export async function runSandboxedPackageProcess(input: {
   if (input.argv.length === 0) {
     throw new OpmError('USAGE', 'runSandboxedPackageProcess requires argv');
   }
-  // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const ext = input.policy as
-    | (PolicyInput & { opmxTimeoutMs?: number })
-    | undefined;
   const policy: SandboxPolicy = {
     ...sandboxPolicyFromProject(input.policy),
-    timeoutMs: parseRunTimeout(
-      String(input.timeoutMs ?? ext?.opmxTimeoutMs ?? 0),
-      input.timeoutMs === undefined
-        ? 'sandbox.opmx_timeout_ms'
-        : 'The run timeout',
-    ),
+    timeoutMs: parseRunTimeout(String(input.timeoutMs), 'The run timeout'),
   };
   const projectWrite = policy.projectWrite === true;
 

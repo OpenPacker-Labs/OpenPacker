@@ -411,16 +411,20 @@ two limits made for what runs unattended still ended it:
 
 Decision:
 
-1. **A tool `opmx` runs has no wall-clock limit unless one is asked for.**
-   `opmx --timeout <ms>` sets one for the run, else `[sandbox] opmx_timeout_ms`
-   in `opm.toml`, else there is none (`runSandboxedPackageProcess`). Both take
-   whole milliseconds, 0 for none, up to 2^31 - 1, what a timer can wait
-   (`parseRunTimeout`); anything else is refused, the key by `INVALID_MANIFEST`.
-   `timeout_ms` keeps bounding what runs unattended, an install's lifecycle
-   scripts, ten minutes by default, and no longer bounds `opmx`: a project that
-   set it for its lifecycle scripts does not end its servers with it. MXC is
-   given no limit of its own (its SDK sets none when it is omitted); the
-   sandbox's own signal carries the policy's.
+1. **A tool `opmx` runs has no wall-clock limit unless one is asked for.** The
+   limit is, in this order: `opmx --timeout <ms>` for the run; else
+   `[sandbox] opmx_timeout_ms` in `opm.toml`; else a `[sandbox] timeout_ms` the
+   project sets, so that a project that bounds its sandboxed runs (in CI, say)
+   keeps that bound for `opmx` too; else none (`opmxRunTimeout`). Only the
+   default of `timeout_ms`, ten minutes, which is for what runs unattended (an
+   install's lifecycle scripts), no longer applies to `opmx`. All take whole
+   milliseconds, 0 for none, up to 2^31 - 1, what a timer can wait
+   (`parseRunTimeout`); anything else is refused, a key by `INVALID_MANIFEST`.
+   The library leaves the choice to its caller: `runSandboxedPackageProcess`
+   requires the limit it applies (`timeoutMs`) and reads none from the project
+   on its own. `opmx pkg:...` reads no project, so only `--timeout` applies to
+   it. MXC is given no limit of its own (its SDK sets none when it is omitted);
+   the sandbox's own signal carries the policy's.
 2. **Output handed to a sink has no byte limit** (`BoundedOutput`): nothing of
    it is kept. Output kept in the outcome, which is what a caller with no sink
    gets (lifecycle scripts, host installers), keeps the limits, and the process
@@ -430,13 +434,14 @@ What a run is still bounded by: the person who started it (Ctrl-C, SIGTERM,
 SIGHUP, as the amendment of 2026-10-17 says), and the limit they ask for.
 
 `opmx-long-run.test.ts` (apps/opm) runs, through bwrap, an installed tool that
-writes 3 MiB to stdout and 1.5 MiB to stderr and runs on for 1.5 s, in a project
-whose `timeout_ms` is 200, and finds all of it written and exit 0; and a tool
-that never ends, ended by `opmx_timeout_ms = 500` and by `--timeout 400` over
-the project's. `opmx-timeout.test.ts` (opm-project) pins which limit a run gets,
-and the key's round trip and refusals; `output-sink.test.ts` (sandbox) hands 4.5
-MiB to a sink through the mock backend and bwrap, and still cuts kept output at
-its limit.
+writes 3 MiB to stdout and 1.5 MiB to stderr, and finds all of it written and
+exit 0; and a tool that never ends, ended by `opmx_timeout_ms = 500`, by
+`timeout_ms = 400` where the project sets no `opmx_timeout_ms`, and by
+`--timeout 400` over the project's. `opmx-timeout.test.ts` (opm-project) pins
+the order, that the library applies the limit its caller gives and refuses a run
+given none, and the key's round trip and refusals; `output-sink.test.ts`
+(sandbox) hands 4.5 MiB to a sink through the mock backend and bwrap, and still
+cuts kept output at its limit.
 
 ### Which network
 

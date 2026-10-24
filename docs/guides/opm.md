@@ -1192,10 +1192,11 @@ Resolution order: explicit `--bin` → package primary bin → bin name in
 A tool's stdout and stderr reach `opmx`'s as the tool writes them, so a server
 shows that it listens while it serves. A tool runs until it ends or is stopped,
 as with `npx`, however long it runs and however much it writes. `--timeout <ms>`
-ends it after that many milliseconds (0 for never), and a project sets one for
-every `opmx` run with `[sandbox] opmx_timeout_ms`; the flag wins. `timeout_ms`
-bounds an install's lifecycle scripts only (ten minutes unless the project sets
-one), and so do the sandbox's byte limits, which bound the output it keeps (ADR
+ends it after that many milliseconds (0 for never). Without it, a project's
+`[sandbox] opmx_timeout_ms` applies, else a `[sandbox] timeout_ms` the project
+sets (a bound it keeps for every sandboxed run, in CI say), else nothing: the
+default `timeout_ms`, ten minutes, is for an install's lifecycle scripts only,
+and so are the sandbox's byte limits, which bound the output it keeps (ADR
 0036). When a tool is ended, the sandbox says what ended it:
 `process stopped by SIGINT` (Ctrl-C; `opmx` then ends by the same signal),
 `process timed out after 600000 ms`, or `process aborted`.
@@ -1449,8 +1450,8 @@ mode = "fail-closed"   # fail-closed | degrade-warn | off
 prefer = "auto"        # auto | mxc | native
 project_write = false  # opmx cannot rewrite project source unless true
 minimal_path = true
-timeout_ms = 600000    # lifecycle scripts: wall-clock limit (0: none)
-opmx_timeout_ms = 0    # opmx: wall-clock limit (0, the default: none)
+timeout_ms = 600000    # wall-clock limit (0: none); set, it bounds opmx too
+opmx_timeout_ms = 0    # opmx's own limit, over timeout_ms (0: none)
 
 # The host's network for one package, in opmx and its lifecycle scripts
 # (none by default; opmx --allow-network grants it to one run):

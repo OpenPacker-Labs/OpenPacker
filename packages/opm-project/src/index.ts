@@ -159,7 +159,11 @@ export {
 } from './lifecycle.js';
 
 export { runSandboxedPackageProcess } from './sandbox-run.js';
-export { MAX_RUN_TIMEOUT_MS, parseRunTimeout } from './run-timeout.js';
+export {
+  MAX_RUN_TIMEOUT_MS,
+  opmxRunTimeout,
+  parseRunTimeout,
+} from './run-timeout.js';
 // How opmx tells the sandbox that a signal it holds ended a run.
 export { stoppedBySignal } from '@openpacker/sandbox';
 export {

@@ -101,6 +101,7 @@ describe.runIf(canSandbox)('a tool whose closure is 21 packages', () => {
       closure.map((item) => item.storePath),
     )}) console.log(require(p + '/package/package.json').name)`;
     const outcome = await runSandboxedPackageProcess({
+      timeoutMs: 0,
       argv: [process.execPath, '-e', read],
       cwd: cacheRoot,
       storePaths: closure.map((item) => item.storePath),
@@ -119,6 +120,7 @@ describe.runIf(canSandbox)('a tool whose closure is 21 packages', () => {
     });
     try {
       const outcome = await runSandboxedPackageProcess({
+        timeoutMs: 0,
         argv: [process.execPath, layout.entry('cli.js')],
         cwd: cacheRoot,
         storePaths: [layout.root],
@@ -156,6 +158,7 @@ describe.runIf(canSandbox)('a tool whose closure is 21 packages', () => {
     await symlink(outside, linked);
     const run = (storePaths: string[]) =>
       runSandboxedPackageProcess({
+        timeoutMs: 0,
         argv: [
           process.execPath,
           '-e',
