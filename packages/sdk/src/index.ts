@@ -1,6 +1,5 @@
 import {
   canonicalBytes,
-  parseCanonicalJson,
   parseUntrustedUrl,
   printable,
   safeEcho,
@@ -42,6 +41,7 @@ import type {
   VerifyRequest,
   VerifyResponse,
 } from '@openpacker/contracts';
+import { parseEventLines } from './event-lines.js';
 
 export interface RequestAuthenticationInput {
   url: string;
@@ -353,24 +353,26 @@ export class OpenPackerClient {
     );
     const { response, signal } = controlled;
     try {
+      const pageBytes = Math.min(
+        this.#maximumResponseBytes,
+        MAXIMUM_EVENT_PAGE_BYTES,
+      );
       const rawBytes = await readBoundedResponse(
         response,
         response.ok
-          ? Math.min(this.#maximumResponseBytes, MAXIMUM_EVENT_PAGE_BYTES)
+          ? pageBytes
           : Math.min(this.#maximumResponseBytes, MAXIMUM_ERROR_BYTES),
         signal,
       );
       if (!response.ok) throw errorFromBytes(response, rawBytes);
       const text = new TextDecoder('utf-8', { fatal: true }).decode(rawBytes);
-      const events = text
-        .split('\n')
-        .map(eventJson)
-        .filter((line): line is string => line !== undefined)
-        .map((line) => ({
-          // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          event: parseCanonicalJson(line) as OpenPackerCloudEvent,
-          rawBytes: new TextEncoder().encode(line),
-        }));
+      const events = parseEventLines(
+        text
+          .split('\n')
+          .map(eventJson)
+          .filter((line): line is string => line !== undefined),
+        pageBytes,
+      );
       const rawCursor = response.headers.get('x-openpacker-next-cursor');
       if (rawCursor === null || !/^(0|[1-9][0-9]*)$/u.test(rawCursor))
         throw new TypeError('PREX event response omitted a valid next cursor');
