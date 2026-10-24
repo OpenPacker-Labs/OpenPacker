@@ -137,28 +137,33 @@ export async function layOutTool(input: {
   };
 }
 
+/** An npm script's run from a layout of its closure. */
+export interface NodeRun {
+  /** The bin, its path inside the layout. */
+  bin: BinDeclaration;
+  /** The layout's root: the one tree the sandbox binds. */
+  root: string;
+  /** The layout's `node_modules/.bin`, for PATH, as npx puts it there. */
+  binDirectory: string;
+  dispose(): Promise<void>;
+}
+
 /**
- * How an ephemeral npm script runs: from a layout of its closure, with that
- * layout as the one tree the sandbox binds. Anything else (a Python console
- * script, a native or .NET tool) runs as before.
+ * How an npm script runs: from a layout of its closure, with that layout as
+ * the one tree the sandbox binds. A tool straight from a registry is laid out
+ * in the tool cache; a package a project installed, in the project, from the
+ * closure its lock records (`installed-closure.ts`). Anything else (a Python
+ * console script, a native or .NET tool) runs as before.
  */
 export async function ephemeralNodeRun(
   tool: {
     exactPurl: string;
+    /** Where the layout is made: `<cacheRoot>/.opm/runs`, beside its store. */
     cacheRoot: string;
     closure: readonly ToolPackage[];
   },
   bin: BinDeclaration,
-): Promise<
-  | {
-      bin: BinDeclaration;
-      root: string;
-      /** The layout's `node_modules/.bin`, for PATH, as npx puts it there. */
-      binDirectory: string;
-      dispose(): Promise<void>;
-    }
-  | undefined
-> {
+): Promise<NodeRun | undefined> {
   if (
     ecosystemFromPurl(tool.exactPurl) !== 'npm' ||
     (bin.interpreter !== undefined && bin.interpreter !== 'node')

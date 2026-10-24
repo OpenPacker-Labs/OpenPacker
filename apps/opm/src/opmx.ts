@@ -13,6 +13,7 @@ import {
   requireOpmRoot,
   resolveExecutable,
   fetchTool,
+  installedNodeRun,
   selectToolBin,
   readManifestFile,
   parsePackageSpec,
@@ -25,8 +26,8 @@ import { grantedEnvironment, help, parse } from './opmx-args.js';
 import { holdingSignals } from './opmx-signals.js';
 import {
   EXIT_CODES,
+  runLaidOut,
   runTool,
-  spawnDeclared,
   spawnTool,
   type CliIo,
 } from './opmx-spawn.js';
@@ -186,12 +187,17 @@ export async function runOpmx(
         }),
         ...(!(declared.entry === undefined) && { entry: declared.entry }),
       };
-      return await holdingSignals((signal) =>
-        spawnDeclared(bin, owner.storePath, passthrough, io, cwd, {
-          ...sandbox,
-          runtimePaths: storePaths,
-          signal,
-        }),
+      // An npm script runs from a node_modules of its package's closure, as
+      // one straight from a registry does: the store has none around it.
+      return await holdingSignals(async (signal) =>
+        runLaidOut(
+          await installedNodeRun({ root, state, alias: owner.alias, bin }),
+          { bin, storePath: owner.storePath, runtimePaths: storePaths },
+          passthrough,
+          io,
+          cwd,
+          { ...sandbox, signal },
+        ),
       );
     }
     return await holdingSignals((signal) =>
