@@ -64,9 +64,11 @@ opmx --help
 ```
 
 A project's `.opm/bin/<tool>` shims re-enter through the `opmx` beside the `opm`
-that wrote them. Written by `node apps/opm/dist/main.js`, that is
-`dist/opmx-main.js`, a module with no execute bit, and the shim starts it with
-Node, as it starts any JavaScript `opmx` (`OPM_OPMX` included).
+that wrote them, as `opmx -- <tool>`, so a name is never read as an option; a
+bin whose name starts with `-` gets no shim. Written by
+`node apps/opm/dist/main.js`, that is `dist/opmx-main.js`, a module with no
+execute bit, and the shim starts it with Node, as it starts any JavaScript
+`opmx` (`OPM_OPMX` included).
 
 ---
 

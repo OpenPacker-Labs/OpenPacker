@@ -38,6 +38,21 @@ export function parse(argv: string[]) {
   while (i < argv.length) {
     const arg = argv[i] ?? '';
     if (arg === '--') {
+      // Nothing has named the tool yet: the name follows, then its arguments
+      // (`opmx -- <name> [args...]`, as a bin shim runs it, so that a name is
+      // never read as one of opmx's options). Otherwise all of it is the tool's.
+      const next = argv[i + 1];
+      if (
+        !seenSelector &&
+        packageAlias === undefined &&
+        binName === undefined &&
+        next !== undefined
+      ) {
+        positionals.push(next);
+        seenSelector = true;
+        passthrough.push(...argv.slice(i + 2));
+        break;
+      }
       passthrough.push(...argv.slice(i + 1));
       break;
     }
@@ -163,6 +178,7 @@ export function help(): string {
 
 From this project's install (needs opm.toml and a prior opm install/sync):
   opmx <package-or-bin> [args...]
+  opmx -- <package-or-bin> [args...]    # a name that starts with "-" too
   opmx --package <alias> [--bin <name>] -- [args...]
   opmx -p demo-tool -c demo-tool -- --version
 

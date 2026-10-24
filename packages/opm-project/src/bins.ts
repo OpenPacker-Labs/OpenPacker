@@ -352,6 +352,13 @@ export async function writeBinShims(input: {
   ];
   for (const bin of input.bins) {
     const name = assertSafeSegment(bin.name, 'bin name');
+    // A shim runs `opmx -- <name>`; a name opmx or a shell could take for an
+    // option has no place among a project's commands.
+    if (name.startsWith('-'))
+      throw new OpmError(
+        'UNSAFE_BIN',
+        `Bin name ${echoed(name)} starts with "-", which reads as an option`,
+      );
     // "." segments are dropped, not refused. npm bin paths are conventionally
     // written "./lib/tool.js", so rejecting them made a large share of real
     // packages uninstallable while protecting against nothing: only ".."
@@ -496,13 +503,14 @@ if (!opmx) {
 // A JavaScript opmx (a source build's dist/opmx-main.js) is a module, not a
 // program: tsc leaves it without an execute bit, and Windows runs no script by
 // its name. Node runs it; anything else is run as the program it is.
+// \`--\` first: whatever the name is, opmx reads it as the tool's.
 const viaOpmx = /\\.[cm]?js$/i.test(opmx)
-  ? spawn(process.execPath, [opmx, ${binName}, ...args], {
+  ? spawn(process.execPath, [opmx, '--', ${binName}, ...args], {
       stdio: 'inherit',
       env: process.env,
       shell: false,
     })
-  : spawn(opmx, [${binName}, ...args], {
+  : spawn(opmx, ['--', ${binName}, ...args], {
       stdio: 'inherit',
       env: process.env,
       shell: false,

@@ -77,7 +77,49 @@ describe('the opmx a shim re-enters through', () => {
           encoding: 'utf8',
           env: { ...process.env, OPM_OPMX: '' },
         }),
-      ).toBe(`${name} ["tool","--flag","value"]\n`);
+      ).toBe(`${name} ["--","tool","--flag","value"]\n`);
+    },
+  );
+
+  it('is handed the name after `--`, so no name reads as one of its options', async () => {
+    const dist = await build(['opmx-main.js']);
+    const project = await mkdtemp(join(tmpdir(), 'opm-shim-project-'));
+    temps.push(project);
+    const store = join(project, 'store');
+    await mkdir(store);
+    await writeFile(join(store, 'cli.js'), '');
+    const [shim] = await asEntry(join(dist, 'main.js'), () =>
+      writeBinShims({
+        binDir: join(project, 'bin'),
+        storeRoot: store,
+        bins: [{ name: 'allow-network', path: 'cli.js' }],
+      }),
+    );
+    expect(
+      execFileSync(shim!.shim, ['--allow-network'], {
+        encoding: 'utf8',
+        env: { ...process.env, OPM_OPMX: '' },
+      }),
+    ).toBe('opmx-main.js ["--","allow-network","--allow-network"]\n');
+  });
+});
+
+describe('a bin whose name starts with "-"', () => {
+  it.each(['-x', '--allow-network', '--'])(
+    'gets no shim (%s): it would read as an option',
+    async (name) => {
+      const project = await mkdtemp(join(tmpdir(), 'opm-shim-dash-'));
+      temps.push(project);
+      const store = join(project, 'store');
+      await mkdir(store);
+      await writeFile(join(store, 'cli.js'), '');
+      await expect(
+        writeBinShims({
+          binDir: join(project, 'bin'),
+          storeRoot: store,
+          bins: [{ name, path: 'cli.js' }],
+        }),
+      ).rejects.toMatchObject({ code: expect.stringMatching(/^UNSAFE_/u) });
     },
   );
 });
