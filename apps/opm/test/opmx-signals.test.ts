@@ -150,8 +150,12 @@ describe('a second signal while a run is being removed', () => {
        ${PLAIN_NODE}
        // A run whose removal never ends.
        setInterval(() => {}, 1000);
+       const run = holdingSignals(() => new Promise(() => {}));
+       // Said once the signals are held: a signal sent on 'held' before they
+       // were (this process descheduled between the two) took their default
+       // action and ended it at the first.
        console.log('held');
-       await holdingSignals(() => new Promise(() => {}));
+       await run;
       `,
       work,
     );
