@@ -322,3 +322,38 @@ Limits:
   them on GitHub's `ubuntu-latest` with no step that installs bubblewrap, and
   whether that image has it was not checked. The root-only ones (capabilities, a
   sweep in another PID namespace) are skipped for any other user.
+
+## Amendment (2026-10-24) — an installed npm bin runs from a node_modules too
+
+`opmx http-server -- --version`, in a project where
+`opm add pkg:npm/http-server` had installed 51 packages, failed with "Cannot
+find module 'chalk'". Decision 2 of the amendment of 2026-10-17 gave a
+`node_modules` to a tool straight from a registry only. An installed bin ran
+from its package's store tree, with every store entry of the project bound, and
+nothing around it where Node looks.
+
+Decision: an npm bin a project installed runs from a layout of its package's
+closure, written by the same code as a tool's (`layOutTool`), as the `tree` of
+`.opm/runs/run-<uuid>` in the project, beside its store, and removed when the
+run ends, by a signal included, as decision 3 says. That tree is what the
+sandbox binds besides the project, and its `node_modules/.bin` is first on PATH
+(`installed-closure.ts`, `runLaidOut` in `opmx-spawn.ts`).
+
+- The closure is the lock's: from the bin's own entry, each entry's
+  `dependencies`, and its `aliases` under the name it requires them by (ADR
+  0054), transitively. Each package is the active generation's store tree, which
+  `activateGeneration` checked against its digest just before.
+- The lock describes what is installed only when every entry of the closure
+  records its edges and is installed with the lock's digest. An offline lock
+  records none, and `opm rollback` activates an older generation and leaves the
+  newer lock; then every npm package installed is laid out by name alone, as a
+  tool whose closure could not be solved is (`ToolPackage.requires` absent). A
+  lock that cannot be read gives no edges either; it does not stop the run.
+- Python, .NET and native bins, and a file in `.opm/bin` no package owns, run as
+  before, the project's store entries bound alone or through a view.
+
+`opmx-installed-deps.test.ts` (apps/opm) runs an installed bin that requires
+`helper@^1` in a project that also holds `helper@2.0.0` and gets version 1;
+`installed-closure.test.ts` (opm-project) pins the closure and the by-name
+cases; `opmx-run-signals.test.ts` stops an installed declared bin by SIGHUP and
+finds its layout removed.

@@ -1184,6 +1184,15 @@ opmx --package demo-tool --bin demo-tool -- --help
 Resolution order: explicit `--bin` → package primary bin → bin name in
 `.opm/bin`.
 
+An installed npm bin runs from a `node_modules` of its package's closure,
+written for the run under `.opm/runs/` beside the project's store and removed
+when it ends, as a tool straight from a registry runs from its own (below): the
+store holds each package as its own tree, so `opmx http-server` found no `chalk`
+without one. The closure and the version each package requires are the lock's;
+where the lock does not describe the active generation (an offline lock records
+no edges, and `opm rollback` leaves the newer lock), every npm package installed
+is laid out by name alone.
+
 `opmx pkg:<type>/<name>` runs a tool straight from a registry, without a
 project. Registry metadata is re-resolved on every run — an unpinned run is a
 different thing tomorrow — but artifact bytes are content-addressed: a repeat
