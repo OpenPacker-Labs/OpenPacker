@@ -4,36 +4,29 @@
  * (test/tar-oracle/blocks.mjs), so a header is always written with a checksum
  * that matches its bytes unless a family says otherwise.
  *
- * Exhaustive families visit every case of a fixed list; seeded ones draw from a
- * generator of their own and take `seed` and `count`. What a family varies is
- * what its comment says and nothing more: none of them reaches every archive,
- * and a family that finds no disagreement shows only that it found none.
+ * Every family takes a seed and a count. Without a seed, `byte-sweep`,
+ * `pax-cut`, `meta-order` and `zero-blocks` visit every case of a fixed list
+ * (the count is ignored) and the other two use seed 1; with one, each draws
+ * `count` archives (or, for the sweep and the cuts, the same positions with
+ * drawn values) from a generator of its own. What a family varies is what its
+ * comment says and nothing more: none of them reaches every archive, and a
+ * family that finds no disagreement shows only that it found none. The last
+ * three families are in families-more.mjs.
  */
 
 import {
-  N,
   Z,
   a,
   b,
-  c,
   entry,
   file,
-  garbage,
   pax,
   paxBody,
   paxRecord,
   smuggled,
 } from '../tar-oracle/blocks.mjs';
-
-function mulberry32(start) {
-  let state = start;
-  return () => {
-    state = (state + 0x6d2b79f5) | 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+import { metaOrder, paxCut, zeroBlocks } from './families-more.mjs';
+import { mulberry32 } from './random.mjs';
 
 /** Header bytes, in the order the sweep and the byte runs draw them from. */
 const SWEEP_VALUES = [
@@ -42,39 +35,66 @@ const SWEEP_VALUES = [
 ];
 const SMUGGLED_BODY = file('package/s0.js', 'SMUGGLED');
 
-/** A file, a file with a ustar prefix, a file whose body is a whole entry, a pax header, each with `edit` applied to its header. */
+/**
+ * A file, an executable file, a file with a ustar prefix, a file whose body is
+ * a whole entry, a pax header and a directory, each with `edit` applied to its
+ * header.
+ */
 const BASES = {
   smuggle: (edit) => file('package/o.js', SMUGGLED_BODY, { edit }),
   plain: (edit) => file('package/o.js', 'PLAN', { edit }),
+  executable: (edit) =>
+    file('package/run.js', 'RUN', {
+      edit: (header) => {
+        header.write('0000755\0', 100, 'latin1');
+        edit(header);
+      },
+    }),
   prefix: (edit) => file('o.js', 'PLAN', { prefix: 'package/sub', edit }),
   pax: (edit) => pax({ path: 'package/px.js' }, 'x', { edit }),
   directory: (edit) => entry('package/d/', '', { type: '5', edit }),
 };
 
 /**
- * Every header byte but the checksum's eight, set to each of 15 values (NUL,
- * LF, CR, space, 0, 1, 7, 8, +, -, /, backslash, 0x80, 0xef, 0xff), in four
- * bases (a file that carries an entry as its body, a plain file, a file with a
- * ustar prefix, a pax header): 4 x 504 x 15 = 30,240 archives. The checksum is
- * written after the edit, so each archive is a valid one.
+ * Without a seed, every header byte but the checksum's eight set to each of 15
+ * values (NUL, LF, CR, space, 0, 1, 7, 8, +, -, /, backslash, 0x80, 0xef,
+ * 0xff), in five bases (a file that carries an entry as its body, a plain
+ * file, an executable file, a file with a ustar prefix, a pax header): 5 x 504
+ * x 15 = 37,800 archives. With a seed, `count` archives with a base, a
+ * position and a byte drawn at random. The checksum is written after the
+ * edit, so each archive is a valid one.
  */
-function* byteSweep() {
-  for (const name of ['smuggle', 'plain', 'prefix', 'pax'])
+function* byteSweep(seed, count = 2000) {
+  const names = ['smuggle', 'plain', 'executable', 'prefix', 'pax'];
+  const one = (name, at, value) => ({
+    label: `${name}@${at}=${value.toString(16)}`,
+    blocks: [
+      a,
+      BASES[name]((header) => {
+        header[at] = value;
+      }),
+      b,
+      Z,
+      Z,
+    ],
+  });
+  if (seed !== undefined) {
+    const random = mulberry32(seed);
+    for (let n = 0; n < count; n += 1) {
+      let at = Math.floor(random() * 504);
+      if (at >= 148) at += 8;
+      yield one(
+        names[Math.floor(random() * names.length)],
+        at,
+        Math.floor(random() * 256),
+      );
+    }
+    return;
+  }
+  for (const name of names)
     for (let at = 0; at < 512; at += 1) {
       if (at >= 148 && at < 156) continue;
-      for (const value of SWEEP_VALUES)
-        yield {
-          label: `${name}@${at}=${value.toString(16)}`,
-          blocks: [
-            a,
-            BASES[name]((header) => {
-              header[at] = value;
-            }),
-            b,
-            Z,
-            Z,
-          ],
-        };
+      for (const value of SWEEP_VALUES) yield one(name, at, value);
     }
 }
 
@@ -121,7 +141,7 @@ const CHECKSUMS = {
  * into the text or number fields of a base, with the checksum right or spelled
  * one of seven ways. Seeded.
  */
-function* fieldBytes(seed, count) {
+function* fieldBytes(seed = 1, count = 2000) {
   const random = mulberry32(seed);
   const pick = (list) => list[Math.floor(random() * list.length)];
   for (let n = 0; n < count; n += 1) {
@@ -170,7 +190,7 @@ const off = (record, by) =>
  * mark, a comment of up to 1,300 bytes (alone, or ending in a character past
  * 0x7f, so the body may pass a block). Seeded.
  */
-function* paxRecords(seed, count) {
+function* paxRecords(seed = 1, count = 2000) {
   const random = mulberry32(seed);
   const pick = (list) => list[Math.floor(random() * list.length)];
   const between = (low, high) => low + Math.floor(random() * (high - low + 1));
@@ -207,136 +227,12 @@ function* paxRecords(seed, count) {
   }
 }
 
-/**
- * A path with a two-byte character in it, after a comment that pads the header
- * out, the padding swept so the character's start passes every offset around the
- * places the readers are fed apart: an archive offset of 2,048 and 2,560
- * (multiples of 512, node-tar's units when it is fed a byte at a time), 2,920
- * and 4,380 (multiples of 1,460), 16,384 and 32,768. The header sits after a
- * file's two blocks, so its body starts at offset 1,536.
- */
-function* paxCut() {
-  for (const cut of [2048, 2560, 2920, 4380, 16384, 32768]) {
-    const body = cut - 1536;
-    for (let fill = body - 40; fill <= body; fill += 1)
-      yield {
-        label: `padding of ${fill} bytes, cut at ${cut}`,
-        blocks: [
-          a,
-          paxBody(
-            paxRecord('comment', 'c'.repeat(fill)) +
-              paxRecord('path', 'package/\u00e9.js'),
-          ),
-          b,
-          Z,
-          Z,
-        ],
-      };
-  }
-}
-
-const long = (type, name) => entry('././@LongLink', `${name}\0`, { type });
-/** Headers that change what the next one means, and files, to put in every order. */
-const META = [
-  a,
-  b,
-  pax({ path: 'package/X.js' }),
-  pax({ comment: 'c' }, 'g'),
-  pax({ path: 'package/zz.js' }, 'g'),
-  long('L', 'package/L.js'),
-  long('K', 'package/K.js'),
-  entry('package/dd/', '', { type: '5' }),
-  entry('package/ds/', '', { type: '5', size: 512 }),
-  pax({ size: '1' }),
-  pax({ path: 'package/Y.js', size: '1' }),
-  pax({ size: '2' }),
-  pax({ linkpath: 'q' }),
-  pax({ path: 'p.js' }),
-  pax({ path: 'package/a/b/c.js' }),
-  pax({ path: 'package//d.js' }),
-];
-
-/** Every pair and every triple of the 16 headers in META, then files and the end of the archive. */
-function* metaOrder() {
-  for (const first of META.keys())
-    for (const second of META.keys()) {
-      const pair = [META[first], META[second]];
-      yield { label: `${first},${second}`, blocks: [...pair, Z, Z] };
-      for (const tail of [c, a])
-        yield {
-          label: `${first},${second},file`,
-          blocks: [...pair, tail, Z, Z],
-        };
-      for (const third of META.keys())
-        yield {
-          label: `${first},${second},${third}`,
-          blocks: [...pair, META[third], c, Z, Z],
-        };
-    }
-}
-
-/** A header cut to its first `length` bytes, or `length` bytes of 0x41 or 0. */
-const partial = (kind, length) =>
-  kind === 'zero'
-    ? Buffer.alloc(length)
-    : kind === 'junk'
-      ? Buffer.alloc(length, 0x41)
-      : file('package/p.js', '').subarray(0, length);
-
-/**
- * Zero blocks and null blocks (a checksum field of spaces) between three
- * entries and after them, partial blocks of three kinds at 17 lengths, and a
- * pair of files cut every 37 bytes.
- */
-function* zeroBlocks() {
-  const entries = [a, b, c];
-  const tails = [[], [Z], [Z, Z], [N], [N, N], [Z, N], [N, Z], [garbage]];
-  const inserts = [[Z], [Z, Z], [N], [Z, N], [N, Z]];
-  for (let mask = 0; mask < 16; mask += 1)
-    for (const insert of inserts)
-      for (const [t, tail] of tails.entries()) {
-        const blocks = [];
-        for (let i = 0; i < 4; i += 1) {
-          if (mask & (1 << i)) blocks.push(...insert);
-          if (i < 3) blocks.push(entries[i]);
-        }
-        yield {
-          label: `zeros ${mask} ${insert.length} tail ${t}`,
-          blocks: [...blocks, ...tail],
-        };
-      }
-  const lengths = [
-    1, 7, 100, 147, 148, 149, 155, 156, 157, 255, 256, 257, 264, 265, 345, 500,
-    511,
-  ];
-  for (const head of [[], [Z], [Z, Z]])
-    for (const kind of ['zero', 'junk', 'header'])
-      for (const length of lengths) {
-        const part = partial(kind, length);
-        yield {
-          label: `partial ${kind} ${length}`,
-          blocks: [a, b, ...head, part],
-        };
-        yield {
-          label: `partial ${kind} ${length} after Z`,
-          blocks: [a, b, ...head, Z, part],
-        };
-        yield {
-          label: `partial ${kind} ${length} before c`,
-          blocks: [a, b, Z, ...head, c, part],
-        };
-      }
-  const whole = Buffer.concat([a, b, Z, Z]);
-  for (let cut = 0; cut <= whole.length; cut += 37)
-    yield { label: `cut at ${cut}`, blocks: [whole.subarray(0, cut)] };
-}
-
-/** name -> { seeded, archives(seed, count) } */
+/** name -> archives(seed, count); see the comment at the top. */
 export const FAMILIES = {
-  'byte-sweep': { seeded: false, archives: () => byteSweep() },
-  'field-bytes': { seeded: true, archives: fieldBytes },
-  'pax-records': { seeded: true, archives: paxRecords },
-  'pax-cut': { seeded: false, archives: () => paxCut() },
-  'meta-order': { seeded: false, archives: () => metaOrder() },
-  'zero-blocks': { seeded: false, archives: () => zeroBlocks() },
+  'byte-sweep': byteSweep,
+  'field-bytes': fieldBytes,
+  'pax-records': paxRecords,
+  'pax-cut': paxCut,
+  'meta-order': metaOrder,
+  'zero-blocks': zeroBlocks,
 };
