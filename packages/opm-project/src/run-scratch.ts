@@ -1,17 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, readdir } from 'node:fs/promises';
+import { mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-  ownerFileProblem,
-  readOwnerFile,
-  writeOwnerFile,
-} from './owner-file.js';
+import { abandonedByOwner, type AbandonJudge } from '@openpacker/project-io';
+import { writeOwnerFile } from './owner-file.js';
 import { removeStableTree } from './paths.js';
-import {
-  isOwnerAlive,
-  type OwnerProbe,
-  type ProcessOwner,
-} from './process-owner.js';
+import type { ProcessOwner } from './process-owner.js';
 
 /**
  * Directories a run makes for itself and removes when it ends: the store views
@@ -73,28 +66,7 @@ export async function makeScratch(
 }
 
 /** How `sweepAbandoned` judges an owner; replaceable in a test. */
-export interface Judge {
-  /** The process judging; this one by default. */
-  reader?: ProcessOwner;
-  /** The system it asks about a pid. */
-  probe?: OwnerProbe;
-  /** The time now, for a directory with no owner yet. */
-  now?: () => number;
-}
-
-/** Whether what `path` holds was left by a run that has ended. */
-async function abandoned(path: string, judge: Judge): Promise<boolean> {
-  const owner = await readOwnerFile(path);
-  if (owner !== undefined)
-    return !(await isOwnerAlive(owner, judge.reader, judge.probe));
-  // An owner file that says nothing opm can read is judged by nobody.
-  if ((await ownerFileProblem(path)) !== 'missing') return false;
-  const info = await lstat(path).catch(() => undefined);
-  return (
-    info?.isDirectory() === true &&
-    (judge.now ?? Date.now)() - info.mtimeMs > UNOWNED_AFTER_MS
-  );
-}
+export type Judge = AbandonJudge;
 
 /** Remove what runs that have ended left under `prefix` in `dir`. */
 export async function sweepAbandoned(
@@ -106,7 +78,7 @@ export async function sweepAbandoned(
   for (const name of names) {
     if (!name.startsWith(prefix)) continue;
     const path = join(dir, name);
-    if (!(await abandoned(path, judge))) continue;
+    if (!(await abandonedByOwner(path, UNOWNED_AFTER_MS, judge))) continue;
     await removeStableTree(path).catch(() => undefined);
   }
 }

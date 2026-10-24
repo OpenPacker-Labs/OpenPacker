@@ -396,7 +396,7 @@ runs, by the mock backend and by bwrap, and the limits ending a tree whose
 output is handed on; `opmx-stream.test.ts` (apps/opm) shows the same through
 `opmx`'s spawn, and a split character written whole.
 
-## Amendment (2026-10-24) — a tool someone runs: how long, how much, which network, and what stopped it
+## Amendment (2026-10-24) — a tool someone runs: how long, how much, which network, what it leaves, and what stopped it
 
 `opmx` runs a tool a person started, as `npx` does: a server, a watcher, a REPL.
 Since the amendment above its output reaches the terminal as it is written, and
@@ -475,6 +475,56 @@ port; with `--allow-network`, and with the project's grant to its package, the
 request is answered and nothing is said. `listen-watch.test.ts` (sandbox) has a
 process listen in a run without network and is told its port, and finds nothing
 told of a process listening in the caller's own namespace.
+
+### What a run killed outright leaves
+
+Every run gives its process a home of its own (`$HOME`, with `$TMPDIR` in it)
+under `$TMPDIR/openpacker-sandbox` and removes it when the run ends, a signal
+included. A run killed outright (SIGKILL, a crash, a second signal while `opmx`
+removes what it made) left it there, with whatever the tool wrote, and nothing
+ever removed it: seven of them were in this machine's `/tmp` from one day's test
+runs.
+
+Decision (`jail-home.ts`):
+
+1. **A home names its owner, out of the tool's sight.** A run's directory is
+   `home-<uuid>`, holding `.owner`, the record every holder opm keeps (ADR
+   0056's `writeOwnerFile`, written before anything else), and `home`, the one
+   thing the sandbox binds. The owner rule (`process-owner.ts`, `owner-file.ts`
+   and the system reads behind them) moved from opm-project to
+   `@openpacker/project-io`, which the sandbox and opm-project both build on;
+   opm-project re-exports it as before, and the judgement a run's scratch made
+   of its directories is the same function for both (`abandonedByOwner`).
+2. **Every run first removes the homes whose owner has ended, by that rule**
+   (`sweepJailHomes`): an owner of this place whose pid is gone, a zombie, or
+   now another process, or one of an earlier boot of this machine. A home whose
+   owner may still be running, runs on another host, machine, boot or PID
+   namespace, or whose `.owner` cannot be read, is never touched.
+3. **A home with no `.owner` is removed only once it has not changed for a
+   week** (`UNOWNED_JAIL_HOME_MS`). An opm from before this made the home the
+   run's directory itself and recorded no owner, so nothing says whether its run
+   is over; a tool such a run keeps up (a server) writes there, and a week is
+   longer than it is likely to go without. A run cut short between making its
+   directory and writing `.owner` is judged the same way. An old opm's run that
+   lasts longer than a week without writing to its home directly would lose it.
+4. **A home is removed by renaming it to a tombstone first**
+   (`.home-<uuid>.sweep-<uuid>`) and removing that, as the shared store
+   unpublishes an entry it collects (`shared-store-gc.ts`). Of two runs that
+   judge one home at once, one renames it and the other finds it gone; a run's
+   own home has a live owner from before it is used, so no sweep takes it; a
+   tombstone a run was killed before removing is removed by the next run. The
+   jail root is listed, and its homes renamed and removed, through a handle of
+   it opened without following a link (`openStablePath`, `renameChild`,
+   `removeChild`), and a home's `.owner` is read without following one.
+
+`jail-home-sweep.test.ts` (sandbox) leaves homes in a jail root and runs through
+`runInSandbox`: a home whose owner is a pid that has ended is removed; one whose
+owner is alive, on another host, or unreadable is kept beside it; a home with no
+owner is kept while young and removed once older than the bound; a tombstone is
+removed; six runs at once, beside a seventh that holds its home throughout, each
+use their own home and remove the one that ended; two sweeps of the same dead
+homes remove each once. Through bwrap, a run's `.owner` names this process and
+the tool cannot read it.
 
 ### What stopped it
 

@@ -34,6 +34,15 @@ export {
 export { packageExecRoRoots } from './backends/native.js';
 
 export {
+  JAIL_HOME_PREFIX,
+  UNOWNED_JAIL_HOME_MS,
+  makeJailHome,
+  removeJailHome,
+  sweepJailHomes,
+  type JailHome,
+} from './jail-home.js';
+
+export {
   stopMessage,
   stoppedBySignal,
   stoppedByTimeout,

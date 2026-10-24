@@ -1,5 +1,4 @@
-import { mkdir, mkdtemp, rm, type FileHandle } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, type FileHandle } from 'node:fs/promises';
 import { createMxcBackend, probeMxc } from './backends/mxc.js';
 import {
   createMockBackend,
@@ -9,6 +8,7 @@ import {
 import { createNativeBackend, probeNativeBackends } from './backends/native.js';
 import { defaultJailHomeRoot, scrubEnvironment } from './env.js';
 import { boundPaths, pathsToOpen } from './handles.js';
+import { makeJailHome, removeJailHome, sweepJailHomes } from './jail-home.js';
 import { stoppedByTimeout } from './stop.js';
 import { containmentWithdrawnNote } from './platform.js';
 import {
@@ -170,10 +170,12 @@ export async function runInSandbox(
 
   const jailRoot = defaultJailHomeRoot();
   await mkdir(jailRoot, { recursive: true });
-  const jailHome = await mkdtemp(join(jailRoot, 'home-'));
+  // What runs killed outright left here, judged by their owners (jail-home.ts).
+  await sweepJailHomes(jailRoot);
+  const jail = await makeJailHome(jailRoot);
+  const jailHome = jail.home;
   const ownedAuthorities: FileHandle[] = [];
   try {
-    await mkdir(join(jailHome, 'tmp'), { recursive: true });
     const interpreter = input.argv[0];
     const env = scrubEnvironment({
       ...(!(input.env === undefined) && { extra: input.env }),
@@ -332,7 +334,7 @@ export async function runInSandbox(
     await Promise.all(
       ownedAuthorities.map(async (handle) => await handle.close()),
     );
-    await rm(jailHome, { recursive: true, force: true }).catch(() => undefined);
+    await removeJailHome(jail);
   }
 }
 
