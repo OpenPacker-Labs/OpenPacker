@@ -32,6 +32,7 @@ import {
   echoedValue,
   type DetectedProject,
   type FrozenLock,
+  type FrozenLockPackage,
   type FrozenLockSkip,
   type FrozenOmit,
   type NativeLockEntry,
@@ -96,6 +97,18 @@ export interface FrozenInstallInput extends FrozenFetchOptions {
   /** Archives read at the same time. */
   concurrency?: number;
   signal?: AbortSignal;
+}
+
+/**
+ * Points inside an install where a test runs what may happen meanwhile, such
+ * as a concurrent `opm gc --shared`. Not part of the package's API: only
+ * `installFrozenWith` takes them, and `index.ts` does not export it.
+ */
+export interface FrozenInstallSeams {
+  /** Once every archive is in the store, before any is linked into `node_modules`. */
+  beforeLayout?: () => Promise<void>;
+  /** How the install's hold on the shared store waits, and where it steps. */
+  hold?: HoldOptions;
 }
 
 export interface FrozenInstallResult {
