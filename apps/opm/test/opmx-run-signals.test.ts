@@ -17,10 +17,11 @@ import {
 
 /**
  * `runOpmx` itself, not the pieces it is made of, holds SIGINT, SIGTERM and
- * SIGHUP while a tool of an installed project runs: the run ends the tool,
- * removes the store view it made, and opmx ends by the very signal. The piece
- * tests (opmx-signals.test.ts) wire `holdingSignals` and `runTool` by hand, so
- * they cannot tell a `runOpmx` that holds nothing.
+ * SIGHUP while a tool runs, of an installed project or straight from a
+ * registry: the run ends the tool, removes the store view or the layout it
+ * made, and opmx ends by the very signal. The piece tests
+ * (opmx-signals.test.ts) wire `holdingSignals` and `runTool` by hand, so they
+ * cannot tell a `runOpmx` that holds nothing.
  */
 
 const temps: string[] = [];
@@ -108,8 +109,59 @@ describe.runIf(canSandbox)(
   },
 );
 
+/**
+ * `runOpmx pkg:npm/idler@1.0.0` in a child process, answered by the npm
+ * fixture registry through the registry seam, killed by `signal` once the
+ * tool runs from its layout in the tool cache.
+ */
+async function killedRegistryRun(signal: NodeJS.Signals) {
+  const work = await mkdtemp(join(tmpdir(), 'opmx-run-signals-pkg-'));
+  temps.push(work);
+  const cache = join(work, 'tool-cache');
+  const runs = join(cache, '.opm', 'runs');
+  const layouts = async () => await readdir(runs).catch(() => []);
+  const marker = `--opmx-run-signals-${randomUUID()}`;
+  const run = await signalledScript({
+    work,
+    marker,
+    signal,
+    made: async () => (await layouts()).length === 1,
+    script: `import { runOpmx } from ${source('../src/opmx.ts')};
+     import { NpmRegistryFixture } from ${source('../../../packages/opm-project/test/npm-registry-fixture.ts')};
+     ${PLAIN_NODE}
+     delete process.env.OPM_STORE_HOME;
+     process.env.OPM_TOOL_CACHE = ${JSON.stringify(cache)};
+     const registry = new NpmRegistryFixture([{
+       name: 'idler',
+       versions: { '1.0.0': {
+         bin: { idler: 'cli.js' },
+         files: { 'cli.js': ${JSON.stringify(idle)} },
+       } },
+     }]);
+     process.exitCode = await runOpmx(
+       ${JSON.stringify(['pkg:npm/idler@1.0.0', '--', marker])},
+       process,
+       ${JSON.stringify(work)},
+       { transport: registry },
+     );
+    `,
+  });
+  return { ...run, layouts: await layouts() };
+}
+
+describe.runIf(canSandbox)(
+  'opmx stopped while it runs a tool straight from a registry',
+  () => {
+    it('ends the tool and removes its layout, by SIGTERM', async () => {
+      const { how, layouts, output } = await killedRegistryRun('SIGTERM');
+      expect([how, layouts]).toEqual(['SIGTERM', []]);
+      expect(output).toContain('opmx: pkg:npm/idler@1.0.0');
+    }, 120_000);
+  },
+);
+
 describe.skipIf(canSandbox)(
-  'opmx stopped while it runs an installed tool',
+  'opmx stopped while it runs an installed tool, or one from a registry',
   () => {
     it.skip('needs bwrap (/usr/bin/bwrap); not checked on this host', () => {});
   },

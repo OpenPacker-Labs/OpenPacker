@@ -16,6 +16,7 @@ import {
   selectToolBin,
   readManifestFile,
   parsePackageSpec,
+  type RegistryOptions,
 } from '@openpacker/opm-project';
 import type { PolicyInput } from '@openpacker/contracts';
 import { out } from '@openpacker/canonical';
@@ -36,6 +37,8 @@ export async function runOpmx(
   argv = process.argv.slice(2),
   io: CliIo = process,
   cwd = process.cwd(),
+  /** Test seam: how a `pkg:` run reaches its registry. Production omits it. */
+  registryOptions?: RegistryOptions,
 ): Promise<number> {
   try {
     if (argv.includes('--help') || argv.includes('-h') || argv.length === 0) {
@@ -97,6 +100,7 @@ export async function runOpmx(
       const tool = await fetchTool({
         purl: requested,
         ...(flags.offline && { offline: true }),
+        ...(!(registryOptions === undefined) && { registryOptions }),
       });
       const bin = selectToolBin(tool, binName);
       // Say which version actually ran. An unpinned ephemeral run resolves to
