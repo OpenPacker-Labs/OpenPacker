@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { hasOverlongHost } from '../src/url-host.js';
 
 /**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
+/**
  * `url-host.spec.test.ts` holds the helper to the URL Standard, and the
  * Standard is not what runs: Node's parser (ada) reads some hosts differently,
  * and its cost is what the helper exists for. So this file times the REAL
@@ -34,13 +44,13 @@ function seeded(seed: number): () => number {
 }
 
 function parseMilliseconds(address: string): number {
-  const started = performance.now();
+  const started = cpuMs();
   try {
     new URL(address);
   } catch {
     // Refusing an address is part of the cost.
   }
-  return performance.now() - started;
+  return cpuMs() - started;
 }
 
 /** The slowest try of the fastest three: noise has to hit every one. */
