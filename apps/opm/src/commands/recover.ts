@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { out, report } from '@openpacker/canonical';
 import {
   DEFAULT_STEP_WAIT_MS,
   OpmError,
@@ -11,7 +12,6 @@ import {
   requireOpmRoot,
   type StepOptions,
 } from '@openpacker/opm-project';
-import { out, report } from '@openpacker/canonical';
 import type { CommandArgs, CommandIo } from './yank.js';
 
 /**
@@ -52,8 +52,8 @@ export function cliStep(
     onWait: (holder) =>
       io.stderr.write(
         report(
-          '',
-          `opm: waiting for ${holder.owner === undefined ? 'a lock opm cannot read' : describeProcessOwner(holder.owner)}, which is changing this project (${holder.file})`,
+          'opm: ',
+          `waiting for ${holder.owner === undefined ? 'a lock opm cannot read' : describeProcessOwner(holder.owner)}, which is changing this project (${holder.file})`,
         ),
       ),
   };

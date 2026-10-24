@@ -1,8 +1,9 @@
 /**
  * The lines opm and opmx write themselves, besides the failures `handleError`
  * and `formatFailure` print: each may carry text a plugin store, a package
- * argument, a workspace or a path wrote, and each reaches the terminal escaped
- * (the review of #179, round 3, N-f).
+ * argument, a workspace or a path wrote, and each reaches the terminal plain,
+ * as `out` and `report` (`@openpacker/canonical`) make it (the review of #179,
+ * round 3, N-f).
  */
 
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -20,12 +21,6 @@ import type { WorkspacePlan } from '../src/commands/run-select.js';
 import { runOpm } from '../src/opm.js';
 import { runOpmx } from '../src/opmx.js';
 import { capture, makeProject } from './run-fixture.js';
-import {
-  writeInstalled,
-  writeLines,
-  writeNativeProjection,
-  writeToolRan,
-} from '../src/terminal-lines.js';
 import { unsafeIn } from './terminal-fixture.js';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -36,7 +31,6 @@ const sandboxReady =
 
 /** A CSI (C1) and a right-to-left override, as a directory name may hold them. */
 const HOSTILE = 'x\u009b2J\u202ey';
-const SHOWN = 'x\\u009b2J\\u202ey';
 /** The same as `report` and `out` (`@openpacker/canonical`) write it: plain, with the controls removed. */
 const PLAIN = 'x2Jy';
 
@@ -65,7 +59,7 @@ describe('what opm and opmx write themselves', () => {
       const c = capture();
       expect(await runOpm(['help'], c.io, dir)).toBe(0);
       expect(c.err).toMatch(/plugin store unavailable/u);
-      expect(c.err).toContain(SHOWN);
+      expect(c.err).toContain(PLAIN);
       expect(unsafeIn(c.err)).toEqual([]);
     } finally {
       if (previous === undefined) delete process.env.OPM_PLUGIN_HOME;
@@ -80,7 +74,7 @@ describe('what opm and opmx write themselves', () => {
       c.io,
       await scratch(),
     );
-    expect(c.err).toContain(`pkg:zzz/${SHOWN}`);
+    expect(c.err).toContain(`pkg:zzz/${PLAIN}`);
     expect(unsafeIn(c.err)).toEqual([]);
   });
 
@@ -135,7 +129,7 @@ describe('what opm and opmx write themselves', () => {
     });
     const c = capture();
     expect(await runOpm(['run', HOSTILE], c.io, root)).toBe(7);
-    expect(c.err).toBe(`opm: script "${SHOWN}" exited with code 7\n`);
+    expect(c.err).toBe(`opm: script "${PLAIN}" exited with code 7\n`);
   });
 
   it('makes plain the warnings and the failure of a workspace run', async () => {
@@ -175,7 +169,6 @@ describe('what opm and opmx write themselves', () => {
 
 /** An OSC that sets the title, BEL, a CSI (C1) and a right-to-left override. */
 const WRITTEN = 'a\u001b]0;PWN\u0007\u009b2J\u202eb';
-const ESCAPED = 'a\\u001b]0;PWN\\u0007\\u009b2J\\u202eb';
 
 describe('lines printed from what a registry, a lock or a package.json wrote', () => {
   it('opm run with no script: the script names and commands of package.json', async () => {
@@ -187,60 +180,5 @@ describe('lines printed from what a registry, a lock or a package.json wrote', (
     // Made one plain line (`plainLine`): the sequences removed, the rest kept.
     expect(c.out).toBe('a2Jb\techo a2Jb\n');
     expect(unsafeIn(c.out)).toEqual([]);
-  });
-
-  it.each([
-    ['opm search', 'pkg:npm/' + WRITTEN],
-    ['opm versions', `1.0.0-${WRITTEN}`],
-    ['opm why', `${WRITTEN} is required by the project`],
-  ])('%s: what the registry or the lock answered', (_site, line) => {
-    const c = capture();
-    writeLines([line], c.io);
-    expect(c.out).toContain(ESCAPED);
-    expect(unsafeIn(c.out)).toEqual([]);
-  });
-
-  it("opm list: an alias, purl, bin and install name from the project's lock", () => {
-    const c = capture();
-    writeInstalled(
-      [
-        {
-          alias: WRITTEN,
-          purl: `pkg:npm/${WRITTEN}@1.0.0`,
-          digest: 'sha256-0123456789abcdef',
-          installed: true,
-          bins: [WRITTEN],
-          installedAs: [WRITTEN],
-        },
-      ],
-      c.io,
-    );
-    expect(c.out.split(ESCAPED)).toHaveLength(5);
-    expect(unsafeIn(c.out)).toEqual([]);
-  });
-
-  it('opm install and its kin: the files written, skipped and their semantic loss', () => {
-    const c = capture();
-    writeNativeProjection(
-      {
-        projections: [
-          {
-            ecosystem: 'npm',
-            written: [WRITTEN],
-            skipped: [{ path: WRITTEN, reason: WRITTEN }],
-            semanticLoss: [{ code: WRITTEN, representedMeaning: WRITTEN }],
-          },
-        ],
-      },
-      c.io,
-    );
-    expect(c.out + c.err).toContain(ESCAPED);
-    expect(unsafeIn(c.out + c.err)).toEqual([]);
-  });
-
-  it('opmx: the purl of the tool an ephemeral run started', () => {
-    const c = capture();
-    writeToolRan(c.io, `pkg:npm/demo@${WRITTEN}`, true);
-    expect(c.err).toBe(`opmx: pkg:npm/demo@${ESCAPED} (cached)\n`);
   });
 });

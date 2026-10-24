@@ -1,3 +1,4 @@
+import { out, plainLine } from '@openpacker/canonical';
 import {
   OpmError,
   exactPurl,
@@ -17,7 +18,7 @@ import {
   type RegistryOptions,
   type StepOptions,
 } from '@openpacker/opm-project';
-import { out, outJson, report } from '@openpacker/canonical';
+import { report } from '../error-report.js';
 import { cliStep } from './recover.js';
 
 export interface CommandArgs {
@@ -171,12 +172,17 @@ async function verify(
   const signer = signerOf(release);
   const executables = (inspection.executables ?? []).map((bin) => bin.name);
   for (const warning of inspection.warnings)
-    io.stderr.write(report('', `opm: ${warning.code}: ${warning.message}`));
+    io.stderr.write(
+      report(
+        'opm: ',
+        `${plainLine(warning.code)}: ${plainLine(warning.message)}`,
+      ),
+    );
 
   if (args.options.has('json')) {
-    outJson(
+    out(
       io,
-      JSON.stringify(
+      `${JSON.stringify(
         {
           purl: release.purl,
           signer: attestation.signerIdentity,
@@ -192,7 +198,7 @@ async function verify(
         },
         null,
         2,
-      ),
+      )}\n`,
     );
     return 0;
   }
@@ -252,8 +258,8 @@ async function pin(
     out(io, stanza);
     io.stderr.write(
       report(
-        '',
-        'opm: this fingerprint is what the release showed just now. Confirm it with the vendor ' +
+        'opm: ',
+        'this fingerprint is what the release showed just now. Confirm it with the vendor ' +
           'before relying on it; pass --write to record it in opm.toml.',
       ),
     );

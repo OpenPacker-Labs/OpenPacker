@@ -13,10 +13,12 @@ export interface TarballContents {
   files?: Record<string, string | Uint8Array>;
   /** `bin` for the package.json inside the archive. */
   bin?: string | Record<string, string>;
+  /** The tarball's bytes exactly, instead of an archive made from the above. */
+  archive?: Uint8Array;
 }
 
 /** A ustar entry: a 512-byte header, the body, and padding to a block. */
-function tarEntry(path: string, body: Buffer): Buffer {
+export function tarEntry(path: string, body: Buffer, type = '0'): Buffer {
   const header = Buffer.alloc(512);
   header.write(path, 0, 'utf8');
   header.write('0000644\0', 100, 'ascii');
@@ -25,7 +27,7 @@ function tarEntry(path: string, body: Buffer): Buffer {
   header.write(`${body.length.toString(8).padStart(11, '0')}\0`, 124, 'ascii');
   header.write('00000000000\0', 136, 'ascii');
   header.write('        ', 148, 'ascii');
-  header.write('0', 156, 'ascii');
+  header.write(type, 156, 'ascii');
   header.write('ustar\0' + '00', 257, 'ascii');
   const checksum = header.reduce((sum, byte) => sum + byte, 0);
   header.write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148, 'ascii');
@@ -69,6 +71,7 @@ export function tarballOf(
   version: string,
   value: TarballContents = {},
 ): Uint8Array {
+  if (value.archive !== undefined) return value.archive;
   const key = `${name}@${version}:${JSON.stringify(
     [value.files, value.bin],
     (_key, item) =>

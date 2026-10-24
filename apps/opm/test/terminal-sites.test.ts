@@ -18,16 +18,27 @@ const SOURCE = fileURLToPath(new URL('../src/', import.meta.url));
 
 /** What may be written raw: the argument as the source spells it, and why. */
 const RAW: readonly { file: string; argument: string; why: string }[] = [
-  { file: 'opm.ts', argument: 'help()', why: 'the help text is fixed' },
   {
     file: 'opm.ts',
-    argument: 'await environmentScript({ root })',
-    why: 'the script `eval "$(opm shell)"` runs: escaping it would change the values it sets',
+    argument: '`\\n${helpText()}\\n`',
+    why: "opm's own usage text, after the usage error has been written",
   },
   {
     file: 'opm.ts',
-    argument: 'outcome.stdout',
-    why: "a host installer's own output, passed through as a child's is",
+    argument:
+      '`opm: candidate sets were bounded for ${graph.truncated.length} package(s); ` +\n              `a solve over a truncated universe can report unsatisfiable for a solvable problem\\n`',
+    why: 'a constant sentence around a count',
+  },
+  {
+    file: 'opm.ts',
+    argument: '`opm: host install exited ${outcome.exitCode}\\n`',
+    why: 'a constant sentence around an exit status',
+  },
+  {
+    file: 'opm.ts',
+    argument:
+      "formatFailure(parseFailure(error), { tool: 'opm', internalError: true })",
+    why: '`formatFailure` makes plain what it formats (`report`, `plainText`)',
   },
   {
     file: 'opm.ts',
@@ -42,7 +53,7 @@ const RAW: readonly { file: string; argument: string; why: string }[] = [
   {
     file: 'opmx.ts',
     argument: "formatFailure(parseFailure(error), { tool: 'opmx' })",
-    why: '`formatFailure` escapes what it formats',
+    why: '`formatFailure` makes plain what it formats (`report`, `plainText`)',
   },
   {
     file: 'commands/run-child.ts',
@@ -125,7 +136,7 @@ describe('what apps/opm writes to a terminal', () => {
   it('finds the writes it is meant to hold (it is not vacuous)', () => {
     expect(writes.length).toBeGreaterThan(15);
     expect(
-      writes.filter(({ argument }) => fixed(argument)).length,
+      writes.filter(({ argument }) => argument.startsWith('report(')).length,
     ).toBeGreaterThan(8);
     // The values go through a writer instead: far more of those than raw writes.
     const says = sources().reduce(

@@ -1,4 +1,3 @@
-import { terminalSafe } from '@openpacker/adapter-core';
 import { plainLine, plainText, report } from '@openpacker/canonical';
 import { scrub } from './scrub.js';
 
@@ -261,17 +260,4 @@ export function formatFailure(
     if (hint !== undefined) lines.push(`${tool}: ${hint}`);
   }
   return `${lines.join('\n')}\n`;
-}
-
-/**
- * Write one of opm's or opmx's own lines, made safe for a terminal first
- * (`terminalSafe`): a line may carry text a repository, an archive, a plugin
- * store, a package argument or the user's own path wrote. What a child process
- * prints is the child's own and does not pass through here.
- */
-export function say(
-  stream: Pick<NodeJS.WriteStream, 'write'>,
-  text: string,
-): void {
-  stream.write(terminalSafe(text));
 }

@@ -26,6 +26,7 @@
 
 import { join } from 'node:path';
 import type {
+  FrozenLockPackage,
   FrozenLockPeers,
   FrozenLockSkip,
   NativeLockEntry,
@@ -41,14 +42,33 @@ import {
 } from './frozen-prepare.js';
 import { checkArchiveIdentities } from './frozen-identity.js';
 import { installScriptFlags, scriptedPackages } from './frozen-scripts.js';
+import { layOutFromStore } from './frozen-layout.js';
 import { projectStep } from './project-step.js';
 import {
   frozenArchiveLimits,
+  labelOf,
   openStore,
   storeArchives,
 } from './frozen-store.js';
+import {
+  holdSharedStore,
+  type HoldOptions,
+  type StoreHold,
+} from './shared-store-lease.js';
 
 export type { FrozenInstallInput };
+
+/**
+ * Points inside an install where a test runs what may happen meanwhile, such
+ * as a concurrent `opm gc --shared`. Not part of the package's API: only
+ * `installFrozenWith` takes them, and `index.ts` does not export it.
+ */
+export interface FrozenInstallSeams {
+  /** Once every archive is in the store, before any is linked into `node_modules`. */
+  beforeLayout?: () => Promise<void>;
+  /** How the install's hold on the shared store waits, and where it steps. */
+  hold?: HoldOptions;
+}
 
 export interface FrozenInstallResult {
   ecosystem: string;
@@ -77,14 +97,25 @@ export interface FrozenInstallResult {
   milliseconds: { read: number; fetch: number; layout: number; total: number };
 }
 
-export async function installFrozen(
+export function installFrozen(
   input: FrozenInstallInput,
 ): Promise<FrozenInstallResult> {
-  return projectStep(input.root, input.step, () => installFrozenInStep(input));
+  return installFrozenWith(input, {});
+}
+
+/** `installFrozen` with the seams a test runs inside it. */
+export async function installFrozenWith(
+  input: FrozenInstallInput,
+  seams: FrozenInstallSeams,
+): Promise<FrozenInstallResult> {
+  return projectStep(input.root, input.step, () =>
+    installFrozenInStep(input, seams),
+  );
 }
 
 async function installFrozenInStep(
   input: FrozenInstallInput,
+  seams: FrozenInstallSeams,
 ): Promise<FrozenInstallResult> {
   const {
     started,
@@ -100,9 +131,17 @@ async function installFrozenInStep(
   } = await prepareFrozen(input);
 
   const store = await openStore(root, env);
+  let hold: StoreHold | undefined;
   try {
-    const stored = await storeArchives({
-      lock,
+    // Every entry is claimed before it is looked up, and the claims last until
+    // node_modules links them, so `opm gc --shared` cannot take one between
+    // (ADR 0048, amendment 2026-10-17).
+    if (store.shared)
+      hold = await holdSharedStore(store.root, {
+        ...seams.hold,
+        ...(input.signal !== undefined && { signal: input.signal }),
+      });
+    const from = {
       claims,
       storeRoot: store.root,
       shared: store.shared,
@@ -110,7 +149,9 @@ async function installFrozenInStep(
       offline,
       ecosystem,
       options: input,
-    });
+      ...(hold !== undefined && { hold }),
+    };
+    const stored = await storeArchives({ lock, ...from });
     const fetched = now();
     const declares = await installScriptFlags(lock.packages, stored.byPath);
     await checkArchiveIdentities(lock.packages, stored.byPath);
@@ -142,18 +183,42 @@ async function installFrozenInStep(
     for (const dir of lock.workspace?.memberDirs ?? [])
       await removeBelow(root, `${dir}/node_modules`);
     await removeTree(join(root, 'node_modules'));
-    let layout: ProjectionResult;
-    try {
-      layout = await format.writeLayout!(
-        detected,
-        entries,
-        lock.workspace === undefined
-          ? undefined
-          : { workspace: lock.workspace.layout },
-      );
-    } catch (error) {
-      throw adapterFailure(error);
-    }
+    await seams.beforeLayout?.();
+    const write = async (): Promise<ProjectionResult> => {
+      try {
+        return await format.writeLayout!(
+          detected,
+          entries,
+          lock.workspace === undefined
+            ? undefined
+            : { workspace: lock.workspace.layout },
+        );
+      } catch (error) {
+        throw adapterFailure(error);
+      }
+    };
+    const pathOf = (pkg: FrozenLockPackage) =>
+      stored.byPath.get(pkg.path)!.path;
+    const layout = !store.shared
+      ? await write()
+      : await layOutFromStore({
+          sources: lock.packages.map((pkg) => ({
+            storePath: pathOf(pkg),
+            label: labelOf(pkg),
+          })),
+          write,
+          restore: async (gone) => {
+            const again = await storeArchives({
+              lock: {
+                ...lock,
+                packages: lock.packages.filter((pkg) => gone.has(pathOf(pkg))),
+              },
+              ...from,
+            });
+            stored.fetched += again.fetched;
+            stored.fetchedBytes += again.fetchedBytes;
+          },
+        });
     const done = now();
     return {
       ecosystem,
@@ -183,6 +248,7 @@ async function installFrozenInStep(
       },
     };
   } finally {
+    await hold?.release();
     await store.dispose();
   }
 }
