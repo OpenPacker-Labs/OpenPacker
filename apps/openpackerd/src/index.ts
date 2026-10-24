@@ -7,6 +7,7 @@ import Fastify, {
 import {
   canonicalBytes,
   canonicalDigest,
+  documentParseLimits,
   formatDigest,
   parseCanonicalJson,
 } from '@openpacker/canonical';
@@ -108,19 +109,23 @@ export function createOpenPackerDaemon(
     options.eventPageSize ?? 1_000,
     'eventPageSize',
   );
+  const bodyLimit = positiveInteger(
+    options.bodyLimit ?? capabilities.limits.requestBytes,
+    'bodyLimit',
+  );
   const app = Fastify({
     logger: options.logger ?? false,
-    bodyLimit: positiveInteger(
-      options.bodyLimit ?? capabilities.limits.requestBytes,
-      'bodyLimit',
-    ),
+    bodyLimit,
     requestTimeout: maximumTimeout,
   });
 
   app.removeContentTypeParser('application/json');
+  // A body's tree may cost what an honest one of `bodyLimit` bytes may (16 MiB
+  // for 1 MiB; ADR 0044, "Documents other than packuments").
+  const bodyParseLimits = documentParseLimits(bodyLimit);
   const jsonParser: FastifyBodyParser<string> = (_request, body, done) => {
     try {
-      done(null, parseCanonicalJson(body));
+      done(null, parseCanonicalJson(body, bodyParseLimits));
     } catch (error) {
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       done(error as Error, undefined);
