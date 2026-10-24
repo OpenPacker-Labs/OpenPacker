@@ -52,12 +52,22 @@ describe('Pact verification of a loopback provider', () => {
       'http://127.8.0.1:1',
       'http://localhost:1',
       'http://[::1]:1',
+      // The same addresses spelled otherwise: IPv4 inside IPv6, and the name
+      // with its root dot.
+      'http://[::ffff:127.0.0.1]:1',
+      'http://[0:0:0:0:0:ffff:7f00:1]:1',
+      'http://localhost.:1',
     ])
       expect(await withoutProxyForLoopback(url, async () => seen())).toEqual([
         undefined,
         undefined,
       ]);
-    for (const url of ['https://provider.example', 'http://10.0.0.1:1'])
+    for (const url of [
+      'https://provider.example',
+      'http://10.0.0.1:1',
+      'http://[::ffff:10.0.0.1]:1',
+      'http://localhost.example:1',
+    ])
       expect(await withoutProxyForLoopback(url, async () => seen())).toEqual([
         UNREACHABLE,
         UNREACHABLE,
