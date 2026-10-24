@@ -93,10 +93,9 @@ posix('a failing member', () => {
       },
       'packages/slow': {
         name: 'slow',
-        scripts: { build: trace('slow', 120_000) },
+        scripts: { build: trace('slow', 20_000) },
       },
     });
-    const before = Date.now();
     const ran = await go(
       'run',
       ['build', '-r', '--workspace-concurrency=2'],
@@ -104,17 +103,15 @@ posix('a failing member', () => {
       contextWith({}, { host: hostWithSignals().host }),
     );
     expect(ran.status).toBe(7);
-    // A run that waited for `slow` would take its two minutes; one that ends
-    // it returns as soon as the processes have started and stopped, which a
-    // loaded machine may stretch to seconds, far under this.
-    expect(Date.now() - before).toBeLessThan(20_000);
-    const log = await ws.log();
-    expect(log.some(([what, id]) => what === 'term' && id === 'slow')).toBe(
-      true,
-    );
-    expect(log.some(([what, id]) => what === 'end' && id === 'slow')).toBe(
-      false,
-    );
+    // A run that waited for `slow` would see it reach its own end twenty
+    // seconds on: `end` in the log, and no `term`. One that ends it sees
+    // `term` and no `end`, however long a loaded machine takes to get there.
+    // No clock is read.
+    const slow = (await ws.log()).filter(([, id]) => id === 'slow');
+    expect(
+      slow.map(([what]) => what),
+      'the run waited for a member it should have ended',
+    ).toEqual(['start', 'term']);
   });
 
   it('reports a member that cannot be started, exits 8, and stops the rest', async () => {
