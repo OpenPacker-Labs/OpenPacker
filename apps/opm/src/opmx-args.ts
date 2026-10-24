@@ -182,17 +182,23 @@ location the plugin publishes and digest-verifies them before anything runs.
 A plugin's declared environment stays unforwarded unless each name is granted
 with --allow-env NAME (repeatable). --offline refuses an ephemeral resolve.
 
+opmx's own options (--timeout, --allow-network, --plugin, --allow-env,
+--offline, --package, --bin) go before the tool's name; everything after the
+name is the tool's own.
+
 A tool runs until it ends or is stopped (Ctrl-C), as with npx, and all it
 writes reaches the terminal. --timeout <ms> ends it after that many
-milliseconds (0: never). Without it, a project's [sandbox] opmx_timeout_ms
-applies, else a [sandbox] timeout_ms it sets, else no limit.
+milliseconds (0: never). Without it, a tool the project installed gets the
+project's [sandbox] opmx_timeout_ms, else a [sandbox] timeout_ms it sets, else
+no limit. opmx pkg:... reads no project: only these options apply to it.
 
 A tool has no network unless it is granted one: it reaches nothing outside
 its sandbox, and nothing outside reaches it, a server included.
 --allow-network shares this host's network with the run, which also gives
 the tool outbound network and this host's loopback services; a project grants
-a package for every run with [sandbox.packages."<purl>"] network = true. opmx
-says on stderr when a tool listens without it, and on which port.
+a package it installed network for every run with
+[sandbox.packages."<purl>"] network = true. opmx says on stderr when a tool
+listens without it, and on which port.
 
 Tool files are kept once per machine in the shared package store
 (OPM_STORE_HOME, default ~/.cache/openpacker/store; OPM_STORE_HOME=off opts out).

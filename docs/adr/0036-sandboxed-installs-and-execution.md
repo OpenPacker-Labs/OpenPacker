@@ -458,11 +458,12 @@ Decision:
 1. **Network is granted, never assumed, and fails closed.** A tool `opmx` runs
    has no network unless the run is granted it. `opmx --allow-network`, the
    spelling `opm pack` uses for the same grant, shares the host's network with
-   that run; a project grants it to a package for every run with
+   that run; a project grants it to a package it installed for every run with
    `[sandbox.packages."<purl>"] network = true`, as it does for that package's
-   lifecycle scripts (decision 5). Either one leaves out `--unshare-net`, and
-   the masks over network tools (`networkToolMaskFiles`) with it. Nothing else
-   grants it: not a tool's own request, not the absence of a policy.
+   lifecycle scripts (decision 5). `opmx pkg:...` reads no project, so only the
+   flag grants it there. Either one leaves out `--unshare-net`, and the masks
+   over network tools (`networkToolMaskFiles`) with it. Nothing else grants it:
+   not a tool's own request, not the absence of a policy.
 2. **A tool that listens without network is told so** (`listen-watch.ts`). While
    a run has no network, the bwrap backend reads, every 200 ms, the TCP sockets
    of the run's namespace in `/proc/<pid>/net/tcp` and `tcp6`, from the first

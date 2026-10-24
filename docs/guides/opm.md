@@ -1192,23 +1192,28 @@ Resolution order: explicit `--bin` → package primary bin → bin name in
 A tool's stdout and stderr reach `opmx`'s as the tool writes them, so a server
 shows that it listens while it serves. A tool runs until it ends or is stopped,
 as with `npx`, however long it runs and however much it writes. `--timeout <ms>`
-ends it after that many milliseconds (0 for never). Without it, a project's
-`[sandbox] opmx_timeout_ms` applies, else a `[sandbox] timeout_ms` the project
-sets (a bound it keeps for every sandboxed run, in CI say), else nothing: the
-default `timeout_ms`, ten minutes, is for an install's lifecycle scripts only,
-and so are the sandbox's byte limits, which bound the output it keeps (ADR
-0036). When a tool is ended, the sandbox says what ended it:
-`process stopped by SIGINT` (Ctrl-C; `opmx` then ends by the same signal),
-`process timed out after 600000 ms`, or `process aborted`.
+ends it after that many milliseconds (0 for never). Without it, a tool the
+project installed gets the project's `[sandbox] opmx_timeout_ms`, else a
+`[sandbox] timeout_ms` the project sets (a bound it keeps for every sandboxed
+run, in CI say), else nothing: the default `timeout_ms`, ten minutes, is for an
+install's lifecycle scripts only, and so are the sandbox's byte limits, which
+bound the output it keeps (ADR 0036). `opmx pkg:...` reads no project, so
+neither key applies to it, only `--timeout`. `opmx`'s own options (`--timeout`,
+`--allow-network`, `--plugin`, `--allow-env`, `--offline`, `--package`, `--bin`)
+go before the tool's name; everything after the name is the tool's. When a tool
+is ended, the sandbox says what ended it: `process stopped by SIGINT` (Ctrl-C;
+`opmx` then ends by the same signal), `process timed out after 600000 ms`, or
+`process aborted`.
 
 A tool has no network unless it is granted one: it reaches nothing outside its
 sandbox, and nothing outside reaches it, a server included. `--allow-network`
 shares this host's network with the run (`opmx --allow-network http-server`),
-and a project grants a package network for every run, and for its lifecycle
-scripts, with `[sandbox.packages."<purl>"] network = true`. Either also gives
-the tool outbound network and this host's loopback services, so grant it to
-reach a server, not by habit. When a tool listens without either, `opmx` says so
-on stderr, once, with the port:
+and a project grants a package it installed network for every run, and for its
+lifecycle scripts, with `[sandbox.packages."<purl>"] network = true`; that does
+not reach `opmx pkg:...`, which reads no project. Either also gives the tool
+outbound network and this host's loopback services, so grant it to reach a
+server, not by habit. When a tool listens without either, `opmx` says so on
+stderr, once, with the port:
 
 ```text
 opmx: the tool listens on port 8080; nothing outside its sandbox can reach it. If you meant to reach it from this host, --allow-network shares this host's network, which also gives the tool outbound network and this host's loopback services.
