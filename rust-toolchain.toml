@@ -1,0 +1,6 @@
+# The Rust every workflow installs (dtolnay/rust-toolchain@1.88.0) and the
+# workspace's rust-version. Without this file a local cargo uses whatever the
+# rustup default is, and a newer clippy refuses code 1.88 accepts.
+[toolchain]
+channel = "1.88.0"
+components = ["clippy", "rustfmt"]
