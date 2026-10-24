@@ -1,6 +1,6 @@
 /**
  * The header lines of a patch are read in linear time and held to a bound
- * (ADR 0056 §13). pnpm reads `index ` and `diff --git` lines with two regexes
+ * (ADR 0057 §13). pnpm reads `index ` and `diff --git` lines with two regexes
  * that backtrack: one header line of 40,000 characters took 5.8 s, 160,000
  * took 104 s, and the patch file may be 16 MiB, so `opm ci --plan` could be
  * held for days before it had a budget to spend. opm refuses a header line
@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { INTERPRETED_PREFIXES, MAXIMUM_HEADER_LINE } from './header-lines.js';
+import { BOUNDED_PREFIXES, MAXIMUM_HEADER_LINE } from './header-lines.js';
 import { readPatchText } from './index.js';
 import { pathOfBytes } from './tree-fixture.js';
 
@@ -62,7 +62,10 @@ describe('a header line of a patch', () => {
 
   it.each([
     ['an index line', (n: number) => `index ${'a'.repeat(n - 6)}`],
-    ['a mode line', (n: number) => `old mode 100644${' '.repeat(n - 15)}`],
+    [
+      'a diff line',
+      (n: number) => `diff --git a/f.js b/f.js${' '.repeat(n - 24)}`,
+    ],
   ])('is taken at the bound and refused one past it: %s', (_, make) => {
     expect(readPatchText(withHeader(make(MAXIMUM_HEADER_LINE)), 'p')).toEqual(
       expect.any(Array),
@@ -72,25 +75,12 @@ describe('a header line of a patch', () => {
     ).toThrow(tooLong(MAXIMUM_HEADER_LINE + 1));
   });
 
-  it('is bounded by the prefixes the parser reads, which are these ten (readHeaderLine and the diff line)', () => {
-    expect([...INTERPRETED_PREFIXES].sort()).toEqual(
-      [
-        'deleted file mode ',
-        'diff --git ',
-        'index ',
-        'new file mode ',
-        'new mode ',
-        'old mode ',
-        'rename from ',
-        'rename to ',
-        '+++ ',
-        '--- ',
-      ].sort(),
-    );
+  it('is bounded only on the two lines pnpm reads with a regex that backtracks', () => {
+    expect([...BOUNDED_PREFIXES].sort()).toEqual(['diff --git ', 'index ']);
   });
 
-  it.each([...INTERPRETED_PREFIXES])(
-    'is refused past the bound, wherever it is in the patch, when it begins like a header line the parser reads: %j',
+  it.each([...BOUNDED_PREFIXES])(
+    'is refused past the bound, wherever it is in the patch, when it begins like a line pnpm reads with a backtracking regex: %j',
     (prefix) => {
       const long = `${prefix}${'a'.repeat(MAXIMUM_HEADER_LINE)}`;
       // Before the first diff header, where a commit message sits, as well.
@@ -121,6 +111,35 @@ describe('a header line of a patch', () => {
         readPatchText(`${line}\n${withHeader('index 1..2')}`, 'p'),
       ).toEqual(clean);
       expect(readPatchText(withHeader(line), 'p')).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    ['old mode ', 'old mode 100644'],
+    ['new mode ', 'new mode 100755'],
+    ['deleted file mode ', 'deleted file mode 100644'],
+    ['new file mode ', 'new file mode 100644'],
+    ['rename from ', 'rename from f.js'],
+    ['rename to ', 'rename to f.js'],
+    ['--- ', '--- a/f.js'],
+    ['+++ ', '+++ b/f.js'],
+  ])(
+    'is no bound on a line that begins %j, which pnpm reads in one pass (a slice and a trim) however long it is',
+    (_, value) => {
+      for (const length of [9_000, 200_000]) {
+        const line = `${value}${' '.repeat(length - value.length)}`;
+        const started = performance.now();
+        const outcome = (() => {
+          try {
+            readPatchText(withHeader(line), 'p');
+            return 'read';
+          } catch (error) {
+            return (error as { code?: string }).code;
+          }
+        })();
+        expect(outcome).not.toBe('SIZE_LIMIT');
+        expect(performance.now() - started).toBeLessThan(1_000);
+      }
     },
   );
 

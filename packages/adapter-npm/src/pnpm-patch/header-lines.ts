@@ -27,28 +27,24 @@ export const MAXIMUM_HEADER_LINE =
   2 * PACKAGE_TREE_LIMITS.maximumPathBytes + 108;
 
 /**
- * What a line begins with for the parser to read it: the `diff --git` line
- * and the header lines of a file's patch (`readHeaderLine`). Any other line
- * of the header part, a commit message or a mail header before the first
- * diff, an `index`-less note, a comment, is read as nothing, in time that
- * does not depend on its length (a few `startsWith`), and has no bound.
+ * The header lines held to `MAXIMUM_HEADER_LINE`: the two pnpm reads with a
+ * regex that backtracks (`diff --git ` and `index `), the only two where a
+ * long line costs pnpm more than its length. Measured with pnpm 10.28's
+ * `applyPatchToDir` on one line of n characters in the worst shape for each
+ * (ADR 0057 §13): these two take 95 to 120 ms at 9,000 and four times as long
+ * at every doubling (22 to 30 s at 144,000); the other eight header lines
+ * (`old mode `, `new mode `, `deleted file mode `, `new file mode `, `rename
+ * from `, `rename to `, `--- `, `+++ `) are a `slice` and a `trim`, under 1 ms
+ * at 288,000, and are read here the same way, with no bound. Neither of the
+ * two is slow here (they are read in one pass, below); the bound keeps opm
+ * from taking a line pnpm itself would spend seconds on, and no line a git
+ * diff writes comes near it.
  */
-export const INTERPRETED_PREFIXES = [
-  'diff --git ',
-  'old mode ',
-  'new mode ',
-  'deleted file mode ',
-  'new file mode ',
-  'rename from ',
-  'rename to ',
-  'index ',
-  '--- ',
-  '+++ ',
-] as const;
+export const BOUNDED_PREFIXES = ['diff --git ', 'index '] as const;
 
-/** True when the parser reads the line as a header line, and so bounds it. */
-export const isInterpreted = (line: string): boolean =>
-  INTERPRETED_PREFIXES.some((prefix) => line.startsWith(prefix));
+/** True when the line is one `MAXIMUM_HEADER_LINE` bounds. */
+export const isBounded = (line: string): boolean =>
+  BOUNDED_PREFIXES.some((prefix) => line.startsWith(prefix));
 
 /** A header line past `MAXIMUM_HEADER_LINE`; `readPatchText` makes it a `SIZE_LIMIT`. */
 export class HeaderLineTooLong extends Error {

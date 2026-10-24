@@ -31,7 +31,7 @@ import {
   diffLinePaths,
   HeaderLineTooLong,
   indexHashes,
-  isInterpreted,
+  isBounded,
   MAXIMUM_HEADER_LINE,
 } from './header-lines.js';
 
@@ -210,7 +210,7 @@ function parsePatchLines(
         state = 'parsing hunks';
         current.hunks = [];
         i--;
-      } else if (line.length > MAXIMUM_HEADER_LINE && isInterpreted(line)) {
+      } else if (line.length > MAXIMUM_HEADER_LINE && isBounded(line)) {
         throw new HeaderLineTooLong(line.length);
       } else if (line.startsWith('diff --git ')) {
         if (current.diffLineFromPath) commitFilePatch();
