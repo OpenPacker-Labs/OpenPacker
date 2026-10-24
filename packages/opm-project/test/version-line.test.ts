@@ -10,7 +10,11 @@ import {
 import type { PackageInstance } from '@openpacker/contracts';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import { requireAdapterRegistry } from '../src/adapters.js';
-import { readManifestFile, resolveManifestToLock } from '../src/project.js';
+import {
+  assertLockMatchesManifest,
+  readManifestFile,
+  resolveManifestToLock,
+} from '../src/project.js';
 import { purlAtVersion } from '../src/spec.js';
 
 /**
@@ -25,7 +29,11 @@ const CRAFTED = '1.0.0/../other@9';
 
 const roots: string[] = [];
 
-async function project(lines: readonly string[], purl = 'pkg:nocodec/demo') {
+async function project(
+  lines: readonly string[],
+  purl = 'pkg:nocodec/demo',
+  version = CRAFTED,
+) {
   const root = await mkdtemp(join(tmpdir(), 'opm-version-line-'));
   roots.push(root);
   const path = join(root, 'opm.toml');
@@ -38,7 +46,7 @@ async function project(lines: readonly string[], purl = 'pkg:nocodec/demo') {
       '',
       '[packages.demo]',
       `purl = "${purl}"`,
-      `version = ${JSON.stringify(CRAFTED)}`,
+      `version = ${JSON.stringify(version)}`,
       ...lines,
       '',
     ].join('\n'),
@@ -75,6 +83,25 @@ describe('a version line with PURL syntax in it', () => {
       qualifiers: {},
       version: CRAFTED,
     });
+  });
+
+  // `+` is not left bare in a PURL version, so the lock spells such a version
+  // encoded where it once wrote it bare: the same package and version once
+  // read, and a lock written with the bare spelling still matches.
+  it('locks an explicit-source version with a + in it encoded, and the bare spelling still matches', async () => {
+    const { root, manifest } = await project(
+      ['source = "./demo.tar"'],
+      'pkg:nocodec/demo',
+      '1.2.3+build.5',
+    );
+    await writeFile(join(root, 'demo.tar'), 'demo bytes');
+    const lock = await resolveManifestToLock({ root, manifest, offline: true });
+    expect(lock.packages.demo!.purl).toBe('pkg:nocodec/demo@1.2.3%2Bbuild.5');
+    expect(parsePurl(lock.packages.demo!.purl).version).toBe('1.2.3+build.5');
+    expect(() => assertLockMatchesManifest(root, manifest, lock)).not.toThrow();
+    const bare = structuredClone(lock);
+    bare.packages.demo!.purl = 'pkg:nocodec/demo@1.2.3+build.5';
+    expect(() => assertLockMatchesManifest(root, manifest, bare)).not.toThrow();
   });
 
   // Maven's codec reads any text without a space as a version, so the line
