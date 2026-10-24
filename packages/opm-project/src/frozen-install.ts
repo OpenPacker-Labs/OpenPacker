@@ -42,7 +42,7 @@ import {
 } from './frozen-prepare.js';
 import { checkArchiveIdentities } from './frozen-identity.js';
 import { installScriptFlags, scriptedPackages } from './frozen-scripts.js';
-import { layOutFromStore } from './frozen-layout.js';
+import { layOutFromStore, type FrozenInstallSeams } from './frozen-layout.js';
 import { projectStep } from './project-step.js';
 import {
   frozenArchiveLimits,
@@ -50,25 +50,9 @@ import {
   openStore,
   storeArchives,
 } from './frozen-store.js';
-import {
-  holdSharedStore,
-  type HoldOptions,
-  type StoreHold,
-} from './shared-store-lease.js';
+import { holdSharedStore, type StoreHold } from './shared-store-lease.js';
 
-export type { FrozenInstallInput };
-
-/**
- * Points inside an install where a test runs what may happen meanwhile, such
- * as a concurrent `opm gc --shared`. Not part of the package's API: only
- * `installFrozenWith` takes them, and `index.ts` does not export it.
- */
-export interface FrozenInstallSeams {
-  /** Once every archive is in the store, before any is linked into `node_modules`. */
-  beforeLayout?: () => Promise<void>;
-  /** How the install's hold on the shared store waits, and where it steps. */
-  hold?: HoldOptions;
-}
+export type { FrozenInstallInput, FrozenInstallSeams };
 
 export interface FrozenInstallResult {
   ecosystem: string;
