@@ -1865,14 +1865,12 @@ makes is far larger than the table the object is charged for.
   GiB child before; 66,000 objects `{"a":1}` are read whole, and 200,000 values
   are still refused for their count (`metadata-json.test.ts`). The packument
   limits are unchanged, at 512 and 720 MiB.
-- **Not done: the documents with no limit at all.** Several reads of a network
-  body call `parseCanonicalJson` and not a costed parse: the packslip discovery,
-  verification and resolve payloads and the packslip provider's, the SDK's event
-  lines, the bodies of requests to `openpackerd` and `openpacker-registry`, and
-  the `opm-project` publish client's receipt. The charge is in the parser, so a
-  cost is counted for them, but none is limited. Each needs its own limit, and
-  what it should be depends on what that document is for. They are the same
-  fault in other readers and are not changed here.
+- **Done since: the documents with no limit at all.** Several reads of a network
+  body called `parseCanonicalJson` and not a costed parse: the packslip
+  discovery, verification and resolve payloads and the packslip provider's, the
+  SDK's event lines, the bodies of requests to `openpackerd` and
+  `openpacker-registry`, and the `opm-project` publish client's receipt. Each
+  now has a limit; see "Documents other than packuments" below.
 - **Not done: making V8 give the store back.** Deleting the largest index of an
   object after setting it might shrink the store. The charge does not rely on a
   behaviour of V8 that the parse cannot see.
@@ -1881,6 +1879,92 @@ makes is far larger than the table the object is charged for.
   already was (`USERINFO` in `redact-text.ts`; `redact-text.userinfo.test.ts`
   and, through a workspace lock's refusal, `lock-tree.userinfo.test.ts`, each
   with both spellings on one line).
+
+**Documents other than packuments (decided 2026-10-24).** Seven readers bounded
+the bytes of a document from somewhere else and parsed it with no cost limit: a
+packslip release statement and release list (read in discovery, in the
+declared-signer check of verification, in resolve, and again by
+`adapter-packslip`'s provider), a page of events in the SDK, an event
+`decodeCloudEvent` is given, a request body in `openpackerd` and in
+`openpacker-registry`, and the pack receipt `opm publish --from` reads. A byte
+bound does not bound a tree. Per byte of document, the parser charges `{}` 110,
+`[]` 51, `1` 45, `""` 47, `{"a":1}` 49, and an object named by an array index
+2,046 (`{"1023":0,"2575":0}`) to 5,078 (`{"0":0}`). In a child with
+`--max-old-space-size=1024`, a request body of 1 MiB of `{"1023":0}` (95,325
+objects) and one of 4 MiB both ended the process with exit 134 before this
+change (Node 22.22.0; the 1 MiB one also on 20.20.0 and 21.7.3).
+
+Each reader now passes `documentParseLimits(bytes)` (`@openpacker/canonical`): a
+cost limit of `DOCUMENT_COST_PER_BYTE`, 16, times the bytes the reader lets the
+document have, and never less than 1 MiB (`DOCUMENT_COST_FLOOR`: a document of a
+few bytes weighs more than sixteen times them; `{}` is 2 bytes and 240). The
+same two documents are now refused at 16 and 64 MiB of cost, in under 0.1 s, at
+59 and 90 MiB of RSS (54 and 56 MiB for the 1 MiB one on Node 20 and 21).
+
+16 is set by what honest documents cost:
+
+- The measure was 31 of the repository's documents, minified as they are sent:
+  the 20 goldens, the PREX pact, packslip's 6 conformance files, its 2 real
+  bundles and its demo bundle, and `tests/fixtures/bounded-solve.json`.
+- They cost 2.4 a byte (a Sigstore bundle, mostly base64) to 11.3 (the CycloneDX
+  golden). `tuf`, `artifact-selection` and `identity` are next, at 11.1 to 11.3.
+- 16 is 41 percent above the densest. A document that is denser per byte can
+  still be read when it is well under its reader's byte bound, because the limit
+  is set by the bound, not by the document.
+- `canonical/test/document-limits.test.ts` reads those documents again. It fails
+  if one of them comes within a quarter of 16. It also reads a 1 MiB document of
+  the universe golden repeated (8.8 a byte) under the 1 MiB limit, and refuses a
+  megabyte of `{"1023":0}`, of `{}` and of `[]` at 16 MiB.
+
+| Reader                                            | Byte bound                                   | Cost limit                                             | Refused as                                                           |
+| ------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------- |
+| packslip, a signed payload (`parseSignedPayload`) | 4 MiB (`MAX_BUNDLE_BYTES`)                   | 64 MiB                                                 | `SignedPayloadCostError` (`INVALID_STATEMENT`)                       |
+| SDK, a page of events                             | 16 MiB, or `maximumResponseBytes` if smaller | 256 MiB for the whole page, its lines counted together | `RangeError`: `PREX event page would cost more than … bytes to hold` |
+| events, `decodeCloudEvent`                        | the bytes it is given                        | 16 times them, at least 1 MiB                          | `CanonicalJsonLimitError`                                            |
+| `openpackerd`, a request body                     | `bodyLimit` (`requestBytes`, 1 MiB)          | 16 MiB                                                 | 400, as any body the parser refuses                                  |
+| `openpacker-registry`, a request body             | `bodyLimit` (4 MiB)                          | 64 MiB                                                 | 413, as a body past `bodyLimit` is                                   |
+| `opm publish`, the pack receipt                   | 4 MiB (`readStableFile`)                     | 64 MiB                                                 | `INVALID_SPEC`: `Invalid pack receipt: …`                            |
+
+Notes on the readers:
+
+- **The packslip provider** parses a statement again only after resolve has
+  accepted it under the same limit, so it cannot reach the limit. It calls
+  `parseSignedPayload` so that the two cannot drift.
+- **The SDK** charges each line against what the page has left. A page of many
+  small events is therefore bounded the same as one large event.
+
+**Not changed:**
+
+- Readers that call `JSON.parse` on a byte-bounded body: the SDK's other
+  responses (64 MiB) and the cargo and Go readers.
+- Files the person writes: `opm.lock.json`, auth configuration, and the CLI's
+  inputs.
+- The daemon's own store.
+
+**Each reader's test, which fails on the code before this change:**
+
+Each was run on b582cd4 without the change, then with it. All 19 tests failed
+before and pass after.
+
+- `canonical/test/document-limits.test.ts`: 7 of 7 fail, because
+  `documentParseLimits` and `DOCUMENT_COST_PER_BYTE` do not exist.
+- `packslip/test/payload.test.ts`: 4 of 4 fail. `parseSignedPayload` and
+  `SignedPayloadCostError` do not exist, and `parseListPayload` accepts a list
+  of 10,000 `{"1023":0}` (120 KB, charged 400 MB): "the document was accepted".
+- `sdk/test/event-cost.test.ts`: 2 of 2 fail. A page with one line of 1,000 such
+  objects, and a page with two lines of 15, both resolved instead of being
+  refused.
+- `events/src/decode-cost.test.ts`: 1 of 1 fails. 100 such objects are parsed in
+  full and refused only by the event contract ("Event contract violation: / must
+  have required property 'specversion'…").
+- `openpackerd/test/body-cost.test.ts`: 2 of 2 fail. A body of 10,000 such
+  objects is parsed in full and refused only by request validation ("Request
+  contract violation: / must have required property 'query'").
+- `openpacker-registry/test/body-cost.test.ts`: 2 of 2 fail. The same body is
+  parsed in full and answered 400 by validation, not 413.
+- `opm-project/test/publish-receipt-cost.test.ts`: 1 of 1 fails. A receipt of
+  such objects is parsed in full and refused only for a missing field ("Pack
+  receipt omitted the distri…").
 
 **The shapes of the table above, end to end.** The same loopback server and the
 repository's own `BoundedFetchTransport` and `NpmRegistryProvider`, every body
