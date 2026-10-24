@@ -289,11 +289,14 @@ export function exactPurl(purl: string, version: string): string {
  *
  * What a manifest writes for a version is text, not PURL syntax: joined after
  * `@`, a `/`, `@`, `?` or `#` in it reads back as another namespace and name, a
- * qualifier or a subpath. So the PURL is built from its parts, read back, and
- * compared with `purl`'s own type, namespace, name and qualifiers; its version
- * must read back as `version` and it carries no subpath (a request names a
- * package, not a path inside one, as `exactPurl` never kept one either).
- * Anything else is refused, so no version line can name another package.
+ * qualifier or a subpath. So the PURL is built from `purl`'s own type,
+ * namespace, name and qualifiers with `version` as its version (no subpath: a
+ * request names a package, not a path inside one, as `exactPurl` never kept
+ * one either), and read back. The version is the only text the manifest line
+ * supplies, so it is the one thing compared: a character of it that escaped
+ * the version component would take it out of the version read back, which
+ * then differs. A line no PURL can carry (empty, too long, a lone surrogate)
+ * is refused too, so no version line can name another package.
  */
 export function purlAtVersion(purl: string, version: string): string {
   const own = parsePurl(purl);
@@ -311,32 +314,12 @@ export function purlAtVersion(purl: string, version: string): string {
   } catch {
     read = undefined;
   }
-  if (
-    target === undefined ||
-    read === undefined ||
-    read.type !== own.type ||
-    read.namespace !== own.namespace ||
-    read.name !== own.name ||
-    read.version !== version ||
-    read.subpath !== undefined ||
-    !sameQualifiers(read.qualifiers, own.qualifiers)
-  )
+  if (target === undefined || read === undefined || read.version !== version)
     throw new OpmError(
       'INVALID_MANIFEST',
       `${JSON.stringify(version)} cannot be written as a version of ${stripPurlVersion(purl)}`,
     );
   return target;
-}
-
-function sameQualifiers(
-  left: Readonly<Record<string, string>>,
-  right: Readonly<Record<string, string>>,
-): boolean {
-  const keys = Object.keys(left);
-  return (
-    keys.length === Object.keys(right).length &&
-    keys.every((key) => Object.hasOwn(right, key) && left[key] === right[key])
-  );
 }
 
 export function stripPurlVersion(purl: string): string {
