@@ -120,7 +120,19 @@ export async function applyPnpmPatch(
         'PATCH_FAILED',
         `the patch ${quote(patch.file)} (patchedDependencies ${quote(patch.key)}) does not apply to ${quote(label)}, and pnpm would refuse it too (ERR_PNPM_PATCH_FAILED); nothing was installed`,
       );
-    const twins = await caseCollision(packageDir, before, tree.nodes, budget);
+    const replaced = effects.flatMap((effect) =>
+      effect.type === 'file creation' &&
+      before.get(effect.path)?.kind === 'file'
+        ? [effect.path]
+        : [],
+    );
+    const twins = await caseCollision(
+      packageDir,
+      before,
+      tree.nodes,
+      budget,
+      replaced,
+    );
     if (twins !== undefined)
       throw new PatchRefusal(
         'CASE_COLLISION',

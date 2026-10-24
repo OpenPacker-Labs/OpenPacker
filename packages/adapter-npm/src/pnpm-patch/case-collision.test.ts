@@ -228,8 +228,10 @@ describe('the directories read to look', () => {
       );
       return budget.spent;
     };
-    // `big/new.js` exists: the patch replaces it, which is not a new file, so
-    // nothing is listed; the same file created where there is none lists two.
+    // `big/new.js` exists: the patch replaces it, so only big/ is listed, to
+    // see the name is there as the patch spells it (a host that folds case
+    // finds a twin by another name); the same file created where there is
+    // none lists the root and big/ and merges what big/ holds.
     const replaces = await measure(create('big/new.js'));
     const created = await (async () => {
       const budget = new PatchBudget();
@@ -241,7 +243,7 @@ describe('the directories read to look', () => {
       );
       return budget.spent;
     })();
-    expect(created - replaces).toBeGreaterThanOrEqual(2 * LSTAT_UNITS);
+    expect(created - replaces).toBeGreaterThanOrEqual(LSTAT_UNITS);
   });
 
   it('are not read for a file the patch only changes', async () => {

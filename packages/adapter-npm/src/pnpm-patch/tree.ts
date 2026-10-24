@@ -343,7 +343,14 @@ const sameFile = (
   left.mode === right.mode &&
   left.bytes.equals(right.bytes);
 
-/** Write what the patch changed: files removed, directories made, files written. */
+/**
+ * Write what the patch changed: files removed, directories made, files
+ * written. A file the tree found absent is created exclusively (`O_EXCL`): if
+ * one is there after all (a host that folds case or normalization found its
+ * twin under this name, or it came meanwhile) the patch is refused as
+ * `CASE_COLLISION`, as extracting an archive that held both fails, and the
+ * file is not written over.
+ */
 export async function commitPatchTree(
   root: string,
   before: ReadonlyMap<string, PatchNode | undefined>,
@@ -362,14 +369,22 @@ export async function commitPatchTree(
     if (node?.kind === 'dir') await mkdir(where(path));
   for (const [path, node] of changed) {
     if (node?.kind !== 'file') continue;
+    const fresh = before.get(path) === undefined;
     const handle = await open(
       where(path),
       constants.O_WRONLY |
         constants.O_CREAT |
-        constants.O_TRUNC |
+        (fresh ? constants.O_EXCL : constants.O_TRUNC) |
         constants.O_NOFOLLOW,
       node.mode & 0o777,
-    );
+    ).catch((error: NodeJS.ErrnoException) => {
+      if (fresh && error.code === 'EEXIST')
+        throw new PatchRefusal(
+          'CASE_COLLISION',
+          `it creates ${quote(shownPath(path))}, and the file system has a file by that name already, one the package was not read to hold: a twin by case or normalization on a file system that folds them, which an archive's extraction refuses too (CASE_COLLISION)`,
+        );
+      throw error;
+    });
     try {
       await handle.writeFile(node.bytes);
     } finally {

@@ -47,6 +47,13 @@ export async function caseCollision(
   before: Nodes,
   after: Nodes,
   budget: PatchBudget,
+  /**
+   * Files the patch creates over a file the tree found (pnpm replaces it).
+   * Each must be listed under exactly its name: on a host that folds case or
+   * normalization, `lstat` finds a twin by another name, and the patch would
+   * write over it.
+   */
+  replaced: readonly string[] = [],
 ): Promise<CaseCollision | undefined> {
   // A directory's names, by key: `Lib` and `lib` under `lib`.
   const listings = new Map<string, ReadonlyMap<string, readonly string[]>>();
@@ -148,6 +155,19 @@ export async function caseCollision(
         (!after.has(found) || after.get(found) !== undefined)
       )
         return { path, other: found };
+  }
+  for (const path of replaced) {
+    const at = path.lastIndexOf('/');
+    const parent = at === -1 ? '' : path.slice(0, at);
+    const name = path.slice(at + 1);
+    const listing = await namesIn(parent);
+    if ((listing.get(collisionKey(name)) ?? []).includes(name)) continue;
+    // Listed by another name, folded by case or (where the keys differ) by normalization.
+    const fold = name.normalize('NFC').toLowerCase();
+    const other = [...listing.values()]
+      .flat()
+      .find((listed) => listed.normalize('NFC').toLowerCase() === fold);
+    return { path, other: below(parent, other ?? name) };
   }
   return undefined;
 }
