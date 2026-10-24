@@ -93,7 +93,7 @@ posix('a failing member', () => {
       },
       'packages/slow': {
         name: 'slow',
-        scripts: { build: trace('slow', 120_000) },
+        scripts: { build: trace('slow', 20_000) },
       },
     });
     const ran = await go(
