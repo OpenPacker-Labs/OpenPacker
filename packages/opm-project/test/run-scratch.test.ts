@@ -1,6 +1,14 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -97,6 +105,20 @@ describe('what a run made', () => {
     expect(dirname(tree)).toBe(path);
     expect((await readdir(path)).sort()).toEqual([OWNER_FILE, 'tree']);
     expect(await readdir(tree)).toEqual([]);
+  });
+
+  it('leaves nothing behind when its owner cannot be written', async () => {
+    const dir = await scratchDir();
+    const unwritable = Object.defineProperty({ ...reader }, 'host', {
+      enumerable: true,
+      get: () => {
+        throw new Error('the owner cannot be written');
+      },
+    });
+    await expect(makeScratch(dir, PREFIX, unwritable)).rejects.toThrow(
+      'the owner cannot be written',
+    );
+    expect(await readdir(dir)).toEqual([]);
   });
 });
 
@@ -308,6 +330,28 @@ describe('the owner rule, as the sweep applies it', () => {
       expect(existsSync(path)).toBe(true);
       await sweepAbandoned(dir, PREFIX, { reader, now: later });
       expect(existsSync(path)).toBe(false);
+    });
+
+    // A name of the prefix that is a link, to a directory or to nothing, is not
+    // a directory a run made, though no owner can be read through it.
+    it('is not a link of its name, which is kept however old it is', async () => {
+      const dir = await scratchDir();
+      await mkdir(join(dir, 'elsewhere'));
+      const links = [
+        [join(dir, `${PREFIX}link`), join(dir, 'elsewhere')],
+        [join(dir, `${PREFIX}dangling`), join(dir, 'nothing')],
+      ] as const;
+      for (const [link, target] of links) await symlink(target, link);
+      await sweepAbandoned(dir, PREFIX, { reader, now: later });
+      const kept = await Promise.all(
+        links.map(([link]) =>
+          lstat(link).then(
+            () => true,
+            () => false,
+          ),
+        ),
+      );
+      expect(kept).toEqual([true, true]);
     });
 
     it('is kept however old it is when its owner file says nothing opm reads', async () => {
