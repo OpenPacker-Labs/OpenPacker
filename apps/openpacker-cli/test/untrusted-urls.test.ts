@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { EXIT_CODES, runCli, type CliIo } from '../src/index.js';
 
 /**
@@ -21,6 +24,14 @@ function cpuMs(): number {
  */
 const HOST = 'ß.é.'.repeat(16384);
 const FAST_MS = 50;
+/**
+ * A prefix that is not there, so the refusal is the location's. `/nonexistent`
+ * was: a machine where something made it (with files in it) had the CLI refuse
+ * the destination first, with an internal error.
+ */
+const scratch = mkdtempSync(join(tmpdir(), 'openpacker-cli-'));
+const MISSING_PREFIX = join(scratch, 'prefix');
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 function io(): CliIo & { out: string; err: string } {
   const result = {
@@ -69,7 +80,7 @@ async function materializeFrom(transport: 'https' | 'file', uri: string) {
     last = io();
     const started = cpuMs();
     exit = await runCli(
-      ['materialize', 'pkg:npm/demo@1.0.0', '--install-prefix', '/nonexistent'],
+      ['materialize', 'pkg:npm/demo@1.0.0', '--install-prefix', MISSING_PREFIX],
       last,
     );
     best = Math.min(best, cpuMs() - started);
