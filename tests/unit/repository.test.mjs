@@ -157,6 +157,64 @@ test('every package and root vitest run extends the one shared default', () => {
   }
 });
 
+// A vitest started from the repository root finds no vitest.config there, so
+// it runs with vitest's own 5 s bound and none of the store isolation unless it
+// names one of the root configs, which both extend the shared default. Every
+// such start: the root package.json scripts, what the scripts spawn (an array
+// that holds 'vitest', or createVitest), and the workflows' run lines.
+test('every vitest run from the repository root names a root config', () => {
+  const rootConfig =
+    /--config[= ]scripts\/vitest\.(?:gate|coverage)\.config\.mjs/u;
+  const bare = [];
+  const { scripts } = JSON.parse(
+    readFileSync(join(root, 'package.json'), 'utf8'),
+  );
+  for (const [name, command] of Object.entries(scripts))
+    for (const part of command.split(/&&|\|\||;/u))
+      if (/\bvitest\b/u.test(part) && !rootConfig.test(part))
+        bare.push(`package.json scripts.${name}: ${part.trim()}`);
+  const scriptFiles = readdirSync(join(root, 'scripts'), { recursive: true })
+    .filter((file) => /\.[cm]?js$/u.test(file))
+    .map((file) => join('scripts', file));
+  for (const file of scriptFiles) {
+    const text = readFileSync(join(root, file), 'utf8');
+    for (const match of text.matchAll(/(['"])vitest\1(?=\s*[,\]])/gu)) {
+      const open = text.lastIndexOf('[', match.index);
+      const close = text.indexOf(']', match.index);
+      const args = text.slice(open, close + 1);
+      if (open === -1 || close === -1 || !/(['"])--config\1/u.test(args))
+        bare.push(`${file}: ${args.replace(/\s+/gu, ' ')}`);
+    }
+    for (const match of text.matchAll(/createVitest\(/gu)) {
+      const call = text.slice(match.index, text.indexOf(');', match.index));
+      if (!/\bconfig:\s*['"]scripts\/vitest\./u.test(call))
+        bare.push(`${file}: createVitest without a root config`);
+    }
+  }
+  // A step's `run:` value with the lines folded under it, as one command.
+  const workflows = join(root, '.github', 'workflows');
+  for (const file of readdirSync(workflows).filter((name) =>
+    /\.ya?ml$/u.test(name),
+  )) {
+    const lines = readFileSync(join(workflows, file), 'utf8').split('\n');
+    lines.forEach((line, at) => {
+      const step = /^(\s*)(?:-\s+)?run:\s*(.*)$/u.exec(line);
+      if (step === null) return;
+      const indent = step[1].length;
+      const parts = [step[2]];
+      for (const next of lines.slice(at + 1)) {
+        if (next.trim() !== '' && next.search(/\S/u) <= indent) break;
+        parts.push(next.trim());
+      }
+      const command = parts.join(' ').trim();
+      if (/\bvitest\b/u.test(command) && !rootConfig.test(command))
+        bare.push(`.github/workflows/${file}: ${command}`);
+    });
+  }
+  assert.ok(scriptFiles.length > 10, `${scriptFiles.length} script files`);
+  assert.deepEqual(bare, []);
+});
+
 // Strict env mode hands a task only what turbo.json names. Without these, cargo
 // under `turbo run build` ignores an exported CARGO_TARGET_DIR and builds into
 // the checkout's own target/, so every worktree grows a private copy.

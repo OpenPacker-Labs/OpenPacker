@@ -39,7 +39,11 @@ Every package's `vitest.config.ts` and the root gate and coverage configs extend
 [`tests/support/stores.setup.ts`](../../tests/support/stores.setup.ts), which
 unsets `OPM_STORE_HOME`, `OPM_TOOL_CACHE` and `OPM_PLUGIN_HOME` and points
 `XDG_CACHE_HOME` and `XDG_DATA_HOME` at a fresh directory per test file, so no
-test reads or writes the caller's shared store, tool cache or plugin store. The
+test reads or writes the caller's shared store, tool cache or plugin store. A
+vitest started from the repository root finds no config there, so it names one:
+`--config scripts/vitest.gate.config.mjs` (`test:pack-parity`, its native lane,
+the CI step) or the coverage config; `tests/unit/repository.test.mjs` refuses a
+root run in a script, a spawned command or a workflow that names neither. The
 opm-project and opm suites and the root runs also fail a test whose environment
 would resolve one of those outside the temporary directory
 ([`tests/support/store-guard.ts`](../../tests/support/store-guard.ts)).
