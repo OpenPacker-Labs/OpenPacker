@@ -1,8 +1,12 @@
-/** The name of a zip entry whose UTF-8 flag is set: strict UTF-8, or a typed refusal. */
+/**
+ * The name of a zip entry whose UTF-8 flag is set: strict UTF-8, or a typed
+ * refusal. A leading byte order mark is part of the name, as it is in a tar
+ * header, rather than dropped by the decoder.
+ */
 
 import { unsafe } from './errors.js';
 
-const utf8 = new TextDecoder('utf-8', { fatal: true });
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 export function zipName(bytes: Uint8Array): string {
   try {

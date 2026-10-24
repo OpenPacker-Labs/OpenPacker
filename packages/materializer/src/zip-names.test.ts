@@ -58,6 +58,14 @@ describe('a zip entry name', () => {
     expect(entries.map(({ path }) => path)).toEqual(['pkg/café.js']);
   });
 
+  it('keeps a leading byte order mark, as zip readers that do not strip it do', async () => {
+    const entries = await inspectArchive(
+      zipNamed(text('\uFEFFpkg/a.js'), UTF8_FLAG),
+      'zip',
+    );
+    expect(entries.map(({ path }) => path)).toEqual(['\uFEFFpkg/a.js']);
+  });
+
   it.each([
     ['a byte that starts no sequence', [0xff]],
     ['a continuation byte alone', [0x80]],
