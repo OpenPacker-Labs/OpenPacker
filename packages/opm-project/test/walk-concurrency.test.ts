@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type {
-  HttpRequest,
-  HttpResponse,
-  HttpTransport,
+import {
+  MAXIMUM_METADATA_BYTES,
+  type HttpRequest,
+  type HttpResponse,
+  type HttpTransport,
 } from '@openpacker/adapter-core';
 import {
   MemoizingTransport,
@@ -120,6 +121,38 @@ describe('MemoizingTransport', () => {
     await transport.request(download);
     await transport.request(download);
     expect(inner.calls).toHaveLength(2);
+  });
+
+  it('keeps a document as large as an adapter may ask for, and no larger', async () => {
+    // npm's packument for `typescript` is 8.7 MB and for `next` 25.6 MB. A
+    // request is kept only if the bound it carries is no more than the
+    // ceiling, so the ceiling cannot sit below what an adapter asks.
+    const inner = new SlowTransport(
+      () => 0,
+      (request) => ok('{"a":1}', request.url, { etag: '"v1"' }),
+    );
+    const transport = new MemoizingTransport(inner);
+    const atCeiling = {
+      ...get('https://r.test/at'),
+      maximumBytes: MAXIMUM_METADATA_BYTES,
+    };
+    await transport.request(atCeiling);
+    await transport.request(atCeiling);
+    const pastCeiling = {
+      ...get('https://r.test/past'),
+      maximumBytes: MAXIMUM_METADATA_BYTES + 1,
+    };
+    await transport.request(pastCeiling);
+    await transport.request(pastCeiling);
+    expect(inner.calls).toEqual([
+      'https://r.test/at',
+      'https://r.test/past',
+      'https://r.test/past',
+    ]);
+    expect(MemoizingTransport.ENTRY_LIMIT).toBe(MAXIMUM_METADATA_BYTES);
+    expect(MemoizingTransport.TOTAL_LIMIT).toBeGreaterThanOrEqual(
+      2 * MemoizingTransport.ENTRY_LIMIT,
+    );
   });
 
   it('bounds how many requests are in flight', async () => {

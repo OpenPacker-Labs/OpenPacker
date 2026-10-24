@@ -15,6 +15,7 @@ import { listUrl, type Project } from './project.js';
 import { assertListFresh, assertListSequence } from './release-list.js';
 import { versionFromTag } from './tags.js';
 import type { ReleaseList } from './types.js';
+import { shown } from './shown.js';
 
 /** What a consumer remembers about a project's signed list between installs. */
 export interface ListMemory {
@@ -58,7 +59,7 @@ function listFromBundle(input: DiscoverInput, bundle: Uint8Array): ReleaseList {
   if (list.project !== input.project.name)
     throw new PackslipError(
       'PROJECT_MISMATCH',
-      `The signed release list is for ${list.project}, not ${input.project.name}`,
+      `The signed release list is for ${shown(list.project)}, not ${input.project.name}`,
     );
   assertListFresh(list, input.now);
   assertListSequence(list, input.memory?.sequence);

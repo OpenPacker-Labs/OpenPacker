@@ -37,6 +37,9 @@ import {
   renameChild,
   supportsStableHandles,
 } from './handle-path.js';
+import { announceWrite } from './write-observer.js';
+
+export { observeWrites, type WriteObserver } from './write-observer.js';
 
 /** Resolve a command without executing project- or PATH-controlled code. */
 export async function findExecutable(
@@ -119,6 +122,7 @@ export async function writeFileAtomic(
 ): Promise<void> {
   const directory = resolve(dirname(path));
   const name = basename(path);
+  await announceWrite(join(directory, name), contents);
   const parent = await openStableDirectory(directory);
   const temporary = `.${name}.opm-${randomUUID()}.tmp`;
   try {
@@ -202,6 +206,7 @@ export async function assertNamedDirectory(
     );
 }
 
+export type { BoundedListing } from './handle-support.js';
 export {
   assertHandleSegment,
   handlePathForPlatform,
@@ -220,6 +225,8 @@ export {
   windowsNtHandlePathForm,
   StableHandleError,
 } from './handle-path.js';
+
+export { readDirChildBounded } from './handle-bounded.js';
 
 export {
   readlinkChild,
@@ -374,3 +381,5 @@ export {
 } from './member-link.js';
 
 export { packTar, packTarGzip, packZip, type ArchiveEntry } from './archive.js';
+
+export { openStablePath, type StablePathOptions } from './stable-path.js';

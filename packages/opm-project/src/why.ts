@@ -1,7 +1,9 @@
+import { canonicalPurlOrSelf } from './catalog.js';
 import { lockEdges } from './lock-edges.js';
 import { LOCK_NAME, MANIFEST_NAME } from './paths.js';
 import { purlPackageName, stripPurlVersion } from './spec.js';
 import type { LockPackage, OpmLockfile, OpmManifest } from './types.js';
+import { OpmError } from './types.js';
 
 /**
  * Why a package is in the project, answered from the manifest and the lock.
@@ -48,6 +50,55 @@ function packageName(pkg: LockPackage): string {
   return purlPackageName(stripPurlVersion(pkg.purl));
 }
 
+/**
+ * A PURL as the lock spells it, whichever way the npm scope was typed
+ * (`@vercel/sdk` or `%40vercel/sdk`); with `base`, without its version.
+ */
+function canonical(purl: string, base = false): string {
+  return canonicalPurlOrSelf(base ? stripPurlVersion(purl) : purl);
+}
+
+/** The lock keys (and unlocked manifest aliases) a PURL names. */
+function entriesForPurl(
+  manifest: OpmManifest,
+  lock: OpmLockfile | undefined,
+  purl: string,
+): string[] {
+  const versioned = stripPurlVersion(purl) !== purl;
+  const wanted = canonical(purl, !versioned);
+  const keys = new Set<string>();
+  for (const [key, pkg] of Object.entries(lock?.packages ?? {}))
+    if (canonical(pkg.purl, !versioned) === wanted) keys.add(key);
+  if (!versioned)
+    for (const [alias, requirement] of Object.entries(manifest.packages))
+      if (canonical(requirement.purl, true) === wanted) keys.add(alias);
+  return [...keys].sort();
+}
+
+/**
+ * The manifest alias `name` means: the alias itself, or the one direct
+ * requirement a PURL names. Two requirements on one package (a plain one and
+ * an `npm:` alias of it) cannot be told apart by the PURL, so that is refused.
+ */
+export function manifestAliasNamed(
+  manifest: OpmManifest,
+  name: string,
+): string | undefined {
+  if (manifest.packages[name] !== undefined) return name;
+  if (!name.startsWith('pkg:')) return undefined;
+  const wanted = canonical(name, true);
+  const aliases = Object.entries(manifest.packages)
+    .filter(([, requirement]) => canonical(requirement.purl, true) === wanted)
+    .map(([alias]) => alias)
+    .sort();
+  if (aliases.length > 1)
+    throw new OpmError(
+      'AMBIGUOUS_SPEC',
+      `${name} is ${aliases.length} requirements in ${MANIFEST_NAME} (${aliases.join(', ')}); name one by its alias`,
+    );
+  return aliases[0];
+}
+
 /** The lock keys a question about `name` is about. */
 export function entriesNamed(
   manifest: OpmManifest,
@@ -55,6 +106,7 @@ export function entriesNamed(
   name: string,
 ): string[] {
   if (manifest.packages[name] !== undefined) return [name];
+  if (name.startsWith('pkg:')) return entriesForPurl(manifest, lock, name);
   if (lock === undefined) return [];
   if (lock.packages[name] !== undefined) return [name];
   return Object.entries(lock.packages)

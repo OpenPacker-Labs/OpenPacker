@@ -4,7 +4,7 @@
  */
 import type { BinProviderReport } from '@openpacker/opm-project';
 import type { RunContext } from './run-context.js';
-import { RunError } from './run-error.js';
+import { plain, RunError } from './run-error.js';
 import { resolveBin, type BinResolution } from './run-paths.js';
 
 /**
@@ -29,7 +29,11 @@ export async function resolveExecutable(
   return resolution;
 }
 
-function describeProviders(report: BinProviderReport, bin: string): string[] {
+function describeProviders(
+  report: BinProviderReport,
+  bin: string,
+  plainLine: (text: string) => string,
+): string[] {
   if (!report.locked)
     return [
       'This is not an opm project with a lock, so there is nothing to say about which package provides it.',
@@ -43,7 +47,7 @@ function describeProviders(report: BinProviderReport, bin: string): string[] {
       provider.evidence === 'declared'
         ? 'declares it'
         : 'has that name, so it likely does';
-    return `${provider.alias} (${provider.purl}), ${provider.direct ? 'a direct requirement' : 'a dependency'}, ${how}`;
+    return `${plainLine(provider.alias)} (${plainLine(provider.purl)}), ${provider.direct ? 'a direct requirement' : 'a dependency'}, ${how}`;
   });
   const first = report.providers[0];
   const next =
@@ -70,14 +74,15 @@ export async function missingBinError(
   // is loaded only then: a bin that is found never pays for it.
   const { findBinProviders } = await import('@openpacker/opm-project');
   const report = await findBinProviders(root, bin);
+  const plainLine = await plain();
   return new RunError(
     'NOT_FOUND',
     [
-      `"${bin}" is not in node_modules/.bin of ${root} or any parent directory; exec never fetches or searches PATH`,
+      `"${bin}" is not in node_modules/.bin of ${plainLine(root)} or any parent directory; exec never fetches or searches PATH`,
       ...resolution.present.map(
-        (file) => `${file} exists but is not executable`,
+        (file) => `${plainLine(file)} exists but is not executable`,
       ),
-      ...describeProviders(report, bin),
+      ...describeProviders(report, bin, plainLine),
     ].join('\n'),
   );
 }

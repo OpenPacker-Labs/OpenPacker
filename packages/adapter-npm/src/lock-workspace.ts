@@ -22,6 +22,8 @@
 import {
   WorkspaceError,
   compileWorkspacePatterns,
+  echoed,
+  echoedValue,
   nameFromDirectory,
   resolveWorkspaceLimits,
   workspaceNameProblem,
@@ -31,6 +33,7 @@ import type { JsonValue } from '@openpacker/contracts';
 import { posix } from 'node:path';
 import { memberLinkProblem } from '@openpacker/project-io';
 import { linkTargetBetween } from './layout-links.js';
+import { quoted } from './layout-names.js';
 import {
   chainOfLockPath,
   readEntry,
@@ -120,7 +123,7 @@ function normalizedBin(
   const out: Record<string, string> = {};
   for (const [key, path] of Object.entries(value)) {
     if (typeof path !== 'string')
-      throw invalid(`${where}.bin.${key} must be a string`);
+      throw invalid(`${where}.bin.${echoed(key)} must be a string`);
     out[key] = path;
   }
   return out;
@@ -165,13 +168,13 @@ function readMember(
 function targetProblem(target: string): string | undefined {
   if (target === '') return 'has no target';
   if (['\0', '\\'].some((bad) => target.includes(bad)))
-    return `points at ${JSON.stringify(target)}, which is not a path inside the project`;
+    return `points at ${quoted(target)}, which is not a path inside the project`;
   if (target.startsWith('/') || /^[A-Za-z]:/u.test(target))
-    return `points at ${target}, an absolute path; a workspace link points inside the project`;
+    return `points at ${echoedValue(target)}, an absolute path; a workspace link points inside the project`;
   if (posix.normalize(target) !== target || target.endsWith('/'))
-    return `points at ${JSON.stringify(target)}, which is not in normal form`;
+    return `points at ${quoted(target)}, which is not in normal form`;
   if (target === '..' || target.startsWith('../'))
-    return `points at ${target}, which leaves the project root`;
+    return `points at ${echoedValue(target)}, which leaves the project root`;
   if (target === '.') return 'points at the project root itself';
   return undefined;
 }
@@ -183,7 +186,7 @@ function sameNameProblem(members: readonly LockMember[]): void {
   for (const [name, dirs] of byName)
     if (dirs.length > 1)
       throw invalid(
-        `${dirs.length === 2 ? 'Two' : dirs.length} workspace members are named ${JSON.stringify(name)}: ${dirs.join(', ')}`,
+        `${dirs.length === 2 ? 'Two' : dirs.length} workspace members are named ${quoted(name)}: ${dirs.map((dir) => echoedValue(dir)).join(', ')}`,
       );
 }
 
@@ -211,14 +214,14 @@ export function readLockWorkspace(
     if (error instanceof WorkspaceError) throw invalid(error.message);
     throw error;
   }
-  const selects = `the lock's workspaces select ${patterns.length === 0 ? 'nothing' : patterns.join(', ')}`;
+  const selects = `the lock's workspaces select ${patterns.length === 0 ? 'nothing' : patterns.map((pattern) => echoedValue(pattern)).join(', ')}`;
   const refused: { path: string; reason: string }[] = [];
   const members: LockMember[] = [];
   const nested: [string, Record<string, unknown>][] = [];
   for (const [path, record] of [...input.foreign].sort(([a], [b]) =>
     a < b ? -1 : a > b ? 1 : 0,
   )) {
-    const where = `packages[${JSON.stringify(path)}]`;
+    const where = `packages[${quoted(path)}]`;
     if (path.includes('/node_modules/')) {
       nested.push([path, record]);
       continue;
@@ -245,22 +248,22 @@ export function readLockWorkspace(
 
   const entries: LockEntry[] = [];
   for (const [path, record] of nested) {
-    const where = `packages[${JSON.stringify(path)}]`;
+    const where = `packages[${quoted(path)}]`;
     const split = splitNestedLockPath(path)!;
     if (!byDir.has(split.directory)) {
       refused.push({
         path,
-        reason: `inside ${split.directory}, which is not a workspace member (${selects})`,
+        reason: `inside ${echoedValue(split.directory)}, which is not a workspace member (${selects})`,
       });
       continue;
     }
     const chain = chainOfLockPath(split.place);
     if (chain === undefined)
-      throw invalid(`The lock path ${JSON.stringify(path)} is malformed`);
+      throw invalid(`The lock path ${quoted(path)} is malformed`);
     if (flag(record, 'link', where)) {
       refused.push({
         path,
-        reason: `a link inside the workspace member ${split.directory}; only a member's name directly in the project's node_modules is linked`,
+        reason: `a link inside the workspace member ${echoedValue(split.directory)}; only a member's name directly in the project's node_modules is linked`,
       });
       continue;
     }
@@ -268,7 +271,7 @@ export function readLockWorkspace(
     if (entry.inBundle && chain.length === 1) {
       refused.push({
         path,
-        reason: `${entry.packageName}@${entry.version} is bundled in the workspace member ${split.directory}, a directory with no archive to take it from`,
+        reason: `${echoedValue(entry.packageName)}@${echoedValue(entry.version)} is bundled in the workspace member ${echoedValue(split.directory)}, a directory with no archive to take it from`,
       });
       continue;
     }
@@ -308,7 +311,7 @@ export function readLockWorkspace(
       answerFor(name);
       refused.push({
         path: link.path,
-        reason: `a link to ${link.target}, which is not a workspace member (${selects}); only a workspace member may be linked`,
+        reason: `a link to ${echoedValue(link.target)}, which is not a workspace member (${selects}); only a workspace member may be linked`,
       });
       continue;
     }
@@ -317,7 +320,7 @@ export function readLockWorkspace(
       answerFor(name);
       refused.push({
         path: link.path,
-        reason: `a link named ${name} to the member ${member.name} (${member.dir}); a member is linked under its own name only`,
+        reason: `a link named ${name} to the member ${member.name} (${echoedValue(member.dir)}); a member is linked under its own name only`,
       });
       continue;
     }
@@ -329,7 +332,7 @@ export function readLockWorkspace(
       answered.add(member.dir);
       refused.push({
         path: link.path,
-        reason: `a link to ${member.dir} that the layout's link rules refuse (${rule})`,
+        reason: `a link to ${echoedValue(member.dir)} that the layout's link rules refuse (${echoed(rule)})`,
       });
       continue;
     }
@@ -339,7 +342,7 @@ export function readLockWorkspace(
   for (const member of members)
     if (!linked.has(member.dir) && !answered.has(member.dir))
       throw invalid(
-        `The workspace member ${member.name} (${member.dir}) has no node_modules/${member.name} link in the lock (npm ci would refuse too)`,
+        `The workspace member ${member.name} (${echoedValue(member.dir)}) has no node_modules/${member.name} link in the lock (npm ci would refuse too)`,
       );
   return {
     patterns,

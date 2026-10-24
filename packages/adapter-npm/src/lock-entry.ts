@@ -9,7 +9,7 @@
  * (`member`) because the placement is part of what the lock pins.
  */
 
-import { unsafeNameProblem } from './layout-plan.js';
+import { quoted, unsafeNameProblem } from './layout-plan.js';
 import {
   flag,
   invalid,
@@ -74,22 +74,22 @@ export function chainOfLockPath(path: string): string[] | undefined {
   let at = 0;
   while (at < segments.length) {
     if (segments[at] !== 'node_modules')
-      throw invalid(`The lock path ${JSON.stringify(path)} is malformed`);
+      throw invalid(`The lock path ${quoted(path)} is malformed`);
     at += 1;
     let name = segments[at];
     if (name === undefined || name === '')
-      throw invalid(`The lock path ${JSON.stringify(path)} is malformed`);
+      throw invalid(`The lock path ${quoted(path)} is malformed`);
     at += 1;
     if (name.startsWith('@')) {
       const second = segments[at];
       if (second === undefined || second === '')
-        throw invalid(`The lock path ${JSON.stringify(path)} is malformed`);
+        throw invalid(`The lock path ${quoted(path)} is malformed`);
       name = `${name}/${second}`;
       at += 1;
     }
     const problem = unsafeNameProblem(name);
     if (problem !== undefined)
-      throw invalid(`The lock path ${JSON.stringify(path)}: ${problem}`);
+      throw invalid(`The lock path ${quoted(path)}: ${problem}`);
     chain.push(name);
   }
   return chain;

@@ -7,6 +7,7 @@ import type {
 import {
   ProviderError,
   compareCodePoints,
+  echoed,
   formatPurl,
   packageNodeId,
   parsePurl,
@@ -75,7 +76,10 @@ export function splitDerivationName(value: string) {
 export function parseStorePath(value: string): NixStorePath {
   const match = STORE_PATH.exec(value.trim());
   if (!match?.[1] || !match[2])
-    throw new ProviderError('INVALID_PURL', `Not a Nix store path: ${value}`);
+    throw new ProviderError(
+      'INVALID_PURL',
+      `Not a Nix store path: ${echoed(value)}`,
+    );
   const { name, version } = splitDerivationName(match[2]);
   return {
     hash: match[1],
@@ -109,7 +113,7 @@ export class NixCodec implements EcosystemCodec {
     if (parsed.type !== NIX_PURL_TYPE)
       throw new ProviderError(
         'INVALID_PURL',
-        `Expected a ${NIX_PURL_TYPE} PURL: ${value}`,
+        `Expected a ${NIX_PURL_TYPE} PURL: ${echoed(value)}`,
       );
     if (parsed.namespace !== undefined)
       throw new ProviderError(
@@ -198,8 +202,8 @@ export class NixCodec implements EcosystemCodec {
             loss(
               'NIX_RANGE_NOT_REPRESENTED',
               '/range',
-              `the native constraint ${original} is not an exact version`,
-              `represented as the exact version ${exact}`,
+              `the native constraint ${echoed(original)} is not an exact version`,
+              `represented as the exact version ${echoed(exact)}`,
               'warning',
             ),
           ],
@@ -302,7 +306,7 @@ export class NixCodec implements EcosystemCodec {
         loss(
           'CONTENT_ADDRESS_UNSUPPORTED',
           '/narHash',
-          `the store entry declares narHash ${record.narHash}`,
+          `the store entry declares narHash ${echoed(record.narHash)}`,
           'the hash algorithm is not representable as a PREX sha256 digest',
           'error',
         ),

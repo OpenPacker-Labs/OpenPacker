@@ -13,6 +13,7 @@ import {
   assertPackageIdentityMatchesRequest,
   compareParsedVersions,
   compareCodePoints,
+  echoed,
   evaluateSemverRange,
   encodeUrlPathComponent,
   formatPurl,
@@ -148,7 +149,7 @@ export class CargoCodec
     if (!match)
       throw new ProviderError(
         'INVALID_NATIVE_COORDINATE',
-        `Invalid Cargo coordinate: ${value}`,
+        `Invalid Cargo coordinate: ${echoed(value)}`,
       );
     return {
       ecosystem: 'cargo',
@@ -234,7 +235,7 @@ export class CargoCodec
                   'cargo',
                   'CARGO_CFG_PRESERVED_NATIVE',
                   `/deps/${index}/target`,
-                  `Cargo cfg expression ${dependency.target} is preserved for a native validator`,
+                  `Cargo cfg expression ${echoed(dependency.target)} is preserved for a native validator`,
                   undefined,
                   'error',
                 ),
@@ -525,7 +526,7 @@ export class CargoSparseProvider implements CatalogProvider {
     if (!metadata)
       throw new ProviderError(
         'VERSION_NOT_FOUND',
-        `${canonical} is absent from the sparse index`,
+        `${echoed(canonical)} is absent from the sparse index`,
       );
     const metadataDigest = await canonicalDigest(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -571,7 +572,7 @@ export class CargoSparseProvider implements CatalogProvider {
     if (!parsed.version)
       throw new ProviderError(
         'ARTIFACT_NOT_FOUND',
-        `No exact crate coordinate for ${exactPurl}`,
+        `No exact crate coordinate for ${echoed(exactPurl)}`,
       );
     const url = `${this.downloadEndpoint}/${parsed.name}/${parsed.name}-${parsed.version}.crate`;
     const response = await this.transport.request({
@@ -724,7 +725,7 @@ export class CargoSparseProvider implements CatalogProvider {
       if (!existing)
         throw new ProviderError(
           'STALE_METADATA',
-          `Received 304 without cached metadata for ${key}`,
+          `Received 304 without cached metadata for ${echoed(key)}`,
           304,
         );
       const revalidated = { ...existing, retrievedAt: this.clock.now() };

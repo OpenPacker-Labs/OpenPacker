@@ -88,6 +88,7 @@ describe('opm gc --shared', () => {
     const real = capture();
     expect(await runOpm(['gc', '--shared'], real.io, shared)).toBe(0);
     expect(real.out).toContain('Removed 1 unreferenced entry');
+    expect(real.out).toContain('0 in use by an install in progress');
     expect(await readdir(shared)).toEqual([]);
   });
 

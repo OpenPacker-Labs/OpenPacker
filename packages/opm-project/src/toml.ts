@@ -1,4 +1,8 @@
-import { normalizePinnedOrigin, ProviderError } from '@openpacker/adapter-core';
+import {
+  echoed,
+  normalizePinnedOrigin,
+  ProviderError,
+} from '@openpacker/adapter-core';
 import type { JsonValue, PolicyInput } from '@openpacker/contracts';
 import type {
   NativeProjectionLevel,
@@ -393,7 +397,7 @@ export function parseManifest(text: string): OpmManifest {
         if (!PACK_PROVIDER_ID.test(packProviderId))
           throw new OpmError(
             'INVALID_MANIFEST',
-            `Invalid pack provider id "${packProviderId}" at line ${i + 1}`,
+            `Invalid pack provider id "${echoed(packProviderId)}" at line ${i + 1}`,
           );
         packageAlias = undefined;
         sandboxPackageId = undefined;
@@ -408,7 +412,7 @@ export function parseManifest(text: string): OpmManifest {
         if (!PLUGIN_ID.test(pluginId))
           throw new OpmError(
             'INVALID_MANIFEST',
-            `Invalid plugin id "${pluginId}" at line ${i + 1}`,
+            `Invalid plugin id "${echoed(pluginId)}" at line ${i + 1}`,
           );
         packageAlias = undefined;
         sandboxPackageId = undefined;
@@ -426,7 +430,7 @@ export function parseManifest(text: string): OpmManifest {
       } else {
         throw new OpmError(
           'INVALID_MANIFEST',
-          `Unsupported TOML section [${name}] at line ${i + 1}`,
+          `Unsupported TOML section [${echoed(name)}] at line ${i + 1}`,
         );
       }
       continue;
@@ -436,7 +440,7 @@ export function parseManifest(text: string): OpmManifest {
     if (!kv) {
       throw new OpmError(
         'INVALID_MANIFEST',
-        `Invalid TOML assignment at line ${i + 1}: ${raw}`,
+        `Invalid TOML assignment at line ${i + 1}: ${echoed(raw)}`,
       );
     }
     const key = kv[1] ?? '';
@@ -468,7 +472,7 @@ export function parseManifest(text: string): OpmManifest {
       } else if (key === 'layout')
         throw new OpmError(
           'INVALID_MANIFEST',
-          `Unsupported layout "${String(value)}" (v1 only supports "opm")`,
+          `Unsupported layout "${echoed(String(value))}" (v1 only supports "opm")`,
         );
       else
         throw new OpmError(
@@ -634,7 +638,7 @@ export function parseManifest(text: string): OpmManifest {
         if (!isRequirementScope(value))
           throw new OpmError(
             'INVALID_MANIFEST',
-            `packages.${packageAlias}.scope must be runtime|development|optional|peer|build (line ${i + 1})`,
+            `packages.${echoed(packageAlias)}.scope must be runtime|development|optional|peer|build (line ${i + 1})`,
           );
         scratch.scope = value;
       } else if (key === 'install_name') {
@@ -664,7 +668,7 @@ export function parseManifest(text: string): OpmManifest {
     if (!scratch.purl) {
       throw new OpmError(
         'INVALID_MANIFEST',
-        `Package "${alias}" is missing required purl`,
+        `Package "${echoed(alias)}" is missing required purl`,
       );
     }
     const requirement: PackageRequirement = {
@@ -682,7 +686,7 @@ export function parseManifest(text: string): OpmManifest {
       if (names.length !== paths.length) {
         throw new OpmError(
           'INVALID_MANIFEST',
-          `Package "${alias}" bin_names/bin_paths length mismatch`,
+          `Package "${echoed(alias)}" bin_names/bin_paths length mismatch`,
         );
       }
       requirement.bins = names.map((name, index) => ({
@@ -699,7 +703,7 @@ export function parseManifest(text: string): OpmManifest {
       if (!scratch.url)
         throw new OpmError(
           'INVALID_MANIFEST',
-          `Registry "${id}" is missing required url`,
+          `Registry "${echoed(id)}" is missing required url`,
         );
       registries[id] = {
         id,
@@ -718,12 +722,12 @@ export function parseManifest(text: string): OpmManifest {
       if (!scratch.manifest)
         throw new OpmError(
           'INVALID_MANIFEST',
-          `Pack provider "${id}" is missing required manifest`,
+          `Pack provider "${echoed(id)}" is missing required manifest`,
         );
       if (!scratch.executable)
         throw new OpmError(
           'INVALID_MANIFEST',
-          `Pack provider "${id}" is missing required executable`,
+          `Pack provider "${echoed(id)}" is missing required executable`,
         );
       providers[id] = {
         manifest: scratch.manifest,
@@ -745,7 +749,7 @@ export function parseManifest(text: string): OpmManifest {
       if (!scratch.store_digest)
         throw new OpmError(
           'INVALID_MANIFEST',
-          `Plugin "${id}" is missing required store_digest`,
+          `Plugin "${echoed(id)}" is missing required store_digest`,
         );
       plugins[id] = {
         storeDigest: assertDigest(scratch.store_digest),
@@ -1216,8 +1220,7 @@ function parseTomlValue(
         `Unterminated string at line ${line}`,
       );
     }
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    return JSON.parse(value) as string;
+    return parseTomlString(value, line);
   }
   if (value.startsWith('[')) {
     if (!value.endsWith(']')) {
@@ -1248,16 +1251,32 @@ function parseTomlValue(
           `Array item ${index + 1} must be a string at line ${line}`,
         );
       }
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      return JSON.parse(item) as string;
+      return parseTomlString(item, line);
     });
   }
   // bare identifier (rare) — treat as string
   if (/^[A-Za-z0-9_./:@%+-]+$/.test(value)) return value;
   throw new OpmError(
     'INVALID_MANIFEST',
-    `Unsupported TOML value at line ${line}: ${raw}`,
+    `Unsupported TOML value at line ${line}: ${echoed(raw)}`,
   );
+}
+
+/**
+ * The text a quoted TOML string holds. The reader takes the JSON escapes, so a
+ * string that JSON refuses (`"a" "b"`, `"a\q"`, a triple-quoted string) is a
+ * manifest that is refused, not an uncoded `SyntaxError` from the parser.
+ */
+function parseTomlString(quoted: string, line: number): string {
+  try {
+    // SAFETY: a JSON string literal parses to a string.
+    return JSON.parse(quoted) as string;
+  } catch {
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      `Invalid string at line ${line}: ${echoed(quoted)}`,
+    );
+  }
 }
 
 function tomlString(value: string): string {
@@ -1300,7 +1319,10 @@ const PLUGIN_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/u;
 
 function packProviderKey(id: string): string {
   if (!PACK_PROVIDER_ID.test(id))
-    throw new OpmError('INVALID_MANIFEST', `Invalid pack provider id "${id}"`);
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      `Invalid pack provider id "${echoed(id)}"`,
+    );
   return id;
 }
 
@@ -1413,7 +1435,7 @@ function parsePluginArtifactOrigins(values: readonly string[]): string[] {
     if (seen.has(origin))
       throw new OpmError(
         'INVALID_MANIFEST',
-        `Plugin artifact_origins lists duplicate origin ${origin}`,
+        `Plugin artifact_origins lists duplicate origin ${echoed(origin)}`,
       );
     seen.add(origin);
     origins.push(origin);

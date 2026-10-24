@@ -336,7 +336,7 @@ describe('the shared entry', () => {
     ).rejects.toThrow(new RegExp(`remove ${join(shared, key)}`, 'u'));
   });
 
-  it('is published again, not failed, when it is collected between publishing and linking', async () => {
+  it('is published again, not failed, when something that ignores claims removes it between publishing and linking', async () => {
     const shared = await tempDir('opm-shared-');
     const { bytes, digest } = archive();
     const key = storeKeyFromDigest(digest);
@@ -350,7 +350,9 @@ describe('the shared entry', () => {
       env,
     });
     await rm(earlier, { recursive: true });
-    // Nothing links to it now, so a concurrent `opm gc --shared` may take it.
+    // Nothing links to it now. `opm gc --shared` leaves it while this install
+    // claims it (see shared-store.gc-race.test.ts); a remover that does not
+    // honour claims (an older opm, a person) may still take it.
     let collected = false;
     let fetches = 0;
     const project = await tempDir('opm-proj-');
@@ -367,7 +369,7 @@ describe('the shared entry', () => {
       linkFile: async (existing, target) => {
         if (!collected) {
           collected = true;
-          await collectSharedStore({ env, minimumAgeMs: 0 });
+          await rm(join(shared, key), { recursive: true, force: true });
         }
         const { link } = await import('node:fs/promises');
         await link(existing, target);
@@ -567,6 +569,7 @@ describe('opm gc --shared', () => {
       removed: [],
       referenced: 0,
       tooNew: 0,
+      held: 0,
     });
     expect(
       await collectSharedStore({ env: { OPM_STORE_HOME: 'off' } }),

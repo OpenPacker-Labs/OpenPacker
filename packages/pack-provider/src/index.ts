@@ -7,11 +7,14 @@ export {
   inspectDelegatedExecutable,
   openDelegatedExecutable,
   MAX_DELEGATED_EXECUTABLE_BYTES,
+  UNSUPPORTED_PLATFORM,
+  delegatedExecutionRefusal,
   type DelegatedExecutableAuthority,
   type DelegatedExecutableIdentity,
   type InspectDelegatedExecutable,
   type OpenDelegatedExecutableAuthority,
 } from './executable.js';
+export type { CollectionReads } from './collect.js';
 export {
   ManifestPackagePacker,
   manifestPackagePackers,

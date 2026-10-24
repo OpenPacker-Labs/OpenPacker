@@ -3,6 +3,7 @@ import {
   satisfiesRequest,
   type VersionRequest,
 } from './version.js';
+import { shown } from './shown.js';
 
 /**
  * A release a consumer could install, as discovery describes it. Discovery is
@@ -112,7 +113,7 @@ export function rankCandidates(
     known === undefined
       ? 'it is not among the discovered releases'
       : known.yanked
-        ? `it was withdrawn${known.yankReason === undefined ? '' : ` (${known.yankReason})`}`
+        ? `it was withdrawn${known.yankReason === undefined ? '' : ` (${shown(known.yankReason)})`}`
         : 'it does not satisfy the prerelease policy';
   return { ordered: eligible, skipped: { recommendation, reason } };
 }

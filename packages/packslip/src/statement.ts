@@ -24,6 +24,7 @@ import type {
 } from './types.js';
 import { RELEASE_PREDICATE } from './types.js';
 import { assertSemver } from './version.js';
+import { shown } from './shown.js';
 
 function invalid(message: string): PackslipError {
   return new PackslipError('INVALID_STATEMENT', message);
@@ -41,7 +42,7 @@ function archivePath(reader: ObjectReader, key: string, raw: string): string {
   )
     throw reader.fail(
       `${reader.path}.${key}`,
-      `"${raw}" must be a relative path inside the archive`,
+      `"${shown(raw)}" must be a relative path inside the archive`,
     );
   return path;
 }
@@ -52,7 +53,7 @@ function commandName(reader: ObjectReader, key: string, raw: string): string {
   if (name === '' || /[\\/\0]/u.test(name))
     throw reader.fail(
       `${reader.path}.${key}`,
-      `"${raw}" must be a command name, not a path`,
+      `"${shown(raw)}" must be a command name, not a path`,
     );
   return name;
 }
@@ -285,10 +286,10 @@ function checkRelations(
   const kinds = new Set<string>();
   for (const artifact of artifacts) {
     if (artifactNames.has(artifact.name))
-      throw invalid(`artifact "${artifact.name}" appears twice`);
+      throw invalid(`artifact "${shown(artifact.name)}" appears twice`);
     artifactNames.add(artifact.name);
     if (!subjectNames.has(artifact.name))
-      throw invalid(`artifact "${artifact.name}" has no subject digest`);
+      throw invalid(`artifact "${shown(artifact.name)}" has no subject digest`);
     // Two artifacts nothing tells apart cannot be chosen between.
     const kind = [
       artifact.os,

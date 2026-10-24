@@ -12,6 +12,8 @@ import {
   transportForSources,
 } from '../src/frozen-fetch.js';
 
+/** Stands for a credential a lock holds in an address. */
+const CANARY = 'vtok_dummy_marker_0123456789abcdef';
 const PUBLIC = [{ address: '104.16.0.1', family: 4 }];
 const PRIVATE = [{ address: '10.0.0.7', family: 4 }];
 
@@ -55,6 +57,18 @@ describe('the transport a lock allows', () => {
       transport.request({ url: 'https://evil.example.net/a/-/a-1.0.0.tgz' }),
     ).rejects.toThrow(/not allowed|origin/iu);
     expect(fetcher.urls).toEqual(['https://npm.example.com/b/-/b-1.0.0.tgz']);
+  });
+
+  it('does not print the userinfo, query or fragment of a source it cannot fetch', () => {
+    const source = `https://u:${CANARY}@ho st/x.tgz?q=${CANARY}#${CANARY}`;
+    let message = '';
+    try {
+      transportForSources('npm', [source], {});
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toBe('https:[address withheld] is not a URL opm can fetch');
+    expect(message).not.toContain(CANARY);
   });
 
   it('does not follow a redirect to a host the lock did not name', async () => {
@@ -173,6 +187,20 @@ describe('downloadArchive', () => {
       ),
     });
     expect(transport.calls).toBe(3);
+  });
+
+  it('does not print the credentials of an address a URL parser refuses', async () => {
+    const transport = transportOf(() => new TypeError('fetch failed'));
+    const error = await downloadArchive(
+      transport,
+      `https://u:${CANARY}@ho st/a.tgz?t=${CANARY}#${CANARY}`,
+      'a@1.0.0',
+    ).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({
+      code: 'FETCH_FAILED',
+      message:
+        'Failed to fetch a@1.0.0 from https:[address withheld]: fetch failed',
+    });
   });
 
   it('does not retry an answer', async () => {

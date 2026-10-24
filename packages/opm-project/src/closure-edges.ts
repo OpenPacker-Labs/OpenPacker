@@ -80,6 +80,9 @@ export function assignEdges(selected: readonly PackageInstance[]): {
     byBase.set(base, [...(byBase.get(base) ?? []), instance]);
   }
   for (const [base, versions] of byBase) {
+    // One version has nothing to be ordered against, and an ecosystem whose
+    // adapter serves a catalog and no codec (a plugin's) is not asked for one.
+    if (versions.length < 2) continue;
     const codec = codecFor(versions[0]!.identity.purlType);
     byBase.set(
       base,

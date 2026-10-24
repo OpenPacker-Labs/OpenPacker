@@ -9,6 +9,7 @@
  */
 
 import type { Dirent } from 'node:fs';
+import type { BoundedListing } from './handle-support.js';
 
 const STATUS_SUCCESS = 0;
 const STATUS_NO_MORE_FILES = 0x80000006;
@@ -31,6 +32,20 @@ export function listNtDirectory(
   fd: number,
   fail: (status: number, name: string) => never,
 ): Dirent[] {
+  return scanNtDirectory(api, fd, fail, Number.POSITIVE_INFINITY).entries;
+}
+
+/**
+ * `listNtDirectory` that stops querying at the first entry past `limit`, so a
+ * directory of millions of names is never held in memory. When it stops early
+ * `exceeded` is true and the entries are the ones read so far.
+ */
+export function scanNtDirectory(
+  api: NtQueryDirectory,
+  fd: number,
+  fail: (status: number, name: string) => never,
+  limit: number,
+): BoundedListing {
   const osHandle = api.getOsFHandle(fd);
   const buffer = Buffer.alloc(16 * 1024);
   const iosb = Buffer.alloc(16);
@@ -67,13 +82,15 @@ export function listNtDirectory(
         offset + 64,
         offset + 64 + nameLength,
       );
-      if (name !== '.' && name !== '..')
+      if (name !== '.' && name !== '..') {
+        if (entries.length >= limit) return { entries, exceeded: true };
         entries.push(ntDirent(name, attributes));
+      }
       if (next === 0) break;
       offset += next;
     }
   }
-  return entries;
+  return { entries, exceeded: false };
 }
 
 function ntDirent(name: string, attributes: number): Dirent {

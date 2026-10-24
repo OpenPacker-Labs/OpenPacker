@@ -1,8 +1,8 @@
+import { echoed } from '@openpacker/adapter-core';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, type FileHandle } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { quote } from 'shell-quote';
 import {
   OpmError,
   type BinDeclaration,
@@ -29,6 +29,7 @@ import {
 } from './paths.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
 import { readProjectState, writeProjectState } from './install.js';
+import { projectStep, type StepOptions } from './project-step.js';
 import { collectFilesFromHandle } from '@openpacker/project-io';
 
 /**
@@ -241,7 +242,7 @@ export async function readStoreReferences(
     if (parsed.referencesVersion !== '1')
       throw new OpmError(
         'INVALID_INPUT',
-        `Unsupported store reference version: ${String(parsed.referencesVersion)}`,
+        `Unsupported store reference version: ${echoed(String(parsed.referencesVersion))}`,
       );
     return { referencesVersion: '1', edges: parsed.edges ?? {} };
   } catch (error) {
@@ -309,7 +310,7 @@ function generationFile(generations: string, digest: string): string {
   if (!/^[0-9a-f]{64}$/u.test(name))
     throw new OpmError(
       'INVALID_DIGEST',
-      `Invalid generation digest: ${digest}`,
+      `Invalid generation digest: ${echoed(digest)}`,
     );
   return resolveContained(generations, `${name}.json`);
 }
@@ -349,7 +350,7 @@ export async function readGeneration(
   const handle = await openStableDirectory(paths.generations).catch((error) => {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-      throw new OpmError('NOT_FOUND', `Unknown generation: ${digest}`);
+      throw new OpmError('NOT_FOUND', `Unknown generation: ${echoed(digest)}`);
     throw error;
   });
   try {
@@ -358,7 +359,7 @@ export async function readGeneration(
   } catch (error) {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-      throw new OpmError('NOT_FOUND', `Unknown generation: ${digest}`);
+      throw new OpmError('NOT_FOUND', `Unknown generation: ${echoed(digest)}`);
     throw error;
   } finally {
     await handle.close();
@@ -372,7 +373,7 @@ function parseGeneration(text: string, digest: string): Generation {
   if (stored !== digest || stored !== generationDigest(body))
     throw new OpmError(
       'DIGEST_MISMATCH',
-      `Generation ${digest} does not match its recorded digest`,
+      `Generation ${echoed(digest)} does not match its recorded digest`,
     );
   if (
     generation.generationVersion !== '1' &&
@@ -577,6 +578,14 @@ export async function recordGeneration(input: {
 export async function switchGeneration(input: {
   root: string;
   target: string | number;
+  step?: StepOptions;
+}): Promise<Generation> {
+  return projectStep(input.root, input.step, () => switchInStep(input));
+}
+
+async function switchInStep(input: {
+  root: string;
+  target: string | number;
 }): Promise<Generation> {
   const state = await readEnvironmentState(input.root);
   if (!state)
@@ -698,9 +707,21 @@ export async function collectGarbage(input: {
   root: string;
   keep?: number;
   dryRun?: boolean;
+  step?: StepOptions;
+}): Promise<{ removed: string[]; retained: Generation[] }> {
+  // A dry run changes nothing, so it takes no step.
+  if (input.dryRun) {
+    const { collectable, retained } = await collectableStorePaths(input);
+    return { removed: collectable, retained };
+  }
+  return projectStep(input.root, input.step, () => collectInStep(input));
+}
+
+async function collectInStep(input: {
+  root: string;
+  keep?: number;
 }): Promise<{ removed: string[]; retained: Generation[] }> {
   const { collectable, retained } = await collectableStorePaths(input);
-  if (input.dryRun) return { removed: collectable, retained };
 
   for (const path of collectable) {
     await removeStableTree(path);
@@ -751,74 +772,6 @@ export async function collectGarbage(input: {
 }
 
 /**
- * The environment a shell should see for a generation: the bin directories
- * that generation's members provide, newest first.
- *
- * This is derived from the record rather than stored, so it is regenerable and
- * an interrupted switch cannot leave it half-written.
- */
-export async function environmentVariables(input: {
-  root: string;
-  generation?: Generation;
-}): Promise<Record<string, string>> {
-  const paths = environmentPaths(input.root);
-  const state = await readEnvironmentState(input.root);
-  const generation =
-    input.generation ??
-    (state
-      ? await readGeneration(input.root, state.currentGenerationDigest)
-      : undefined);
-  // A directory containing ':' cannot be expressed in PATH at all. Checked
-  // here, where PATH is built, rather than in the script writer: every
-  // consumer — `opm shell`, `--json`, anything embedding these variables —
-  // gets a truncated search path otherwise, and only one of them was quoting.
-  if (paths.bin.includes(':'))
-    throw new OpmError(
-      'UNSAFE_PATH',
-      `The project bin directory contains ':', which PATH cannot represent: ${paths.bin}`,
-    );
-  return {
-    OPM_PROJECT_ROOT: paths.root,
-    OPM_BIN: paths.bin,
-    ...(generation && {
-      OPM_GENERATION: String(generation.sequence),
-      OPM_ENVIRONMENT: generation.environmentName,
-    }),
-    PATH: [paths.bin, process.env.PATH ?? ''].filter(Boolean).join(':'),
-  };
-}
-
-/**
- * Quote a value for POSIX `sh`.
- *
- * Delegated to `shell-quote` rather than written here. The bug this replaced
- * used `JSON.stringify`, where `$`, a backtick and `\` stay live, so a project
- * directory named `demo$(...)` executed under the documented
- * `eval "$(opm shell)"`. Shell quoting has more edge cases than it appears to
- * — `!` under history expansion, `#`, globs, embedded quotes — and getting
- * them right is not this project's problem to solve.
- */
-export function shellQuote(value: string): string {
-  return quote([value]);
-}
-
-/**
- * The environment as `export` statements for `eval "$(opm shell)"`.
- *
- * Variable names are fixed constants rather than data, so only values need
- * quoting; a caller adding a dynamic name would have to validate it here.
- */
-export async function environmentScript(input: {
-  root: string;
-  generation?: Generation;
-}): Promise<string> {
-  const environment = await environmentVariables(input);
-  return Object.entries(environment)
-    .map(([name, value]) => `export ${name}=${shellQuote(value)}\n`)
-    .join('');
-}
-
-/**
  * Rebuild the derived view for a generation from its own record plus store
  * content.
  *
@@ -849,7 +802,7 @@ export async function activateGeneration(input: {
       if (aliases.has(alias))
         throw new OpmError(
           'INVALID_STATE',
-          `Generation ${input.generation.sequence} declares duplicate alias ${alias}`,
+          `Generation ${input.generation.sequence} declares duplicate alias ${echoed(alias)}`,
         );
       aliases.add(alias);
       const expected = storePathForDigest(input.root, member.digest);
@@ -880,7 +833,7 @@ export async function activateGeneration(input: {
         await handle.close();
         throw new OpmError(
           'INVALID_STATE',
-          `Generation ${input.generation.sequence} has invalid purl ${member.purl}`,
+          `Generation ${input.generation.sequence} has invalid purl ${echoed(member.purl)}`,
         );
       }
       try {
@@ -934,7 +887,7 @@ export async function activateGeneration(input: {
           if (binNames.has(name))
             throw new OpmError(
               'INVALID_STATE',
-              `Generation ${input.generation.sequence} declares duplicate bin ${name}`,
+              `Generation ${input.generation.sequence} declares duplicate bin ${echoed(name)}`,
             );
           binNames.add(name);
         }

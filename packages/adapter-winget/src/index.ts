@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { platform } from 'node:os';
 import { promisify } from 'node:util';
 import {
+  echoed,
   ProviderError,
   formatPurl,
   parsePurl,
@@ -70,7 +71,7 @@ function wingetId(exactPurl: string) {
   if (parsed.type !== 'winget')
     throw new ProviderError(
       'INVALID_PURL',
-      `Not a winget PURL: ${exactPurl} (expected pkg:winget/...)`,
+      `Not a winget PURL: ${echoed(exactPurl)} (expected pkg:winget/...)`,
     );
   const id = [parsed.namespace, parsed.name]
     .filter((part): part is string => part !== undefined && part !== '')
@@ -78,7 +79,7 @@ function wingetId(exactPurl: string) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/u.test(id) || id.includes('..'))
     throw new ProviderError(
       'INVALID_PURL',
-      `Not a valid winget package identifier: ${id}`,
+      `Not a valid winget package identifier: ${echoed(id)}`,
     );
   if (
     parsed.version !== undefined &&
@@ -86,7 +87,7 @@ function wingetId(exactPurl: string) {
   )
     throw new ProviderError(
       'INVALID_PURL',
-      `Not a valid winget version: ${parsed.version}`,
+      `Not a valid winget version: ${echoed(parsed.version)}`,
     );
   return {
     id,
@@ -265,7 +266,7 @@ export class WingetSystemProvider implements InstallerProvider {
     if (!publisher || rest.length === 0)
       throw new ProviderError(
         'INVALID_PURL',
-        `A winget identifier is Publisher.Package: ${id}`,
+        `A winget identifier is Publisher.Package: ${echoed(id)}`,
       );
     return formatPurl({
       type: 'winget',
