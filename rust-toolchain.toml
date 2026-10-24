@@ -1,6 +1,10 @@
 # The Rust every workflow installs (dtolnay/rust-toolchain@1.88.0) and the
 # workspace's rust-version. Without this file a local cargo uses whatever the
-# rustup default is, and a newer clippy refuses code 1.88 accepts.
+# rustup default is, and a newer clippy refuses code 1.88 accepts. rustup
+# installs the listed components and targets with the toolchain: clippy and
+# rustfmt for `check:rust`, and wasm32 for the embedded package's wasm binding,
+# which `build:wasm` skips (or refuses under OPENPACKER_REQUIRE_WASM) without it.
 [toolchain]
 channel = "1.88.0"
 components = ["clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]
