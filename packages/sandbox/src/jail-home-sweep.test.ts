@@ -1,6 +1,8 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
+  chmod,
+  chown,
   lstat,
   mkdir,
   readdir,
@@ -305,6 +307,53 @@ describe('a home swapped for a link after it was listed', () => {
     );
     expect((await lstat(home)).isSymbolicLink()).toBe(true);
     expect(present([join(decoy, OWNER_FILE)])).toEqual([true]);
+  });
+});
+
+describe('the jail root', () => {
+  it('is refused when its group or others may write it', async () => {
+    await ownTmpdir();
+    const root = defaultJailHomeRoot();
+    await chmod(root, 0o777);
+    await expect(aRun()).rejects.toThrow(
+      /can be written by its group or by others \(mode 777\)/u,
+    );
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  it.runIf(process.geteuid?.() === 0)(
+    'is refused when another user owns it',
+    async () => {
+      await ownTmpdir();
+      const root = defaultJailHomeRoot();
+      await chown(root, 65534, 65534);
+      await expect(aRun()).rejects.toThrow(
+        /is owned by uid 65534, not by this user/u,
+      );
+      expect(await readdir(root)).toEqual([]);
+    },
+  );
+
+  it('is where a run removes its own home, though its path came to be a link', async () => {
+    const dir = await ownTmpdir();
+    const decoy = join(dir, 'decoy');
+    await mkdir(decoy);
+    // The tool moves the root away and leaves a link to the decoy in its
+    // place, with a directory there under its own home's name.
+    const outcome = await aRun(
+      [
+        '/bin/sh',
+        '-c',
+        'own=$(dirname "$HOME"); root=$(dirname "$own"); name=$(basename "$own"); ' +
+          'mv "$root" "$root.moved" && mkdir -p "$DECOY/$name" && ' +
+          'touch "$DECOY/$name/kept" && ln -s "$DECOY" "$root" && echo "$name"',
+      ],
+      { env: { DECOY: decoy } },
+    );
+    expect(outcome.exitCode, outcome.stderr).toBe(0);
+    const name = outcome.stdout.trim();
+    expect(present([join(decoy, name, 'kept')])).toEqual([true]);
+    expect(await readdir(`${defaultJailHomeRoot()}.moved`)).toEqual([]);
   });
 });
 

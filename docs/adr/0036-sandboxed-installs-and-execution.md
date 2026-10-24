@@ -534,6 +534,19 @@ Decision (`jail-home.ts`):
    it opened without following a link (`openStablePath`, `renameChild`,
    `removeChild`), and a home's `.owner` is read without following one.
 
+5. **The jail root is this user's, and no one else may write it**
+   (`openJailRoot`). It sits in the temporary directory, which every user can
+   write, and its ownership was never checked: a root another user made, or left
+   writable, would let that user put a home there whose owner a run then judges,
+   or a link where a home goes. A run opens the root once, without following a
+   link, and refuses it unless that handle is a directory owned by its effective
+   uid and writable by its owner alone (made 0700 when it is not there); every
+   home is made, judged and removed through that handle, the run's own included
+   (`removeChild`), never by the root's path again. A root per uid
+   (`openpacker-sandbox-<uid>`) was not taken: it would strand what earlier runs
+   left in the shared root, and a root another user made in its place would
+   still need refusing.
+
 `jail-home-sweep.test.ts` (sandbox) leaves homes in a jail root and runs through
 `runInSandbox`: a home whose owner is a pid that has ended is removed; one whose
 owner is alive, on another host, or unreadable is kept beside it; a home with no
@@ -541,7 +554,12 @@ owner is kept while young and removed once older than the bound; a tombstone is
 removed; six runs at once, beside a seventh that holds its home throughout, each
 use their own home and remove the one that ended; two sweeps of the same dead
 homes remove each once. Through bwrap, a run's `.owner` names this process and
-the tool cannot read it.
+the tool cannot read it. A home whose owner is a running `sleep`, and one a
+second process holds through `runInSandbox`, are kept. A home swapped for a link
+after it is listed is judged as what is opened. A root made 0777, and one owned
+by uid 65534, are refused; a tool that moves the root away and leaves a link to
+a decoy in its place does not make the run remove the decoy's directory of its
+home's name.
 
 ### What stopped it
 

@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { constants, existsSync } from 'node:fs';
+import { mkdir, type FileHandle } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import {
   abandonedByOwnerAt,
+  mkdirChild,
+  O_DIRECTORY,
+  openChild,
   openStablePath,
   readDirChildWithTypes,
   removeChild,
@@ -11,6 +15,7 @@ import {
   type AbandonJudge,
   type ProcessOwner,
 } from '@openpacker/project-io';
+import { JailPathError } from './paths.js';
 
 /**
  * The home a sandboxed process gets ($HOME, with $TMPDIR in it), one per run,
@@ -64,45 +69,137 @@ export interface JailHome {
   home: string;
 }
 
+/** The jail root, opened and checked: what every home is made, judged and removed through. */
+export interface JailRoot {
+  path: string;
+  handle: FileHandle;
+}
+
 /**
- * Make a jail home under `root` that this process owns (or `owner`, for a
- * test). Nothing is left behind when it cannot be made whole.
+ * Open the jail root `path`, making it (0700) when it is not there, and
+ * refuse it unless it is a directory this process's user owns that no one
+ * else may write. It sits in the temporary directory, which every user can
+ * write: a root another user made, or left writable, would let that user put
+ * a home there whose owner this run then judges, or a link where a home goes.
+ * The checks are made on the handle every later step goes through, never on
+ * the path again.
+ */
+export async function openJailRoot(path: string): Promise<JailRoot> {
+  await mkdir(path, { recursive: true, mode: 0o700 });
+  let handle: FileHandle;
+  try {
+    handle = await openStablePath(path);
+  } catch (error) {
+    throw new JailPathError(
+      'root',
+      `${path} must be a directory reached without a link (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+  try {
+    const info = await handle.stat();
+    const uid = process.geteuid?.();
+    if (!info.isDirectory())
+      throw new JailPathError('root', `${path} is not a directory`);
+    if (uid !== undefined && info.uid !== uid)
+      throw new JailPathError(
+        'root',
+        `${path} is owned by uid ${info.uid}, not by this user (uid ${uid}); remove it, or set TMPDIR to a directory of your own`,
+      );
+    if (process.platform !== 'win32' && (info.mode & 0o022) !== 0)
+      throw new JailPathError(
+        'root',
+        `${path} can be written by its group or by others (mode ${(info.mode & 0o777).toString(8)}); it must be writable by its owner alone`,
+      );
+    return { path, handle };
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+/**
+ * Make a jail home in `root` that this process owns (or `owner`, for a test).
+ * Nothing is left behind when it cannot be made whole.
  */
 export async function makeJailHome(
-  root: string,
+  root: JailRoot,
   owner?: ProcessOwner,
 ): Promise<JailHome> {
-  const path = join(root, `${JAIL_HOME_PREFIX}${randomUUID()}`);
-  await mkdir(path, { mode: 0o700 });
+  const name = `${JAIL_HOME_PREFIX}${randomUUID()}`;
+  await mkdirChild(root.handle, name);
+  const path = join(root.path, name);
   const home = join(path, HOME);
   try {
+    // Its own until it is removed, as a directory mkdtemp makes.
+    const made = await openChild(
+      root.handle,
+      name,
+      constants.O_RDONLY | O_DIRECTORY | (constants.O_NOFOLLOW ?? 0),
+    );
+    try {
+      await made.chmod(0o700);
+    } finally {
+      await made.close();
+    }
     await writeOwnerFile(path, owner);
     await mkdir(join(home, 'tmp'), { recursive: true, mode: 0o700 });
   } catch (error) {
-    await removeJailHome({ path, home });
+    await removeJailHome(root, { path, home });
     throw error;
   }
   return { path, home };
 }
 
-/** Remove a run's own jail home when it ends. */
-export async function removeJailHome(jail: JailHome): Promise<void> {
-  await rm(jail.path, { recursive: true, force: true }).catch(() => undefined);
+/**
+ * Remove a run's own jail home when it ends, through the root's handle and
+ * without following a link: the root's path may name something else by now.
+ */
+export async function removeJailHome(
+  root: JailRoot,
+  jail: JailHome,
+): Promise<void> {
+  await removeChild(root.handle, basename(jail.path), {
+    recursive: true,
+    force: true,
+  }).catch(() => undefined);
 }
 
 /**
- * Remove, under `root`, the homes whose owner has ended and the tombstones
- * left by a run killed while it removed one. Nothing that cannot be judged is
- * touched, and a failure removes nothing more: a run does not depend on it.
+ * Remove, under the jail root at `path`, the homes whose owner has ended and
+ * the tombstones left by a run killed while it removed one. A root that fails
+ * {@link openJailRoot}'s checks, or is not there, is left alone.
  */
 export async function sweepJailHomes(
-  root: string,
+  path: string,
   judge: AbandonJudge = {},
-  /** Test seam: called with each home's name before it is judged. */
-  seams: { beforeJudging?: (name: string) => Promise<void> } = {},
+  seams: SweepSeams = {},
 ): Promise<void> {
-  const parent = await openStablePath(root).catch(() => undefined);
-  if (parent === undefined) return;
+  if (!existsSync(path)) return;
+  const root = await openJailRoot(path).catch(() => undefined);
+  if (root === undefined) return;
+  try {
+    await sweepJailHomesIn(root, judge, seams);
+  } finally {
+    await root.handle.close().catch(() => undefined);
+  }
+}
+
+/** Test seam: called with each home's name before it is judged. */
+export interface SweepSeams {
+  beforeJudging?: (name: string) => Promise<void>;
+}
+
+/**
+ * {@link sweepJailHomes} in a root already opened. Nothing that cannot be
+ * judged is touched, and a failure removes nothing more: a run does not
+ * depend on it.
+ */
+export async function sweepJailHomesIn(
+  root: JailRoot,
+  judge: AbandonJudge = {},
+  seams: SweepSeams = {},
+): Promise<void> {
+  const parent = root.handle;
   try {
     for (const entry of await readDirChildWithTypes(parent)) {
       if (!entry.isDirectory()) continue;
@@ -137,7 +234,5 @@ export async function sweepJailHomes(
     }
   } catch {
     // An unreadable root sweeps nothing; the run goes on.
-  } finally {
-    await parent.close().catch(() => undefined);
   }
 }
