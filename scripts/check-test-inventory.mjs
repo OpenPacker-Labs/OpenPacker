@@ -114,7 +114,7 @@ export async function checkTestInventory(root) {
     readFileSync(join(root, 'package.json'), 'utf8'),
   ).scripts;
   const commands = {
-    test: 'turbo run test && node scripts/run-gate.mjs unit',
+    test: 'turbo run test --concurrency=1 && node scripts/run-gate.mjs unit',
     conformance: 'node scripts/run-gate.mjs conformance',
     security: 'node scripts/run-gate.mjs security',
     integration: 'node scripts/run-gate.mjs integration',
