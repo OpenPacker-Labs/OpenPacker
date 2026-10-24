@@ -28,6 +28,16 @@ import {
 } from '../src/supply-chain.js';
 
 /**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
+/**
  * Every place in this package that reads a URL out of a registry's document, a
  * lock, or a manifest answers a host no DNS name could be without handing it to
  * the URL parser, which takes most of a second on 65,550 characters of it
