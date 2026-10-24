@@ -10,7 +10,6 @@ const root = resolve(import.meta.dirname, '../../..');
 const files = new Map([
   ['/sdk/browser.js', join(root, 'packages/sdk/dist/esm/browser.js')],
   ['/sdk/index.js', join(root, 'packages/sdk/dist/esm/index.js')],
-  ['/canonical.js', join(root, 'packages/canonical/dist/esm/index.js')],
   [
     '/embedded/openpacker_wasm.js',
     join(root, 'packages/embedded/dist/esm/openpacker_wasm.js'),
@@ -30,12 +29,23 @@ const files = new Map([
   ],
 ]);
 
+// @openpacker/canonical's ESM build is several modules (index.js imports
+// ./echo.js, ./budget.js and the rest), so its whole directory is served
+// under /canonical/, by file name only.
+const canonicalDirectory = join(root, 'packages/canonical/dist/esm');
+function served(url) {
+  const file = files.get(url);
+  if (file) return file;
+  const name = /^\/canonical\/([a-z0-9-]+\.js)$/u.exec(url)?.[1];
+  return name === undefined ? undefined : join(canonicalDirectory, name);
+}
+
 test(
   'built SDK browser entry imports without Node polyfills',
   { timeout: 60_000 },
   async () => {
     const server = createServer((request, response) => {
-      const file = files.get(request.url ?? '');
+      const file = served(request.url ?? '');
       if (file) {
         response.setHeader(
           'content-type',
@@ -51,7 +61,7 @@ test(
       if (request.url === '/') {
         response.setHeader('content-type', 'text/html');
         response.end(
-          '<!doctype html><script type="importmap">{"imports":{"@openpacker/canonical":"/canonical.js"}}</script>',
+          '<!doctype html><script type="importmap">{"imports":{"@openpacker/canonical":"/canonical/index.js"}}</script>',
         );
         return;
       }
@@ -97,7 +107,7 @@ test(
           });
         };
         const sdk = await import('/sdk/browser.js');
-        const canonical = await import('/canonical.js');
+        const canonical = await import('/canonical/index.js');
         const wasm = await import('/embedded/openpacker_wasm.js');
         await wasm.default('/embedded/openpacker_wasm_bg.wasm');
         const discovery = await sdk
