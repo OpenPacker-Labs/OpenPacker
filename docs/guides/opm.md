@@ -63,6 +63,11 @@ opm --help
 opmx --help
 ```
 
+A project's `.opm/bin/<tool>` shims re-enter through the `opmx` beside the `opm`
+that wrote them. Written by `node apps/opm/dist/main.js`, that is
+`dist/opmx-main.js`, a module with no execute bit, and the shim starts it with
+Node, as it starts any JavaScript `opmx` (`OPM_OPMX` included).
+
 ---
 
 ## Working on OpenPacker itself
@@ -1473,8 +1478,8 @@ plugin) needs Linux and is refused by name before its file is opened, because a
 descriptor has no path the kernel will execute anywhere else and a named copy
 could be swapped between the check and the run.
 
-**Run tools with `opmx`.** Shims re-enter via `opmx`; ambient direct spawn needs
-`OPENPACKER_ALLOW_AMBIENT_SHIMS=1` (insecure).
+**Run tools with `opmx`.** Shims re-enter via `opmx` (a JavaScript one through
+Node); ambient direct spawn needs `OPENPACKER_ALLOW_AMBIENT_SHIMS=1` (insecure).
 
 Lifecycle scripts are deny-by-default; an allowlist entry is required under
 strict mode. Host installers only get **limited user-capability** containment.

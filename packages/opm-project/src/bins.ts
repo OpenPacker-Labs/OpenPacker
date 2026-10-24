@@ -390,6 +390,11 @@ export async function writeBinShims(input: {
 /**
  * Absolute `opmx` to embed in shims. PATH lookup is a sandbox bypass:
  * a package bin named `opmx` earlier on PATH would win.
+ *
+ * Beside `opm`'s own entry: `opmx` where a package manager linked the bins,
+ * and in a build, `opmx-main.js`, the file the `opmx` bin names (before
+ * `opmx.js`, which runs only when started by its own path). A build's files
+ * are modules tsc wrote, not programs; the shim starts one with Node.
  */
 export function resolveOpmxPath(): string {
   const fromEnv = process.env.OPM_OPMX?.trim();
@@ -397,7 +402,7 @@ export function resolveOpmxPath(): string {
   const argv1 = process.argv[1];
   if (argv1) {
     const dir = dirname(resolve(argv1));
-    for (const name of ['opmx', 'opmx.js', 'opmx.mjs']) {
+    for (const name of ['opmx', 'opmx-main.js', 'opmx.js', 'opmx.mjs']) {
       const candidate = join(dir, name);
       if (existsSync(candidate)) return candidate;
     }
@@ -488,11 +493,20 @@ if (!opmx) {
   );
   process.exit(78);
 }
-const viaOpmx = spawn(opmx, [${binName}, ...args], {
-  stdio: 'inherit',
-  env: process.env,
-  shell: false,
-});
+// A JavaScript opmx (a source build's dist/opmx-main.js) is a module, not a
+// program: tsc leaves it without an execute bit, and Windows runs no script by
+// its name. Node runs it; anything else is run as the program it is.
+const viaOpmx = /\\.[cm]?js$/i.test(opmx)
+  ? spawn(process.execPath, [opmx, ${binName}, ...args], {
+      stdio: 'inherit',
+      env: process.env,
+      shell: false,
+    })
+  : spawn(opmx, [${binName}, ...args], {
+      stdio: 'inherit',
+      env: process.env,
+      shell: false,
+    });
 viaOpmx.on('error', (error) => {
   if (process.env.OPENPACKER_ALLOW_AMBIENT_SHIMS === '1') {
     console.error('opm: opmx unavailable; ambient shim allowed by OPENPACKER_ALLOW_AMBIENT_SHIMS=1');
