@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { PackslipError } from './errors.js';
+import { shown } from './shown.js';
 
 /**
  * A signer fingerprint pins the repository (and issuer) that signs a keyless
@@ -69,7 +70,7 @@ export function assertFingerprint(text: string): void {
   if (!isFingerprint(text))
     throw new PackslipError(
       'INVALID_INPUT',
-      `"${text}" is not a signer fingerprint (ps1_ followed by 26 lowercase base32 characters)`,
+      `"${shown(text)}" is not a signer fingerprint (ps1_ followed by 26 lowercase base32 characters)`,
     );
 }
 

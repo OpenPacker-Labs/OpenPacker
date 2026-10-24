@@ -11,6 +11,7 @@ import type {
 } from '@openpacker/contracts';
 import {
   compareCodePoints,
+  echoed,
   evaluateRange,
   encodeUrlPathComponent,
   formatPurl,
@@ -308,12 +309,12 @@ export function parseMavenVersion(value: string): ParsedVersion {
   if (original.length === 0 || original.length > 256)
     throw new ProviderError(
       'INVALID_NATIVE_VERSION',
-      `Invalid Maven version: ${value}`,
+      `Invalid Maven version: ${echoed(value)}`,
     );
   if (/[\s<>]/.test(original))
     throw new ProviderError(
       'INVALID_NATIVE_VERSION',
-      `Invalid Maven version: ${value}`,
+      `Invalid Maven version: ${echoed(value)}`,
     );
   const tokens = tokenizeMavenVersion(original);
   const release: number[] = [];
@@ -350,7 +351,7 @@ function parseMavenInterval(interval: string, codec: MavenCodec): RangeAst {
   if (!/^[[(].*[\])]$/.test(trimmed))
     throw new ProviderError(
       'INVALID_NATIVE_RANGE',
-      `Invalid Maven version range: ${interval}`,
+      `Invalid Maven version range: ${echoed(interval)}`,
     );
   const lowerInclusive = trimmed.startsWith('[');
   const upperInclusive = trimmed.endsWith(']');
@@ -361,7 +362,7 @@ function parseMavenInterval(interval: string, codec: MavenCodec): RangeAst {
     if (!version)
       throw new ProviderError(
         'INVALID_NATIVE_RANGE',
-        `Invalid Maven version range: ${interval}`,
+        `Invalid Maven version range: ${echoed(interval)}`,
       );
     return {
       type: 'comparison',
@@ -469,7 +470,7 @@ export function parseGradleLockfile(input: string): GradleLockDocument {
     if (equals <= 0)
       throw new ProviderError(
         'INVALID_LOCKFILE',
-        `Invalid gradle.lockfile line: ${rawLine}`,
+        `Invalid gradle.lockfile line: ${echoed(rawLine)}`,
       );
     const coordinate = line.slice(0, equals).trim();
     const configurations = line
@@ -484,7 +485,7 @@ export function parseGradleLockfile(input: string): GradleLockDocument {
     if (!match)
       throw new ProviderError(
         'INVALID_LOCKFILE',
-        `Invalid gradle.lockfile coordinate: ${coordinate}`,
+        `Invalid gradle.lockfile coordinate: ${echoed(coordinate)}`,
       );
     entries.push({
       groupId: match[1]!,
@@ -620,7 +621,7 @@ export class MavenCodec
     if (parts.length < 2 || parts.some((part) => part.length === 0))
       throw new ProviderError(
         'INVALID_NATIVE_COORDINATE',
-        `Invalid Maven coordinate: ${value}`,
+        `Invalid Maven coordinate: ${echoed(value)}`,
       );
     const groupId = parts[0]!;
     const artifactId = parts[1]!;
@@ -650,7 +651,7 @@ export class MavenCodec
     }
     throw new ProviderError(
       'INVALID_NATIVE_COORDINATE',
-      `Invalid Maven coordinate: ${value}`,
+      `Invalid Maven coordinate: ${echoed(value)}`,
     );
   }
 
@@ -717,7 +718,7 @@ export class MavenCodec
       if (alternatives.length === 0)
         throw new ProviderError(
           'INVALID_NATIVE_RANGE',
-          `Invalid Maven version range: ${value}`,
+          `Invalid Maven version range: ${echoed(value)}`,
         );
       const parsed = alternatives.map((alternative) =>
         parseMavenInterval(alternative, this),
@@ -1150,7 +1151,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
     if (isMavenSnapshotVersion(parsed.version))
       throw new ProviderError(
         'VERSION_NOT_FOUND',
-        `Refusing to inspect Maven SNAPSHOT ${canonical}; unique timestamps are not resolved`,
+        `Refusing to inspect Maven SNAPSHOT ${echoed(canonical)}; unique timestamps are not resolved`,
       );
     const requestedPackaging = parsed.qualifiers.type;
     const classifier = parsed.qualifiers.classifier;
@@ -1176,7 +1177,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
     )
       throw new ProviderError(
         'INVALID_PROVIDER_METADATA',
-        `POM groupId, artifactId, and version cannot be completed from this POM file alone for ${canonical}`,
+        `POM groupId, artifactId, and version cannot be completed from this POM file alone for ${echoed(canonical)}`,
       );
     if (
       coordinates.groupId !== parsed.namespace ||
@@ -1186,7 +1187,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
     )
       throw new ProviderError(
         'INVALID_PROVIDER_METADATA',
-        `POM identity does not match ${canonical}`,
+        `POM identity does not match ${echoed(canonical)}`,
       );
 
     const { included, skippedUnresolved } = resolvedPomDependencies(pom);
@@ -1365,7 +1366,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
     if (!source)
       throw new ProviderError(
         'ARTIFACT_NOT_FOUND',
-        `No Maven artifact source for ${exactPurl}`,
+        `No Maven artifact source for ${echoed(exactPurl)}`,
       );
     const response = await this.transport.request({
       url: source.uri,
@@ -1543,7 +1544,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
     if (response === undefined)
       throw new ProviderError(
         'VERSION_NOT_FOUND',
-        `Maven POM was not found for ${canonical}`,
+        `Maven POM was not found for ${echoed(canonical)}`,
         404,
       );
     const record: ProviderRecord<string> = {
@@ -1628,7 +1629,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
     )
       throw new ProviderError(
         'INVALID_PROVIDER_METADATA',
-        `Catalog entry identity does not match ${canonical}`,
+        `Catalog entry identity does not match ${echoed(canonical)}`,
       );
   }
 
@@ -1709,7 +1710,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
       if (!existing)
         throw new ProviderError(
           'STALE_METADATA',
-          `Received 304 without cached metadata for ${key}`,
+          `Received 304 without cached metadata for ${echoed(key)}`,
           304,
         );
       const revalidated = { ...existing, retrievedAt: this.clock.now() };
@@ -1722,7 +1723,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
     if (body.groupId !== parsed.namespace || body.artifactId !== parsed.name)
       throw new ProviderError(
         'INVALID_PROVIDER_METADATA',
-        `maven-metadata.xml identity does not match ${key}`,
+        `maven-metadata.xml identity does not match ${echoed(key)}`,
       );
     const record: ProviderRecord<MavenMetadataDocument> = {
       key,

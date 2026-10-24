@@ -6,6 +6,7 @@
  * openpacker:prex-adapter@0.1.0 remains the ABI shape this check enforces.
  */
 
+import { echoed } from '@openpacker/adapter-core';
 import { canonicalBytes } from '@openpacker/canonical';
 import type { AdapterModule, RegistryDefinition } from './types.js';
 import { AdapterHostError } from './types.js';
@@ -28,7 +29,7 @@ export function parseServiceIndex(bytes: Uint8Array): RegistryDefinition {
   if (value.registryDefinitionVersion !== '1')
     throw new AdapterHostError(
       'INVALID_REGISTRY_DEFINITION',
-      `Unsupported registryDefinitionVersion: ${String(value.registryDefinitionVersion)}`,
+      `Unsupported registryDefinitionVersion: ${echoed(String(value.registryDefinitionVersion))}`,
     );
   if (!Array.isArray(value.resources) || value.resources.length === 0)
     throw new AdapterHostError(

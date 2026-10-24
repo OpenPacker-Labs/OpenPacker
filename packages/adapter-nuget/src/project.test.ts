@@ -262,6 +262,35 @@ describe('NugetProjectFormat — pack', () => {
     }
   });
 
+  it.each([
+    [
+      'a target framework',
+      (text: string) => text.replace('net9.0', 'net9.0\u001b[2K\u0007/..'),
+    ],
+    [
+      'a package version',
+      (text: string) =>
+        text.replace(
+          '    <Nullable>enable</Nullable>',
+          '    <Nullable>enable</Nullable>\n    <PackageId>Demo</PackageId>\n    <Version>1.0/..\u001b[2K\u0007</Version>',
+        ),
+    ],
+  ])('says %s it refuses without an escape sequence', async (_, edit) => {
+    const fixture = await project({ 'app.csproj': edit(CSPROJ) });
+    try {
+      const error = await fixture.format.pack!(fixture.detected).then(
+        () => undefined,
+        (reason: unknown) => reason,
+      );
+      expect(error).toMatchObject({ code: 'UNSAFE_PATH' });
+      expect(error instanceof Error ? error.message : '').not.toContain(
+        '\u001b',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('rejects traversal in package metadata before writing', async () => {
     const fixture = await project({
       'app.csproj': CSPROJ.replace(

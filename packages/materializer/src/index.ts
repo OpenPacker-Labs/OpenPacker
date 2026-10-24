@@ -3,7 +3,11 @@ import { constants } from 'node:fs';
 import { lstat, readdir, rmdir, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { collectStream, type ArtifactSource } from '@openpacker/artifact-model';
-import { compareCanonicalStrings, sha256 } from '@openpacker/canonical';
+import {
+  compareCanonicalStrings,
+  safeEcho,
+  sha256,
+} from '@openpacker/canonical';
 import type { ArtifactDescriptor, Digest } from '@openpacker/contracts';
 import {
   mkdirChild,
@@ -503,7 +507,7 @@ function parseTar(
     } else {
       throw new MaterializationError(
         'ADAPTER_REQUIRED',
-        `Unsupported tar entry type ${JSON.stringify(type)} at ${path}`,
+        `Unsupported tar entry type ${JSON.stringify(type)} at ${safeEcho(path, 256)}`,
       );
     }
     offset = dataStart + Math.ceil(size / 512) * 512;
@@ -826,10 +830,14 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+/**
+ * An archive was refused. The detail is usually a name from the archive, which
+ * is a registry's to choose: one line, with no escape sequence in it, and cut.
+ */
 function unsafe(code: string, detail: string): MaterializationError {
   return new MaterializationError(
     code,
-    `Unsafe archive rejected (${code}): ${detail}`,
+    `Unsafe archive rejected (${code}): ${safeEcho(detail, 256)}`,
   );
 }
 

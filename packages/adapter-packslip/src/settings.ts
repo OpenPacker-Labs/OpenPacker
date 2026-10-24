@@ -1,3 +1,4 @@
+import { echoed } from '@openpacker/adapter-core';
 import type { JsonValue } from '@openpacker/contracts';
 import {
   PackslipError,
@@ -63,13 +64,13 @@ function textList(
 }
 
 function decodeSigner(project: string, value: JsonValue): SignerConfig {
-  const where = `trust."${project}"`;
+  const where = `trust."${echoed(project)}"`;
   if (!isJsonObject(value)) throw refuse(`${where} must be a table`);
   // An unknown key is an error, not a no-op: a misspelled `pin` that is
   // silently dropped is a project that quietly trusts whoever signs.
   for (const key of Object.keys(value))
     if (!SIGNER_KEYS.has(key))
-      throw refuse(`${where} has unknown key "${key}"`);
+      throw refuse(`${where} has unknown key "${echoed(key)}"`);
   const pins = textList(value.pin, `${where}.pin`);
   for (const pin of pins ?? []) assertFingerprint(pin);
   const publicKey = text(value.public_key, `${where}.public_key`);
@@ -125,7 +126,7 @@ export function decodeSettings(raw: JsonObject | undefined): PackslipSettings {
       key !== 'approvals' &&
       key !== 'allow_incompatible_host'
     )
-      throw refuse(`unknown setting "${key}"`);
+      throw refuse(`unknown setting "${echoed(key)}"`);
   const signers: Record<string, SignerConfig> = {};
   const trust = raw.trust;
   if (trust !== undefined) {
@@ -140,7 +141,7 @@ export function decodeSettings(raw: JsonObject | undefined): PackslipSettings {
       const name = trustKey(project);
       if (Object.hasOwn(signers, name))
         throw refuse(
-          `trust has two entries for ${project} that differ only by case`,
+          `trust has two entries for ${echoed(project)} that differ only by case`,
         );
       signers[name] = decodeSigner(project, value);
     }

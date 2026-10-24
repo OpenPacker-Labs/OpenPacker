@@ -1,3 +1,4 @@
+import { echoed } from '@openpacker/adapter-core';
 import { digestOf, uninstallPackages } from './install.js';
 import { reachableKeys } from './lock-edges.js';
 import { applyKeys, rekeyTransitive } from './lock-rekey.js';
@@ -47,7 +48,7 @@ async function removeInStep(input: { root: string; alias: string }) {
   if (alias === undefined) {
     throw new OpmError(
       'NOT_FOUND',
-      `Package "${input.alias}" is not in ${MANIFEST_NAME}`,
+      `Package "${echoed(input.alias)}" is not in ${MANIFEST_NAME}`,
     );
   }
   delete manifest.packages[alias];

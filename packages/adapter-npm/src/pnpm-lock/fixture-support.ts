@@ -5,10 +5,13 @@
 
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const DIRECTORY = new URL(
-  '../../../../fixtures/locks/pnpm-v9/',
-  import.meta.url,
+// A path, not a URL: no parser reads a fixture's name.
+const DIRECTORY = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../../fixtures/locks/pnpm-v9',
 );
 
 export const FIXTURES = [
@@ -22,7 +25,7 @@ export const FIXTURES = [
 export type FixtureName = (typeof FIXTURES)[number];
 
 export function fixtureBytes(name: FixtureName): Buffer {
-  return readFileSync(new URL(name, DIRECTORY));
+  return readFileSync(join(DIRECTORY, name));
 }
 
 export function fixtureText(name: FixtureName): string {
@@ -66,7 +69,7 @@ export interface ExpectedCounts {
 
 export function expectedCounts(name: FixtureName): ExpectedCounts {
   const all: Record<string, ExpectedCounts> = JSON.parse(
-    readFileSync(new URL('expected.json', DIRECTORY), 'utf8'),
+    readFileSync(join(DIRECTORY, 'expected.json'), 'utf8'),
   );
   const counts = all[name];
   if (counts === undefined) throw new Error(`no expected counts for ${name}`);

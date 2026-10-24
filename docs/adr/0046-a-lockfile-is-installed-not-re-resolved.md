@@ -139,11 +139,16 @@ tool but not a dependency tree, where a native build alone is 287 MB unpacked.
    unpacked at once.
 
 8. **What cannot be honoured is refused, by name, whole.** An entry with no
-   `resolved` or no `integrity`, a git or path source: each is listed, up to
-   twenty a screen, and nothing is installed. Workspace members and links were
-   on this list until [ADR 0051](0051-opm-ci-installs-workspace-locks.md), which
-   installs them; what it still refuses is a link or a key that is not a
-   workspace member's. A lock opm cannot install is not partly installed.
+   `resolved` or no `integrity`, an entry whose `resolved` names a host longer
+   than 253 characters as written (no DNS name is, and Node's URL parser can be
+   slow on one), a git or path source: each is listed, up to twenty a screen,
+   and nothing is installed. A source is listed by its scheme, host and path, or
+   as `scheme:[address withheld]`, or as `[address withheld]` where what stands
+   before its first colon may be a user name (ADR 0044). Workspace members and
+   links were on this list until
+   [ADR 0051](0051-opm-ci-installs-workspace-locks.md), which installs them;
+   what it still refuses is a link or a key that is not a workspace member's. A
+   lock opm cannot install is not partly installed.
 
 9. **Nothing is executed.** `allow_lifecycle_scripts = false` stays the default.
    The packages that declare an install script are counted in the summary line

@@ -16,6 +16,7 @@ import type {
 } from '@openpacker/adapter-core';
 import {
   assertPackageIdentityMatchesRequest,
+  echoed,
   ProviderError,
 } from '@openpacker/adapter-core';
 import type {
@@ -116,7 +117,7 @@ export class PrexRegistryProvider implements CatalogProvider {
     if (version === undefined)
       throw new ProviderError(
         'INVALID_PURL',
-        `inspect needs an exact PURL, got ${exactPurl}`,
+        `inspect needs an exact PURL, got ${echoed(exactPurl)}`,
       );
     const entry = await this.client.entry(name, version, signal);
     // Verify before the answer is used, not after. A digest that does not match
@@ -128,7 +129,7 @@ export class PrexRegistryProvider implements CatalogProvider {
     if (!distribution)
       throw new ProviderError(
         'PACKAGE_NOT_FOUND',
-        `${name}@${version} is not published for purl type ${purlType}`,
+        `${echoed(name)}@${echoed(version)} is not published for purl type ${echoed(purlType)}`,
       );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const instance: PackageInstance = {
@@ -157,7 +158,7 @@ export class PrexRegistryProvider implements CatalogProvider {
     if (version === undefined)
       throw new ProviderError(
         'INVALID_PURL',
-        `fetchArtifactRecord needs an exact PURL, got ${exactPurl}`,
+        `fetchArtifactRecord needs an exact PURL, got ${echoed(exactPurl)}`,
       );
     const entry = await this.client.entry(name, version, signal);
     await this.client.verifyEntry(entry);
@@ -167,7 +168,7 @@ export class PrexRegistryProvider implements CatalogProvider {
     if (!distribution?.digest || !distribution.locations?.length)
       throw new ProviderError(
         'ARTIFACT_NOT_FOUND',
-        `Registry has no artifact location or digest for ${exactPurl}. ` +
+        `Registry has no artifact location or digest for ${echoed(exactPurl)}. ` +
           'A metadata-only registry points at an upstream source; this one pointed nowhere.',
       );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -216,7 +217,8 @@ function splitPurl(purl: string) {
   const match = /^pkg:([A-Za-z0-9.+-]+)\/(.+?)(?:@([^?#]+))?(?:[?#].*)?$/u.exec(
     purl,
   );
-  if (!match) throw new ProviderError('INVALID_PURL', `Not a PURL: ${purl}`);
+  if (!match)
+    throw new ProviderError('INVALID_PURL', `Not a PURL: ${echoed(purl)}`);
   return {
     purlType: match[1]!,
     name: decodeURIComponent(match[2]!),

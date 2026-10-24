@@ -1599,12 +1599,12 @@ describe('delegated bins flow', () => {
         ],
       }),
     );
-    vi.stubGlobal('fetch', fetchStub(tarRoute));
     const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-host-fetch-'));
     try {
       const tool = await fetchTool({
         purl: EXACT,
         cacheRoot,
+        fetch: fetchStub(tarRoute),
       });
       expect(tool.bins).toEqual([
         { name: 'demo', path: 'bin/demo', interpreter: 'native' },
@@ -1660,16 +1660,23 @@ describe('ephemeral tool cache', () => {
     };
   }
 
-  /** Count host-side byte downloads; the only global-fetch user on this path. */
+  /**
+   * Serve the byte downloads and count them. The run takes it as its `fetch`:
+   * production dials a pinned address, which a stubbed global never sees.
+   */
   function countingFetch(routes: Readonly<Record<string, Uint8Array>>) {
     let count = 0;
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    vi.stubGlobal('fetch', ((input: URL | Request | string) => {
+    const fetch = ((input: URL | Request | string) => {
       count += 1;
       return fetchStub(routes)(input);
-    }) as typeof fetch);
-    return { downloads: () => count };
+    }) as typeof fetch;
+    return { fetch, downloads: () => count };
   }
+
+  /** One ephemeral run of the acme tool over a counted network. */
+  const run = (net: ReturnType<typeof countingFetch>, cacheRoot: string) =>
+    fetchTool({ purl: EXACT, cacheRoot, fetch: net.fetch });
 
   it('serves a repeat run from the cache without re-downloading bytes', async () => {
     const counts = { inspect: 0, record: 0 };
@@ -1682,12 +1689,12 @@ describe('ephemeral tool cache', () => {
     const fetch_ = countingFetch(tarRoute);
     const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-cache-'));
     try {
-      const first = await fetchTool({ purl: EXACT, cacheRoot });
+      const first = await run(fetch_, cacheRoot);
       expect(first.cached).toBe(false);
       expect(fetch_.downloads()).toBe(1);
       const afterFirst = { ...counts };
 
-      const second = await fetchTool({ purl: EXACT, cacheRoot });
+      const second = await run(fetch_, cacheRoot);
       expect(second.cached).toBe(true);
       expect(second.storePath).toBe(first.storePath);
       expect(second.bins).toEqual(first.bins);
@@ -1734,7 +1741,7 @@ describe('ephemeral tool cache', () => {
     const fetch_ = countingFetch(routes);
     const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-cache-'));
     try {
-      const first = await fetchTool({ purl: EXACT, cacheRoot });
+      const first = await run(fetch_, cacheRoot);
       expect(first.digest).toBe(`sha256:${TOOL_DIGEST}`);
 
       served = descriptor({
@@ -1743,7 +1750,7 @@ describe('ephemeral tool cache', () => {
       });
       routes[`${ENDPOINT}/artifacts/demo-1.0.0.tar`] = otherTar;
 
-      const second = await fetchTool({ purl: EXACT, cacheRoot });
+      const second = await run(fetch_, cacheRoot);
       expect(second.cached).toBe(false);
       expect(second.digest).toBe(`sha256:${sha256(otherTar)}`);
       expect(second.storePath).not.toBe(first.storePath);
@@ -1758,11 +1765,11 @@ describe('ephemeral tool cache', () => {
     const fetch_ = countingFetch(tarRoute);
     const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-cache-'));
     try {
-      const first = await fetchTool({ purl: EXACT, cacheRoot });
+      const first = await run(fetch_, cacheRoot);
       const target = join(first.storePath, 'bin', 'demo');
       await writeFile(target, 'tampered');
 
-      const second = await fetchTool({ purl: EXACT, cacheRoot });
+      const second = await run(fetch_, cacheRoot);
       expect(second.cached).toBe(true);
       expect(fetch_.downloads()).toBe(1);
       expect(await readFile(target, 'utf8')).toBe(TOOL_SCRIPT);
@@ -1776,7 +1783,7 @@ describe('ephemeral tool cache', () => {
     const fetch_ = countingFetch(tarRoute);
     const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-cache-'));
     try {
-      const first = await fetchTool({ purl: EXACT, cacheRoot });
+      const first = await run(fetch_, cacheRoot);
       // Same length, different bytes: only the digest check can catch it.
       const archive = `${first.storePath}.artifact`;
       await chmod(archive, 0o644);
@@ -1787,7 +1794,7 @@ describe('ephemeral tool cache', () => {
 
       // The corrupt entry must not make a runnable tool fail: the run falls
       // back to the bounded download and verifies as if uncached.
-      const second = await fetchTool({ purl: EXACT, cacheRoot });
+      const second = await run(fetch_, cacheRoot);
       expect(second.cached).toBe(false);
       expect(fetch_.downloads()).toBe(2);
       expect(
@@ -1795,7 +1802,7 @@ describe('ephemeral tool cache', () => {
       ).toBe(TOOL_SCRIPT);
 
       // Self-healed: the archive now holds the verified bytes again.
-      const third = await fetchTool({ purl: EXACT, cacheRoot });
+      const third = await run(fetch_, cacheRoot);
       expect(third.cached).toBe(true);
       expect(fetch_.downloads()).toBe(2);
     } finally {
@@ -1808,12 +1815,12 @@ describe('ephemeral tool cache', () => {
     const fetch_ = countingFetch(tarRoute);
     const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-cache-'));
     try {
-      const first = await fetchTool({ purl: EXACT, cacheRoot });
+      const first = await run(fetch_, cacheRoot);
       await rm(`${first.storePath}.artifact`, { force: true });
 
       // The tree alone is not a trusted cache entry — nothing re-verified it
       // against the digest — so the bytes move again.
-      const second = await fetchTool({ purl: EXACT, cacheRoot });
+      const second = await run(fetch_, cacheRoot);
       expect(second.cached).toBe(false);
       expect(fetch_.downloads()).toBe(2);
       expect(
@@ -1861,10 +1868,13 @@ describe('native interpreter', () => {
         ],
       }),
     );
-    vi.stubGlobal('fetch', fetchStub(tarRoute));
     const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-native-run-'));
     try {
-      const tool = await fetchTool({ purl: EXACT, cacheRoot });
+      const tool = await fetchTool({
+        purl: EXACT,
+        cacheRoot,
+        fetch: fetchStub(tarRoute),
+      });
       const target = join(tool.storePath, 'bin', 'demo');
       const outcome = await runSandboxedPackageProcess({
         argv: [target, 'hello'],

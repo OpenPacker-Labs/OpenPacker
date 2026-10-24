@@ -1,3 +1,4 @@
+import { echoed } from '@openpacker/adapter-core';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, type FileHandle } from 'node:fs/promises';
@@ -241,7 +242,7 @@ export async function readStoreReferences(
     if (parsed.referencesVersion !== '1')
       throw new OpmError(
         'INVALID_INPUT',
-        `Unsupported store reference version: ${String(parsed.referencesVersion)}`,
+        `Unsupported store reference version: ${echoed(String(parsed.referencesVersion))}`,
       );
     return { referencesVersion: '1', edges: parsed.edges ?? {} };
   } catch (error) {
@@ -309,7 +310,7 @@ function generationFile(generations: string, digest: string): string {
   if (!/^[0-9a-f]{64}$/u.test(name))
     throw new OpmError(
       'INVALID_DIGEST',
-      `Invalid generation digest: ${digest}`,
+      `Invalid generation digest: ${echoed(digest)}`,
     );
   return resolveContained(generations, `${name}.json`);
 }
@@ -349,7 +350,7 @@ export async function readGeneration(
   const handle = await openStableDirectory(paths.generations).catch((error) => {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-      throw new OpmError('NOT_FOUND', `Unknown generation: ${digest}`);
+      throw new OpmError('NOT_FOUND', `Unknown generation: ${echoed(digest)}`);
     throw error;
   });
   try {
@@ -358,7 +359,7 @@ export async function readGeneration(
   } catch (error) {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-      throw new OpmError('NOT_FOUND', `Unknown generation: ${digest}`);
+      throw new OpmError('NOT_FOUND', `Unknown generation: ${echoed(digest)}`);
     throw error;
   } finally {
     await handle.close();
@@ -372,7 +373,7 @@ function parseGeneration(text: string, digest: string): Generation {
   if (stored !== digest || stored !== generationDigest(body))
     throw new OpmError(
       'DIGEST_MISMATCH',
-      `Generation ${digest} does not match its recorded digest`,
+      `Generation ${echoed(digest)} does not match its recorded digest`,
     );
   if (
     generation.generationVersion !== '1' &&
@@ -801,7 +802,7 @@ export async function activateGeneration(input: {
       if (aliases.has(alias))
         throw new OpmError(
           'INVALID_STATE',
-          `Generation ${input.generation.sequence} declares duplicate alias ${alias}`,
+          `Generation ${input.generation.sequence} declares duplicate alias ${echoed(alias)}`,
         );
       aliases.add(alias);
       const expected = storePathForDigest(input.root, member.digest);
@@ -832,7 +833,7 @@ export async function activateGeneration(input: {
         await handle.close();
         throw new OpmError(
           'INVALID_STATE',
-          `Generation ${input.generation.sequence} has invalid purl ${member.purl}`,
+          `Generation ${input.generation.sequence} has invalid purl ${echoed(member.purl)}`,
         );
       }
       try {
@@ -886,7 +887,7 @@ export async function activateGeneration(input: {
           if (binNames.has(name))
             throw new OpmError(
               'INVALID_STATE',
-              `Generation ${input.generation.sequence} declares duplicate bin ${name}`,
+              `Generation ${input.generation.sequence} declares duplicate bin ${echoed(name)}`,
             );
           binNames.add(name);
         }

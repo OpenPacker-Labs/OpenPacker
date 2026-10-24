@@ -1,3 +1,5 @@
+import { plainLine } from '@openpacker/canonical';
+
 /**
  * Every refusal this package makes carries a stable code, so callers map a
  * failure to an exit status or a policy decision without parsing prose.
@@ -51,11 +53,29 @@ export type PackslipErrorCode =
   /** The consumer is offline and the answer is not already local. */
   | 'OFFLINE';
 
+/**
+ * A refusal with a stable code. Its message is one line: a message repeats text
+ * a signed document, a registry or a forge chose, and whatever writes it (a
+ * terminal, a log, a report) cannot tell a line opm wrote from one that text
+ * added, so an escape sequence, a control or bidirectional character and a line
+ * break are removed here, whatever the call site quoted. A message that is a
+ * list names its entries apart: each is made one line and they follow the
+ * headline, one to a line.
+ */
 export class PackslipError extends Error {
   readonly code: PackslipErrorCode;
 
-  constructor(code: PackslipErrorCode, message: string) {
-    super(message);
+  constructor(
+    code: PackslipErrorCode,
+    message: string,
+    entries: readonly string[] = [],
+  ) {
+    super(
+      [
+        plainLine(message),
+        ...entries.map((entry) => `  - ${plainLine(entry)}`),
+      ].join('\n'),
+    );
     this.name = 'PackslipError';
     this.code = code;
   }
@@ -73,8 +93,8 @@ export class TrustChangeError extends PackslipError {
   constructor(proposalId: string, project: string, changes: readonly string[]) {
     super(
       'TRUST_CHANGE',
-      `The trust for ${project} changed and needs your approval (proposal ${proposalId}):\n` +
-        changes.map((change) => `  - ${change}`).join('\n'),
+      `The trust for ${project} changed and needs your approval (proposal ${proposalId}):`,
+      changes,
     );
     this.name = 'TrustChangeError';
     this.proposalId = proposalId;

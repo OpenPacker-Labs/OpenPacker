@@ -7,6 +7,7 @@
  * authoritative after import (ADR 0034).
  */
 
+import { echoed } from '@openpacker/adapter-core';
 import { access } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { requireAdapterRegistry } from './adapters.js';
@@ -140,6 +141,6 @@ function uniqueAlias(
   if (!used.has(qualified)) return qualified;
   throw new OpmError(
     'INVALID_SPEC',
-    `Native import produced duplicate alias "${base}" for ${ecosystem} package "${nativeName}"`,
+    `Native import produced duplicate alias "${echoed(base)}" for ${ecosystem} package "${echoed(nativeName)}"`,
   );
 }

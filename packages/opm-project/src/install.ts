@@ -9,6 +9,12 @@ import {
   streamFromBytes,
   type ArtifactSource,
 } from '@openpacker/artifact-model';
+import {
+  echoed,
+  parseUntrustedUrl,
+  redactAddress,
+} from '@openpacker/adapter-core';
+import { shownSource } from './shown-source.js';
 import { materialize, type ArchiveFormat } from '@openpacker/materializer';
 import {
   freezeBoundLockPackage,
@@ -370,6 +376,22 @@ export async function writeProjectState(
   await writeStableFile(path, `${JSON.stringify(state, null, 2)}\n`);
 }
 
+/**
+ * A source that is an address, read once before anything else parses it: the
+ * URL parser spends most of a second on a host no DNS name could be, and the
+ * message names the address as `redactAddress` shows it, never as written.
+ */
+function assertReadableUrl(source: string, verb: string): URL {
+  try {
+    return parseUntrustedUrl(source);
+  } catch {
+    throw new OpmError(
+      'UNSAFE_SOURCE',
+      `${redactAddress(source)} is not a URL opm can ${verb}`,
+    );
+  }
+}
+
 export async function fetchArtifactBytes(
   source: string,
   offline: boolean,
@@ -377,6 +399,12 @@ export async function fetchArtifactBytes(
     expectedBytes?: number;
     maximumBytes?: number;
     signal?: AbortSignal;
+    /**
+     * What the person wrote as the source, when `source` is what opm made of it
+     * (a path against the project root): an error names what was written, as
+     * an address is named, and not the path made of it.
+     */
+    written?: string;
   } = {},
 ): Promise<Uint8Array> {
   const absoluteMaximum = 512 * 1024 * 1024;
@@ -404,16 +432,17 @@ export async function fetchArtifactBytes(
     if (offline) {
       throw new OpmError(
         'OFFLINE',
-        `Refusing network fetch for ${source} while offline`,
+        `Refusing network fetch for ${redactAddress(source)} while offline`,
       );
     }
+    assertReadableUrl(source, 'fetch');
     const response = await fetch(source, {
       ...(!(options.signal === undefined) && { signal: options.signal }),
     });
     if (!response.ok) {
       throw new OpmError(
         'FETCH_FAILED',
-        `Failed to fetch ${source}: HTTP ${response.status}`,
+        `Failed to fetch ${redactAddress(source)}: HTTP ${response.status}`,
       );
     }
     const declared = response.headers.get('content-length');
@@ -442,8 +471,9 @@ export async function fetchArtifactBytes(
     return bytes;
   }
   // file path
+  const written = options.written ?? source;
   const path = source.startsWith('file:')
-    ? fileURLToPath(source)
+    ? fileURLToPath(assertReadableUrl(source, 'read'))
     : resolve(source);
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
@@ -455,7 +485,7 @@ export async function fetchArtifactBytes(
     if (!before.isFile())
       throw new OpmError(
         'UNSAFE_SOURCE',
-        `Artifact source is not a regular file: ${path}`,
+        `Artifact source is not a regular file: ${shownSource(written, path)}`,
       );
     if (before.size > BigInt(limit))
       throw new OpmError(
@@ -488,19 +518,22 @@ export async function fetchArtifactBytes(
     )
       throw new OpmError(
         'INPUT_CHANGED',
-        `Artifact source changed while it was read: ${path}`,
+        `Artifact source changed while it was read: ${shownSource(written, path)}`,
       );
     return bytes;
   } catch (error) {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new OpmError('NOT_FOUND', `Artifact source not found: ${path}`);
+      throw new OpmError(
+        'NOT_FOUND',
+        `Artifact source not found: ${shownSource(written, path)}`,
+      );
     }
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ELOOP')
       throw new OpmError(
         'UNSAFE_SOURCE',
-        `Artifact source must not be a symbolic link: ${path}`,
+        `Artifact source must not be a symbolic link: ${shownSource(written, path)}`,
       );
     throw error;
   } finally {
@@ -670,7 +703,7 @@ export async function materializeLockPackage(input: {
       )
         throw new OpmError(
           'UNVERIFIED_ARTIFACT',
-          `Refusing to refetch ${pkg.purl} outside its bounded provider transport`,
+          `Refusing to refetch ${echoed(pkg.purl)} outside its bounded provider transport`,
         );
       loaded ??= await fetchArtifactBytes(pkg.source, offline, {
         expectedBytes: pkg.size,
@@ -679,13 +712,13 @@ export async function materializeLockPackage(input: {
       if (actual !== pkg.digest) {
         throw new OpmError(
           'DIGEST_MISMATCH',
-          `Digest mismatch for ${pkg.alias}: expected ${pkg.digest}, got ${actual}`,
+          `Digest mismatch for ${echoed(pkg.alias)}: expected ${echoed(pkg.digest)}, got ${actual}`,
         );
       }
       if (loaded.byteLength !== pkg.size) {
         throw new OpmError(
           'SIZE_MISMATCH',
-          `Size mismatch for ${pkg.alias}: expected ${pkg.size}, got ${loaded.byteLength}`,
+          `Size mismatch for ${echoed(pkg.alias)}: expected ${pkg.size}, got ${loaded.byteLength}`,
         );
       }
       bytes = loaded;
@@ -802,7 +835,7 @@ export async function materializeLockPackage(input: {
         if (publishedTreeDigest !== treeDigest)
           throw new OpmError(
             'INPUT_CHANGED',
-            `Post-build tree for ${pkg.purl} changed during publication`,
+            `Post-build tree for ${echoed(pkg.purl)} changed during publication`,
           );
       } catch (error) {
         await removeChild(storeHandle, storeName, {
@@ -905,7 +938,10 @@ export async function installFromLock(input: {
   for (const alias of aliases) {
     const pkg = lockPackages[alias];
     if (!pkg)
-      throw new OpmError('NOT_FOUND', `Lock entry missing for ${alias}`);
+      throw new OpmError(
+        'NOT_FOUND',
+        `Lock entry missing for ${echoed(alias)}`,
+      );
     freezeBoundLockPackage(pkg);
     selectedPackages.set(alias, pkg);
   }
@@ -925,7 +961,10 @@ export async function installFromLock(input: {
   for (const alias of aliases) {
     const pkg = selectedPackages.get(alias);
     if (!pkg)
-      throw new OpmError('NOT_FOUND', `Lock entry missing for ${alias}`);
+      throw new OpmError(
+        'NOT_FOUND',
+        `Lock entry missing for ${echoed(alias)}`,
+      );
     const capability = verifiedArtifactFor(pkg);
     await assertLockPackageAllowed(pkg, policy, evaluationTime, {
       registryArtifactVerified: capability?.provenance === 'registry',
@@ -954,7 +993,10 @@ export async function installFromLock(input: {
     const safeAlias = assertSafeSegment(alias, 'package alias');
     const pkg = selectedPackages.get(alias);
     if (!pkg) {
-      throw new OpmError('NOT_FOUND', `Lock entry missing for ${alias}`);
+      throw new OpmError(
+        'NOT_FOUND',
+        `Lock entry missing for ${echoed(alias)}`,
+      );
     }
     const {
       storePath,

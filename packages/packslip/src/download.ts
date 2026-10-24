@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { PackslipError } from './errors.js';
 import type { Fetcher } from './fetch.js';
 import type { Artifact, ReleaseStatement, Subject } from './types.js';
+import { shown } from './shown.js';
 
 export function subjectFor(statement: ReleaseStatement, name: string): Subject {
   const subject = statement.subjects.find(
@@ -10,7 +11,7 @@ export function subjectFor(statement: ReleaseStatement, name: string): Subject {
   if (subject === undefined)
     throw new PackslipError(
       'INVALID_STATEMENT',
-      `${name} is not a subject of the release, so nothing signs its bytes`,
+      `${shown(name)} is not a subject of the release, so nothing signs its bytes`,
     );
   return subject;
 }
@@ -29,20 +30,20 @@ export function checkDigest(
   if (expectedSize !== undefined && bytes.byteLength !== expectedSize)
     throw new PackslipError(
       'SIZE_MISMATCH',
-      `${subject.name} is ${bytes.byteLength} bytes; the signed size is ${expectedSize}`,
+      `${shown(subject.name)} is ${bytes.byteLength} bytes; the signed size is ${expectedSize}`,
     );
   const sha256 = createHash('sha256').update(bytes).digest('hex');
   if (sha256 !== subject.sha256)
     throw new PackslipError(
       'DIGEST_MISMATCH',
-      `${subject.name} has sha256 ${sha256}, not the signed ${subject.sha256}`,
+      `${shown(subject.name)} has sha256 ${sha256}, not the signed ${subject.sha256}`,
     );
   if (subject.sha512 !== undefined) {
     const sha512 = createHash('sha512').update(bytes).digest('hex');
     if (sha512 !== subject.sha512)
       throw new PackslipError(
         'DIGEST_MISMATCH',
-        `${subject.name} has sha512 ${sha512}, not the signed ${subject.sha512}`,
+        `${shown(subject.name)} has sha512 ${sha512}, not the signed ${subject.sha512}`,
       );
   }
 }
@@ -69,7 +70,7 @@ export async function fetchArtifact(
   if (response.status !== 200)
     throw new PackslipError(
       'UNAVAILABLE',
-      `${url} answered ${response.status} for ${artifact.name}`,
+      `${url} answered ${response.status} for ${shown(artifact.name)}`,
     );
   checkArtifactBytes(statement, artifact, response.bytes);
   return response.bytes;

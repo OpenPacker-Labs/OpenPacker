@@ -14,6 +14,7 @@ import {
   assertPackageIdentityMatchesRequest,
   compareParsedVersions,
   compareCodePoints,
+  echoed,
   evaluateSemverRange,
   encodeUrlPathComponent,
   formatPurl,
@@ -173,7 +174,7 @@ export function splitModulePath(path: string) {
   if (segments.length === 0)
     throw new ProviderError(
       'INVALID_NATIVE_COORDINATE',
-      `Empty Go module path: ${path}`,
+      `Empty Go module path: ${echoed(path)}`,
     );
   const name = segments.pop()!;
   if (segments.length === 0) return { name };
@@ -460,7 +461,7 @@ export class GolangCodec
     )
       throw new ProviderError(
         'INVALID_NATIVE_COORDINATE',
-        `Invalid Go module coordinate: ${value}`,
+        `Invalid Go module coordinate: ${echoed(value)}`,
       );
     const parts = splitModulePath(path);
     return {
@@ -479,7 +480,7 @@ export class GolangCodec
     if (parsed.type !== 'golang')
       throw new ProviderError(
         'INVALID_PURL',
-        `Expected golang PURL, received ${parsed.type}`,
+        `Expected golang PURL, received ${echoed(parsed.type)}`,
       );
     const path = modulePathFromParts(parsed.namespace, parsed.name);
     encodeGoModulePath(path);
@@ -662,7 +663,7 @@ export class GolangCodec
             'golang',
             'GOLANG_BUILD_CONSTRAINT_NOT_EXACT',
             `/buildConstraints/${index}`,
-            `Build constraint ${constraint} is not an exact OS/arch predicate and is preserved natively only`,
+            `Build constraint ${echoed(constraint)} is not an exact OS/arch predicate and is preserved natively only`,
             undefined,
             'error',
           ),
@@ -1052,7 +1053,7 @@ export class GolangProxyProvider implements CatalogProvider {
     if (!parsed.version)
       throw new ProviderError(
         'ARTIFACT_NOT_FOUND',
-        `No exact module coordinate for ${exactPurl}`,
+        `No exact module coordinate for ${echoed(exactPurl)}`,
       );
     const path = modulePathFromParts(parsed.namespace, parsed.name);
     const url = this.moduleUrl(path, `@v/${parsed.version}.zip`);
@@ -1206,7 +1207,7 @@ export class GolangProxyProvider implements CatalogProvider {
       if (!existing)
         throw new ProviderError(
           'STALE_METADATA',
-          `Received 304 without cached list for ${key}`,
+          `Received 304 without cached list for ${echoed(key)}`,
           304,
         );
       const revalidated = { ...existing, retrievedAt: this.clock.now() };

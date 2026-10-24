@@ -1,3 +1,5 @@
+import { echoed } from '@openpacker/adapter-core';
+import { plainLine } from '@openpacker/canonical';
 import type { PackageInstance } from '@openpacker/contracts';
 import { binDeclarationsFromExecutables } from './bins.js';
 import { requireAdapterRegistry } from './adapters.js';
@@ -178,14 +180,14 @@ export async function resolveTransitive(input: {
       if (actual !== artifact.digest)
         throw new OpmError(
           'DIGEST_MISMATCH',
-          `Registry digest mismatch for ${artifact.exactPurl}: ` +
-            `the ${instance.identity.purlType} provider reported ${artifact.digest}, ` +
+          `Registry digest mismatch for ${echoed(artifact.exactPurl)}: ` +
+            `the ${echoed(instance.identity.purlType)} provider reported ${echoed(artifact.digest)}, ` +
             `the bytes hash to ${actual}`,
         );
       if (artifact.size > 0 && artifact.bytes.byteLength !== artifact.size)
         throw new OpmError(
           'SIZE_MISMATCH',
-          `Registry size mismatch for ${artifact.exactPurl}: ` +
+          `Registry size mismatch for ${echoed(artifact.exactPurl)}: ` +
             `expected ${artifact.size} bytes, got ${artifact.bytes.byteLength}`,
         );
 
@@ -276,7 +278,7 @@ export async function resolveTransitive(input: {
       if (key === undefined)
         throw new OpmError(
           'UNRESOLVABLE',
-          `Selected package ${instance.identity.exactPurl} has no unique lock entry`,
+          `Selected package ${echoed(String(instance.identity.exactPurl))} has no unique lock entry`,
         );
       dependencies[key] ??= [];
     }
@@ -326,7 +328,7 @@ export async function resolveTransitive(input: {
     const reason = error instanceof Error ? error.message : String(error);
     throw new OpmError(
       error instanceof OpmError ? error.code : 'UNRESOLVABLE',
-      `Cannot lock the dependency closure of ${resolvable.map((pkg) => pkg.purl).join(', ')}: ${reason}${unresolvedNote(unresolved, gated)}`,
+      `Cannot lock the dependency closure of ${resolvable.map((pkg) => echoed(pkg.purl)).join(', ')}: ${reason}${unresolvedNote(unresolved, gated)}`,
     );
   }
   return { packages: out, dependencies, aliases };
@@ -361,7 +363,7 @@ function unresolvedNote(
       .slice(0, 5)
       .map(
         (item) =>
-          `\n  - ${item.purl}: ${item.reason}${askedBy(item.requiredBy)}`,
+          `\n  - ${echoed(item.purl)}: ${plainLine(item.reason)}${askedBy(item.requiredBy)}`,
       )
       .join('') +
     (items.length > 5 ? `\n  - and ${items.length - 5} more` : '');
