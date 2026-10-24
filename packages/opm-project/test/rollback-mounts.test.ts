@@ -37,6 +37,10 @@ interface Report {
 async function inMounts(body: string): Promise<Report> {
   const root = await project(['base']);
   const report = temporary(`${root}.report.json`);
+  // What a body makes beside the project (another project, a second name for
+  // it), removed after the test like the project; its mounts were the child's.
+  temporary(`${root}-b`);
+  temporary(`${root}-alias`);
   const run = await child(
     root,
     `import { execFileSync } from 'node:child_process';
