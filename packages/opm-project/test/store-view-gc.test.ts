@@ -19,8 +19,8 @@ import {
   listGenerations,
   projectPaths,
 } from '../src/index.js';
-import { currentOwner } from '../src/run-owner.js';
-import { scratchName, scratchNameFor } from '../src/run-scratch.js';
+import { currentOwner } from '../src/process-owner.js';
+import { makeScratch } from '../src/run-scratch.js';
 import { storeViews } from '../src/store-view.js';
 
 configureDefaultAdapters();
@@ -86,7 +86,7 @@ describe('opm gc while a tool runs', () => {
       expect(made).toBeDefined();
       const { removed } = await collectGarbage({ root });
       expect(removed).toEqual(unreachable);
-      expect((await readdir(join(store, made!))).sort()).toEqual(
+      expect((await readdir(join(store, made!, 'tree'))).sort()).toEqual(
         [installed, ...unreachable].map((path) => basename(path)).sort(),
       );
     } finally {
@@ -105,14 +105,15 @@ describe('opm gc after a run that was killed', () => {
     await mkdir(store, { recursive: true });
     const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
     await new Promise((resolve) => child.once('exit', resolve));
-    const ended = { ...currentOwner(), pid: child.pid!, start: '' };
-    const left = scratchNameFor('.view-', ended);
-    const running = scratchName('.view-');
-    const foreign = scratchNameFor('.view-', { ...ended, machine: 'zzzzzzzz' });
-    for (const name of [left, running, foreign])
-      await mkdir(join(store, name, `sha256-${'0'.repeat(64)}`), {
-        recursive: true,
-      });
+    const ended = { ...(await currentOwner()), pid: child.pid! };
+    const made = [
+      await makeScratch(store, '.view-', ended),
+      await makeScratch(store, '.view-'),
+      await makeScratch(store, '.view-', { ...ended, host: 'another-host' }),
+    ];
+    for (const { tree } of made)
+      await mkdir(join(tree, `sha256-${'0'.repeat(64)}`));
+    const [left, running, foreign] = made.map(({ path }) => basename(path));
 
     await collectGarbage({ root, dryRun: true });
     expect((await readdir(store)).sort()).toEqual(

@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { materialiseTree } from '@openpacker/project-io';
 import { isSameDirectory, storeViews } from '../src/store-view.js';
@@ -12,12 +12,16 @@ import { isSameDirectory, storeViews } from '../src/store-view.js';
  * handle opened afterwards would bind that one, with whatever it holds.
  */
 
-/** Run in turn, one before each entry is linked into a view. */
+/**
+ * Run in turn, one before each entry is linked into a view, with the view's
+ * directory in the store (what a process that can write the store can rename:
+ * the links go into its `tree`).
+ */
 const swaps: ((view: string) => Promise<void>)[] = [];
 
 /** The layout's own tree copy, after whatever swap is next. */
 const linkTree: typeof materialiseTree = async (...args) => {
-  await swaps.shift()?.(args[2]);
+  await swaps.shift()?.(dirname(args[2]));
   return await materialiseTree(...args);
 };
 
@@ -49,7 +53,9 @@ describe('a view swapped for another directory while it is made', () => {
     const { root, entries } = await store();
     swaps.push(async (view) => {
       await rename(view, `${view}-moved`);
-      await mkdir(join(view, `sha256-${'f'.repeat(64)}`), { recursive: true });
+      await mkdir(join(view, 'tree', `sha256-${'f'.repeat(64)}`), {
+        recursive: true,
+      });
     });
     // One handle for three entries: they are bound through a view.
     await expect(storeViews(entries, 1, linkTree)).rejects.toThrow(
@@ -67,7 +73,7 @@ describe('a view swapped for another directory while it is made', () => {
     swaps.push(
       async (view) => {
         await rename(view, `${view}-moved`);
-        await mkdir(view);
+        await mkdir(join(view, 'tree'), { recursive: true });
       },
       async (view) => {
         await rename(view, `${view}-other`);
@@ -92,9 +98,9 @@ describe('a view whose held directory lists the right names', () => {
     const { root, entries } = await store();
     swaps.push(async (view) => {
       await rename(view, `${view}-moved`);
-      await mkdir(view);
+      await mkdir(join(view, 'tree'), { recursive: true });
       for (const entry of entries)
-        await mkdir(join(`${view}-moved`, basename(entry)));
+        await mkdir(join(`${view}-moved`, 'tree', basename(entry)));
     });
     await expect(storeViews(entries, 1, linkTree)).rejects.toThrow(
       'changed while it was made',

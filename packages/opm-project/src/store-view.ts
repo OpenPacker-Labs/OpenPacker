@@ -1,10 +1,10 @@
 import type { Stats } from 'node:fs';
-import { lstat, mkdir, readdir, rm, type FileHandle } from 'node:fs/promises';
+import { lstat, readdir, rm, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { materialiseTree } from '@openpacker/project-io';
 import { MAX_INHERITED_HANDLES } from '@openpacker/sandbox';
 import { openStableDirectory, stableHandlePath } from './paths.js';
-import { scratchName, sweepAbandoned } from './run-scratch.js';
+import { makeScratch, sweepAbandoned } from './run-scratch.js';
 import { OpmError } from './types.js';
 
 const VIEW_PREFIX = '.view-';
@@ -35,7 +35,9 @@ export const sweepAbandonedViews = (store: string): Promise<void> =>
  * of hard links to exactly those entries, opened once and bound where the store
  * is. Inside the sandbox the store holds the same entries at the same paths as
  * when each was bound on its own, and nothing else: no other package in the
- * store, and not the view itself, becomes visible. The bind stays read-only,
+ * store, and not the view itself, becomes visible. That directory is the
+ * `tree` of a run's scratch directory (`run-scratch.ts`), whose `.owner` says
+ * which process made it and is not bound. The bind stays read-only,
  * and a store file's bytes are not copied. The links are made through no-follow
  * handles as a layout's are, so a symlink is refused here as a bind refuses it.
  *
@@ -102,6 +104,7 @@ export async function storeViews(
   const readonlyPaths = unique.filter((path) => !viewed.has(dirname(path)));
   const authorities: StoreView['authorities'] = [];
   const handles: FileHandle[] = [];
+  /** The scratch directories made: each view's `.owner` and `tree`. */
   const views: string[] = [];
   const dispose = async () => {
     await Promise.all(handles.map((handle) => handle.close().catch(() => {})));
@@ -110,19 +113,20 @@ export async function storeViews(
   try {
     for (const [store, entries] of viewed) {
       await sweepAbandoned(store, VIEW_PREFIX);
-      const view = join(store, scratchName(VIEW_PREFIX));
-      await mkdir(view, { mode: 0o755 }).catch((error: Error) => {
-        throw new OpmError(
-          'SANDBOX_UNAVAILABLE',
-          `${unique.length} store entries do not fit in the ${budget} of ` +
-            `the ${MAX_INHERITED_HANDLES} handles a sandboxed process may ` +
-            `inherit that are left for them, so the ${entries.length} of ` +
-            `${store} are bound through a view of it, and it cannot be made ` +
-            `there: ${error.message}`,
-          { cause: error },
-        );
-      });
-      views.push(view);
+      const { path, tree: view } = await makeScratch(store, VIEW_PREFIX).catch(
+        (error: Error) => {
+          throw new OpmError(
+            'SANDBOX_UNAVAILABLE',
+            `${unique.length} store entries do not fit in the ${budget} of ` +
+              `the ${MAX_INHERITED_HANDLES} handles a sandboxed process may ` +
+              `inherit that are left for them, so the ${entries.length} of ` +
+              `${store} are bound through a view of it, and it cannot be made ` +
+              `there: ${error.message}`,
+            { cause: error },
+          );
+        },
+      );
+      views.push(path);
       // Opened once, before anything is linked into it, and bound from this
       // handle, which must hold the directory the links went into.
       const handle = await openStableDirectory(view);

@@ -1197,8 +1197,10 @@ by name. Store entries are bound one by one while the sandbox's 16 handles
 allow, and past that through one view of their store (ADR 0036). Both are
 removed when the run ends, Ctrl-C and SIGTERM included (a second signal ends
 `opmx` at once). After a SIGKILL or a crash, the next run in the same place, or
-`opm gc` for a project's views, removes them where a machine id is readable; a
-left-behind view makes `opm gc --shared` keep its entries.
+`opm gc` for a project's views, removes them once the process that made them has
+ended, judged by the same owner rule as a step's lock (`.owner`, ADR 0056); what
+another host, container or earlier boot left there and cannot be placed stays,
+and a left-behind view makes `opm gc --shared` keep its entries.
 
 ### Delegated adapter plugins
 

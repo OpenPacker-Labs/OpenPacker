@@ -149,11 +149,11 @@ Decision:
      view that cannot be made in its store, are refused with a message that
      names the bound.
    - A view is a directory of hard links to exactly the entries the run needs,
-     made inside the store as `.view-<owner>-<uuid>` and bound read-only at the
-     store's own path. It is opened once, before anything is linked into it, and
-     bound from that handle; once its entries are linked its path must still
-     name that directory and the directory must hold exactly them, or it is
-     refused.
+     made inside the store as the `tree` of `.view-<uuid>` (a run's scratch
+     directory, decision 3) and bound read-only at the store's own path. It is
+     opened once, before anything is linked into it, and bound from that handle;
+     once its entries are linked its path must still name that directory and the
+     directory must hold exactly them, or it is refused.
    - The links are made by the layout's own tree copy (`materialiseTree`, ADR
      0048): each file linked is the inode opened through no-follow handles, and
      an entry or a name in it that is a symbolic link, or that was swapped
@@ -173,8 +173,8 @@ Decision:
      chose the newest release, and a pinned older tool
      (`opmx pkg:npm/cowsay@1.5.0`) got the dependency versions the newest wants.
    - The layout is written by the same writer as a project's (ADR 0048), with
-     hard links to the store's files, under
-     `<tool cache>/.opm/runs/run-<owner>-<uuid>`.
+     hard links to the store's files, as the `tree` of
+     `<tool cache>/.opm/runs/run-<uuid>`.
    - The layout is told which package each one requires, as the solve chose (ADR
      0054), so two versions of one name stay apart. cowsay's closure holds four
      names twice; told nothing, the layout kept one of each, and cowsay got
@@ -189,37 +189,47 @@ Decision:
      run trusts without checking it again.
    - Python, .NET and native tools run as before; their closure is bound through
      views when it does not fit.
-3. **A run removes both when it ends** (`run-scratch.ts`, `run-owner.ts`).
+3. **A run removes both when it ends** (`run-scratch.ts`).
    - `opmx` holds SIGINT, SIGTERM and SIGHUP while a tool runs: the first ends
      the sandboxed process tree, the run removes its view and its layout, and
      the same signal is raised again, so `opmx` ends by it. A second signal,
      whichever it is, while they are still being removed does not wait: it is
      raised at once and `opmx` ends by it, leaving what was not yet removed to
      the next run in the same place.
-   - A run killed outright (SIGKILL, a crash, the power) leaves them. Each name
-     says who made it: a pid, the time it started, and digests of its PID
-     namespace, its boot, its machine id and its host name. The next run that
-     makes one in the same place, and `opm gc` for the views of a project's
-     store, removes those whose owner has ended: of this machine (machine id and
-     host name) in an earlier boot, whatever its pid; or of this machine, boot
-     and namespace, with its pid unused or used by a process that started at
-     another time. Anything else (another machine id or host name, another PID
-     namespace, a machine id this host cannot read) is another host or a
-     container sharing the store, taken to be running and left alone. A host
-     with no readable machine id (`/etc/machine-id` and
+   - A run killed outright (SIGKILL, a crash, the power) leaves them. So each is
+     a directory `<prefix><uuid>` that holds `.owner`, written as soon as the
+     directory is made, and the `tree` the run uses, which is all a sandbox
+     binds: a tool does not see who made it. `.owner` is the owner record of ADR
+     0056 (`owner-file.ts`): a pid, the time it started, the host name, the PID
+     namespace, and digests of the boot id and the machine id.
+   - The next run that makes one in the same place, and `opm gc` for the views
+     of a project's store, removes those whose owner has ended, by the one rule
+     every holder opm records is judged by (`process-owner.ts`, ADR 0056): an
+     owner of this machine (machine id and host name) in an earlier boot,
+     whatever its pid; or of this place (host name, machine id, boot and PID
+     namespace equal, a field neither side can read counting as equal), with its
+     pid unused, a zombie, or used by a process that started at another time,
+     another user's process included. Anything else (another host name, machine
+     id, boot or PID namespace, or a field one side reads and the other cannot)
+     is another host or a container sharing the store, taken to be running and
+     left alone.
+   - A directory with no `.owner` a minute after it was made was left by a run
+     cut short between the two, and is removed; an `.owner` opm cannot read (cut
+     short, a newer version, a link) is judged by nobody and left alone.
+   - A host with no readable machine id (`/etc/machine-id` and
      `/var/lib/dbus/machine-id` both absent: minimal container images, macOS,
-     Windows) therefore removes no leftover at all, even one of its own boot
-     with an unused pid. The owner rule of #182 (`process-owner.ts`) needs the
-     machine id only to tell an earlier boot, and judges a pid without it; this
-     one is to be replaced by it. Measured with both files masked in a mount
-     namespace: a leftover of a dead pid was removed with the machine id
-     readable and kept with it masked.
+     Windows) removes what a run of its own boot left once that run's pid has
+     ended: the machine id is needed only to tell an earlier boot. After a
+     reboot such a host cannot place the earlier boot's leftovers, and keeps
+     them. Before this rule (`run-owner.ts`, its own) such a host removed no
+     leftover at all; measured then with both files masked in a mount namespace,
+     a leftover of a dead pid was removed with the machine id readable and kept
+     with it masked.
    - `opm gc` does not count a view as a store path (`isStoreView`).
    - While a view exists, each entry it shows has files with a second name, so
      the shared store's `opm gc --shared` counts that entry as in use, and keeps
-     it. A view left behind by a run killed outright, on a host that does not
-     remove it (above), keeps its entries in the shared store until it is
-     removed by hand.
+     it. A view left behind by a run killed outright, where it is not removed
+     (above), keeps its entries in the shared store until it is removed by hand.
 4. **As root, the sandboxed process holds no capabilities** (`native.ts`). bwrap
    run by root gives the process root's capabilities unless told to drop them,
    and CAP_SYS_ADMIN remounts any read-only bind read-write. The bwrap backend
@@ -266,7 +276,8 @@ Limits:
 - What a run killed outright leaves on another machine or in another PID
   namespace is never removed from here, by a run or by `opm gc`: whether its
   owner still runs cannot be told. A later run on that machine, or in that
-  namespace, removes it.
+  namespace, removes it. On a host with no machine id, what an earlier boot left
+  is never removed by a run.
 - Two machines with the same machine id and host name are taken for one, as
   machine-id(5) requires the id to be unique: a clone that kept its original's
   id, sharing a store with it, would have a live run's leftovers taken for an

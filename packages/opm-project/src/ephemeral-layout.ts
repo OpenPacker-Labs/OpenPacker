@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { NativeLockEntry } from '@openpacker/adapter-core';
 import { tarballWrapper } from '@openpacker/project-io';
 import { requireAdapterRegistry } from './adapters.js';
-import { scratchName, sweepAbandoned } from './run-scratch.js';
+import { makeScratch, sweepAbandoned } from './run-scratch.js';
 import {
   ecosystemFromPurl,
   purlPackageName,
@@ -67,9 +67,12 @@ export async function layOutTool(input: {
     );
   const runs = join(input.cacheRoot, '.opm', 'runs');
   await sweepAbandoned(runs, RUN_PREFIX);
-  const root = join(runs, scratchName(RUN_PREFIX));
-  await mkdir(root, { recursive: true });
-  const dispose = () => rm(root, { recursive: true, force: true });
+  await mkdir(runs, { recursive: true });
+  // The layout is the scratch's `tree`; its `.owner` stays outside what the
+  // sandbox binds.
+  const scratch = await makeScratch(runs, RUN_PREFIX);
+  const root = scratch.tree;
+  const dispose = () => rm(scratch.path, { recursive: true, force: true });
   try {
     await format.writeLayout(
       {
