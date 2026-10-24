@@ -1205,11 +1205,13 @@ A tool has no network unless it is granted one: it reaches nothing outside its
 sandbox, and nothing outside reaches it, a server included. `--allow-network`
 shares this host's network with the run (`opmx --allow-network http-server`),
 and a project grants a package network for every run, and for its lifecycle
-scripts, with `[sandbox.packages."<purl>"] network = true`. When a tool listens
-without either, `opmx` says so on stderr, once, with the port:
+scripts, with `[sandbox.packages."<purl>"] network = true`. Either also gives
+the tool outbound network and this host's loopback services, so grant it to
+reach a server, not by habit. When a tool listens without either, `opmx` says so
+on stderr, once, with the port:
 
 ```text
-opmx: the tool listens on port 8080, but has no network: nothing outside its sandbox can reach it. Run it with --allow-network to share this host's network.
+opmx: the tool listens on port 8080; nothing outside its sandbox can reach it. If you meant to reach it from this host, --allow-network shares this host's network, which also gives the tool outbound network and this host's loopback services.
 ```
 
 An installed npm bin runs from a `node_modules` of its package's closure,

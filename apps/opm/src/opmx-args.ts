@@ -189,8 +189,9 @@ applies, else a [sandbox] timeout_ms it sets, else no limit.
 
 A tool has no network unless it is granted one: it reaches nothing outside
 its sandbox, and nothing outside reaches it, a server included.
---allow-network shares this host's network with the run; a project grants a
-package for every run with [sandbox.packages."<purl>"] network = true. opmx
+--allow-network shares this host's network with the run, which also gives
+the tool outbound network and this host's loopback services; a project grants
+a package for every run with [sandbox.packages."<purl>"] network = true. opmx
 says on stderr when a tool listens without it, and on which port.
 
 Tool files are kept once per machine in the shared package store

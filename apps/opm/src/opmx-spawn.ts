@@ -279,7 +279,7 @@ async function spawnProcess(
         io.stderr.write(
           report(
             'opmx: ',
-            `the tool listens on port ${port}, but has no network: nothing outside its sandbox can reach it. Run it with --allow-network to share this host's network.`,
+            `the tool listens on port ${port}; nothing outside its sandbox can reach it. If you meant to reach it from this host, --allow-network shares this host's network, which also gives the tool outbound network and this host's loopback services.`,
           ),
         ),
       // The tool's output reaches the terminal as the tool writes it: a

@@ -97,7 +97,7 @@ describe.runIf(canSandbox)('a server opmx runs', () => {
     expect(answer).toEqual({ refused: 'ECONNREFUSED' });
     expect(exit).toBe(0);
     expect(said).toBe(
-      `opmx: the tool listens on port ${port}, but has no network: nothing outside its sandbox can reach it. Run it with --allow-network to share this host's network.\n`,
+      `opmx: the tool listens on port ${port}; nothing outside its sandbox can reach it. If you meant to reach it from this host, --allow-network shares this host's network, which also gives the tool outbound network and this host's loopback services.\n`,
     );
   }, 120_000);
 

@@ -470,14 +470,18 @@ Decision:
    read, so a run that shares the host's is never reported. The first port in
    the LISTEN state is handed to the caller (`onIsolatedListen`), once, and
    `opmx` writes one line to stderr: the port, that nothing outside the sandbox
-   can reach it, and `--allow-network`. Run by a user who is not root, bwrap
-   makes the run's namespaces inside a user namespace of its own; the processes
-   there still answer to that user, and `/proc/<pid>/net/tcp` of the first of
-   them is readable by the process that started bwrap (measured with a child of
-   uid 65534 on Linux 6.18; `/proc/<pid>/root/proc/net/tcp`, the other way in,
-   is not needed). Where it cannot be read (a `/proc` mounted with `hidepid`, a
-   kernel without `/proc/<pid>/task/<pid>/children`, MXC, the mock backend)
-   nothing is said; `opmx --help` and the opm guide say the same in words.
+   can reach it, and, if it was meant to be reached from this host, that
+   `--allow-network` shares this host's network, which also gives the tool
+   outbound network and the host's loopback services: the hint names the grant
+   and what it costs, rather than urging it. Run by a user who is not root,
+   bwrap makes the run's namespaces inside a user namespace of its own; the
+   processes there still answer to that user, and `/proc/<pid>/net/tcp` of the
+   first of them is readable by the process that started bwrap (measured with a
+   child of uid 65534 on Linux 6.18; `/proc/<pid>/root/proc/net/tcp`, the other
+   way in, is not needed). Where it cannot be read (a `/proc` mounted with
+   `hidepid`, a kernel without `/proc/<pid>/task/<pid>/children`, MXC, the mock
+   backend) nothing is said; `opmx --help` and the opm guide say the same in
+   words.
 
 `opmx-network.test.ts` (apps/opm) runs an installed server through bwrap: with
 no grant a request to its port is refused and `opmx` says so, once, with the
