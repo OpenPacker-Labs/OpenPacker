@@ -1,3 +1,5 @@
+import type { CanonicalParseLimits } from './errors.js';
+
 /**
  * What building each part of a parsed document costs, in bytes of heap.
  *
@@ -100,3 +102,46 @@ export const PARSE_COSTS: ParseCosts = Object.freeze({
     heapNumber: 16,
   }),
 });
+
+/**
+ * The most a document may cost to parse for each byte a reader lets it have,
+ * in the units of `PARSE_COSTS.peak` (ADR 0044, "Documents other than
+ * packuments").
+ *
+ * A byte bound does not bound what a tree costs to build: `{},` is 3 bytes and
+ * an object of 240 (110 a byte), and `{"1023":0},` is 11 bytes and an
+ * elements store of 40 KB (3,694 a byte, `member-table.ts`). One megabyte of
+ * the second ends a process with a heap of 1 GiB. The repository's own
+ * documents, minified as they are sent (the goldens, the PREX pact, and
+ * packslip's statements and bundles: 31 of them), cost 2.4 to 11.3 a byte, so
+ * 16 a byte leaves a document at its byte bound 40 percent to spare and holds
+ * whatever is sent in that many bytes to 16 times them
+ * (`document-limits.test.ts` reads those documents again).
+ */
+export const DOCUMENT_COST_PER_BYTE = 16;
+
+/**
+ * The least a document may cost, whatever its bytes: a document of a few bytes
+ * weighs more than sixteen times them (`{}` is 2 bytes and 240, `{"a":1}` 7
+ * bytes and 304), so a bound of a few bytes, or an event decoded from the
+ * bytes it is, still reads what it should.
+ */
+export const DOCUMENT_COST_FLOOR = 1024 * 1024;
+
+/**
+ * The parse limits for a document of at most `maximumBytes`: what a reader
+ * passes `parseCanonicalJson` beside its byte bound, so that the tree is
+ * bounded as the bytes are. A reader whose documents are known to be denser,
+ * or larger than any byte bound it sets (an npm packument), states its own
+ * limit instead.
+ */
+export function documentParseLimits(
+  maximumBytes: number,
+): CanonicalParseLimits & { readonly maximumCost: number } {
+  return {
+    maximumCost: Math.max(
+      maximumBytes * DOCUMENT_COST_PER_BYTE,
+      DOCUMENT_COST_FLOOR,
+    ),
+  };
+}
