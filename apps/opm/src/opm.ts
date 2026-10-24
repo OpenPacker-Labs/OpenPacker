@@ -16,8 +16,6 @@ import {
 import {
   OpmError,
   addPackage,
-  collectGarbage,
-  collectSharedStore,
   configurePackProviders,
   enableDefaultSharedStore,
   ecosystemFromPurl,
@@ -41,6 +39,7 @@ import {
   stripPurlVersion,
   planSystemInstall,
   projectPaths,
+  projectStep,
   readEnvironmentState,
   removePackage,
   registryEcosystems,
@@ -49,22 +48,20 @@ import {
   resolveGraph,
   resolveRegistryArtifact,
   solveGraph,
-  rollbackTarget,
   searchRegistry,
-  switchGeneration,
   syncProject,
   uninstallProject,
   updateProject,
   whyPackage,
   type AdapterModule,
   type AdapterRegistry,
-  type Generation,
 } from '@openpacker/opm-project';
 import { asksForHelp } from './commands/run-args.js';
+import { cliStep, runRecoverCommand } from './commands/recover.js';
 import { COMMANDS } from './commands/command-names.js';
 import { routeRun, unknownCommandHint } from './commands/run-route.js';
 import { RunError } from './commands/run-error.js';
-import { RUN_HELP } from './commands/run-help.js';
+import { helpText } from './commands/help-text.js';
 import { formatFailure, parseFailure, report } from './error-report.js';
 import { importHeading, importLine, listLine } from './stdout-lines.js';
 
@@ -189,7 +186,7 @@ export async function runOpm(
       args.options.has('help') ||
       args.command === ''
     ) {
-      out(io, help());
+      out(io, helpText());
       return EXIT_CODES.success;
     }
     if (!COMMANDS.has(args.command)) {
@@ -199,6 +196,15 @@ export async function runOpm(
       );
     }
 
+    const step = cliStep(io, args.options);
+    // A command's work on its project is one step (`project-step.ts`): bound
+    // plugins are verified once what a killed step left is put back, and the
+    // library calls inside it neither lock nor recover again.
+    const inStep = <T>(root: string, work: () => Promise<T>) =>
+      projectStep(root, step, async () => {
+        await registerBoundPlugins(root, adapterRegistry);
+        return work();
+      });
     switch (args.command) {
       case 'init': {
         const root = option(args, 'path') ?? cwd;
@@ -207,6 +213,7 @@ export async function runOpm(
           root,
           ...(name !== undefined && { name }),
           force: args.options.has('force'),
+          step,
         });
         out(
           io,
@@ -224,6 +231,7 @@ export async function runOpm(
         const result = await importNativeProject({
           root,
           force: args.options.has('force'),
+          step,
         });
         out(io, importHeading(result.imported.length, result.manifestPath));
         for (const item of result.imported) out(io, importLine(item));
@@ -261,19 +269,20 @@ export async function runOpm(
         }
         const root = (await findOpmRoot(cwd)) ?? (await requireOpmRoot(cwd));
         const offline = offlineOverride(args);
-        // A project that binds plugins resolves through them; verify the
-        // binding before any registry read it could influence.
-        await registerBoundPlugins(root, adapterRegistry);
-        const result = await addPackage({
-          allowElevation: args.options.has('allow-elevation'),
-          dryRun: args.options.has('dry-run'),
-          root,
-          spec,
-          ...(ecosystemOpt !== undefined && { ecosystem: ecosystemOpt }),
-          ...(source !== undefined && { source }),
-          ...(alias !== undefined && { alias }),
-          ...(!(offline === undefined) && { offline }),
-        });
+        // A project that binds plugins resolves through them; the binding is
+        // verified before any registry read it could influence.
+        const result = await inStep(root, () =>
+          addPackage({
+            allowElevation: args.options.has('allow-elevation'),
+            dryRun: args.options.has('dry-run'),
+            root,
+            spec,
+            ...(ecosystemOpt !== undefined && { ecosystem: ecosystemOpt }),
+            ...(source !== undefined && { source }),
+            ...(alias !== undefined && { alias }),
+            ...(!(offline === undefined) && { offline }),
+          }),
+        );
         if (result.hostInstall) {
           return writeHostInstallResult(result.hostInstall, args, io);
         }
@@ -295,33 +304,35 @@ export async function runOpm(
         const alias = args.positionals[0];
         if (!alias) throw usage('opm remove requires a package alias');
         const offline = offlineOverride(args);
-        // remove rewrites the manifest and lock; verify bound plugins first.
-        await registerBoundPlugins(root, adapterRegistry);
-        await removePackage({
-          root,
-          alias,
-          ...(!(offline === undefined) && { offline }),
-        });
-        out(io, `Removed ${alias} from manifest, lock, and install\n`);
+        // remove rewrites the manifest and lock; bound plugins are verified first.
+        const removed = await inStep(root, () =>
+          removePackage({
+            root,
+            alias,
+            ...(!(offline === undefined) && { offline }),
+          }),
+        );
+        out(io, `Removed ${removed.alias} from manifest, lock, and install\n`);
         return EXIT_CODES.success;
       }
       case 'ci': {
         const { runCiCommand } = await import('./commands/ci.js');
-        return await runCiCommand(args, io, cwd, options);
+        return await runCiCommand(args, io, cwd, { ...options, step });
       }
       case 'install': {
         // `--frozen` is `opm ci`: install exactly what the lock says.
         if (args.options.has('frozen')) {
           const { runCiCommand } = await import('./commands/ci.js');
-          return await runCiCommand(args, io, cwd, options);
+          return await runCiCommand(args, io, cwd, { ...options, step });
         }
         const root = await requireOpmRoot(cwd);
         const offline = offlineOverride(args);
-        await registerBoundPlugins(root, adapterRegistry);
-        const result = await installProject({
-          root,
-          ...(!(offline === undefined) && { offline }),
-        });
+        const result = await inStep(root, () =>
+          installProject({
+            root,
+            ...(!(offline === undefined) && { offline }),
+          }),
+        );
         const count = Object.keys(result.state.packages).length;
         out(
           io,
@@ -337,11 +348,9 @@ export async function runOpm(
       case 'uninstall': {
         const root = await requireOpmRoot(cwd);
         const alias = args.positionals[0];
-        await registerBoundPlugins(root, adapterRegistry);
-        await uninstallProject({
-          root,
-          ...(alias !== undefined && { alias }),
-        });
+        await inStep(root, () =>
+          uninstallProject({ root, ...(alias !== undefined && { alias }) }),
+        );
         out(
           io,
           alias
@@ -353,11 +362,9 @@ export async function runOpm(
       case 'sync': {
         const root = await requireOpmRoot(cwd);
         const offline = offlineOverride(args);
-        await registerBoundPlugins(root, adapterRegistry);
-        const result = await syncProject({
-          root,
-          ...(!(offline === undefined) && { offline }),
-        });
+        const result = await inStep(root, () =>
+          syncProject({ root, ...(!(offline === undefined) && { offline }) }),
+        );
         const count = Object.keys(result.lock.packages).length;
         out(io, `Synced ${count} package(s); lock and .opm/ store updated\n`);
         writeNativeProjection(result.native, io);
@@ -366,13 +373,14 @@ export async function runOpm(
       case 'update': {
         const root = await requireOpmRoot(cwd);
         const offline = offlineOverride(args);
-        await registerBoundPlugins(root, adapterRegistry);
-        const result = await updateProject({
-          root,
-          ...(args.positionals.length > 0 && { aliases: args.positionals }),
-          latest: args.options.has('latest'),
-          ...(!(offline === undefined) && { offline }),
-        });
+        const result = await inStep(root, () =>
+          updateProject({
+            root,
+            ...(args.positionals.length > 0 && { aliases: args.positionals }),
+            latest: args.options.has('latest'),
+            ...(!(offline === undefined) && { offline }),
+          }),
+        );
         out(
           io,
           result.updated.length === 0
@@ -441,8 +449,8 @@ export async function runOpm(
           out(io, '(no published versions)\n');
           return EXIT_CODES.success;
         }
-        // Newest last, matching the order the registry reports and the one
-        // `opm add` picks from when no version is given.
+        // Newest last, the order the registry reports. Prereleases are listed;
+        // `opm add` with no version takes `latest` (`default-release.ts`).
         for (const version of versions) out(io, `${plainLine(version)}\n`);
         return EXIT_CODES.success;
       }
@@ -649,6 +657,8 @@ export async function runOpm(
         const { runAuthCommand } = await import('./commands/auth.js');
         return await runAuthCommand(args, io);
       }
+      case 'recover':
+        return await runRecoverCommand(args, io, cwd, step);
       case 'generations': {
         const root = await requireOpmRoot(cwd);
         const state = await readEnvironmentState(root);
@@ -668,51 +678,25 @@ export async function runOpm(
         return EXIT_CODES.success;
       }
       case 'rollback': {
-        const root = await requireOpmRoot(cwd);
-        const to = option(args, 'to');
-        const target = to
-          ? await switchGeneration({ root, target: Number(to) })
-          : await rollbackToPrevious(root);
-        out(io, `Rolled back to generation ${target.sequence}\n`);
-        return EXIT_CODES.success;
+        const { runRollbackCommand } = await import(
+          './commands/generations.js'
+        );
+        return await runRollbackCommand(
+          args,
+          io,
+          await requireOpmRoot(cwd),
+          step,
+        );
       }
       case 'gc': {
+        const { runGcCommand, runSharedGcCommand } = await import(
+          './commands/generations.js'
+        );
         // The shared store belongs to the user, not to a project, so this
         // needs no project and never runs as part of a project's own gc.
-        if (args.options.has('shared')) {
-          const result = await collectSharedStore({
-            dryRun: args.options.has('dry-run'),
-          });
-          if (result.root === undefined) {
-            out(
-              io,
-              'No shared store is in use (OPM_STORE_HOME is off or this host has none)\n',
-            );
-            return EXIT_CODES.success;
-          }
-          const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
-          out(
-            io,
-            `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'} from ${result.root}; ` +
-              `${result.referenced} still used by a project, ${result.held} in use by an install in progress, ${result.tooNew} too new to judge\n`,
-          );
-          for (const path of result.removed) out(io, `  ${path}\n`);
-          return EXIT_CODES.success;
-        }
-        const root = await requireOpmRoot(cwd);
-        const keepValue = option(args, 'keep');
-        const result = await collectGarbage({
-          root,
-          ...(!(keepValue === undefined) && { keep: Number(keepValue) }),
-          dryRun: args.options.has('dry-run'),
-        });
-        const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
-        out(
-          io,
-          `${verb} ${result.removed.length} store path(s); retained ${result.retained.length} generation(s)\n`,
-        );
-        for (const path of result.removed) out(io, `  ${path}\n`);
-        return EXIT_CODES.success;
+        if (args.options.has('shared'))
+          return await runSharedGcCommand(args, io);
+        return await runGcCommand(args, io, await requireOpmRoot(cwd), step);
       }
       case 'shell': {
         const root = await requireOpmRoot(cwd);
@@ -734,22 +718,11 @@ export async function runOpm(
   }
 }
 
-/** Roll back one step, which is the common case. */
-async function rollbackToPrevious(root: string): Promise<Generation> {
-  const target = await rollbackTarget(root);
-  if (!target)
-    throw new OpmError(
-      'NOT_FOUND',
-      'There is no earlier generation to roll back to',
-    );
-  return switchGeneration({ root, target: target.generationDigest });
-}
-
 /** Report a failure and choose the exit code that tells a script what kind it was. */
 export function handleError(error: unknown, io: CliIo): number {
   if (error instanceof UsageError) {
     io.stderr.write(report('', error.message));
-    io.stderr.write(`\n${help()}\n`);
+    io.stderr.write(`\n${helpText()}\n`);
     return EXIT_CODES.usage;
   }
   if (error instanceof RunError) {
@@ -778,6 +751,8 @@ export function handleError(error: unknown, io: CliIo): number {
       case 'INVALID_MANIFEST':
       case 'INVALID_LOCK':
       case 'UNSUPPORTED_LOCK':
+      case 'INVALID_ROLLBACK':
+      case 'ROLLBACK_CONFLICT':
       case 'INVALID_CATALOG':
       case 'INVALID_PLUGIN_SPEC':
       case 'INVALID_PLUGIN_MANIFEST':
@@ -800,6 +775,8 @@ export function handleError(error: unknown, io: CliIo): number {
       case 'FETCH_FAILED':
       case 'UNAVAILABLE':
       case 'STORE_ENTRY_VANISHED':
+      case 'PROJECT_BUSY':
+      case 'STEP_ALIVE':
       case 'PLUGIN_ERROR':
       case 'PLUGIN_FAILED':
       case 'PLUGIN_REGISTRY_UNCONFIGURED':
@@ -1268,153 +1245,6 @@ function registryEcosystem(args: Parsed, target: string): string {
     `Cannot tell which registry "${target}" belongs to. ` +
       `Pass a PURL (pkg:npm/${target}) or --ecosystem <${ecosystems}>.`,
   );
-}
-
-function help(): string {
-  return `opm — Open Package Manager
-
-Usage:
-  opm init [--name <name>] [--path <dir>]
-  opm import --native [--path <dir>] [--force]
-  opm add <spec> [--ecosystem|-e <eco>] [--source <file|url>] [--alias <name>] [--offline|--online]
-  opm remove <alias>
-  opm install [--offline|--online]
-  opm ci [--path <dir>] [--production] [--omit <dev|optional|peer>] [--offline|--online]
-         [--workspace|-w <name|dir>]... [--include-workspace-root] [--workspaces[=false]|--no-workspaces]
-                                      install exactly what package-lock.json says;
-                                      resolves nothing, runs no install script
-                                      (opm install --frozen is the same).
-                                      A workspace lock links each member to its
-                                      directory and gives it its own node_modules;
-                                      -w installs only those members and what they
-                                      need (--include-workspace-root adds the root's
-                                      own dependencies), --workspaces=false only
-                                      the root's
-  opm uninstall [alias]
-  opm sync [--offline|--online]
-  opm update [alias...] [--latest] [--offline|--online]
-  opm list
-  opm why <alias>
-  opm gc [--keep <n>] [--dry-run]     remove store paths no retained generation uses
-  opm gc --shared [--dry-run]         remove entries of the user-level package store
-                                      that no project links to
-
-${RUN_HELP}
-
-Signed vendor releases (packslip — https://packslip.dev):
-  opm add packslip:github.com/jdx/hk[@version]    (or packslip:jdx/hk)
-  opm packslip verify <spec>                      who signed it; installs nothing
-  opm packslip pin <spec> [--write]               hold a keyless project to its signer
-  opm packslip approve <proposal-id>              accept one reported signer change
-  Trust lives in opm.toml, never in the lock:
-    [adapters.packslip.trust."github.com/jdx/hk"]  pin = ["ps1_…"]  (keyless)
-    [adapters.packslip.trust."example.com/tool"]   public_key = "RW…"  (key-signed)
-  A changed signer stops the resolve and prints a proposal id; nothing is
-  accepted until a person approves exactly that change.
-  OPM_PACKSLIP_GITHUB_TOKEN_ENV names the variable holding a GitHub token;
-  OPM_PACKSLIP_TRUSTED_ROOT points at a Sigstore trusted_root.json.
-
-Browse registries (no project needed):
-  opm search <query|purl> [--ecosystem|-e <eco>]
-  opm versions <purl> [--ecosystem|-e <eco>]
-  opm info <exact-purl> [--ecosystem|-e <eco>]
-
-Resolve a full dependency graph (transitive, proof-checked):
-  opm resolve pkg:npm/chalk --range '^4.1.0'
-  opm resolve pkg:npm/chalk --candidates 8
-
-Pack a project:
-  opm pack npm --package-version <version>
-  opm pack <npm|cargo|pypi|nuget|maven|golang|oci|nix|deb|winget|chocolatey> --package-version <version>
-  opm pack <purl-type> --package-version <version> --provider <id> --dry-run
-  Standard packing is the default. OCI targets require explicit --os and --arch.
-  Delegated providers come from [pack.providers.<id>] in opm.toml.
-  Provider builds require --allow-build; network additionally requires --allow-network.
-  Provider environment is empty unless each name is granted with --allow-env NAME.
-
-Publish to a PREX registry (not npmjs, PyPI, or crates.io):
-  opm publish --from <dir> --registry <url>
-  opm publish --pack <ecosystem> --package-version <v> --registry <url>
-  opm yank <exact-purl> --registry <url> --reason <text>
-  OPM_PREX_REGISTRY is the default registry URL. --offline is refused.
-
-Host/profile installers use the same verbs when the registry advertises
-install (capability discovery). Examples:
-  opm add pkg:nix/hello
-  opm add pkg:deb/curl --allow-elevation --dry-run
-  opm system available   # alias: list install-capable adapters
-
-Delegated adapter plugins (user-level, never installed by default):
-  opm plugin add <name>[@version]     install from the plugin registry
-  opm plugin list                     show installed plugins and their pins
-  opm plugin remove <name>            remove a plugin and its store entry
-  opmx --plugin <name> <tool>         ephemeral-run a plugin-served purl type
-  [plugins.<id>] store_digest = "sha256:…" in opm.toml pins an installed
-  plugin for this project; optional artifact_origins lists extra HTTPS
-  origins the host may fetch this plugin's artifacts from (union with
-  OPM_HOST_FETCH_ORIGINS). Optional artifact_origin_token_envs lists
-  env-var names (never values) parallel to those origins;
-  OPM_HOST_FETCH_TOKEN_ENVS is the process-wide parallel list for
-  OPM_HOST_FETCH_ORIGINS. Optional artifact_origin_extra_header_names and
-  artifact_origin_extra_header_envs name one extra header per origin
-  (for example X-JFrog-Art-Api); OPM_HOST_FETCH_HEADER_NAMES and
-  OPM_HOST_FETCH_HEADER_ENVS are the process-wide parallel lists.
-  OPM_HOST_FETCH_BEARER is not a grant unless that
-  name is listed. The binding never acquires, and project commands fail
-  closed when the installed entry digests differently.
-  The plugin registry is selected with OPM_REGISTRY_OPM_PLUGIN; the store
-  lives at OPM_PLUGIN_HOME or $XDG_DATA_HOME/openpacker/plugins.
-  Installed plugins register as adapters at startup; a plugin that fails
-  verification is reported on stderr and skipped (its ecosystem stays
-  unsupported rather than answering untrusted).
-
-Auth (env names only):
-  opm auth set --origin <https-origin> [--token-env <NAME>]
-  opm auth list
-  opm auth unset --origin <https-origin>
-  Remembers which environment variable holds a bearer for a pinned HTTPS origin.
-  The file stores names only — never token values. Mint tokens outside opm
-  (cloud CLI, gh, vault). No login command, device flow, or --token flag.
-  Config: OPM_AUTH_CONFIG or $XDG_CONFIG_HOME/openpacker/auth.json (mode 0600).
-
-Registries (catalog, from adapter discovery): ${registryEcosystems().join(', ') || '(none configured)'}
-Host/profile install uses the same verbs when Registry Definition advertises install.
-
-  Override one with OPM_REGISTRY_<ECOSYSTEM>, e.g.
-  OPM_REGISTRY_NPM=https://npm.internal.example
-  --offline refuses every registry read.
-
-Specs:
-  pkg:npm/@scope/name@1.2.3
-  lodash@4.17.21 --ecosystem npm
-  demo-tool --ecosystem npm --source ./vendor/demo-tool.tgz
-
-opm import --native reads adapter readRequirements (package.json,
-Cargo.toml, pyproject.toml, ...) into opm.toml once. Native files stay
-non-authoritative: later sync does not re-import them.
-
-An add with no --source and no catalog entry resolves against the ecosystem's
-registry and verifies the download against the digest the registry published.
-
-Project files:
-  opm.toml          requirements (edit or use opm add/remove)
-  opm.lock.json     exact pins (generated)
-  .opm/store        content-addressed installs (hard links into the shared store)
-  .opm/bin          executable shims (use with opmx or PATH)
-
-Shared package store (one copy of each package per machine, linked into every
-project): $XDG_CACHE_HOME/openpacker/store, else ~/.cache/openpacker/store.
-OPM_STORE_HOME=/abs/path relocates it; OPM_STORE_HOME=off keeps each project
-self-contained. It is used only on the project's own filesystem, where links
-are possible. Free what no project uses with: opm gc --shared
-
-Execute installed bins with: opmx <bin|package> [args...]
-  Ephemeral: opmx pkg:nuget/dotnet-cowsay@1.3.0
-  Ephemeral: opmx pkg:pypi/cowsay
-
-Aliases: opkg, opkgm → opm
-Protocol/control plane: openpacker (advanced)
-`;
 }
 
 /**
