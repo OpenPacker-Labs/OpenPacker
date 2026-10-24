@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
 import { createReadStream, readFileSync, writeFileSync } from 'node:fs';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
 import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -1328,15 +1328,26 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
 
     const miseCommand = process.env.OPENPACKER_MISE ?? 'mise';
     const miseRoot = join(output, 'mise');
-    for (const directory of ['cache', 'config', 'data', 'state'])
+    for (const directory of ['bin', 'cache', 'config', 'data', 'state'])
       await mkdir(join(miseRoot, directory), { recursive: true });
+    // The plugin runs OPENPACKER_BIN as a program. The built CLI is a .js file
+    // that `tsc` writes without the executable bit (npm sets it only on an
+    // installed bin), so on a fresh checkout the shell refused it (exit 126).
+    // A launcher of the demo's own runs it with this Node.
+    const openpackerBin = join(miseRoot, 'bin', 'openpacker');
+    const quoted = (text) => `'${text.replaceAll("'", `'\\''`)}'`;
+    await writeFile(
+      openpackerBin,
+      `#!/bin/sh\nexec ${quoted(process.execPath)} ${quoted(join(root, 'apps/openpacker-cli/dist/index.js'))} "$@"\n`,
+      { mode: 0o755 },
+    );
     const miseEnv = {
       ...process.env,
       MISE_DATA_DIR: join(miseRoot, 'data'),
       MISE_CACHE_DIR: join(miseRoot, 'cache'),
       MISE_CONFIG_DIR: join(miseRoot, 'config'),
       MISE_STATE_DIR: join(miseRoot, 'state'),
-      OPENPACKER_BIN: join(root, 'apps/openpacker-cli/dist/index.js'),
+      OPENPACKER_BIN: openpackerBin,
       OPENPACKER_URL: daemon.address,
       OPENPACKER_OFFLINE: 'true',
       OPENPACKER_TOOL_DEMO_PURL: 'pkg:npm/%40openpacker/demo-tool',
