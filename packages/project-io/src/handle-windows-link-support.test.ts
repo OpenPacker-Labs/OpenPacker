@@ -1,4 +1,5 @@
 import { stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   MEMBER,
@@ -27,7 +28,9 @@ describe('the shared set-up of the Windows link suites', () => {
       directory: 'node_modules',
       projectRoot: made.root,
     });
-    expect(made.link('left-pad')).toBe(`${made.root}/node_modules/left-pad`);
+    expect(made.link('left-pad')).toBe(
+      join(made.root, 'node_modules', 'left-pad'),
+    );
     expect(handles).toContain(made.modules);
     expect(MEMBER).toBe('../packages/pkg');
   });
