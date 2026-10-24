@@ -39,7 +39,8 @@ export const FOLLOW_UNITS = 64;
  * The first created file that has a twin, or undefined. Charges `budget` for
  * each directory read (a system call and its names) and each directory
  * followed. The directories a path's parent folds to are found once for the
- * parent, and their names indexed once, however many files are created in it.
+ * parent's key, and their names indexed once, however many files are created
+ * in it and however the patch spells it.
  */
 export async function caseCollision(
   root: string,
@@ -74,10 +75,15 @@ export async function caseCollision(
   const below = (directory: string, name: string) =>
     directory === '' ? name : `${directory}/${name}`;
 
-  /** The existing directories whose path folds to `spelled`, as a path of the patch spells it. */
+  /**
+   * The existing directories whose path folds to `spelled`, as a path of the
+   * patch spells it. They depend on the path's key only (each segment is
+   * matched by its key), so `Big` and `BIG` are found once, by `big`.
+   */
   const directories = new Map<string, readonly string[]>([['', ['']]]);
   const directoriesOf = async (spelled: string): Promise<readonly string[]> => {
-    const known = directories.get(spelled);
+    const folded = collisionKey(spelled);
+    const known = directories.get(folded);
     if (known !== undefined) return known;
     const at = spelled.lastIndexOf('/');
     const segment = spelled.slice(at + 1);
@@ -90,16 +96,21 @@ export async function caseCollision(
       for (const name of (await namesIn(parent)).get(fold) ?? [])
         found.push(below(parent, name));
     }
-    directories.set(spelled, found);
+    directories.set(folded, found);
     return found;
   };
 
-  /** Every name below those directories, by key, as the path it is. */
+  /**
+   * Every name below those directories, by key, as the path it is: merged once
+   * for every spelling of the parent, so what it holds is bounded by the
+   * package's own entries, not by the spellings a patch uses.
+   */
   const indexes = new Map<string, ReadonlyMap<string, readonly string[]>>();
   const indexOf = async (
     parent: string,
   ): Promise<ReadonlyMap<string, readonly string[]>> => {
-    const known = indexes.get(parent);
+    const folded = collisionKey(parent);
+    const known = indexes.get(folded);
     if (known !== undefined) return known;
     const merged = new Map<string, string[]>();
     for (const directory of await directoriesOf(parent))
@@ -110,7 +121,7 @@ export async function caseCollision(
           if (same === undefined) merged.set(key, [below(directory, name)]);
           else same.push(below(directory, name));
         }
-    indexes.set(parent, merged);
+    indexes.set(folded, merged);
     return merged;
   };
 
