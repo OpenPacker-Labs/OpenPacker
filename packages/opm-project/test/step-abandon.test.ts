@@ -229,6 +229,8 @@ describe('how long a step waits', () => {
     ).rejects.toMatchObject({
       code: 'PROJECT_BUSY',
     });
-    expect(Date.now() - started).toBeLessThan(2_000);
+    // Not taking waitMs 0 would wait the 10 s default; half of that leaves a
+    // loaded machine room to look at the step once.
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 });

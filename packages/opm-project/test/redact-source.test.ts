@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { redactSource } from '../src/frozen-store.js';
 
+/**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
 /** Stands for a credential an address holds. */
 const CANARY = 'vtok_dummy_marker_0123456789abcdef';
 
@@ -116,13 +126,13 @@ describe('a source named in an error', () => {
   ])(
     'shows %s, whose host no DNS name could be, as [url] and unread',
     (_, before, unit, after) => {
-      const started = performance.now();
+      const started = cpuMs();
       expect(redactSource(`${before}${unit.repeat(32768)}${after}`)).toBe(
         '[url]',
       );
       // Node's parser takes a second or more for this host, and `origin` of a
       // blob URL parses its path again.
-      expect(performance.now() - started).toBeLessThan(500);
+      expect(cpuMs() - started).toBeLessThan(500);
     },
   );
 
@@ -132,14 +142,14 @@ describe('a source named in an error', () => {
   ])(
     'does not withhold %s with a long host: the parser reads it in linear time',
     (_, before, after) => {
-      const started = performance.now();
+      const started = cpuMs();
       const shown = redactSource(`${before}${'ß.é.'.repeat(8192)}${after}`);
       expect(shown).not.toBe('[url]');
       expect(shown.startsWith(before.replace(/[^/]*@$/u, ''))).toBe(true);
       // 256 characters of the host, and how many there were.
       expect(shown.length).toBeLessThan(600);
       expect(shown).toContain('… (');
-      expect(performance.now() - started).toBeLessThan(500);
+      expect(cpuMs() - started).toBeLessThan(500);
     },
   );
 
@@ -371,11 +381,11 @@ describe('a source named in an error', () => {
 
   it('does not parse the address in a blob URL again', () => {
     // `origin` of a blob URL parses its path: 5 seconds for this one.
-    const started = performance.now();
+    const started = cpuMs();
     const shown = redactSource(
       `blob:https://${'a'.repeat(250)}.${'ß.é.'.repeat(60)}`,
     );
     expect(shown).toBe('[url]');
-    expect(performance.now() - started).toBeLessThan(500);
+    expect(cpuMs() - started).toBeLessThan(500);
   });
 });
