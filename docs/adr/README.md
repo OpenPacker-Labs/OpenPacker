@@ -57,7 +57,8 @@ Accepted decisions:
 53. [`opm run` and `opm exec` across the members of a workspace](0053-opm-run-across-workspace-members.md)
 54. [Aliases and several versions of one package in the closure](0054-aliases-and-several-versions-in-the-closure.md)
 
-There is no ADR 0055 on this branch; the next one keeps the number of its file.
+Number 55 is reserved for an ADR that has not landed yet; an ADR keeps the
+number of its file.
 
 56. [A step finishes or leaves the project as it was](0056-a-step-finishes-or-leaves-the-project-as-it-was.md)
 
