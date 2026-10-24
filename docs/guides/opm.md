@@ -457,7 +457,8 @@ not places:
   lock for which no such layout is found is laid out as before, never refused
   for a peer. Where no layout keeps a package and its dependent to one copy of a
   peer they share (a package that depends on an older version of itself and
-  hosts a plugin that peers it, say), the install goes ahead and says so with
+  hosts a plugin that peers it, while the project holds another version of a
+  package that needs them both, say), the install goes ahead and says so with
   one line on stderr, for `opm ci` and `opm ci --plan`: how many dependencies
   load their own copy of a peer, and which first. pnpm's symlinks keep them to
   one copy; a tree of directories cannot always. Every edge of every importer

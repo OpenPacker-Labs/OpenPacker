@@ -188,8 +188,24 @@ design:
    peer is answered beside its dependent the next time, unless the instance is
    one the dependent already sits inside (a copy nested in its own copy would be
    nested again in that one, for ever); and when no split is left, the
-   empty-slot rule above runs. What this cannot cure is bounded, and is not
-   refused:
+   empty-slot rule above runs. Pinning every such edge at once cures nearly
+   every lock and is tried first. Where it leaves a split, or no layout, the
+   same is tried again pinning only the splits closest to the importers, since a
+   pin made for a split that an outer pin would have cured can itself leave one;
+   and that second way takes two more steps, each followed by a new layout:
+   - an edge pinned beside its dependent that still splits, because the
+     dependent shadows a peer its dependency needs, gives its dependency the
+     project's slot, to be written above the dependent; where that is done, or
+     the project's own edge holds the slot, the dependency is written as high on
+     the dependent's way up as its peers allow, below whatever answers the name;
+   - a package that needs, below itself, a copy of itself with a package between
+     that a nested copy is shadowed by makes a layout more than 32 directories
+     deep, or one past the bound on places before that: the packages between are
+     given the project's slots, and where that does not answer, they are written
+     as high as their peers allow. The second way is kept only when it leaves
+     fewer splits, or as many in fewer places, so a lock the first lays out
+     without a split is laid out as it was. What this cannot cure is bounded,
+     and is not refused:
    - Where sharing leaves a split, or no layout (a host and its plugins that
      peer one another, wanted at several versions by several members: packages
      that need each other at different versions), the members that reach such a
@@ -201,44 +217,47 @@ design:
      was before the peer rule, without peers in view, and installed: a lock that
      installed before is not refused for a peer.
    - The work is bounded. At most 8 layouts are made for each of the two ways of
-     sharing and one without peers, 17 in all (`MAXIMUM_LAYOUTS`); a layout made
-     with peers in view takes at most 8 places for each instance and importer
-     and 256 more, and one without at most the 50,000 of the cap. Each layout
-     adds a pin or an election, or ends the loop, so the bound is the count and
+     sharing under each of the two ways of pinning, and one without peers, 33 in
+     all (`MAXIMUM_LAYOUTS`, `MAXIMUM_PLANNED_LAYOUTS`); a layout made with
+     peers in view takes at most 8 places for each instance and importer and 256
+     more, and one without at most the 50,000 of the cap. Each layout adds a
+     pin, an election or a lift, or ends the loop, so the bound is the count and
      not a proof that fewer suffice. What the suite holds is the exact count of
-     each fixture world (two to four layouts) and, for the generated worlds
-     (more than 600 are valid), none above 16; the review generators, which are
-     not in the suite, measured at most 5 over 25,200 worlds of cycles of peers
-     and at most 6 over 6,042 worlds in which a package may depend on another
-     version of itself.
+     each fixture world (two to fourteen layouts, and 22 for the two that keep a
+     split) and, for the generated worlds (more than 600 are valid), none above
+     the bound. A lock that keeps a split takes more of it than one that does
+     not: HoBo's whole lock (1,851 packages) with the six packages of
+     `kept-split.json` added to it takes 22 layouts, and three to four times the
+     time of the 6 it took at 848c7b9, on the same loaded machine.
    - A split that no layout the planner makes avoids is kept, in the layout with
      the fewest, and said: `opm ci` and `opm ci --plan` print one line on stderr
      with how many dependencies load their own copy of a peer and which first
      (`FrozenLock.peers`; the exit status and the plan are as they were). The
-     layout without peers in view is said too. It is reachable. A package that
-     depends on an older version of itself and hosts a plugin that peers it
-     (`kept-split.json`, five packages) cannot have one copy of the host in a
-     tree without symlinks, and 88 of 6,042 worlds of the review's `self` family
-     end so, 2 of them in the layout without peers; 656 more are refused as too
-     deep (§12), 326 of which were checked to be refused at 0e65d69 and daf5ff6
-     too. Not every kept split is inherent. The planner pins every split of a
-     layout at once and keeps each pin for the layouts after it, so in a world
-     of 4 instances and 3 importers one of the three pins it makes first cures
-     the layout and the three together leave a split (12 of 800 worlds of the
-     `sibcycle` family at 5 packages, 4 members and a cycle probability of 0.6
-     end so). Neither shape is in the committed generated worlds, which the
-     tests require to keep none.
+     layout without peers in view is said too. It is reachable, and the one
+     shape the review's generators reach is one no layout avoids: a package that
+     depends on an older version of itself and hosts a plugin that peers it,
+     while the project holds another version of a package that needs them both
+     (`kept-split.json`, six instances). Three instances of one name compete for
+     the places that package can be found from, and a search over every layout
+     of at most 20 places (`place-exhaustive.ts`, which uses nothing of the
+     planner; 94,505 resolve every edge) finds none without a split.
 
    The install refuses a plan only when an edge does not resolve (point 12).
    That no layout of the fixture worlds below splits a peer is held by the
    tests, with a second check that shares nothing with the planner
    (`peerSplitProblems`, placements alone), over the three fixture locks, the
    cycle, beside-edge, isolation, pin and host/plugin worlds committed under
-   `packages/adapter-npm/test/fixtures/peer-worlds` and 750 generated ones;
-   `kept-split.json` and `fallback.json` hold the opposite: a split the planner
-   keeps and counts, and a layout made without peers in view. Each planner line
-   a review changed one at a time (14 mutants, `place.attempts.test.ts`,
-   `place.layout.test.ts`, `place.cycles.test.ts`) fails a test.
+   `packages/adapter-npm/test/fixtures/peer-worlds` and 750 generated ones; six
+   more of those worlds are ones the planner of 848c7b9 kept a split in or fell
+   back on, and the same search finds a layout of each without a split
+   (`place.refine.test.ts`). `kept-split.json` holds the opposite, a split the
+   planner keeps and counts and the search shows no layout avoids
+   (`tie-break.json` holds it beside another world, and the layout with fewer
+   places is kept), and a world laid out with two places for a layout with peers
+   in view, a layout made without them. Each planner line a review changed one
+   at a time, and each line of the steps above (33 mutants; `place.attempts`,
+   `place.layout`, `place.loops`, `place.refine` and `place.cycles` tests),
+   fails a test.
 
    **Executables.** pnpm links each importer's direct dependencies' executables
    into that importer's own `node_modules/.bin`, wherever the package is. So
@@ -302,6 +321,18 @@ design:
    world reached them are replaced by the numbers the review measured. The
    prefix of a member's line in a run over members is written as text: a
    directory with no package name was written to the terminal as it was.
+
+   Amended a fifth time on 2026-10-24, after the decision on the seventh
+   review's finding: a split a layout can avoid is not kept and merely reported.
+   The planner pinned every split at once and kept each pin, so a pin made for a
+   split that an outer pin would have cured could itself leave one (12 of 800
+   `sibcycle` worlds); it kept a split where the dependent shadows a peer its
+   dependency needs, and it fell back to the layout without peers where a
+   package nested in a copy of itself grew the layout past its depth or size.
+   The second way of pinning, the election and the lift above answer those, and
+   of the 88 worlds of the `self` family that kept a split (7 distinct worlds, 2
+   of them in the layout without peers) all are cured but the one no layout
+   avoids, drawn 24 times.
 
 10. **Everything else is placed as the closure planner places it**
     (`layout-plan.ts`), generalised to several tops: breadth-first from the
@@ -688,6 +719,21 @@ The kept-split lock of the review (`p1@3` depends on `p1@1`, `p2@1` and a plugin
 instances, exit 0, and `opm ci --plan` now says on stderr that 1 dependency
 loads another copy of a peer it shares with its dependent. Planner mutants: 14
 of 14 fail a test (8 did not). Bin mutants: 6 of 6.
+
+**After the round-8 decision (2026-10-24)**, the same generators on the planner
+of §9's fifth amendment, each world judged by the function that shares nothing
+with the planner, and the `self` and `sibcycle` worlds also planned at 848c7b9
+to compare:
+
+| worlds                                                                              | result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the 25,200 cycle worlds, the 1,500 host/plugin worlds and the 27,000 without cycles | as before to the digit: 1 layout for 24,828, 2 for 315, 3 for 54, 4 for 1, 5 for 2; 1 for 1,471 and 2 for 29 with isolation in 7; 0 refused, 0 unresolved, 0 splits, 0 differences from Node                                                                                                                                                                                                                                                                                                         |
+| 31,935 planned in the five families of `adv3.mjs` that keep no split                | as before: 0 refused, 0 unresolved, 0 splits, 0 fell back; 1 to 5 layouts (5 in 15 worlds of `sibcycle`)                                                                                                                                                                                                                                                                                                                                                                                             |
+| 6,042 planned in the `self` family                                                  | 24 keep a split (88 at 848c7b9, 2 of them in the layout without peers; now none): 88 draws of 7 distinct worlds, 6 cured and the one no layout avoids drawn 24 times; every world 848c7b9 laid out without a split is laid out the same, in as many layouts; up to 22 layouts; 656 refused as too deep, at 848c7b9 too (654 hold two versions of one name that need each other under it, which no tree holds; the other 2, one world, reduce to five instances no layout of at most 14 places holds) |
+| `sibcycle` at 5 packages, 4 members, cycle probability 0.6, seed 31 (800 worlds)    | 0 keep a split (12 at 848c7b9), the 788 others laid out as at 848c7b9; up to 6 layouts                                                                                                                                                                                                                                                                                                                                                                                                               |
+
+Planner mutants: the 14 of the seventh review and 19 for the steps of the fifth
+amendment, 33 of 33 fail a test.
 
 **HoBo's `allowBuilds`**, which this install does not run (`esbuild`,
 `@ast-grep/cli`, `@bufbuild/buf`, `protobufjs`): each was installed by `opm ci`
