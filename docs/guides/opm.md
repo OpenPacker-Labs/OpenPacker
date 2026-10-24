@@ -1247,7 +1247,7 @@ another host, container or earlier boot left there and cannot be placed stays,
 and a left-behind view makes `opm gc --shared` keep its entries. The home each
 run gives its tool, under `$TMPDIR/openpacker-sandbox`, is judged the same way
 by the next sandboxed run; one with no owner, from an earlier opm, is removed
-once it is a week old.
+once the directory itself has not changed for a week.
 
 ### Delegated adapter plugins
 
