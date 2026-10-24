@@ -127,8 +127,16 @@ inside the bundle.
        file may be 16 MiB. opm reads the two lines in one pass
        (`header-lines.ts`), with the groups the regexes give (compared with them
        over 60,000 and 120,000 generated lines, line terminators and Unicode
-       whitespace included), and refuses a header line over 8,300 characters
-       (point 13);
+       whitespace included), and refuses either line over 8,300 characters
+       (point 13). Those two are the only header lines pnpm reads in more than
+       linear time: on one line of n characters in the worst shape for each,
+       pnpm 10.28's `applyPatchToDir` spends 95 to 120 ms at 9,000 and four
+       times as long at each doubling (22 to 30 s at 144,000), and under 1 ms at
+       288,000 on the eight others (`old mode `, `new mode `,
+       `deleted file mode `, `new file mode `, `rename from `, `rename to `,
+       `--- `, `+++ `), a slice and a trim, which opm reads the same way and
+       does not bound
+       (`reports/fix-184-r4.scripts/01-header-prefix-timing.mjs`);
    - a binary diff is read as nothing, as pnpm reads it;
    - when the patch fails, it counts as applied if its reverse would apply: the
      package already has the change;
@@ -188,7 +196,19 @@ inside the bundle.
    (`21-hostile-shapes.mjs`). A package that holds a directory in every case of
    a name at two levels, 100 by 100 leaf directories, with 1,000 files created
    below it: 0.35 s of CPU (5.4 s when each file followed the directories
-   again). Measured at round 2, OpenSesame's four patches spend 49,836
+   again). The directories a created file's parent folds to are found, and the
+   names below them merged, once for the folded path, not once for each way a
+   patch spells it, so what the search holds is bounded by the package's own
+   entries (at most the 100,000 its archive held) and not by the patch: one
+   60,000-file directory reached in 60 spellings held 670 MB resident when each
+   spelling merged it again, and holds 112 MB (0.17 s of CPU); 65,536 leaf
+   directories reached in 300 spellings, refused as too costly after 4.4 s and
+   463 MB before, apply in 1.7 s of CPU and 136 MB
+   (`reports/review-184-r4.scripts/06-twin-shapes.mjs`, load average 17). The
+   most resident memory measured over every shape here is 270 MB (99,850 shallow
+   deletions, above); the reviewer's shapes peak at 219 MB (20,000 files deleted
+   and the other case created beside each, 12 s of CPU), and the twin search's
+   own at 136 MB. Measured at round 2, OpenSesame's four patches spend 49,836
    (`braces@3.0.3`), 13,113 (`js-yaml@3.15.2`), 189,011 (`node-forge@1.4.0`,
    most of it `lstat`) and 96,686 (`@simple-git/argv-parser@2.0.1`), and the 37
    oracle cases at most 6,241: the bound is 1,420 times the largest real patch
@@ -260,7 +280,7 @@ inside the bundle.
     script is then read from what is installed, the patched files (a patch that
     adds a `postinstall` is reported).
 
-### What is refused, by name, before anything is fetched
+### What is refused, by name
 
 13. In the order of ADR 0055 §18:
     - by the lock alone (exit 3): a key that applies to no package of the lock;
@@ -298,26 +318,38 @@ inside the bundle.
       directory the host makes the package in in front of it, the longest path
       is under 4,096 bytes (Linux's `PATH_MAX`, the NUL included; measured:
       4,095 in all is made, 4,096 is `ENAMETOOLONG`, with 330 bytes and with
-      3,700 bytes of directory in front). `--plan` and the install both check
-      it, before anything is fetched, against the longest directory the install
-      can use (`OPM_STORE_HOME`, or the private store beside `node_modules`,
-      then `.<key>.materialize-<uuid>/package`), and the install checks again
-      against the directory it really made; the message says the path's bytes,
-      the directory's and the limit, and not a raw `ENAMETOOLONG`
-      (`UNSAFE_PATH`, exit 7). macOS takes 1,024 bytes and Windows fewer;
-      neither is checked. **The paths a patch names and the directories above
-      them** are held to the 100,000 files an archive may hold (`SIZE_LIMIT`,
-      exit 7). A **header line** of more than 8,300 characters, two paths of
-      4,088 bytes and the `diff --git a/ b/` around them with room for trailing
-      whitespace, is `SIZE_LIMIT` when it begins like a line the parser reads
-      (`diff --git `, `index `, `old mode `, `new mode `, `deleted file mode `,
-      `new file mode `, `rename from `, `rename to `, `--- `, `+++ `), wherever
-      it is; a line the parser reads as nothing, a commit message or a mail
-      header before the first diff, is taken at any length, as pnpm takes it,
-      and a line of a hunk is a line of the package and has no bound. The one
-      difference left: a preamble line that begins `index ` or the like and is
-      over 8,300 characters, which pnpm reads and opm refuses; a path thousands
-      of directories deep makes such a line before it is looked at as a path;
+      3,700 bytes of directory in front). `--plan`, and the install before it
+      fetches, check the longest path the patch names against the longest
+      directory the install can use: `OPM_STORE_HOME`, or the private store
+      beside `node_modules`, each in the longer of its two forms, as it is
+      written and with the symlinks of its existing ancestors followed (the host
+      works on the canonical path, and `realpath` takes no more than 4,095 bytes
+      of it either), then `.<key>.materialize-<uuid>/package`. A lock that
+      patches nothing does not read the store setting. Once the package is
+      fetched, the install checks again against the directory it really made, in
+      the same longer form, and checks the longest path **the unpatched package
+      already holds**: the patched copy is made about 120 bytes deeper than the
+      archive's entry, so below a 30-byte store a package that holds a path of
+      3,864 to 3,984 bytes is stored, and cannot be patched whatever the patch;
+      `--plan`, which has no archive, cannot see it. Each is refused with the
+      path's bytes, the directory's and the limit (`UNSAFE_PATH`, exit 7), and
+      any `ENAMETOOLONG` the file system still gives while the patched copy is
+      made, patched, counted or hashed is the same refusal, with nothing
+      published and the temporary removed. Not checked: the paths of the
+      project's `node_modules` (which can be longer than the store's), as for an
+      unpatched archive; macOS's 1,024 bytes and Windows's fewer. **The paths a
+      patch names and the directories above them** are held to the 100,000 files
+      an archive may hold (`SIZE_LIMIT`, exit 7). A **`diff --git ` or `index `
+      line** of more than 8,300 characters, two paths of 4,088 bytes and the
+      `diff --git a/ b/` around them with room for trailing whitespace, is
+      `SIZE_LIMIT`, wherever it is: the two lines pnpm reads with a regex that
+      backtracks (point 7). The eight other header lines the parser reads, and a
+      line it reads as nothing (a commit message or a mail header before the
+      first diff), are taken at any length, as pnpm takes them, and a line of a
+      hunk is a line of the package and has no bound. The one difference left: a
+      `diff --git ` or `index ` line over 8,300 characters, in the preamble as
+      well, which pnpm reads in seconds and opm refuses; a path thousands of
+      directories deep makes such a line before it is looked at as a path;
     - when it is applied (the package's files are needed, so not at `--plan`): a
       patch that does not apply, or one too costly to apply (point 9)
       (`PATCH_FAILED`, exit 3); **a pair of files the patch leaves that an
@@ -328,23 +360,45 @@ inside the bundle.
       in every case they are spelled, `Lib` and `lib` alike) and against the
       other files the patch creates, as the patch leaves them (a file it deletes
       or moves away is not a twin, so a swap of `x.js` for `X.js`, or a rename
-      that only changes case, is taken); and **more files in the patched entry
-      than an archive may hold**, 100,000, counted once the patch is applied and
-      before the entry is hashed or published (`SIZE_LIMIT`, exit 7).
+      that only changes case, is taken). On a host that folds case or
+      normalization (macOS by default, Windows, ext4 with casefold) `lstat` of
+      `lib/X.js` finds `lib/x.js`, and pnpm's rule (a new file replaces one at
+      its path) would write over the twin, where extracting an archive that held
+      both fails on its exclusive create; so a file the patch creates over one
+      the tree found must be listed under exactly that name in its directory,
+      and a file the tree found absent is created with `O_EXCL`; both are
+      `CASE_COLLISION`. Linux, where the tests run, does not fold:
+      `case-collision.host.test.ts` gives the check a folding host's answer and
+      plants the twin between the read and the write; no macOS or Windows run
+      was made. And **more files in the patched entry than an archive may
+      hold**, 100,000, counted once the patch is applied and before the entry is
+      hashed or published (`SIZE_LIMIT`, exit 7).
 
     **What this holds, and what it does not.** A patched entry has no path an
     archive could not hold in its depth, its length (with `package/`), its names
-    or the pair rule above, and no more files than an archive may. It is not
-    re-checked as an archive in whole: two names that differ only in Unicode
+    or the pair rule above, and no more files than an archive may. The pair rule
+    is the archive's own, and as weak as it: `collisionKey` is `toLowerCase`,
+    which is not Unicode's simple case folding, so `ς` and `σ`, `µ` and `μ`, `ſ`
+    and `s`, `ß` and `SS`, `ı` and `I` have different keys, and an archive and a
+    patch both take a pair of them that NTFS or APFS, folding by their own
+    tables, may make one file. Two names that differ only in Unicode
     normalization (an NFC name beside an NFD one) are two keys for the archive
     (`inspectArchive` on a tar of the two takes them; `case-collision.test.ts`
-    runs it) and so for the patch, where a normalizing file system, APFS's,
-    would make them one; making `collisionKey` normalize is one line, a change
-    to extraction this ADR does not make. Directories that differ in case and
-    hold different files (`Lib/a.js`, `lib/b.js`) are accepted by an archive and
-    by a patch. The entry's expanded size is not re-added: the patch adds at
-    most its own size (16 MiB) to an entry that was held to 64 MiB when it was
-    extracted.
+    runs it) and so for the patch: that is the archive's decision, and making
+    `collisionKey` normalize is one line, a change to extraction this ADR does
+    not make (on a normalizing host, the listing and `O_EXCL` checks above
+    refuse what would write over such a twin). A file created beside a directory
+    the same patch creates (`a/b` and `A`) is not compared: an archive whose
+    directories are implied by its files' paths, as `npm pack` writes them
+    (files only), takes the pair, and one with an explicit `a/` entry refuses it
+    (`reports/fix-184-r4.scripts/03-archive-dir-vs-file.mjs`); against a
+    directory the package already has (`lib/X` beside `lib/x/`) the patch
+    refuses it, which is stricter than an npm archive. Directories that differ
+    in case and hold different files (`Lib/a.js`, `lib/b.js`) are taken by an
+    npm archive and by a patch, and refused by an archive with explicit `Lib/`
+    and `lib/` entries. The entry's expanded size is not re-added: the patch
+    adds at most its own size (16 MiB) to an entry that was held to 64 MiB when
+    it was extracted.
 
 14. **What pnpm does that opm refuses, and why:**
     - a path in the patch that leaves the package, or a link in the package on
@@ -354,16 +408,19 @@ inside the bundle.
       makes the directories whatever their depth (a 12 KB patch names a path
       2,000 deep) and creates `lib/CON` or `a:b`, and opm refuses them as it
       refuses those in an archive;
-      - a header line past 8,300 characters that begins like one the parser
-        reads, and a patch that would cost more than 256 MiB of work: pnpm reads
-        the first with a backtracking regex and runs the second for as long as
-        it takes (points 7 and 9);
+      - a `diff --git ` or `index ` line past 8,300 characters, and a patch that
+        would cost more than 256 MiB of work: pnpm reads the first with a
+        backtracking regex and runs the second for as long as it takes (points 7
+        and 9);
     - a patch that leaves two files that differ only in case: pnpm applies it, a
       case-insensitive file system keeps one, and an archive with the pair is
-      refused (point 13);
+      refused (point 13); and, on a host that folds case or normalization, a
+      file a patch creates where `lstat` finds a twin by another name: pnpm
+      writes over the twin (point 13);
     - a path that is under every bound of its own and too long with the store's
-      directory in front of it: pnpm's `lstat` would be `ENAMETOOLONG` as well,
-      and opm says so first (point 13);
+      directory in front of it, the store's canonical path counted, or a package
+      that already holds a path too long for the patched copy: pnpm's `lstat`
+      would be `ENAMETOOLONG` as well, and opm says so first (point 13);
     - a patch that fails for a bare-name key, or with `ignorePatchFailures`:
       pnpm warns and installs the package unpatched; opm refuses, because a lock
       that says a package is patched and an install where it is not are two
