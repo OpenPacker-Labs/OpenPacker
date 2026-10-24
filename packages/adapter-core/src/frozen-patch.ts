@@ -1,6 +1,6 @@
 /**
  * A patch a lock applies to a package before it is installed (pnpm's
- * `patchedDependencies`, ADR 0056), and the format hook that applies it.
+ * `patchedDependencies`, ADR 0057), and the format hook that applies it.
  */
 
 /** A patch file a lock applies to a package, read once by the adapter. */
@@ -36,4 +36,10 @@ export interface FrozenPatchFormat {
     patch: FrozenPatch,
     label: string,
   ): Promise<void>;
+  /**
+   * The most bytes in a path the patch names, relative to the package: what
+   * the host holds, with the directories it keeps the package in, to what the
+   * system takes in a path before anything is fetched (`wholePathProblem`).
+   */
+  frozenPatchPathBytes?(patch: FrozenPatch): number;
 }

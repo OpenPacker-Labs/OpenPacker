@@ -22,16 +22,16 @@
       "size": 636
     },
     {
+      "artifactType": "application/vnd.openpacker.prex.receipt.v1+json",
+      "digest": "sha256:91cff04583c44dea3bc737938f3ee3ce1c3546d0d53adcdbc8965f56191aca65",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "size": 653
+    },
+    {
       "artifactType": "application/vnd.openpacker.overlay.v1+json",
       "digest": "sha256:b995b61ab8b04d0b6d9bdaacfcc8720308d38c6c6d26a6333935334e5363a320",
       "mediaType": "application/vnd.oci.image.manifest.v1+json",
       "size": 648
-    },
-    {
-      "artifactType": "application/vnd.openpacker.prex.receipt.v1+json",
-      "digest": "sha256:d0850b8a83bca3e70b4d8e9ac8db43eca432d870b02a559c8a918ebc0b2e7fa5",
-      "mediaType": "application/vnd.oci.image.manifest.v1+json",
-      "size": 653
     },
     {
       "artifactType": "application/vnd.in-toto+json",

@@ -5,7 +5,7 @@
  */
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { RunError } from './run-error.js';
+import { plain, quoted, RunError } from './run-error.js';
 import { firstWord, isBatchFile, planScript } from './run-command-line.js';
 import {
   exitStatus,
@@ -34,24 +34,31 @@ function asText(value: unknown): string | undefined {
 }
 
 /** What `opm run` keeps of a `package.json`: its name, version and scripts. */
-export function readPackageText(file: string, text: string): PackageFile {
+export async function readPackageText(
+  file: string,
+  text: string,
+): Promise<PackageFile> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch (error) {
+    const plainLine = await plain();
     throw new RunError(
       'INVALID_MANIFEST',
-      `${file} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `${plainLine(file)} is not valid JSON: ${plainLine(error instanceof Error ? error.message : String(error))}`,
     );
   }
   if (!isRecord(parsed))
-    throw new RunError('INVALID_MANIFEST', `${file} is not a JSON object`);
+    throw new RunError(
+      'INVALID_MANIFEST',
+      `${await quoted(file)} is not a JSON object`,
+    );
   const scripts = new Map<string, unknown>();
   if (parsed.scripts !== undefined) {
     if (!isRecord(parsed.scripts))
       throw new RunError(
         'INVALID_MANIFEST',
-        `"scripts" in ${file} is not an object`,
+        `"scripts" in ${await quoted(file)} is not an object`,
       );
     for (const [name, command] of Object.entries(parsed.scripts))
       scripts.set(name, command);
@@ -72,7 +79,7 @@ export async function readPackageFile(
     if ((await stat(file)).size > MAX_PACKAGE_JSON_BYTES)
       throw new RunError(
         'INVALID_MANIFEST',
-        `${file} is larger than ${MAX_PACKAGE_JSON_BYTES} bytes`,
+        `${await quoted(file)} is larger than ${MAX_PACKAGE_JSON_BYTES} bytes`,
       );
     text = await readFile(file, 'utf8');
   } catch (error) {
@@ -81,7 +88,7 @@ export async function readPackageFile(
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }
-  return readPackageText(file, text);
+  return await readPackageText(file, text);
 }
 
 export function describeEnd(label: string, outcome: ChildOutcome): string {
@@ -184,7 +191,7 @@ export async function runScriptSteps(
     if (typeof command !== 'string')
       throw new RunError(
         'INVALID_MANIFEST',
-        `Script "${event}" in ${join(dir, 'package.json')} is not a string`,
+        `Script "${event}" in ${await quoted(join(dir, 'package.json'))} is not a string`,
       );
     const env = scriptEnvironment({
       base: context.env,

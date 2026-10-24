@@ -4,7 +4,6 @@ import {
   mkdtemp,
   mkdir,
   open,
-  opendir,
   readFile,
   rename,
   rm,
@@ -24,17 +23,19 @@ import {
   type SandboxBackend,
   type SandboxOutcome,
 } from '@openpacker/sandbox';
+import { openChild, readDirChildBounded } from '@openpacker/project-io';
+import type { CollectionReads } from './collect.js';
 import {
   ManifestPackagePacker,
   type ManifestPackagePackerLimits,
 } from './packer.js';
 
-const directorySwap = vi.hoisted(() => ({
+const directorySwap = {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   output: undefined as string | undefined,
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   original: undefined as string | undefined,
-}));
+};
 
 const snapshotOpen = vi.hoisted(() => ({
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -69,22 +70,27 @@ const instrumentedOpen: typeof open = async (...arguments_) => {
   return handle;
 };
 
-const instrumentedOpenDirectory: typeof opendir = async (path) => {
-  if (path !== directorySwap.output || directorySwap.original === undefined)
-    return opendir(path);
+/**
+ * Reads the output directory through the retained handle, as the packer does,
+ * but first puts a different, empty directory at its name for the length of
+ * the read when a swap is armed: reading by name would see an empty directory
+ * and let the pack run over stale artifacts.
+ */
+const swappingList: CollectionReads['list'] = async (directory, limit) => {
+  const path = directorySwap.output;
   const original = directorySwap.original;
+  if (path === undefined || original === undefined)
+    return readDirChildBounded(directory, limit);
   directorySwap.output = undefined;
   directorySwap.original = undefined;
   await rename(path, original);
   await mkdir(path);
-  const handle = await opendir(path);
-  const close = handle.close.bind(handle);
-  handle.close = async () => {
-    await close();
+  try {
+    return await readDirChildBounded(directory, limit);
+  } finally {
     await rm(path, { recursive: true });
     await rename(original, path);
-  };
-  return handle;
+  }
 };
 
 const roots: string[] = [];
@@ -614,7 +620,7 @@ describe('manifest package packer', () => {
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
-  it('retains preflight authority across a swap to empty and restore', async () => {
+  it('refuses before running when the output directory is swapped to empty and restored during preflight', async () => {
     const root = await project();
     const outputDirectory = join(root, 'out');
     const original = join(root, 'out-original');
@@ -622,10 +628,32 @@ describe('manifest package packer', () => {
     await writeFile(join(outputDirectory, 'stale.test'), 'stale');
     directorySwap.output = outputDirectory;
     directorySwap.original = original;
+    let ran = false;
 
-    await expect(
-      configured().pack(input(root), { allowBuild: true, outputDirectory }),
-    ).rejects.toMatchObject({ code: 'OUTPUT_NOT_EMPTY' });
+    const failure = await configured(
+      manifest(),
+      async () => '/usr/bin/test-pack',
+      async () => {
+        ran = true;
+        return outcome();
+      },
+    )
+      .pack(input(root), { allowBuild: true, outputDirectory })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    // The swap really fired: the read it was armed for happened.
+    expect(directorySwap.output).toBeUndefined();
+    // Reading the stale artifact through the retained handle is refused as
+    // OUTPUT_NOT_EMPTY, or as the directory having changed when its change
+    // time moved across the two renames; which depends on the filesystem's
+    // timestamp granularity. The exact retention is pinned in collect.test.ts.
+    expect(failure).toMatchObject({
+      code: expect.stringMatching(/^(OUTPUT_NOT_EMPTY|INVALID_RESPONSE)$/u),
+    });
+    expect(ran).toBe(false);
   });
 
   it('bounds directory entries before materializing them', async () => {
@@ -704,11 +732,17 @@ describe('manifest package packer', () => {
         return outcome();
       },
       { artifactBytes: 1024n, readChunkBytes: 1 },
-      async (...arguments_) => {
-        const handle = await open(...arguments_);
-        signalOpened();
-        await released;
-        return handle;
+      {
+        open: async (directory, name) => {
+          const handle = await openChild(
+            directory,
+            name,
+            constants.O_RDONLY | constants.O_NOFOLLOW,
+          );
+          signalOpened();
+          await released;
+          return handle;
+        },
       },
     );
 
@@ -764,7 +798,7 @@ function configured(
     input: RunInSandboxInput,
   ) => Promise<SandboxOutcome> = async () => outcome(),
   limits?: Partial<ManifestPackagePackerLimits>,
-  openFile?: typeof open,
+  collectionReads?: Partial<CollectionReads>,
 ): ManifestPackagePacker {
   return new ManifestPackagePacker(value, 'test', {
     executablePath: '/usr/bin/test-pack',
@@ -790,8 +824,8 @@ function configured(
       return sandboxRun(input_);
     },
     ...(!(limits === undefined) && { limits }),
-    openFile: openFile ?? instrumentedOpen,
-    openDirectory: instrumentedOpenDirectory,
+    openFile: instrumentedOpen,
+    collectionReads: { list: swappingList, ...collectionReads },
   });
 }
 

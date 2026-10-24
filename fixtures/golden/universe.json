@@ -1,7 +1,7 @@
 {
   "canonicalDigest": {
     "algorithm": "sha256",
-    "value": "58968dea8732e38a9e83d55acda9c8bab8d2770e677fbf0a83ff9899da999915"
+    "value": "338e77f934c92454a2a1265ce002674fdfdbb320e31a86725b682a40e0362cca"
   },
   "lifecycleRoot": {
     "algorithm": "sha256",
@@ -258,7 +258,7 @@
       "sourceSnapshots": [
         {
           "algorithm": "sha256",
-          "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
+          "value": "c2cc24a52f2eccfba614f45fc2f552ae633eec540ddb01640a5e16191fe6837f"
         }
       ],
       "versionSortKey": "1.0.0"
@@ -453,7 +453,7 @@
       "sourceSnapshots": [
         {
           "algorithm": "sha256",
-          "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
+          "value": "c2cc24a52f2eccfba614f45fc2f552ae633eec540ddb01640a5e16191fe6837f"
         }
       ],
       "versionSortKey": "0.9.0"
@@ -648,7 +648,7 @@
       "sourceSnapshots": [
         {
           "algorithm": "sha256",
-          "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
+          "value": "c2cc24a52f2eccfba614f45fc2f552ae633eec540ddb01640a5e16191fe6837f"
         }
       ],
       "versionSortKey": "1.0.0-beta.1"
@@ -699,7 +699,7 @@
       "sourceSnapshots": [
         {
           "algorithm": "sha256",
-          "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
+          "value": "c2cc24a52f2eccfba614f45fc2f552ae633eec540ddb01640a5e16191fe6837f"
         }
       ],
       "versionSortKey": "1.0.0"
@@ -1056,7 +1056,7 @@
       "sourceSnapshots": [
         {
           "algorithm": "sha256",
-          "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
+          "value": "c2cc24a52f2eccfba614f45fc2f552ae633eec540ddb01640a5e16191fe6837f"
         }
       ],
       "versionSortKey": "1.0.0"
@@ -1072,15 +1072,15 @@
       "providerType": "npm-registry",
       "recordsDigest": {
         "algorithm": "sha256",
-        "value": "8dbb3ae40086459066da7fb353d0634530e7b41d87827e0003995d9e0f7d8cad"
+        "value": "3bfd04610d8dec5cea3677327ea5688776ac0434ed2006d2f63b21d7885c71d9"
       },
       "retrievedAt": "2026-08-02T00:00:00Z",
       "revision": "sha256:f205ca7467d05b93e5700a867db07bf15c2f463c9b38afd03f4561234c3ffb1e",
       "rootDigest": {
         "algorithm": "sha256",
-        "value": "b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
+        "value": "c2cc24a52f2eccfba614f45fc2f552ae633eec540ddb01640a5e16191fe6837f"
       },
-      "snapshotId": "sha256:b7c61e658a416c897f27e23a08c86d85b3748c0a0742bf35eafa66f179d2aea3"
+      "snapshotId": "sha256:c2cc24a52f2eccfba614f45fc2f552ae633eec540ddb01640a5e16191fe6837f"
     },
     {
       "endpointIdentity": "https://fixtures.test",

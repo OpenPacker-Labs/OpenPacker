@@ -19,8 +19,8 @@ import {
   parsePackageSpec,
 } from '@openpacker/opm-project';
 import type { PolicyInput } from '@openpacker/contracts';
-import { formatFailure, parseFailure, say } from './error-report.js';
-import { writeToolRan } from './terminal-lines.js';
+import { formatFailure, parseFailure, report } from './error-report.js';
+import { out, outRaw } from '@openpacker/canonical';
 
 export const EXIT_CODES = {
   success: 0,
@@ -46,7 +46,7 @@ export async function runOpmx(
 ): Promise<number> {
   try {
     if (argv.includes('--help') || argv.includes('-h') || argv.length === 0) {
-      io.stdout.write(help());
+      out(io, help());
       return argv.length === 0 ? EXIT_CODES.usage : EXIT_CODES.success;
     }
 
@@ -106,8 +106,11 @@ export async function runOpmx(
         ...(flags.offline && { offline: true }),
       });
       const bin = selectToolBin(tool, binName);
-      // Say which version ran: an unpinned run is another thing tomorrow.
-      writeToolRan(io, tool.exactPurl, tool.cached);
+      // Say which version actually ran. An unpinned ephemeral run resolves to
+      // whatever is newest, so it is a different thing tomorrow.
+      io.stderr.write(
+        report('opmx: ', `${tool.exactPurl}${tool.cached ? ' (cached)' : ''}`),
+      );
       return await spawnDeclared(
         bin,
         tool.storePath,
@@ -393,7 +396,7 @@ async function spawnProcess(
       }),
       ...(!(sandbox?.policy === undefined) && { policy: sandbox.policy }),
     });
-    if (outcome.stdout) io.stdout.write(outcome.stdout);
+    if (outcome.stdout) outRaw(io, outcome.stdout);
     if (outcome.stderr) io.stderr.write(outcome.stderr);
     if (
       outcome.exitCode !== 0 &&
@@ -411,12 +414,17 @@ async function spawnProcess(
       error instanceof Error &&
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ENOENT';
-    const hint = missing ? missingHint : undefined;
-    say(
-      io.stderr,
-      `opmx: ${hint ? `${hint} (${command} not found)` : message}\n`,
+    io.stderr.write(
+      report(
+        'opmx: ',
+        missing && missingHint
+          ? `${missingHint} (${command} not found)`
+          : message,
+      ),
     );
-    return hint ? EXIT_CODES.unavailable : EXIT_CODES.internal;
+    return missing && missingHint
+      ? EXIT_CODES.unavailable
+      : EXIT_CODES.internal;
   }
 }
 
@@ -589,9 +597,14 @@ stderr either way.
 `;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  // Same user-level package store as `opm`, so a tool run once is not stored
-  // again for the next project.
+/** The `opmx` process: the user-level package store `opm` uses, then the run. */
+export async function runOpmxFromProcess(): Promise<number> {
   enableDefaultSharedStore();
-  process.exitCode = await runOpmx();
+  return await runOpmx();
+}
+
+// The `opmx` bin is `opmx-main.js`. This is false when the file is started
+// through a link, so it serves only `node dist/opmx.js` by its own path.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  process.exitCode = await runOpmxFromProcess();
 }

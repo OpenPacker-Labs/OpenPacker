@@ -10,6 +10,7 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import {
+  echoed,
   ProviderError,
   type DetectedProject,
   type FrozenLock,
@@ -44,7 +45,7 @@ export function readManifest(text: string, path: string): FrozenManifest {
   } catch (error) {
     throw new ProviderError(
       'INVALID_MANIFEST',
-      `${path} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `${path} is not valid JSON: ${echoed(error instanceof Error ? error.message : String(error))}`,
     );
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
@@ -67,7 +68,7 @@ export function readManifest(text: string, path: string): FrozenManifest {
       if (typeof spec !== 'string')
         throw new ProviderError(
           'INVALID_MANIFEST',
-          `${path}: ${name}.${key} must be a string`,
+          `${path}: ${name}.${echoed(key)} must be a string`,
         );
       out[key] = spec;
     }

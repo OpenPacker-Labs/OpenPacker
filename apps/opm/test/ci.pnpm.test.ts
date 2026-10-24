@@ -190,7 +190,7 @@ describe('opm ci with a pnpm-lock.yaml', () => {
 });
 
 describe('what opm ci writes to the terminal', () => {
-  it('escapes a control sequence a package.json that is not JSON echoes, wherever the message comes from', async () => {
+  it('removes a control sequence a package.json that is not JSON echoes, wherever the message comes from', async () => {
     const p = await project();
     // V8's JSON.parse quotes the bad text in its message: an OSC that sets the
     // terminal's title, a CSI, and a right-to-left override.
@@ -203,7 +203,9 @@ describe('what opm ci writes to the terminal', () => {
       fetch: p.fetcher,
     });
     expect(code).not.toBe(EXIT_CODES.success);
-    expect(c.err).toContain('\\u001b]0;PWN\\u0007');
+    // Made plain (`report`): the title-setting sequence is removed whole.
+    expect(c.err).toMatch(/^opm: /u);
+    expect(c.err).not.toContain('PWN');
     const raw = [...c.err].filter((character) => {
       const code = character.codePointAt(0)!;
       return (
@@ -217,7 +219,7 @@ describe('what opm ci writes to the terminal', () => {
     expect(p.urls).toEqual([]);
   });
 
-  it('escapes the project path the plan and the install summary print', async () => {
+  it('makes plain the project path the plan and the install summary print', async () => {
     // A CSI (C1) and a right-to-left override in the directory's own name.
     const p = await project({}, 'opm-ci-pnpm-x\u009b2J\u202ey-');
     for (const plan of [['--plan'], []]) {
@@ -229,7 +231,7 @@ describe('what opm ci writes to the terminal', () => {
         c.err,
       ).toBe(EXIT_CODES.success);
       expect(c.out).toMatch(plan.length > 0 ? /^Plan for /u : /^Installed /u);
-      expect(c.out).toContain('x\\u009b2J\\u202ey');
+      expect(c.out).toContain('opm-ci-pnpm-x2Jy-');
       expect(unsafeIn(c.out + c.err)).toEqual([]);
     }
   });

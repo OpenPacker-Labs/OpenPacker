@@ -24,7 +24,7 @@ const DIGEST = `sha256:${'a'.repeat(64)}`;
 const PATCH = 'b'.repeat(64);
 
 /**
- * `opm gc --shared` treats a patched entry (ADR 0056) as it treats an
+ * `opm gc --shared` treats a patched entry (ADR 0057) as it treats an
  * archive's: kept while a project links one of its files, kept while it is
  * younger than the age rule, removed with its tree record otherwise, and its
  * half-written temporary cleared once it is old.
@@ -88,6 +88,29 @@ describe('a patched entry in the shared store, collected', () => {
     expect((await collectSharedStore({ env, now: hourOn })).removed).toEqual([
       entry,
     ]);
+  });
+
+  it('keeps the unpatched entry of a patched copy that is too new to judge, though the entry itself is old', async () => {
+    const shared = await mkdtemp(join(tmpdir(), 'opm-shared-'));
+    temps.push(shared);
+    const base = join(shared, `sha256-${'a'.repeat(64)}`);
+    const copy = join(shared, patchedStoreKey(DIGEST, PATCH));
+    for (const entry of [base, copy]) {
+      await mkdir(join(entry, 'package'), { recursive: true });
+      await writeFile(join(entry, 'package', 'index.js'), entry);
+      await writeFile(`${entry}.tree`, `sha256:${'c'.repeat(64)}\n`);
+    }
+    const old = new Date(Date.now() - 3_600_000);
+    await utimes(`${base}.tree`, old, old);
+    const env = { OPM_STORE_HOME: shared };
+    // An install that made the copy just now proved `base` to be the package
+    // its lock names, and links the copy next: `base` must still be there.
+    expect(await collectSharedStore({ env })).toMatchObject({
+      removed: [],
+      referenced: 1,
+      tooNew: 1,
+    });
+    expect(await readdir(shared)).toContain(`sha256-${'a'.repeat(64)}`);
   });
 
   it('keeps the unpatched entry while a patched copy of it is kept, and removes both together', async () => {

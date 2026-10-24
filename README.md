@@ -6,14 +6,21 @@
 **Open Package Manager (`opm` / `opmx`)** plus a **PREX control plane** for
 multi-ecosystem package identity, locks, proofs, and digests.
 
-|                                  |                                                                    |
-| -------------------------------- | ------------------------------------------------------------------ |
-| **Project site / releases**      | [OpenPacker Pages](https://tyler-r-kendrick.github.io/OpenPacker/) |
-| **Package manager (start here)** | **[docs/guides/opm.md](docs/guides/opm.md)**                       |
-| **Example project**              | [examples/opm-project/](examples/opm-project/)                     |
-| **PREX / advanced CLI**          | [docs/guides/cli.md](docs/guides/cli.md)                           |
-| **Protocol**                     | [spec/prex/v1/](spec/prex/v1/)                                     |
-| **License**                      | [MIT](LICENSE)                                                     |
+**Status:** Private reference implementation of the PREX draft. This is not a
+production package registry.
+
+**AI usage:** Maintainers and contributors may use AI coding tools under human
+review. See [CONTRIBUTING.md](CONTRIBUTING.md#ai-assisted-contributions).
+
+|                                  |                                                                                               |
+| -------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Project site / releases**      | [OpenPacker Pages](https://tyler-r-kendrick.github.io/OpenPacker/)                            |
+| **Package manager (start here)** | **[docs/guides/opm.md](docs/guides/opm.md)**                                                  |
+| **Example project**              | [examples/opm-project/](examples/opm-project/)                                                |
+| **PREX / advanced CLI**          | [docs/guides/cli.md](docs/guides/cli.md)                                                      |
+| **Protocol**                     | [spec/prex/v1/](spec/prex/v1/)                                                                |
+| **License**                      | [MIT](LICENSE)                                                                                |
+| **Community**                    | [Code of Conduct](CODE_OF_CONDUCT.md) · [Governance](GOVERNANCE.md) · [Security](SECURITY.md) |
 
 ---
 

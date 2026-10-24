@@ -1,0 +1,69 @@
+{
+  "instances": [
+    {
+      "key": "p2@2.0.0",
+      "name": "p2",
+      "version": "2.0.0",
+      "edges": [
+        { "as": "p4", "to": "p4@1.0.0", "peer": true },
+        { "as": "p5", "to": "p5@2.0.0", "peer": true }
+      ]
+    },
+    {
+      "key": "p4@1.0.0",
+      "name": "p4",
+      "version": "1.0.0",
+      "edges": [
+        { "as": "p4", "to": "p4@2.0.0" },
+        { "as": "p6", "to": "p6@2.0.0" },
+        { "as": "p2", "to": "p2@2.0.0", "peer": true },
+        { "as": "p5", "to": "p5@2.0.0", "peer": true }
+      ]
+    },
+    { "key": "p4@2.0.0", "name": "p4", "version": "2.0.0", "edges": [] },
+    {
+      "key": "p5@2.0.0",
+      "name": "p5",
+      "version": "2.0.0",
+      "edges": [{ "as": "p2", "to": "p2@2.0.0", "peer": true }]
+    },
+    {
+      "key": "p6@2.0.0",
+      "name": "p6",
+      "version": "2.0.0",
+      "edges": [
+        { "as": "p2", "to": "p2@2.0.0", "peer": true },
+        { "as": "p4", "to": "p4@1.0.0", "peer": true },
+        { "as": "p5", "to": "p5@2.0.0", "peer": true }
+      ]
+    },
+    { "key": "p6@1.0.0", "name": "p6", "version": "1.0.0", "edges": [] },
+    {
+      "key": "p4@2.0.0#2",
+      "name": "p4",
+      "version": "2.0.0",
+      "edges": [{ "as": "p6", "to": "p6@1.0.0", "peer": true }]
+    }
+  ],
+  "tops": [
+    {
+      "id": ".",
+      "dir": "",
+      "edges": [
+        { "as": "p4", "to": "p4@1.0.0" },
+        { "as": "p5", "to": "p5@2.0.0" },
+        { "as": "p2", "to": "p2@2.0.0" }
+      ],
+      "links": []
+    },
+    {
+      "id": "packages/m0",
+      "dir": "packages/m0",
+      "edges": [
+        { "as": "p6", "to": "p6@1.0.0" },
+        { "as": "p4", "to": "p4@2.0.0#2" }
+      ],
+      "links": []
+    }
+  ]
+}

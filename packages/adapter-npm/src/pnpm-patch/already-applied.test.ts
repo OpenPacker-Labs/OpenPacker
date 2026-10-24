@@ -1,6 +1,6 @@
 /**
  * A patch that fails forward and whose reverse would apply counts as applied
- * (ADR 0056 §9), as pnpm counts it, and the package keeps what the two runs
+ * (ADR 0057 §9), as pnpm counts it, and the package keeps what the two runs
  * left: the files the forward run wrote before it failed, and any mode the
  * dry run of the reverse set (pnpm's dry run still runs chmod). Only a patch
  * that fails both ways leaves the package as it was. The outcomes below are

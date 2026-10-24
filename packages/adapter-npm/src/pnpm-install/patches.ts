@@ -1,6 +1,6 @@
 /**
  * Which patch of a pnpm lock's `patchedDependencies` each instance takes
- * (ADR 0056), as pnpm 10.28 decides it, and what in the lock is refused.
+ * (ADR 0057), as pnpm 10.28 decides it, and what in the lock is refused.
  *
  * pnpm groups the declarations by package name (`groupPatchedDependencies` in
  * `@pnpm/patching.config`): `name@1.2.3` is that exact version, `name@^1` a
@@ -13,7 +13,7 @@
  * end, and exact when node-semver's strict `valid` takes it (`1.0.0-01`, a
  * number past 2^53 - 1 and a version longer than 256 are not, and are then no
  * range either). pnpm 9 knew only the exact and bare forms, which mean the
- * same here; a lock pnpm 9 wrote is read by these rules too (ADR 0056 §3).
+ * same here; a lock pnpm 9 wrote is read by these rules too (ADR 0057 §3).
  *
  * pnpm decides from the project's settings, which a fresh lock records as they
  * are; a frozen install of the lock decides from the lock and holds the

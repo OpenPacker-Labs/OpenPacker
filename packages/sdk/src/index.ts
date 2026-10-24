@@ -1,4 +1,10 @@
-import { canonicalBytes, parseCanonicalJson } from '@openpacker/canonical';
+import {
+  canonicalBytes,
+  parseCanonicalJson,
+  parseUntrustedUrl,
+  printable,
+  safeEcho,
+} from '@openpacker/canonical';
 import type {
   Capabilities,
   CatalogImportRequest,
@@ -86,6 +92,13 @@ export interface EventPage {
   nextCursor: number;
 }
 
+const MESSAGE_LIMIT = 512;
+
+/** Text a server worded, as a message repeats it: one line, plain, cut. */
+function shown(text: string | undefined, limit: number): string {
+  return safeEcho(printable(text), limit);
+}
+
 export class PrexClientError extends Error {
   constructor(
     readonly status: number,
@@ -93,10 +106,16 @@ export class PrexClientError extends Error {
     readonly rawBytes: Uint8Array,
     readonly response: Response,
   ) {
+    // A server worded `detail` and `title`, and the message goes to a terminal,
+    // a log and a report: one line, no escape or control character, cut at 512
+    // characters. The `problem` keeps the document as it was received.
     super(
-      problem?.detail ??
-        problem?.title ??
-        `PREX request failed with HTTP ${status}`,
+      shown(
+        problem?.detail ??
+          problem?.title ??
+          `PREX request failed with HTTP ${status}`,
+        MESSAGE_LIMIT,
+      ),
     );
     this.name = 'PrexClientError';
   }
@@ -104,7 +123,9 @@ export class PrexClientError extends Error {
 
 export class UnsupportedProtocolVersionError extends Error {
   constructor(readonly protocolVersion: string) {
-    super(`Unsupported PREX protocol version: ${protocolVersion}`);
+    super(
+      `Unsupported PREX protocol version: ${shown(protocolVersion, MESSAGE_LIMIT)}`,
+    );
     this.name = 'UnsupportedProtocolVersionError';
   }
 }
@@ -136,7 +157,9 @@ export class OpenPackerClient {
   readonly #maximumResponseBytes: number;
 
   constructor(options: PrexClientOptions = {}) {
-    this.#baseUrl = new URL(options.baseUrl ?? 'http://127.0.0.1:7337/');
+    this.#baseUrl = parseUntrustedUrl(
+      options.baseUrl ?? 'http://127.0.0.1:7337/',
+    );
     this.#fetch = options.fetch ?? globalThis.fetch;
     if (!this.#fetch)
       throw new TypeError('A standard fetch implementation is required');
@@ -391,7 +414,7 @@ export class OpenPackerClient {
     body?: unknown,
     options?: RequestOptions,
   ): Promise<ControlledResponse> {
-    const url = new URL(path.replace(/^\//u, ''), this.#baseUrl).href;
+    const url = parseUntrustedUrl(path.replace(/^\//u, ''), this.#baseUrl).href;
     const attempts = 1 + this.#retries;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const headers = new Headers(this.#headers);
@@ -415,7 +438,7 @@ export class OpenPackerClient {
         for (const [key, value] of new Headers(authentication))
           headers.set(key, value);
       if (
-        new URL(url).protocol !== 'https:' &&
+        parseUntrustedUrl(url).protocol !== 'https:' &&
         ['authorization', 'proxy-authorization', 'cookie'].some((name) =>
           headers.has(name),
         )

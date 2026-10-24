@@ -6,13 +6,16 @@ import {
   type FrozenInstallInput,
   type FrozenPlan,
   type FrozenWorkspaceRequest,
+  type StepOptions,
 } from '@openpacker/opm-project';
 import {
   detectNativeTarget,
   type FrozenOmit,
   type NativeTarget,
 } from '@openpacker/adapter-core';
-import { say } from '../error-report.js';
+import { out, plainLine } from '@openpacker/canonical';
+import { report } from '../error-report.js';
+import { printPeerNotice } from './ci-peers.js';
 import type { CommandArgs, CommandIo } from './yank.js';
 
 /** What `opm ci` accepts beyond the shared argument shape. */
@@ -23,6 +26,8 @@ export interface CiArgs extends CommandArgs {
 export interface CiOptions {
   /** Network seam for tests; production resolves and pins real addresses. */
   fetch?: typeof fetch;
+  /** What to say when the step finishes what a killed opm left. */
+  step?: StepOptions;
 }
 
 const OMITTABLE = new Set<FrozenOmit>(['dev', 'optional', 'peer']);
@@ -205,14 +210,14 @@ function leftOut(result: Pick<FrozenPlan, 'skipped'>): string | undefined {
     .join(', ');
 }
 
-/** The packages a lock patches, when it patches any (ADR 0056). */
+/** The packages a lock patches, when it patches any (ADR 0057). */
 function writePatched(
   patched: { packages: number; patches: number },
   io: CommandIo,
 ): void {
   if (patched.packages === 0) return;
-  say(
-    io.stdout,
+  out(
+    io,
     `  patched: ${patched.packages} package${patched.packages === 1 ? '' : 's'} by ${patched.patches} patch${patched.patches === 1 ? '' : 'es'} from patchedDependencies, each a store entry of its own\n`,
   );
 }
@@ -222,19 +227,19 @@ function writePatched(
  * nothing done. The same plan is the same text, so it carries no wall time.
  */
 function printPlan(plan: FrozenPlan, io: CommandIo, root: string): void {
-  say(
-    io.stdout,
+  out(
+    io,
     `Plan for ${resolve(root)} (${plan.lockPath}): nothing was fetched or written\n` +
       `  ${plan.instances} package${plan.instances === 1 ? '' : 's'} in ${plan.places} place${plan.places === 1 ? '' : 's'} under node_modules, from ${plan.archives} archive${plan.archives === 1 ? '' : 's'}\n`,
   );
   const clause = leftOut(plan);
-  if (clause !== undefined) say(io.stdout, `  left out: ${clause}\n`);
+  if (clause !== undefined) out(io, `  left out: ${clause}\n`);
   writePatched(plan.patched, io);
   if (plan.targets !== undefined)
-    say(io.stdout, `  platforms: ${describeTargets(plan.targets)}\n`);
+    out(io, `  platforms: ${describeTargets(plan.targets)}\n`);
   if (plan.workspace !== undefined)
-    say(
-      io.stdout,
+    out(
+      io,
       `  workspace: ${plan.workspace.installed} of ${plan.workspace.members} member${plan.workspace.members === 1 ? '' : 's'} installed, ${plan.workspace.linked} linked at the project\n`,
     );
 }
@@ -270,43 +275,57 @@ export async function runCiCommand(
     ...(offline && { offline: true }),
     ...(args.options.has('online') && { offline: false }),
     ...(options.fetch !== undefined && { fetch: options.fetch }),
+    ...(options.step !== undefined && { step: options.step }),
   };
   if (args.options.has('plan')) {
-    printPlan(await planFrozen(request), io, root);
+    const plan = await planFrozen(request);
+    printPlan(plan, io, root);
+    if (plan.peers !== undefined) printPeerNotice(io, plan.peers);
     return 0;
   }
   const result = await installFrozen(request);
 
   const noScripts = result.installScripts.length;
-  say(
-    io.stdout,
+  out(
+    io,
     `Installed ${result.installed} package${result.installed === 1 ? '' : 's'} into ${resolve(root, 'node_modules')} ` +
       `(${result.fromStore} from the store, ${result.fetched} fetched, ${megabytes(result.fetchedBytes)}) ` +
       `in ${(result.milliseconds.total / 1000).toFixed(1)} s; ` +
       `${noScripts} ${noScripts === 1 ? 'declares an install script' : 'declare install scripts'}, which opm does not run\n`,
   );
   const clause = leftOut(result);
-  if (clause !== undefined) say(io.stdout, `  left out: ${clause}\n`);
+  if (clause !== undefined) out(io, `  left out: ${clause}\n`);
   writePatched(result.patched, io);
   if (result.targets !== undefined)
-    say(io.stdout, `  platforms: ${describeTargets(result.targets)}\n`);
+    out(io, `  platforms: ${describeTargets(result.targets)}\n`);
   if (result.workspace !== undefined)
-    say(
-      io.stdout,
+    out(
+      io,
       `  workspace: ${result.workspace.linked} of ${result.workspace.members} member${result.workspace.members === 1 ? '' : 's'} linked, not fetched; their scripts are not run\n`,
     );
   const shown = result.installScripts.slice(0, 50);
   for (const item of shown)
-    say(io.stdout, `  install script not run: ${item.name}@${item.version}\n`);
+    out(
+      io,
+      `  install script not run: ${plainLine(item.name)}@${plainLine(item.version)}\n`,
+    );
   if (noScripts > shown.length)
-    say(io.stdout, `  ... and ${noScripts - shown.length} more\n`);
+    out(io, `  ... and ${noScripts - shown.length} more\n`);
   for (const entry of result.layout.skipped ?? [])
-    say(io.stderr, `opm: skipped ${entry.path}: ${entry.reason}\n`);
+    io.stderr.write(
+      report(
+        'opm: ',
+        `skipped ${plainLine(entry.path)}: ${plainLine(entry.reason)}`,
+      ),
+    );
   for (const loss of result.layout.semanticLoss)
     if (loss.severity !== 'info')
-      say(
-        io.stderr,
-        `opm: ${loss.code}${loss.representedMeaning ? `: ${loss.representedMeaning}` : ''}\n`,
+      io.stderr.write(
+        report(
+          'opm: ',
+          `${plainLine(loss.code)}${loss.representedMeaning ? `: ${plainLine(loss.representedMeaning)}` : ''}`,
+        ),
       );
+  if (result.peers !== undefined) printPeerNotice(io, result.peers);
   return 0;
 }

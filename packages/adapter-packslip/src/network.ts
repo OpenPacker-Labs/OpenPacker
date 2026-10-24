@@ -1,6 +1,10 @@
 import {
   BoundedFetchTransport,
+  LONGEST_HOST_LENGTH,
+  OverlongHostError,
   ProviderError,
+  echoed,
+  parseUntrustedUrl,
   type HostLookup,
   type HttpTransport,
 } from '@openpacker/adapter-core';
@@ -55,7 +59,10 @@ function mapFailure(url: string, error: Error): PackslipError {
     error instanceof ProviderError
       ? `${error.code}: ${error.message}`
       : error.message;
-  return new PackslipError('UNAVAILABLE', `Could not fetch ${url}: ${detail}`);
+  return new PackslipError(
+    'UNAVAILABLE',
+    `Could not fetch ${echoed(url)}: ${echoed(detail)}`,
+  );
 }
 
 /**
@@ -86,9 +93,16 @@ export function createNetwork(options: NetworkOptions): Fetcher {
     async get(url, request) {
       let parsed: URL;
       try {
-        parsed = new URL(url);
-      } catch {
-        throw new PackslipError('UNAVAILABLE', `Not a URL: ${url}`);
+        parsed = parseUntrustedUrl(url);
+      } catch (error) {
+        // The text is a project's or a signed document's: not repeated when its
+        // host is one no DNS name could be, one line and cut when it is not a URL.
+        throw new PackslipError(
+          'UNAVAILABLE',
+          error instanceof OverlongHostError
+            ? `Refusing an address whose host is longer than ${LONGEST_HOST_LENGTH} characters`
+            : `Not a URL: ${echoed(url)}`,
+        );
       }
       const github = GITHUB_HOSTS.has(parsed.host);
       try {

@@ -1,5 +1,5 @@
 /**
- * The hash pnpm records for a patch file (ADR 0056).
+ * The hash pnpm records for a patch file (ADR 0057).
  *
  * Both read the file as UTF-8 text and make every `\r\n` a `\n` first, so a
  * patch checked out with either line ending has one hash. Which hash depends

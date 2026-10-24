@@ -2,17 +2,36 @@
 
 ## Reporting a vulnerability
 
-Do not open a public issue for a suspected vulnerability. Use GitHub's private
-security advisory flow for the `Tyler-R-Kendrick/OpenPacker` repository and
-include affected version/commit, attack prerequisites, minimal reproduction,
-impact, and any known digest or key IDs. Do not include registry credentials,
-tokens, private package bytes, or personal data. Maintainers will acknowledge
+Do not open a public issue for a suspected vulnerability. Use GitHub private
+vulnerability reporting (Security Advisories) for the
+`Tyler-R-Kendrick/OpenPacker` repository:
+
+<https://github.com/Tyler-R-Kendrick/OpenPacker/security/advisories/new>
+
+Include the affected version or commit, attack prerequisites, a minimal
+reproduction, impact, and any known digest or key IDs. Do not include registry
+credentials, tokens, private package bytes, or personal data.
+
+Maintainers must enable private vulnerability reporting in the GitHub repository
+under **Settings → Security** (Private vulnerability reporting). This repository
+does not publish a security email address. If that private channel cannot be
+opened, disclose only the inability to open it in a public issue; do not include
+exploit details.
+
+Maintainers will acknowledge a valid private report within 3 business days
 through that private channel, coordinate validation and remediation, and publish
 an advisory after a fix or documented disposition is available.
 
-No response-time guarantee is asserted by this repository. If private advisory
-delivery is unavailable, disclose only the inability to open the channel in a
-public issue; do not include exploit details.
+## Supply-chain sensitivity
+
+OpenPacker is a package manager. A defect in how a package is selected,
+recorded, or installed can affect every consumer of the resulting lock. The
+security scope includes:
+
+- resolver, lock, and install paths;
+- registry metadata;
+- signing; and
+- artifact integrity.
 
 ## Supported surface
 

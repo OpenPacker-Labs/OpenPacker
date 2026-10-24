@@ -41,6 +41,11 @@ import {
   type OperationContext,
   type PrexOperations,
 } from './operations.js';
+import {
+  LOOPBACK_HOSTS,
+  isLoopbackAuthority,
+  isLoopbackOrigin,
+} from './loopback.js';
 import { SqliteStateStore, type OpenPackerStateStore } from './store.js';
 
 export * from './operations.js';
@@ -557,16 +562,6 @@ export function createOpenPackerDaemon(
   return app;
 }
 
-/**
- * Hosts the reference daemon is willing to bind without an explicit override.
- *
- * The control plane is unauthenticated by design (capabilities say so). That
- * is only safe on a loopback interface. Binding `0.0.0.0` / `::` would expose
- * normalize/solve/materialize to the network with no auth — refuse that unless
- * the operator opts in with `allowRemoteBind`.
- */
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
-
 function assertLoopbackRequest(
   host: string | undefined,
   origin: string | undefined,
@@ -583,49 +578,6 @@ function assertLoopbackRequest(
       'The reference daemon rejects non-loopback browser origins',
       403,
     );
-}
-
-function isLoopbackAuthority(authority: string | undefined): boolean {
-  if (authority === undefined) return false;
-  try {
-    const url = new URL(`http://${authority}`);
-    return (
-      url.username === '' &&
-      url.password === '' &&
-      url.pathname === '/' &&
-      url.search === '' &&
-      url.hash === '' &&
-      isLoopbackHostname(url.hostname)
-    );
-  } catch {
-    return false;
-  }
-}
-
-function isLoopbackOrigin(origin: string): boolean {
-  try {
-    const url = new URL(origin);
-    return (
-      (url.protocol === 'http:' || url.protocol === 'https:') &&
-      url.username === '' &&
-      url.password === '' &&
-      url.pathname === '/' &&
-      url.search === '' &&
-      url.hash === '' &&
-      isLoopbackHostname(url.hostname)
-    );
-  } catch {
-    return false;
-  }
-}
-
-function isLoopbackHostname(hostname: string): boolean {
-  const normalized = hostname.toLowerCase().replace(/\.$/u, '');
-  return LOOPBACK_HOSTS.has(
-    normalized.startsWith('[') && normalized.endsWith(']')
-      ? normalized.slice(1, -1)
-      : normalized,
-  );
 }
 
 export function assertDaemonBindAddress(

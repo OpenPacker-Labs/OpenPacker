@@ -9,6 +9,12 @@ import {
   streamFromBytes,
   type ArtifactSource,
 } from '@openpacker/artifact-model';
+import {
+  echoed,
+  parseUntrustedUrl,
+  redactAddress,
+} from '@openpacker/adapter-core';
+import { shownSource } from './shown-source.js';
 import { materialize, type ArchiveFormat } from '@openpacker/materializer';
 import {
   freezeBoundLockPackage,
@@ -29,7 +35,9 @@ import {
   materializeThroughSharedStore,
   usableSharedRoot,
 } from './shared-store.js';
+import { holdSharedStore } from './shared-store-lease.js';
 import { installArchiveLimits } from './install-limits.js';
+export { inferFormat, mediaTypeForEcosystem } from './artifact-format.js';
 import { OpmError } from './types.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
 import { restoreSharedBins } from './bin-restore.js';
@@ -369,6 +377,22 @@ export async function writeProjectState(
   await writeStableFile(path, `${JSON.stringify(state, null, 2)}\n`);
 }
 
+/**
+ * A source that is an address, read once before anything else parses it: the
+ * URL parser spends most of a second on a host no DNS name could be, and the
+ * message names the address as `redactAddress` shows it, never as written.
+ */
+function assertReadableUrl(source: string, verb: string): URL {
+  try {
+    return parseUntrustedUrl(source);
+  } catch {
+    throw new OpmError(
+      'UNSAFE_SOURCE',
+      `${redactAddress(source)} is not a URL opm can ${verb}`,
+    );
+  }
+}
+
 export async function fetchArtifactBytes(
   source: string,
   offline: boolean,
@@ -376,6 +400,12 @@ export async function fetchArtifactBytes(
     expectedBytes?: number;
     maximumBytes?: number;
     signal?: AbortSignal;
+    /**
+     * What the person wrote as the source, when `source` is what opm made of it
+     * (a path against the project root): an error names what was written, as
+     * an address is named, and not the path made of it.
+     */
+    written?: string;
   } = {},
 ): Promise<Uint8Array> {
   const absoluteMaximum = 512 * 1024 * 1024;
@@ -403,16 +433,17 @@ export async function fetchArtifactBytes(
     if (offline) {
       throw new OpmError(
         'OFFLINE',
-        `Refusing network fetch for ${source} while offline`,
+        `Refusing network fetch for ${redactAddress(source)} while offline`,
       );
     }
+    assertReadableUrl(source, 'fetch');
     const response = await fetch(source, {
       ...(!(options.signal === undefined) && { signal: options.signal }),
     });
     if (!response.ok) {
       throw new OpmError(
         'FETCH_FAILED',
-        `Failed to fetch ${source}: HTTP ${response.status}`,
+        `Failed to fetch ${redactAddress(source)}: HTTP ${response.status}`,
       );
     }
     const declared = response.headers.get('content-length');
@@ -441,8 +472,9 @@ export async function fetchArtifactBytes(
     return bytes;
   }
   // file path
+  const written = options.written ?? source;
   const path = source.startsWith('file:')
-    ? fileURLToPath(source)
+    ? fileURLToPath(assertReadableUrl(source, 'read'))
     : resolve(source);
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
@@ -454,7 +486,7 @@ export async function fetchArtifactBytes(
     if (!before.isFile())
       throw new OpmError(
         'UNSAFE_SOURCE',
-        `Artifact source is not a regular file: ${path}`,
+        `Artifact source is not a regular file: ${shownSource(written, path)}`,
       );
     if (before.size > BigInt(limit))
       throw new OpmError(
@@ -487,19 +519,22 @@ export async function fetchArtifactBytes(
     )
       throw new OpmError(
         'INPUT_CHANGED',
-        `Artifact source changed while it was read: ${path}`,
+        `Artifact source changed while it was read: ${shownSource(written, path)}`,
       );
     return bytes;
   } catch (error) {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new OpmError('NOT_FOUND', `Artifact source not found: ${path}`);
+      throw new OpmError(
+        'NOT_FOUND',
+        `Artifact source not found: ${shownSource(written, path)}`,
+      );
     }
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ELOOP')
       throw new OpmError(
         'UNSAFE_SOURCE',
-        `Artifact source must not be a symbolic link: ${path}`,
+        `Artifact source must not be a symbolic link: ${shownSource(written, path)}`,
       );
     throw error;
   } finally {
@@ -669,7 +704,7 @@ export async function materializeLockPackage(input: {
       )
         throw new OpmError(
           'UNVERIFIED_ARTIFACT',
-          `Refusing to refetch ${pkg.purl} outside its bounded provider transport`,
+          `Refusing to refetch ${echoed(pkg.purl)} outside its bounded provider transport`,
         );
       loaded ??= await fetchArtifactBytes(pkg.source, offline, {
         expectedBytes: pkg.size,
@@ -678,13 +713,13 @@ export async function materializeLockPackage(input: {
       if (actual !== pkg.digest) {
         throw new OpmError(
           'DIGEST_MISMATCH',
-          `Digest mismatch for ${pkg.alias}: expected ${pkg.digest}, got ${actual}`,
+          `Digest mismatch for ${echoed(pkg.alias)}: expected ${echoed(pkg.digest)}, got ${actual}`,
         );
       }
       if (loaded.byteLength !== pkg.size) {
         throw new OpmError(
           'SIZE_MISMATCH',
-          `Size mismatch for ${pkg.alias}: expected ${pkg.size}, got ${loaded.byteLength}`,
+          `Size mismatch for ${echoed(pkg.alias)}: expected ${pkg.size}, got ${loaded.byteLength}`,
         );
       }
       bytes = loaded;
@@ -801,7 +836,7 @@ export async function materializeLockPackage(input: {
         if (publishedTreeDigest !== treeDigest)
           throw new OpmError(
             'INPUT_CHANGED',
-            `Post-build tree for ${pkg.purl} changed during publication`,
+            `Post-build tree for ${echoed(pkg.purl)} changed during publication`,
           );
       } catch (error) {
         await removeChild(storeHandle, storeName, {
@@ -874,6 +909,12 @@ export async function installFromLock(input: {
   only?: readonly string[];
   policy?: PolicyInput;
   expectedManifestDigest?: string;
+  /**
+   * Run once every package is in the store and before anything outside it
+   * changes, so that a package that cannot be fetched, verified or extracted
+   * stops the install before it: how `opm add` leaves a project as it was.
+   */
+  beforeLinking?: () => Promise<void>;
 }): Promise<ProjectState> {
   const root = input.root;
   const offline = input.offline;
@@ -898,7 +939,10 @@ export async function installFromLock(input: {
   for (const alias of aliases) {
     const pkg = lockPackages[alias];
     if (!pkg)
-      throw new OpmError('NOT_FOUND', `Lock entry missing for ${alias}`);
+      throw new OpmError(
+        'NOT_FOUND',
+        `Lock entry missing for ${echoed(alias)}`,
+      );
     freezeBoundLockPackage(pkg);
     selectedPackages.set(alias, pkg);
   }
@@ -911,11 +955,6 @@ export async function installFromLock(input: {
   await ensureStableDirectory(paths.bin);
   await ensureStableDirectory(paths.links);
 
-  const state = (await readProjectState(paths.projectState)) ?? {
-    schemaVersion: 1 as const,
-    packages: {},
-  };
-
   // Evaluate the complete closure before the first package can fetch or
   // mutate disk. A denied transitive entry must not leave earlier packages
   // partially installed.
@@ -923,7 +962,10 @@ export async function installFromLock(input: {
   for (const alias of aliases) {
     const pkg = selectedPackages.get(alias);
     if (!pkg)
-      throw new OpmError('NOT_FOUND', `Lock entry missing for ${alias}`);
+      throw new OpmError(
+        'NOT_FOUND',
+        `Lock entry missing for ${echoed(alias)}`,
+      );
     const capability = verifiedArtifactFor(pkg);
     await assertLockPackageAllowed(pkg, policy, evaluationTime, {
       registryArtifactVerified: capability?.provenance === 'registry',
@@ -948,34 +990,51 @@ export async function installFromLock(input: {
       treeDigest: string;
     }
   >();
-  for (const alias of aliases) {
-    const safeAlias = assertSafeSegment(alias, 'package alias');
-    const pkg = selectedPackages.get(alias);
-    if (!pkg) {
-      throw new OpmError('NOT_FOUND', `Lock entry missing for ${alias}`);
+  // One hold on the shared store for the closure, not one per package; each
+  // package still claims its own entry (shared-store-lease.ts).
+  const sharedRoot = await usableSharedRoot(paths.store);
+  const hold =
+    sharedRoot === undefined ? undefined : await holdSharedStore(sharedRoot);
+  try {
+    for (const alias of aliases) {
+      const safeAlias = assertSafeSegment(alias, 'package alias');
+      const pkg = selectedPackages.get(alias);
+      if (!pkg) {
+        throw new OpmError(
+          'NOT_FOUND',
+          `Lock entry missing for ${echoed(alias)}`,
+        );
+      }
+      const {
+        storePath,
+        bins,
+        lifecycleScriptsExecuted,
+        sandboxOutcomes,
+        treeDigest,
+      } = await materializeLockPackage({
+        root,
+        pkg,
+        offline,
+        ...(!(policy === undefined) && { policy }),
+      });
+      materialised.set(safeAlias, {
+        storePath,
+        bins,
+        pkg,
+        lifecycleScriptsExecuted,
+        sandboxOutcomes,
+        treeDigest,
+      });
     }
-    const {
-      storePath,
-      bins,
-      lifecycleScriptsExecuted,
-      sandboxOutcomes,
-      treeDigest,
-    } = await materializeLockPackage({
-      root,
-      pkg,
-      offline,
-      ...(!(policy === undefined) && { policy }),
-    });
-    materialised.set(safeAlias, {
-      storePath,
-      bins,
-      pkg,
-      lifecycleScriptsExecuted,
-      sandboxOutcomes,
-      treeDigest,
-    });
+  } finally {
+    await hold?.release();
   }
 
+  await input.beforeLinking?.();
+  const state = (await readProjectState(paths.projectState)) ?? {
+    schemaVersion: 1 as const,
+    packages: {},
+  };
   const pythonStoreRoots = [...materialised.values()]
     .filter(({ pkg }) => pkg.ecosystem === 'pypi')
     .map(({ storePath }) => storePath);
@@ -1215,52 +1274,4 @@ export function lockPackageFromSource(input: {
   bindVerifiedArtifactBytes(pkg, bytes, 'direct', facts);
   sealVerifiedArtifactBinding(pkg);
   return pkg;
-}
-
-export function inferFormat(source: string, mediaType?: string): ArchiveFormat {
-  const lower = source.toLowerCase();
-  // Gzip first: media types like "...+gzip" also contain "zip" and must not
-  // be classified as zip archives. Plain `.tar` / `...layout.v1.tar` is
-  // uncompressed — matching on the substring "tar" alone would mis-label an
-  // OCI image layout as gzip and fail extraction.
-  if (
-    mediaType?.includes('gzip') ||
-    lower.endsWith('.tgz') ||
-    lower.endsWith('.tar.gz') ||
-    lower.endsWith('.crate')
-  )
-    return 'tar+gzip';
-  if (
-    mediaType === 'application/x-tar' ||
-    mediaType === 'application/vnd.oci.image.layout.v1.tar' ||
-    (mediaType?.includes('tar') && !mediaType.includes('gzip')) ||
-    (lower.endsWith('.tar') && !lower.endsWith('.tar.gz'))
-  )
-    return 'tar';
-  if (
-    mediaType === 'application/zip' ||
-    mediaType?.includes('zip') ||
-    lower.endsWith('.zip') ||
-    lower.endsWith('.nupkg') ||
-    lower.endsWith('.whl')
-  )
-    return 'zip';
-  return 'tar';
-}
-
-export function mediaTypeForEcosystem(ecosystem: string): string {
-  switch (ecosystem) {
-    case 'npm':
-      return 'application/vnd.npm.package+gzip';
-    case 'cargo':
-      return 'application/vnd.crates.io.crate+gzip';
-    case 'nuget':
-      return 'application/vnd.nuget.package+zip';
-    case 'pypi':
-      return 'application/zip';
-    case 'oci':
-      return 'application/vnd.oci.image.layout.v1.tar';
-    default:
-      return 'application/octet-stream';
-  }
 }

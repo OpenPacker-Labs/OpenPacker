@@ -24,3 +24,25 @@ export async function readTree(
   await walk(root);
   return Object.fromEntries(out.sort(([a], [b]) => (a < b ? -1 : 1)));
 }
+
+/**
+ * A path of exactly `bytes` UTF-8 bytes whose segments are `unit` repeated
+ * (up to 50 times) and no longer than a file name may be: the longest path
+ * a patch may name has no segment of 4,096 bytes.
+ */
+export function pathOfBytes(bytes: number, unit = 'a'): string {
+  const width = Buffer.byteLength(unit, 'utf8');
+  let path = '';
+  let segment = 0;
+  while (Buffer.byteLength(path, 'utf8') + width <= bytes) {
+    if (segment === 50) {
+      // A separator, unless it would leave nothing for the segment after it.
+      if (Buffer.byteLength(path, 'utf8') + 1 + width > bytes) break;
+      path += '/';
+      segment = 0;
+    }
+    path += unit;
+    segment += 1;
+  }
+  return path;
+}

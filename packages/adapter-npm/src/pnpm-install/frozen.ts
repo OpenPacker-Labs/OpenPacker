@@ -15,6 +15,7 @@ import type {
   FrozenLock,
   FrozenLockOptions,
   FrozenLockPackage,
+  FrozenLockPeers,
   FrozenLockRefusal,
   FrozenLockWorkspace,
   WorkspaceMember,
@@ -33,9 +34,11 @@ import { npmPurl } from '../purl.js';
 import { readPnpmLock } from '../pnpm-lock/index.js';
 import { isSemver } from '../pnpm-lock/source.js';
 import { buildPnpmModel, type PnpmInstance, type PnpmModel } from './model.js';
+import { quote } from './quote.js';
 import { planPlacement } from './place.js';
+import type { PlannedPlacement } from './place-types.js';
 import { placeInputOf } from './place-input.js';
-import { resolutionProblems } from './place-check.js';
+import { directPlaces, resolutionProblems } from './place-check.js';
 import {
   importerRefusals,
   lockRefusals,
@@ -193,7 +196,17 @@ export async function readFrozenPnpmLock(
       ...(patch !== undefined && { patch: declared.patches.get(patch)! }),
     };
   });
-  const workspace = workspaceOf(model, tops, present, placement.links, disk);
+  const direct = directPlaces(input, placement);
+  const workspace = workspaceOf(model, tops, present, disk, {
+    links: placement.links,
+    importers: input.tops.map((top) => ({
+      dir: top.dir,
+      dependencies: (direct.get(top.dir) ?? []).map(({ place }) =>
+        placePath(place.chain, place.base),
+      ),
+      members: top.links.map((link) => link.memberDir),
+    })),
+  });
   return {
     ...common,
     ...(targets.length > 1 && { targets }),
@@ -201,6 +214,39 @@ export async function readFrozenPnpmLock(
     skipped: [...selection.skipped],
     refused: [],
     ...(workspace !== undefined && { workspace }),
+    ...peersOf(model, placement),
+  };
+}
+
+/** What to say about the peers the places could not keep to one copy: nothing when they all are. */
+function peersOf(
+  model: PnpmModel,
+  placement: PlannedPlacement,
+): { peers: FrozenLockPeers } | undefined {
+  if (placement.splits === 0 && !placement.fallback) return undefined;
+  const instanceName = (key: string): string => {
+    const instance = model.instances.get(key);
+    return quote(
+      instance === undefined ? key : `${instance.name}@${instance.version}`,
+    );
+  };
+  const edge = placement.firstSplit;
+  return {
+    peers: {
+      splits: placement.splits,
+      withoutPeers: placement.fallback,
+      ...(edge !== undefined && {
+        first: {
+          dependency: instanceName(edge.dependency),
+          dependent:
+            edge.dependent !== undefined
+              ? instanceName(edge.dependent)
+              : edge.importer === ''
+                ? 'the project'
+                : `the member ${quote(edge.importer)}`,
+        },
+      }),
+    },
   };
 }
 
@@ -226,13 +272,20 @@ function archiveIdentityOf(instance: PnpmInstance): {
   };
 }
 
-/** What the layout links and shims: the installed members, and the project's link to each. */
+/**
+ * What the layout links and shims: the installed members, the project's link
+ * to each, and every installed importer's direct dependencies, whose
+ * executables pnpm gives that importer.
+ */
 function workspaceOf(
   model: PnpmModel,
   tops: ReadonlySet<string>,
   present: ReadonlySet<string>,
-  links: readonly { name: string; memberDir: string }[],
   disk: readonly WorkspaceMember[],
+  planned: {
+    links: readonly { name: string; memberDir: string }[];
+    importers: NonNullable<FrozenLockWorkspace['layout']['importers']>;
+  },
 ): FrozenLockWorkspace | undefined {
   // Only the members the project has: a directory the lock remembers and the
   // workspace no longer declares is not the install's to clear.
@@ -257,10 +310,11 @@ function workspaceOf(
             bin: member?.manifest.bin ?? {},
           };
         }),
-      links: links.map((link) => {
+      links: planned.links.map((link) => {
         const path = `node_modules/${link.name}`;
         return { path, target: linkTargetBetween(path, link.memberDir) };
       }),
+      importers: planned.importers,
     },
   };
 }

@@ -27,6 +27,8 @@ export function opmErrorExitCode(code: string): number {
     case 'INVALID_MANIFEST':
     case 'INVALID_LOCK':
     case 'UNSUPPORTED_LOCK':
+    case 'INVALID_ROLLBACK':
+    case 'ROLLBACK_CONFLICT':
     case 'PATCH_FAILED':
     case 'INVALID_PATCH':
     case 'INVALID_CATALOG':
@@ -50,6 +52,9 @@ export function opmErrorExitCode(code: string): number {
     case 'OFFLINE':
     case 'FETCH_FAILED':
     case 'UNAVAILABLE':
+    case 'STORE_ENTRY_VANISHED':
+    case 'PROJECT_BUSY':
+    case 'STEP_ALIVE':
     case 'PLUGIN_ERROR':
     case 'PLUGIN_FAILED':
     case 'PLUGIN_REGISTRY_UNCONFIGURED':

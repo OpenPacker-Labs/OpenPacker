@@ -1,5 +1,5 @@
 /**
- * The bounds on the patch files a lock declares (ADR 0056 §13): each is at
+ * The bounds on the patch files a lock declares (ADR 0057 §13): each is at
  * most 16 MiB, and together at most 64 MiB, each read whole into memory as
  * bytes and as text when the lock is read. Past either, the lock is refused
  * as SIZE_LIMIT before any patch is read; pnpm reads whatever is there. The

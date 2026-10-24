@@ -2,8 +2,14 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, readdir, rmdir, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
+import { PACKAGE_TREE_LIMITS, segmentProblem } from '@openpacker/adapter-core';
+import { collisionKey } from '@openpacker/adapter-core';
 import { collectStream, type ArtifactSource } from '@openpacker/artifact-model';
-import { compareCanonicalStrings, sha256 } from '@openpacker/canonical';
+import {
+  compareCanonicalStrings,
+  safeEcho,
+  sha256,
+} from '@openpacker/canonical';
 import type { ArtifactDescriptor, Digest } from '@openpacker/contracts';
 import {
   mkdirChild,
@@ -61,8 +67,9 @@ export const DEFAULT_MATERIALIZATION_LIMITS: MaterializationLimits = {
   maximumCompressedBytes: 64 * 1024 * 1024,
   maximumCompressionRatio: 32,
   maximumMemoryBytes: 192 * 1024 * 1024,
-  maximumPathBytes: 4096,
-  maximumDepth: 128,
+  // The bounds of a path in a package: one definition, with the store's.
+  maximumPathBytes: PACKAGE_TREE_LIMITS.maximumPathBytes,
+  maximumDepth: PACKAGE_TREE_LIMITS.maximumDepth,
 };
 
 export interface InspectedArchiveEntry {
@@ -113,19 +120,10 @@ export function validateArchivePath(
     parts.some((part) => part === '' || part === '.' || part === '..')
   )
     throw unsafe('PATH_TRAVERSAL', input);
-  // Windows device names are reserved at every directory level and stay
-  // reserved with an extension, so extracting an entry called `CON` or
-  // `aux.txt` there writes to a device rather than a file. Trailing dots and
-  // spaces are stripped on resolution, so `a.` and `a` would name one file on
-  // Windows and two here — which defeats the duplicate and case-collision
-  // checks below. Both are refused on every platform, because an archive that
-  // only extracts safely on Linux is not safely extractable.
+  // The names an archive refuses: one rule, the one a patch's paths meet.
   for (const part of parts) {
-    if (part.includes(':'))
-      throw unsafe('WINDOWS_ALTERNATE_DATA_STREAM', input);
-    if (/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(part))
-      throw unsafe('WINDOWS_RESERVED_NAME', input);
-    if (/[ .]$/u.test(part)) throw unsafe('WINDOWS_TRAILING_CHARACTER', input);
+    const problem = segmentProblem(part);
+    if (problem !== undefined) throw unsafe(problem.code, input);
   }
   if (parts.length > limits.maximumDepth)
     throw unsafe('PATH_DEPTH_LIMIT', input);
@@ -525,7 +523,7 @@ function parseTar(
     } else {
       throw new MaterializationError(
         'ADAPTER_REQUIRED',
-        `Unsupported tar entry type ${JSON.stringify(type)} at ${path}`,
+        `Unsupported tar entry type ${JSON.stringify(type)} at ${safeEcho(path, 256)}`,
       );
     }
     offset = dataStart + Math.ceil(size / 512) * 512;
@@ -694,7 +692,7 @@ function validateEntries(
   let expanded = 0;
   for (const entry of entries) {
     if (paths.has(entry.path)) throw unsafe('DUPLICATE_PATH', entry.path);
-    const fold = entry.path.toLowerCase();
+    const fold = collisionKey(entry.path);
     if (folded.has(fold)) throw unsafe('CASE_COLLISION', entry.path);
     paths.add(entry.path);
     types.set(entry.path, entry.type);

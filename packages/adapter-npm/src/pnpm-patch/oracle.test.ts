@@ -1,5 +1,5 @@
 /**
- * The patch reader and applier against pnpm's own code (ADR 0056):
+ * The patch reader and applier against pnpm's own code (ADR 0057):
  * `test/pnpm-patch-oracle/oracle.json` is what pnpm 10.28's
  * `applyPatchToDir` did with each case and what pnpm 10.28's and 9.15's
  * `calcPatchHashes` record for each file (`generate.mjs` makes it from the two

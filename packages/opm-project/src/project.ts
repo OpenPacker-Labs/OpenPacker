@@ -10,6 +10,12 @@ import type {
 } from './types.js';
 import { installArchiveLimits } from './install-limits.js';
 import { OpmError } from './types.js';
+import { projectStep, type StepOptions } from './project-step.js';
+import {
+  addHostPackage,
+  assertEcosystemAllowed,
+  type AddPackageResult,
+} from './add-host.js';
 import {
   canonicalCatalogPurl,
   canonicalPurlOrSelf,
@@ -30,23 +36,23 @@ import { resolveTransitive } from './closure-lock.js';
 import { assertLabelIsFree } from './label-conflict.js';
 import { lockEdgeKeys } from './lock-edges.js';
 import { entriesNamed, explainEntry, installedAs } from './why.js';
-import { isExactVersion, registryTargetFor } from './registry-target.js';
+import {
+  isPinnedVersion,
+  registryHintFor,
+  registryTargetFor,
+} from './registry-target.js';
+import { defaultRelease } from './default-release.js';
 import {
   emptyLockfile,
   readLockfile,
-  reproducibleLockForm,
   serializeLockfile,
   writeLockfile,
 } from './lock.js';
-import {
-  hostSandboxFromPolicy,
-  installSystemPackage,
-  planSystemInstall,
-} from './system.js';
+import { reproducibleLockForm } from './lock-reproducible.js';
+import { commitInstall } from './install-commit.js';
 import {
   assertPackageIdentityMatchesRequest,
-  type InstallOutcome,
-  type InstallPlan,
+  echoed,
 } from '@openpacker/adapter-core';
 import type { NativeProjectionReport } from './native.js';
 import {
@@ -88,7 +94,6 @@ import {
   assertSupplyChainAllowed,
   captureFactsFromCatalog,
   captureFactsFromSourceUri,
-  insideReleaseAge,
   lockAttestationFrom,
   lockPackageSupplyChainFields,
   projectPolicyDocument,
@@ -131,6 +136,15 @@ export async function requireOpmRoot(cwd: string): Promise<string> {
 }
 
 export async function initProject(input: {
+  root: string;
+  name?: string;
+  force?: boolean;
+  step?: StepOptions;
+}): Promise<{ manifestPath: string; created: boolean }> {
+  return projectStep(input.root, input.step, () => initInStep(input));
+}
+
+async function initInStep(input: {
   root: string;
   name?: string;
   force?: boolean;
@@ -195,39 +209,14 @@ export async function addPackage(input: {
   dryRun?: boolean;
   /** Transport / endpoint overrides for the registry walk (tests, hosts). */
   registryOptions?: RegistryOptions;
-}): Promise<{
-  manifest: OpmManifest;
-  lock: OpmLockfile;
-  state: ProjectState;
-  alias: string;
-  /** What was written into the ecosystem's own project files. */
-  native?: NativeProjectionReport;
-  /** When the adapter prefers host install, the plan/outcome is returned. */
-  hostInstall?: {
-    plan: InstallPlan;
-    outcome?: InstallOutcome;
-  };
-}> {
+  step?: StepOptions;
+}): Promise<AddPackageResult> {
   const paths = projectPaths(input.root);
-  const manifest = await readManifestFile(paths.manifest);
   const parsed = parsePackageSpec(input.spec, {
     ...(input.ecosystem !== undefined && { ecosystem: input.ecosystem }),
     ...(input.source !== undefined && { source: input.source }),
     ...(input.alias !== undefined && { alias: input.alias }),
   });
-
-  // Fail closed if ecosystem not allowed when project restricts
-  if (
-    parsed.ecosystem &&
-    manifest.project.ecosystems.length > 0 &&
-    !manifest.project.ecosystems.includes(parsed.ecosystem)
-  ) {
-    throw new OpmError(
-      'ECOSYSTEM_DENIED',
-      `Ecosystem "${parsed.ecosystem}" is not in project.ecosystems`,
-    );
-  }
-
   const ecosystem = parsed.ecosystem ?? ecosystemFromPurl(parsed.purl);
   // Host/profile install is selected by Registry Definition capabilities, not
   // a separate CLI product. Project-store materialize remains the default for
@@ -235,64 +224,83 @@ export async function addPackage(input: {
   if (
     !input.source &&
     (await requireAdapterRegistry().prefersHostInstall(ecosystem))
-  ) {
-    const exact =
-      parsed.version !== undefined
-        ? `${stripPurlVersion(parsed.purl)}@${parsed.version}`
-        : parsed.purl.startsWith('pkg:')
-          ? parsed.purl
-          : `pkg:${ecosystem}/${parsed.alias}`;
-    const sandbox = hostSandboxFromPolicy(manifest.policy);
-    const planOptions = {
-      ...(input.offline !== undefined && { offline: input.offline }),
-      ...(input.dryRun !== undefined && { dryRun: input.dryRun }),
-      ...(input.allowElevation !== undefined && {
-        allowElevation: input.allowElevation,
-      }),
-      sandbox,
-    };
-    const plan = await planSystemInstall(exact, planOptions);
-    const outcome =
-      input.dryRun === true
-        ? undefined
-        : await installSystemPackage(exact, {
-            ...(input.offline !== undefined && { offline: input.offline }),
-            ...(input.allowElevation !== undefined && {
-              allowElevation: input.allowElevation,
-            }),
-            sandbox,
-          });
+  )
+    return addHostPackage({
+      ...input,
+      manifest: await readManifestFile(paths.manifest),
+      parsed,
+      ecosystem,
+    });
+  return projectStep(input.root, input.step, async () => {
+    const manifest = await readManifestFile(paths.manifest);
+    assertEcosystemAllowed(manifest, parsed.ecosystem);
     const alias = assertSafeSegment(parsed.alias, 'package alias');
-    const state = (await readProjectState(paths.projectState)) ?? {
-      schemaVersion: 1 as const,
-      packages: {},
-    };
-    return {
-      manifest,
-      lock: emptyLockfile(),
-      state,
+    const requirement: PackageRequirement = {
       alias,
-      hostInstall: {
-        plan,
-        ...(!(outcome === undefined) && { outcome }),
-      },
+      purl: stripPurlVersion(parsed.purl),
     };
-  }
+    if (parsed.version !== undefined) requirement.version = parsed.version;
+    if (parsed.installName !== undefined)
+      requirement.installName = parsed.installName;
+    if (parsed.source !== undefined) requirement.source = parsed.source;
+    else if (input.source !== undefined) requirement.source = input.source;
 
-  const alias = assertSafeSegment(parsed.alias, 'package alias');
-  const requirement: PackageRequirement = {
-    alias,
-    purl: stripPurlVersion(parsed.purl),
-  };
-  if (parsed.version !== undefined) requirement.version = parsed.version;
-  if (parsed.installName !== undefined)
-    requirement.installName = parsed.installName;
-  if (parsed.source !== undefined) requirement.source = parsed.source;
-  else if (input.source !== undefined) requirement.source = input.source;
+    assertLabelIsFree(manifest, alias, requirement.purl);
+    manifest.packages[alias] = requirement;
 
-  assertLabelIsFree(manifest, alias, requirement.purl);
-  manifest.packages[alias] = requirement;
+    const offline = input.offline ?? manifest.options.offline;
+    const lock = await resolveManifestToLock({
+      root: input.root,
+      manifest,
+      offline,
+      ...(input.catalogPaths !== undefined && {
+        catalogPaths: input.catalogPaths,
+      }),
+      ...(input.registryOptions !== undefined && {
+        registryOptions: input.registryOptions,
+      }),
+      previousLock: await readPreviousLock(paths.lock),
+    });
+    // The whole lock, not just the alias that was named: a package is not
+    // installed in any useful sense without the things it needs, and the lock
+    // now carries them. A refused or unsatisfiable add used to leave its
+    // requirement in opm.toml; one that fails installing it leaves the project
+    // as it was.
+    const { state, native } = await commitInstall({
+      root: input.root,
+      manifest,
+      lock,
+      offline,
+      writeManifest: true,
+    });
+    return { manifest, lock, state, alias, native };
+  });
+}
 
+export async function syncProject(input: {
+  root: string;
+  offline?: boolean;
+  catalogPaths?: readonly string[];
+  /** Transport / endpoint overrides for the registry walk (tests, hosts). */
+  registryOptions?: RegistryOptions;
+  step?: StepOptions;
+}): Promise<{
+  manifest: OpmManifest;
+  lock: OpmLockfile;
+  state: ProjectState;
+  native?: NativeProjectionReport;
+}> {
+  return projectStep(input.root, input.step, () => syncInStep(input));
+}
+
+async function syncInStep(input: {
+  root: string;
+  offline?: boolean;
+  catalogPaths?: readonly string[];
+  registryOptions?: RegistryOptions;
+}) {
+  const paths = projectPaths(input.root);
+  const manifest = await readManifestFile(paths.manifest);
   const offline = input.offline ?? manifest.options.offline;
   const lock = await resolveManifestToLock({
     root: input.root,
@@ -306,88 +314,12 @@ export async function addPackage(input: {
     }),
     previousLock: await readPreviousLock(paths.lock),
   });
-  // Only once the requirement has resolved. A refused or unsatisfiable add
-  // used to leave it in opm.toml, where every later install tripped over it.
-  await writeManifestFile(paths.manifest, manifest);
-  await writeLockfile(paths.lock, lock);
-
-  // What is installed under a key the lock no longer has: adding the package
-  // that makes a name two versions re-keys the first (`ansi-regex` is
-  // `ansi-regex.5.0.1` and `ansi-regex.6.4.0` now), and the old record would
-  // go on being listed as installed.
-  const stale = Object.keys(
-    (await readProjectState(paths.projectState))?.packages ?? {},
-  ).filter((key) => !lock.packages[key]);
-  if (stale.length > 0)
-    await uninstallPackages({ root: input.root, aliases: stale });
-
-  // The whole lock, not just the alias that was named: a package is not
-  // installed in any useful sense without the things it needs, and the lock now
-  // carries them.
-  const state = await installFromLock({
-    root: input.root,
-    lock,
-    offline,
-    ...(!(manifest.policy === undefined) && { policy: manifest.policy }),
-  });
-
-  // Last, and only after the store is real: a native manifest that names a
-  // package the resolve never produced would send the native tool looking for
-  // something opm does not have.
-  const native = await projectNativeFormats({
+  const { state, native } = await commitInstall({
     root: input.root,
     manifest,
     lock,
-  });
-
-  return { manifest, lock, state, alias, native };
-}
-
-export async function syncProject(input: {
-  root: string;
-  offline?: boolean;
-  catalogPaths?: readonly string[];
-}): Promise<{
-  manifest: OpmManifest;
-  lock: OpmLockfile;
-  state: ProjectState;
-  native?: NativeProjectionReport;
-}> {
-  const paths = projectPaths(input.root);
-  const manifest = await readManifestFile(paths.manifest);
-  const offline = input.offline ?? manifest.options.offline;
-  const lock = await resolveManifestToLock({
-    root: input.root,
-    manifest,
     offline,
-    ...(input.catalogPaths !== undefined && {
-      catalogPaths: input.catalogPaths,
-    }),
-    previousLock: await readPreviousLock(paths.lock),
-  });
-  await writeLockfile(paths.lock, lock);
-
-  // uninstall packages no longer in lock
-  const previous = await readProjectState(paths.projectState);
-  if (previous) {
-    const stale = Object.keys(previous.packages).filter(
-      (alias) => !lock.packages[alias],
-    );
-    if (stale.length > 0) {
-      await uninstallPackages({ root: input.root, aliases: stale });
-    }
-  }
-
-  const state = await installFromLock({
-    root: input.root,
-    lock,
-    offline,
-    ...(!(manifest.policy === undefined) && { policy: manifest.policy }),
-  });
-  const native = await projectNativeFormats({
-    root: input.root,
-    manifest,
-    lock,
+    writeManifest: false,
   });
   return { manifest, lock, state, native };
 }
@@ -395,11 +327,16 @@ export async function syncProject(input: {
 export async function installProject(input: {
   root: string;
   offline?: boolean;
+  step?: StepOptions;
 }): Promise<{
   lock: OpmLockfile;
   state: ProjectState;
   native?: NativeProjectionReport;
 }> {
+  return projectStep(input.root, input.step, () => installInStep(input));
+}
+
+async function installInStep(input: { root: string; offline?: boolean }) {
   const paths = projectPaths(input.root);
   const manifest = await readManifestFile(paths.manifest);
   const lock = await readLockfile(paths.lock);
@@ -479,7 +416,7 @@ export function assertLockMatchesManifest(
     if (!pkg || pkg.reason !== 'direct')
       throw new OpmError(
         'INVALID_LOCK',
-        `Lock does not contain direct manifest requirement ${alias}`,
+        `Lock does not contain direct manifest requirement ${echoed(alias)}`,
       );
     if (
       canonicalPurlOrSelf(stripPurlVersion(pkg.purl)) !==
@@ -487,13 +424,16 @@ export function assertLockMatchesManifest(
     )
       throw new OpmError(
         'INVALID_LOCK',
-        `Lock package ${alias} does not match manifest PURL ${requirement.purl}`,
+        `Lock package ${echoed(alias)} does not match manifest PURL ${echoed(requirement.purl)}`,
       );
     const exactRequirement =
       stripPurlVersion(requirement.purl) !== requirement.purl
         ? requirement.purl
         : requirement.version !== undefined &&
-            /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u.test(requirement.version)
+            isPinnedVersion(
+              ecosystemFromPurl(requirement.purl),
+              requirement.version,
+            )
           ? exactPurl(requirement.purl, requirement.version)
           : undefined;
     if (
@@ -502,7 +442,7 @@ export function assertLockMatchesManifest(
     )
       throw new OpmError(
         'INVALID_LOCK',
-        `Lock package ${alias} does not match manifest version ${requirement.version}`,
+        `Lock package ${echoed(alias)} does not match manifest version ${echoed(String(requirement.version))}`,
       );
     if (
       requirement.source !== undefined &&
@@ -511,7 +451,7 @@ export function assertLockMatchesManifest(
     )
       throw new OpmError(
         'INVALID_LOCK',
-        `Lock package ${alias} does not match its manifest source`,
+        `Lock package ${echoed(alias)} does not match its manifest source`,
       );
     if (pkg.installName !== requirement.installName)
       throw new OpmError(
@@ -523,7 +463,7 @@ export function assertLockMatchesManifest(
     if (pkg.reason === 'direct' && manifest.packages[alias] === undefined)
       throw new OpmError(
         'INVALID_LOCK',
-        `Lock contains undeclared direct package ${alias}`,
+        `Lock contains undeclared direct package ${echoed(alias)}`,
       );
 
   const reachable = new Set(Object.keys(manifest.packages));
@@ -532,12 +472,15 @@ export function assertLockMatchesManifest(
     const alias = queue.shift()!;
     const pkg = lock.packages[alias];
     if (!pkg)
-      throw new OpmError('INVALID_LOCK', `Lock dependency ${alias} is missing`);
+      throw new OpmError(
+        'INVALID_LOCK',
+        `Lock dependency ${echoed(alias)} is missing`,
+      );
     for (const dependency of lockEdgeKeys(pkg)) {
       if (!lock.packages[dependency])
         throw new OpmError(
           'INVALID_LOCK',
-          `Lock dependency ${alias} -> ${dependency} is missing`,
+          `Lock dependency ${echoed(alias)} -> ${echoed(dependency)} is missing`,
         );
       if (!reachable.has(dependency)) {
         reachable.add(dependency);
@@ -549,7 +492,7 @@ export function assertLockMatchesManifest(
     if (!reachable.has(alias))
       throw new OpmError(
         'INVALID_LOCK',
-        `Lock contains package ${alias} outside the manifest dependency closure`,
+        `Lock contains package ${echoed(alias)} outside the manifest dependency closure`,
       );
 }
 
@@ -587,12 +530,14 @@ function normalizedRequirementSource(source: string, root: string): string {
 export async function uninstallProject(input: {
   root: string;
   alias?: string;
+  step?: StepOptions;
 }): Promise<ProjectState> {
-  if (input.alias) {
-    return uninstallPackages({ root: input.root, aliases: [input.alias] });
-  }
-  await uninstallAll(input.root);
-  return { schemaVersion: 1, packages: {} };
+  return projectStep(input.root, input.step, async () => {
+    if (input.alias)
+      return uninstallPackages({ root: input.root, aliases: [input.alias] });
+    await uninstallAll(input.root);
+    return { schemaVersion: 1, packages: {} };
+  });
 }
 
 export async function listInstalled(
@@ -640,7 +585,7 @@ export async function whyPackage(root: string, alias: string): Promise<string> {
   const lock = await readLockfile(paths.lock);
   const keys = entriesNamed(manifest, lock, alias);
   if (keys.length === 0)
-    throw new OpmError('NOT_FOUND', `Unknown package "${alias}"`);
+    throw new OpmError('NOT_FOUND', `Unknown package "${echoed(alias)}"`);
   return keys.map((key) => explainEntry(manifest, lock, key)).join('\n\n');
 }
 
@@ -778,8 +723,9 @@ async function resolveRequirement(input: {
   // 1) Explicit source on requirement
   if (input.req.source) {
     const resolved = resolveSource(input.req.source, input.root);
+    const written = { written: input.req.source };
     const offlineBytes = input.offline
-      ? await fetchArtifactBytes(resolved, true)
+      ? await fetchArtifactBytes(resolved, true, written)
       : undefined;
     const sourceUri =
       resolved.startsWith('/') || /^[A-Za-z]:/.test(resolved)
@@ -792,7 +738,8 @@ async function resolveRequirement(input: {
     });
     await assertSupplyChainAllowed(policy, facts);
     const bytes =
-      offlineBytes ?? (await fetchArtifactBytes(resolved, input.offline));
+      offlineBytes ??
+      (await fetchArtifactBytes(resolved, input.offline, written));
     const version =
       versionHint &&
       !versionHint.startsWith('^') &&
@@ -895,12 +842,9 @@ async function resolveRequirement(input: {
       if (error instanceof OpmError) throw error;
       continue;
     }
-    // Keep the manifest's equivalent spelling in user-facing state while the
-    // catalog map and all comparisons remain canonical.
-    const entryPurl = exactPurl(
-      stripPurlVersion(input.req.purl),
-      entry.version,
-    );
+    // The canonical spelling, whichever one opm.toml was typed with: a lock
+    // holds one spelling of one identity (`lock-purl.ts`).
+    const entryPurl = exactPurl(stripPurlVersion(requestedPurl), entry.version);
     const facts = captureFactsFromSourceUri(entryPurl, sourceUri, {
       evaluationTime,
       dependencyDepth: 0,
@@ -914,12 +858,13 @@ async function resolveRequirement(input: {
       );
     const bytes = await fetchArtifactBytes(source, input.offline, {
       expectedBytes: entry.size,
+      written: entry.source,
     });
     const actual = digestOf(bytes);
     if (actual !== entry.digest) {
       throw new OpmError(
         'DIGEST_MISMATCH',
-        `Catalog digest mismatch for ${entry.purl}: expected ${entry.digest}, got ${actual}`,
+        `Catalog digest mismatch for ${echoed(entry.purl)}: expected ${echoed(entry.digest)}, got ${actual}`,
       );
     }
     let bins = input.req.bins
@@ -970,12 +915,7 @@ async function resolveRequirement(input: {
         : await input.pool.optionsWithProvider(ecosystem);
     // A range or a dist-tag in the manifest is resolved here; a version is a
     // version. (`candidateExact` treats anything but ^ and ~ as a version.)
-    const registryHint =
-      versionHint !== undefined &&
-      versionHint !== '' &&
-      !isExactVersion(ecosystem, versionHint)
-        ? versionHint
-        : undefined;
+    const registryHint = registryHintFor(ecosystem, versionHint);
     const target =
       (registryHint === undefined
         ? candidateExact
@@ -989,35 +929,26 @@ async function resolveRequirement(input: {
             evaluationTime,
           })) ??
       (await (async () => {
-        // No exact version given, so ask the registry what exists and take the
-        // newest. `enumerate` returns oldest-first.
-        const versions = await listRegistryVersions(
+        // No version given: the registry's `latest`, else its newest release
+        // that is not a prerelease, passing over one the policy's minimum age
+        // rules out (`default-release.ts`).
+        const base = stripPurlVersion(requestedPurl);
+        const newest = await defaultRelease({
           ecosystem,
-          stripPurlVersion(requestedPurl),
-          registryOptions,
-        );
-        // Newest first, skipping a release the policy's minimum age rules out
-        // so that "add foo" lands on the previous release instead of failing
-        // on one published an hour ago. If every release is inside the window
-        // the newest is kept and the policy refuses it by name.
-        const provider = await providerFor(ecosystem, registryOptions);
-        let newest = versions[versions.length - 1];
-        for (let index = versions.length - 1; index >= 0; index -= 1)
-          if (
-            !(await insideReleaseAge(
-              policy,
-              provider,
-              versions[index]!,
-              evaluationTime,
-            ))
-          ) {
-            newest = versions[index];
-            break;
-          }
+          basePurl: base,
+          published: await listRegistryVersions(
+            ecosystem,
+            base,
+            registryOptions,
+          ),
+          provider: await providerFor(ecosystem, registryOptions),
+          policy,
+          evaluationTime,
+        });
         if (!newest)
           throw new OpmError(
             'UNRESOLVABLE',
-            `The ${ecosystem} registry published no versions of ${input.req.purl}.`,
+            `The ${ecosystem} registry published no versions of ${echoed(input.req.purl)}.`,
           );
         return newest;
       })());
@@ -1035,13 +966,13 @@ async function resolveRequirement(input: {
     if (actual !== artifact.digest)
       throw new OpmError(
         'DIGEST_MISMATCH',
-        `Registry digest mismatch for ${artifact.exactPurl}: ` +
-          `the ${ecosystem} provider reported ${artifact.digest}, the bytes hash to ${actual}`,
+        `Registry digest mismatch for ${echoed(artifact.exactPurl)}: ` +
+          `the ${ecosystem} provider reported ${echoed(artifact.digest)}, the bytes hash to ${actual}`,
       );
     if (artifact.size > 0 && bytes.byteLength !== artifact.size)
       throw new OpmError(
         'SIZE_MISMATCH',
-        `Registry size mismatch for ${artifact.exactPurl}: ` +
+        `Registry size mismatch for ${echoed(artifact.exactPurl)}: ` +
           `expected ${artifact.size} bytes, got ${bytes.byteLength}`,
       );
 
@@ -1139,7 +1070,7 @@ async function resolveRequirement(input: {
 
   throw new OpmError(
     'UNRESOLVABLE',
-    `Cannot resolve "${input.alias}" (${input.req.purl}${versionHint ? `@${versionHint}` : ''}). ` +
+    `Cannot resolve "${echoed(input.alias)}" (${echoed(input.req.purl)}${versionHint ? `@${echoed(versionHint)}` : ''}). ` +
       `Provide source = "file:..." in ${MANIFEST_NAME}, pass --source, or add a catalog entry ` +
       `(${CATALOG_NAME} / OPM_CATALOG). Offline catalogs are required when offline.`,
   );

@@ -1,5 +1,5 @@
 /**
- * A patch file read as pnpm reads one (ADR 0056).
+ * A patch file read as pnpm reads one (ADR 0057).
  *
  * pnpm 10.28 applies `patchedDependencies` with its fork of patch-package,
  * `@pnpm/patch-package@0.0.1`, bundled in `pnpm.cjs` as
@@ -17,7 +17,23 @@
  * applies whole or not at all. pnpm's own code is kept as the oracle instead:
  * `test/pnpm-patch-oracle/` drives it, from the pnpm 10.28 bundle, over every
  * case the tests compare.
+ *
+ * Two of pnpm's regexes backtrack (`index abc..def` and `diff --git a/x b/y`),
+ * so they are read in one pass instead (`header-lines.ts`), and a line the
+ * parser reads as a header line (it begins `diff --git `, `index `, `--- `...)
+ * is refused when longer than that module's bound. A line it reads as nothing,
+ * a commit message before the first diff, is taken at any length: it costs a
+ * few `startsWith`. The other regexes here run over a line only after a
+ * literal prefix and take it in one pass.
  */
+
+import {
+  diffLinePaths,
+  HeaderLineTooLong,
+  indexHashes,
+  isBounded,
+  MAXIMUM_HEADER_LINE,
+} from './header-lines.js';
 
 /** A run of one kind of line in a hunk. */
 export interface PatchPart {
@@ -154,10 +170,9 @@ function readHeaderLine(file: FilePatch, line: string): void {
   else if (line.startsWith('rename to '))
     file.renameTo = line.slice('rename to '.length).trim();
   else if (line.startsWith('index ')) {
-    const match = /(\w+)\.\.(\w+)/u.exec(line);
-    if (match === null) return;
-    file.beforeHash = match[1]!;
-    file.afterHash = match[2]!;
+    const hashes = indexHashes(line);
+    if (hashes === null) return;
+    [file.beforeHash, file.afterHash] = hashes;
   } else if (line.startsWith('--- '))
     file.fromPath = line.slice('--- a/'.length).trim();
   else if (line.startsWith('+++ '))
@@ -195,12 +210,13 @@ function parsePatchLines(
         state = 'parsing hunks';
         current.hunks = [];
         i--;
+      } else if (line.length > MAXIMUM_HEADER_LINE && isBounded(line)) {
+        throw new HeaderLineTooLong(line.length);
       } else if (line.startsWith('diff --git ')) {
         if (current.diffLineFromPath) commitFilePatch();
-        const match = /^diff --git a\/(.*?) b\/(.*?)\s*$/u.exec(line);
-        if (match === null) throw new Error(`Bad diff line: ${line}`);
-        current.diffLineFromPath = match[1]!;
-        current.diffLineToPath = match[2]!;
+        const paths = diffLinePaths(line);
+        if (paths === null) throw new Error(`Bad diff line: ${line}`);
+        [current.diffLineFromPath, current.diffLineToPath] = paths;
       } else readHeaderLine(current, line);
       continue;
     }

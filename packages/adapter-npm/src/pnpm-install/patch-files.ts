@@ -1,6 +1,6 @@
 /**
  * The patch files a pnpm project declares, read and held to its lock (ADR
- * 0056).
+ * 0057).
  *
  * pnpm reads `patchedDependencies` from the root `package.json`
  * (`pnpm.patchedDependencies`) or `pnpm-workspace.yaml`, makes each path
@@ -39,6 +39,8 @@ export const PATCH_FILE_LIMITS = {
   file: 16 * 1024 * 1024,
   total: 64 * 1024 * 1024,
 } as const;
+
+const MiB = 1024 * 1024;
 
 const code = (error: unknown): string | undefined =>
   // SAFETY: Node file errors carry an optional string `code`.
@@ -94,13 +96,45 @@ async function withFileBelow<T>(
   }
 }
 
-/** Refuse one patch file past `PATCH_FILE_LIMITS.file`. */
-function tooLarge(path: string, size: number): void {
+/**
+ * Refuse one patch file past `PATCH_FILE_LIMITS.file`. `atLeast` is for a file
+ * read to one byte past the bound, whose size is not known.
+ */
+function tooLarge(path: string, size: number, atLeast = false): void {
   if (size > PATCH_FILE_LIMITS.file)
     throw new ProviderError(
       'SIZE_LIMIT',
-      `the patch file ${quote(path)} is ${size} bytes, more than the ${PATCH_FILE_LIMITS.file} opm reads of one patch file`,
+      `the patch file ${quote(path)} is ${atLeast ? 'at least ' : ''}${size} bytes, more than the ${PATCH_FILE_LIMITS.file} opm reads of one patch file`,
     );
+}
+
+/** What of an open file reading a patch takes: `FileHandle` is one. */
+export interface PatchFileReader {
+  read(
+    buffer: Buffer,
+    offset: number,
+    length: number,
+    position: number,
+  ): Promise<{ readonly bytesRead: number }>;
+}
+
+/**
+ * At most one byte more than a patch file may be, from the start of `handle`:
+ * a file that grew since it was sized is never held whole, and the byte past
+ * the bound is what says it is over it.
+ */
+async function readBounded(handle: PatchFileReader): Promise<Buffer> {
+  const limit = PATCH_FILE_LIMITS.file + 1;
+  const chunks: Buffer[] = [];
+  let total = 0;
+  while (total < limit) {
+    const chunk = Buffer.allocUnsafe(Math.min(MiB, limit - total));
+    const { bytesRead } = await handle.read(chunk, 0, chunk.length, total);
+    if (bytesRead === 0) break;
+    chunks.push(chunk.subarray(0, bytesRead));
+    total += bytesRead;
+  }
+  return Buffer.concat(chunks, total);
 }
 
 /** Refuse patch files that come to more than `PATCH_FILE_LIMITS.total`. */
@@ -112,6 +146,20 @@ function tooLargeTogether(files: number, size: number): void {
     );
 }
 
+/**
+ * The bytes of the patch file `path` open as `handle`, read to one byte past
+ * the bound and held to it again: a file that grew since it was sized is
+ * refused, and never held whole.
+ */
+export async function readPatchBytes(
+  handle: PatchFileReader,
+  path: string,
+): Promise<Buffer> {
+  const bytes = await readBounded(handle);
+  tooLarge(path, bytes.length, bytes.length > PATCH_FILE_LIMITS.file);
+  return bytes;
+}
+
 /** The project's patches, by key, and how they differ from the lock's record. */
 export interface ProjectPatches {
   readonly patches: ReadonlyMap<string, FrozenPatch>;
@@ -121,8 +169,10 @@ export interface ProjectPatches {
 /** Read every patch the project declares and hold the lock's record to it. */
 export async function readProjectPatches(
   root: string,
-  config: PnpmProjectConfig,
-  lock: PnpmLock,
+  config: Pick<PnpmProjectConfig, 'patches' | 'patchesFrom'>,
+  lock: Pick<PnpmLock, 'patchedDependencies'>,
+  /** Awaited once every file is sized and none is read yet; nothing by default. */
+  afterSizing: () => Promise<void> = () => Promise.resolve(),
 ): Promise<ProjectPatches> {
   const patches = new Map<string, FrozenPatch>();
   const stale: string[] = [];
@@ -148,14 +198,14 @@ export async function readProjectPatches(
   for (const path of paths)
     size += await withFileBelow(root, path, async (_, bytes) => bytes);
   tooLargeTogether(paths.length, size);
+  await afterSizing();
   let read = 0;
   for (const [index, [key]] of declared.entries()) {
     const path = paths[index]!;
     const bytes = await withFileBelow(root, path, (handle) =>
-      handle.readFile(),
+      readPatchBytes(handle, path),
     );
-    // A file that grew since it was sized is held to the bounds again.
-    tooLarge(path, bytes.length);
+    // Files that grew since they were sized are held to the bound of all again.
     read += bytes.length;
     tooLargeTogether(paths.length, read);
     const recorded = lock.patchedDependencies.get(key);

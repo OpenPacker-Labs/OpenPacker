@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-12; amended 2026-10-17 after the independent review of #179 (§1,
   §7, §11, §15, §18, §19, §20, §23 and Costs); amended 2026-10-17 by
-  [ADR 0056](0056-opm-ci-applies-pnpm-patches.md): a lock's patches are applied
+  [ADR 0057](0057-opm-ci-applies-pnpm-patches.md): a lock's patches are applied
 - Amends [ADR 0052](0052-pnpm-lockfile-model.md): "Not done: the mapping" and
   the plan in §15 to §18 are built, with the changes listed under each point
   below. [ADR 0051](0051-opm-ci-installs-workspace-locks.md): "pnpm or yarn
@@ -140,31 +140,124 @@ design:
    edges, from the importer's directory. The planner (`pnpm-install/place*.ts`)
    chooses; it is the job arborist does when npm writes a lock, and it ends in
    the same `PlacedEntry` list the npm lock gives `planLayoutFromPaths`.
-9. **One lock instance has one real path wherever no other version holds its
-   name**, as pnpm (one `node_modules/.pnpm` directory per instance, linked to
-   from each importer) and npm (arborist hoists a member's dependency to the
-   root unless it conflicts) lay it out. Node keys its module cache by real
-   path, so each copy of one instance is a separate module, and state held at
-   module level does not survive it (two members and the project depending on
-   `react@18.3.1`, written three times, render "Invalid hook call"). The
-   project's direct dependencies live in its `node_modules`. A member's are
-   placed as everything else is (point 10), from the member's directory: nothing
-   is written when Node already finds that instance from the member, at the
-   project or an enclosing member; it goes to the project's `node_modules` when
-   nothing answers there and it is the instance of its name the most packages
-   and importers want; otherwise it is the member's own
-   (`packages/web/node_modules/x` when the project holds another `x`). One case
-   keeps a copy in the member although the project's would do: when the shared
-   copy would find, under a name the member requires itself, another copy of the
-   instance the member requires (a peer: `dom@1.0.0(react@18.2.0)` shared at the
-   project beside the project's react 18.3 needs its own react 18.2 beside it, a
-   second copy of the one the member loads), the member gets the dependency in
-   its own `node_modules`, beside its peer. A shared dependency is still a
-   direct one (the policy's depth, the precedence of its executable); its shim
-   is in the `.bin` beside it, which `opm run` and `opm exec` put on a member's
-   `PATH` (ADR 0047, every ancestor's `node_modules/.bin`); a member installed
-   alone (`-w`, `--filter`) finds it at the project, as `npm ci -w` places it;
-   and it is left out with its importer's list (`--omit`).
+9. **One lock instance has one real path** unless another instance of its name
+   (another version, or the same package resolved against other peers) is found
+   first on the way up from one of its dependents, or a peer it shares with its
+   dependent has more than one path. That is how pnpm (one `node_modules/.pnpm`
+   directory per instance, linked to from each importer) and npm (arborist
+   hoists a member's dependency to the root unless it conflicts) lay it out.
+   Node keys its module cache by real path, so each copy of one instance is a
+   separate module, and state held at module level does not survive it (two
+   members and the project depending on `react@18.3.1`, written three times,
+   render "Invalid hook call"). The project's direct dependencies live in its
+   `node_modules`. A member's are answered as everything else is (point 10),
+   from the member's directory: nothing is written when Node already finds that
+   instance from the member, at the project or an enclosing member; it goes to
+   the project's `node_modules` when nothing answers there and it is the
+   instance of its name the most packages and importers want; otherwise it is
+   the member's own (`packages/web/node_modules/x` when the project holds
+   another `x`). When a plan leaves a name's slot in the project empty while one
+   instance of it is written in two or more members' own `node_modules`, the
+   slot goes to that instance and the plan is made again, unless a peer of the
+   instance resolves differently at the project (the rule below keeps it lower:
+   HoBo's `@vitest/mocker`, whose `vite` is the member's own, is written in 58
+   members' `node_modules` and the project's slot stays empty).
+
+   **Peers.** pnpm resolves a peer from the package that depends on the
+   instance, and its one path per instance means a package and the dependency it
+   shares a peer with load one copy of that peer. In a tree that holds only
+   where the dependency, wherever it is written, finds the very copy its
+   dependent finds. So an edge whose instance has a peer that the dependent
+   requires too, as the same instance, is answered with that in view, at every
+   level and not only a member's: the copy found above is shared only when each
+   such peer resolves from there to the dependent's own copy; otherwise a new
+   copy is written as high on the dependent's way up as that still holds, and no
+   higher (`dom@1.0.0(react@18.2.0)` under a member on react 18.2, beside the
+   project's react 18.3, goes in the member's `node_modules`, where everything
+   in the member that needs it shares it; under a package of the project that
+   holds its own react 18.2, it is nested in that package). It is never written
+   in a `node_modules` an answered edge already looked through, which would
+   change what that edge finds. A dependent's own edges to its peers are
+   answered before the edges that share them. A peer is what the package
+   declares in `peerDependencies` or an instance its key carries in the peer
+   suffix. An optional peer that nothing provided is no edge in a pnpm snapshot,
+   so the planner never sees it (`place-input.ts`): a cycle through optional
+   peers is, to it, a cycle through the peers that were resolved.
+
+   The answers depend on the order they are given in, so a layout is checked and
+   made again (point 12): an edge whose dependency still loads another copy of a
+   peer is answered beside its dependent the next time, unless the instance is
+   one the dependent already sits inside (a copy nested in its own copy would be
+   nested again in that one, for ever); and when no split is left, the
+   empty-slot rule above runs. What this cannot cure is bounded, and is not
+   refused:
+   - Where sharing leaves a split, or no layout (a host and its plugins that
+     peer one another, wanted at several versions by several members: packages
+     that need each other at different versions), the members that reach such a
+     cycle (a strongly connected component of the instances) keep all they need
+     in their own `node_modules`, where one copy of each name serves every
+     package and a cycle cannot split it, and the better of the two layouts is
+     kept.
+   - Where neither can be written within the bound, the lock is laid out as it
+     was before the peer rule, without peers in view, and installed: a lock that
+     installed before is not refused for a peer.
+   - The work is bounded. At most 8 layouts are made for each of the two ways of
+     sharing and one without peers, 17 in all (`MAXIMUM_LAYOUTS`); a layout made
+     with peers in view takes at most 8 places for each instance and importer
+     and 256 more, and one without at most the 50,000 of the cap. Each layout
+     adds a pin or an election, or ends the loop, so the bound is the count and
+     not a proof that fewer suffice. What the suite holds is the exact count of
+     each fixture world (two to four layouts) and, for the generated worlds
+     (more than 600 are valid), none above 16; the review generators, which are
+     not in the suite, measured at most 5 over 25,200 worlds of cycles of peers
+     and at most 6 over 6,042 worlds in which a package may depend on another
+     version of itself.
+   - A split that no layout the planner makes avoids is kept, in the layout with
+     the fewest, and said: `opm ci` and `opm ci --plan` print one line on stderr
+     with how many dependencies load their own copy of a peer and which first
+     (`FrozenLock.peers`; the exit status and the plan are as they were). The
+     layout without peers in view is said too. It is reachable. A package that
+     depends on an older version of itself and hosts a plugin that peers it
+     (`kept-split.json`, five packages) cannot have one copy of the host in a
+     tree without symlinks, and 88 of 6,042 worlds of the review's `self` family
+     end so, 2 of them in the layout without peers; 656 more are refused as too
+     deep (§12), 326 of which were checked to be refused at 0e65d69 and daf5ff6
+     too. Not every kept split is inherent. The planner pins every split of a
+     layout at once and keeps each pin for the layouts after it, so in a world
+     of 4 instances and 3 importers one of the three pins it makes first cures
+     the layout and the three together leave a split (12 of 800 worlds of the
+     `sibcycle` family at 5 packages, 4 members and a cycle probability of 0.6
+     end so). Neither shape is in the committed generated worlds, which the
+     tests require to keep none.
+
+   The install refuses a plan only when an edge does not resolve (point 12).
+   That no layout of the fixture worlds below splits a peer is held by the
+   tests, with a second check that shares nothing with the planner
+   (`peerSplitProblems`, placements alone), over the three fixture locks, the
+   cycle, beside-edge, isolation, pin and host/plugin worlds committed under
+   `packages/adapter-npm/test/fixtures/peer-worlds` and 750 generated ones;
+   `kept-split.json` and `fallback.json` hold the opposite: a split the planner
+   keeps and counts, and a layout made without peers in view. Each planner line
+   a review changed one at a time (14 mutants, `place.attempts.test.ts`,
+   `place.layout.test.ts`, `place.cycles.test.ts`) fails a test.
+
+   **Executables.** pnpm links each importer's direct dependencies' executables
+   into that importer's own `node_modules/.bin`, wherever the package is. So
+   does this: the lock reader names each installed importer's direct
+   dependencies by place, the writer shims each in its importer's `.bin`
+   addressing the package where it was written, and in any `.bin` only the
+   importer's own direct dependencies rank as direct. A member therefore runs
+   its own tool through `opm run` and `opm exec` (which put every ancestor's
+   `node_modules/.bin` on `PATH`, ADR 0047, the member's first), and the project
+   its own, whatever a shared package of the same executable name sits beside. A
+   member's dependency shared at the project is still a direct one for the
+   policy's depth; a member installed alone (`-w`, `--filter`) finds it at the
+   project, as `npm ci -w` places it; and it is left out with its importer's
+   list (`--omit`). The executables a member declares itself go to the `.bin` of
+   each importer that links the member and to no other, so a member never takes
+   a name in the project's `.bin` from the project's own dependency; an npm lock
+   names no importers, and its members' executables stay in the project's
+   `.bin`, where npm links them.
 
    Amended 2026-10-17. The rule was "always in the importer's own
    `node_modules`, even when the same instance would also resolve from the
@@ -173,6 +266,43 @@ design:
    now), the OpenSesame cut `vitest@4.1.11` at 6 real paths, and `planFrozen`'s
    tests on those locks and HoBo's cut now hold that no instance is placed both
    in a member's own `node_modules` and anywhere else.
+
+   Amended again on 2026-10-17, after review. Sharing a member's dependency at
+   the project had moved its executable into the project's `.bin`, where it lost
+   or took a name by package-name order (a member's script ran the project's
+   `esbuild`, the project's own `build` a member's); and the peer check covered
+   a member's own edges only, so a package hoisted above its dependent could
+   still nest its own copy of their peer (HoBo's whole lock had 100 such splits;
+   a UI kit's hook dependency rendered "Invalid hook call"). Both are as stated
+   above now.
+
+   Amended a third time on 2026-10-17, after the sixth review. The peer rule's
+   pins fed on themselves in a cycle of peers across members: a pin names an
+   instance and an edge, so it applied to the copies it wrote, and the copies
+   nested to the 32-directory or the 50,000-place bound, or left a split that
+   only the install's own check saw and refused, so locks that installed before
+   were refused (49 of 25,200 generated cycle worlds). A pin no longer recurses
+   and is keyed by the importer it was found in; every edge is checked for a
+   split; the members that reach a cycle keep to themselves where sharing fails;
+   and no lock is refused for a peer. A member's own executable was offered to
+   the project's `.bin` as the project's own would be; it now goes only to the
+   importers that link the member. Both are as stated above now.
+
+   Amended a fourth time on 2026-10-17, after the seventh review. Eight of the
+   fourteen lines of the planner that the review changed one at a time were held
+   by no test, and a split no layout avoids was kept without a word. The lines
+   are held now (the chain rule of a pin, a pin kept to its importer and kept
+   between layouts, the check of an edge whose dependency sits beside its
+   dependent, the isolated attempt preferred, the election leaving out an
+   isolated importer, a package that needs itself, and a split counted), by
+   worlds committed under `peer-worlds` and by cases that lay out one world
+   under a given strategy; the other six already were. Two bin-routing lines (a
+   linked member's executable ranked as direct, and the tie between two linked
+   members) are held by two more cases. A kept split and a layout made without
+   peers in view are said on stderr, and the claims above that no generated
+   world reached them are replaced by the numbers the review measured. The
+   prefix of a member's line in a run over members is written as text: a
+   directory with no package name was written to the terminal as it was.
 
 10. **Everything else is placed as the closure planner places it**
     (`layout-plan.ts`), generalised to several tops: breadth-first from the
@@ -184,8 +314,9 @@ design:
     when it is the instance of that name the most packages and importers want
     (an importer's edge counts, so two members that share an instance elect it),
     and beside its dependent otherwise. A tie is broken by the newer version,
-    then by key. A name that differs only by case from one already in the
-    directory is nested instead (ADR 0054 §17 refuses what cannot be).
+    then by key. An instance with a peer its dependent shares goes no higher
+    than point 9 allows. A name that differs only by case from one already in
+    the directory is nested instead (ADR 0054 §17 refuses what cannot be).
 11. **A member link** is a link at `node_modules/<name>` in the project, where
     the name is the one the importer gives the dependency: the member's own
     name, or an alias (`"e": "workspace:b@*"` is a link at `node_modules/e`), as
@@ -199,27 +330,33 @@ design:
     placed instance and every importer is resolved on the planned tree by the
     algorithm of point 8, and any edge that does not find its target is a bug in
     the planner, not a reason to install: the install is refused with the edge
-    named. The tests use the same function. The acceptance runs check a plan a
-    second time with a walk that shares none of its structure (the real ancestor
-    directories of the planned tree, and, on a tree on disk, Node's own
+    named. A split peer is not that: the planner looks for it itself (point 9),
+    cures what it can and counts what it cannot, `opm ci` says so on stderr, and
+    the tests check it with a second function that shares nothing with it. The
+    tests use the same function. The acceptance runs check a plan a second time
+    with a walk that shares none of its structure (the real ancestor directories
+    of the planned tree, and, on a tree on disk, Node's own
     `require.resolve.paths`), against the lock read by PyYAML:
     `packages/adapter-npm/test/pnpm-install-oracle`.
 
     One shape has no plan: packages that need each other at different versions
-    (`a@1` needs `b@1`, which needs `a@2`, which needs `b@2`, which needs
-    `a@1`), because each copy nested beside its dependent is shadowed by the one
-    above it, for ever. pnpm writes that with symlinks, which this layout does
-    not have. The planner stops at 32 directories deep and the install is
-    refused naming the instances, where without the bound it exhausted an 8 GB
-    heap on the first generated graph that had one.
+    in one importer's closure (`a@1` needs `b@1`, which needs `a@2`, which needs
+    `b@2`, which needs `a@1`), because each copy nested beside its dependent is
+    shadowed by the one above it, for ever. pnpm writes that with symlinks,
+    which this layout does not have. The planner stops at 32 directories deep
+    and the install is refused naming the instances, where without the bound it
+    exhausted an 8 GB heap on the first generated graph that had one. Several
+    importers that each need one version of such packages do have a plan, in
+    each importer's own `node_modules` (point 9).
 
 ### Peer-suffixed instances
 
 13. **Each is a separate instance of one registry package.** It is placed where
     its dependents resolve their peers: because placement is by what Node finds
     from the dependent, `react-dom@18.2.0(react@18.2.0)` and
-    `react-dom@18.2.0(react@18.3.0)` end up in the nearest places whose
-    ancestors find the right `react` and nothing wrong.
+    `react-dom@18.2.0(react@18.3.0)` end up in places whose ancestors find the
+    right `react` and nothing wrong, and, by point 9, the very copy of it their
+    dependents load.
 14. **Two instances of one tarball cost one extraction.** The archive is
     fetched, proved and extracted once however many places the plan gives it
     (the store is found by the integrity, ADR 0046 §5; `storeArchives` already
@@ -264,7 +401,7 @@ design:
     touched** (ADR 0046 §6: what looks only at the lock comes first, then what
     needs the project's files, then what needs the target, then the places):
     1. The lock itself: refusals of the reader (ADR 0052), a source this does
-       not install (§20), what is wrong with its `patchedDependencies` (ADR 0056
+       not install (§20), what is wrong with its `patchedDependencies` (ADR 0057
        §13), an `excludeLinksFromLockfile` lock, an importer with
        `dependenciesMeta` or `publishDirectory`, a lock written with
        `ignoredOptionalDependencies`.
@@ -389,14 +526,16 @@ design:
 
 20. By name, whole, with nothing installed or removed (a lock's
     `patchedDependencies` are applied as pnpm applies them, and what of them is
-    refused is ADR 0056 §13's):
+    refused is ADR 0057 §13's):
     - A package from a git repository, a directory, a `file:` archive or a
       runtime; and an `http(s)` tarball without an integrity. A tarball with one
       is installed from its URL, as a `tarball` source.
     - A package with no integrity, or only a sha1.
     - An injected workspace package (`dependenciesMeta.injected`), a
-      `publishDirectory`, a `link:` in a snapshot or to a directory that is not
-      an importer, a `link:` to an importer the project no longer has (§15).
+      `publishDirectory`, a `link:` in a snapshot (a peer satisfied by a
+      workspace member, `plug@1.0.0(ui@link:../ui)`, is refused naming the peer
+      and the member) or to a directory that is not an importer, a `link:` to an
+      importer the project no longer has (§15).
     - A lock written with `ignoredOptionalDependencies`: pnpm also takes those
       names out of the importers' `package.json`, which opm does not.
     - A member the lock does not list that has dependencies (§15).
@@ -416,7 +555,7 @@ design:
     Only the refusals of a stale lock (§18.3, §18.4's overrides, §18.5's
     project-side `ignoredOptionalDependencies`, §18.6, and
     `publishConfig.directory`) say that `pnpm install --frozen-lockfile` would
-    refuse too: the review of #179 saw real pnpm refuse each (ADR 0056 adds a
+    refuse too: the review of #179 saw real pnpm refuse each (ADR 0057 adds a
     patch file that changed). Every other refusal here is opm's own rule and
     says so.
 
@@ -478,7 +617,7 @@ tree on disk (`require.resolve.paths`, `package.json` read at the place found).
 | that tree, resolved by Node                                    | 579 edges, **0 mismatches**; the two vitest variants load the `@types/node` of their own member                                                                                                                                                                                                             |
 | HoBo's scripts through `opm`                                   | `typecheck` of `provider-config` and of `adapter-better-auth` (after `opm run build` of `@hobo/core`, so through the link), 95 + 3 tests with `opm exec vitest run`. The `test` script runs `pnpm exec turbo` in its `pretest`, so it needs pnpm and is not run                                             |
 | ts-autocode and gitlang, npm locks                             | 438 and 758 packages, the figures of ADRs 0051 and 0054; `build:grounding`, `tsc --noEmit` and 50 tests, `build:libs` and the 312 node tests pass through `opm`. (Run with the shell's `GITHUB_TOKEN` set, 7 gitlang tests fail with or without opm: they assume no ambient token)                          |
-| OpenSesame                                                     | was refused by name for its 4 `patchedDependencies` (exit 3); with ADR 0056 it plans with them (1,758 packages, 4 patched), and installs except one member, whose `sylvester@0.0.21` archive the materializer cannot extract (ADR 0056, Consequences); its `.deepsec` lock plans (287 packages, 288 places) |
+| OpenSesame                                                     | was refused by name for its 4 `patchedDependencies` (exit 3); with ADR 0057 it plans with them (1,758 packages, 4 patched), and installs except one member, whose `sylvester@0.0.21` archive the materializer cannot extract (ADR 0057, Consequences); its `.deepsec` lock plans (287 packages, 288 places) |
 | a stale lock                                                   | `zod` edited in `packages/sdk/package.json`: `packages/sdk: zod is "^9.9.9" in package.json and "^4.6.5" in pnpm-lock.yaml`, exit 3, the previous `node_modules` as it was                                                                                                                                  |
 
 **After §9's amendment (2026-10-17)**, the same runs give one real path per
@@ -492,8 +631,64 @@ installs 354, 352 from the store; `vitest` and `zod` resolve from the project,
 places (the table's 2,564); 156 places are in a member's own `node_modules`,
 none of them an instance the member would find above it: each is there because
 the project holds another instance of the name (`vitest@4.1.9` against
-`@types/node@22.20.0`, in 57 members beside the project's against 24.13.2, as
-npm would place it too).
+`@types/node@22.20.0`, in 57 members beside the project's against 24.13.2: a
+peer variant, which npm does not have; arborist would place one `vitest@4.1.9`
+at the root and resolve its optional peer from there).
+
+**After §9's second amendment (2026-10-17)**, the peer rule and the executables
+as §9 now states them. HoBo's whole lock plans 1,851 packages in 2,463 places,
+80 more than 2,383: 118 copies added and 38 no longer needed, 115 of the added
+being packages whose key or peers name `@types/node`, written where they find
+their member's own (writing each beside its dependent instead, the review's
+prototype, took 2,491). Planned with the peers of each package's own
+`peerDependencies`, it has 0 splits, as do ai-bdd and the two cut locks; ai-bdd
+still plans 354 places. ai-bdd installed again (`git archive` of ea16857): 354
+places, 353 from the store, 0 fetched; `vitest` and `zod` resolve to one real
+path each from the project, `packages/verify`, `packages/sdk` and
+`packages/cli`; each member's `.bin` holds its own direct dependencies'
+executables (`packages/verify`: `vitest`); `opm exec tsc -- --version` prints
+5.9.3; after `opm run build` in `packages/verify`, the reporters test of
+`packages/sdk` passes 22 of 22.
+
+**After §9's third amendment (2026-10-17)**, measured with the sixth review's
+generators (`adv.mjs`, `adv2.mjs`; a judge that shares nothing with the planner,
+and Node's own resolver over a real tree on disk for every 25th world):
+
+| worlds                                                                                                        | at 1a621ca                                                 | now                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 25,200 with cycles of peers (36 runs)                                                                         | 49 refused or too large (48 at 50,000 directories, 1 deep) | 0 refused, 0 unresolved, 0 splits; layouts per world: 1 for 24,828, 2 for 315, 3 for 54, 4 for 1, 5 for 2    |
+| 1,500 of a host and its plugins, a third peer that differs per member, five members (`adv2.mjs 8 1500 8 5 0`) | 8 refused                                                  | 0 refused, 0 splits; 1 layout for 1,471, 2 for 29 (the members that reach the cycle kept to themselves in 7) |
+| 27,000 without cycles (6 families, 3 seeds; 1,080 trees resolved by Node)                                     | 0 refused, 0 splits                                        | 0 refused, 0 unresolved, 0 splits, 0 differences from Node; 1 layout for 26,345, 2 for 655                   |
+| 31,500 from `place-cycle-worlds.ts` (7 specifications)                                                        | not run                                                    | 0 fell back, 0 splits kept; at most 3 layouts                                                                |
+
+In those worlds none needed the layout without peers, and none kept a split; the
+seventh review's worlds (below) are not those. The fixture locks and the bound
+are as above: ai-bdd plans 354 places and HoBo's whole lock 2,463, each in 1
+layout with 0 splits, and HoBo's planner takes 0.9 to 1.2 s on this machine
+against 1.0 to 1.3 s at 1a621ca. These numbers are what the generators drew; the
+bound of 17 layouts is a guarantee of work, and the absence of a kept split is a
+measurement, not a proof.
+
+**After the seventh review (2026-10-17)**, run again on this head with the sixth
+review's generators and the seventh's `adv3.mjs` (per-version peer sets, peers
+absent from some importers, dependency pins at another version, sibling links,
+`--filter` and `--omit dev` subsets, a package depending on another version of
+itself; seeds 11 to 13, four sizes, 600 worlds each), each judged by a function
+that shares nothing with the planner, and by Node's own resolver over a tree on
+disk for every 25th world:
+
+| worlds                                                                                                                                       | result                                                                                                                                                                                                   |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the sixth review's 25,200 cycle worlds, 1,500 host/plugin worlds (`adv2r7.mjs 8 1500 8 5 0`) and 27,000 without cycles (6 families, 3 seeds) | as in the table above to the digit: 1 layout for 24,828, 2 for 315, 3 for 54, 4 for 1, 5 for 2; 1 for 1,471 and 2 for 29 with isolation in 7; 0 refused, 0 unresolved, 0 splits, 0 differences from Node |
+| 31,935 planned in five families (`mixed`, `verpeers`, `sibcycle`, `chain`, `filter`; `optcycle` draws the same worlds as `mixed`)            | 0 refused, 0 unresolved, 0 splits, 0 fell back, 0 differences from Node; 1 to 5 layouts (5 in 15 worlds of `sibcycle`)                                                                                   |
+| 6,042 planned in the `self` family                                                                                                           | 88 keep a split, 2 of them in the layout without peers; 0 unresolved; up to 6 layouts; 656 more refused as too deep (326 checked: refused at 0e65d69 and daf5ff6 too)                                    |
+| `sibcycle` at 5 packages, 4 members, cycle probability 0.6, seed 31 (800 worlds)                                                             | 12 keep a split (4 layouts each), 0 refused, 0 unresolved                                                                                                                                                |
+
+The kept-split lock of the review (`p1@3` depends on `p1@1`, `p2@1` and a plugin
+`p4` that peers `p1`; `p2@1` peers `p4` and `p1`) plans in 8 places for 5
+instances, exit 0, and `opm ci --plan` now says on stderr that 1 dependency
+loads another copy of a peer it shares with its dependent. Planner mutants: 14
+of 14 fail a test (8 did not). Bin mutants: 6 of 6.
 
 **HoBo's `allowBuilds`**, which this install does not run (`esbuild`,
 `@ast-grep/cli`, `@bufbuild/buf`, `protobufjs`): each was installed by `opm ci`
@@ -516,7 +711,7 @@ Costs and limits, stated so nobody finds them by surprise.
 - **Not pnpm's layout.** A tool that expects `node_modules/.pnpm` finds none; a
   package that reaches a dependency it does not declare may find it (hoisting)
   or not (pnpm's own isolation). Node resolves every declared edge.
-- **No scripts, no `.npmrc`.** A lock's patches are applied (ADR 0056); a
+- **No scripts, no `.npmrc`.** A lock's patches are applied (ADR 0057); a
   package whose install script is needed is installed as it is and says so; a
   registry or auth in `.npmrc` is not read (`opm auth` and `OPM_REGISTRY_NPM`
   are how opm is told).

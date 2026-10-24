@@ -31,7 +31,7 @@ import { planLayout, toLayoutEntries } from './layout-plan.js';
 import { writeNodeModules } from './layout-write.js';
 import { chooseProjectLock } from './lock-choice.js';
 import { readFrozenPnpmLock } from './pnpm-install/frozen.js';
-import { applyPnpmPatch } from './pnpm-patch/index.js';
+import { applyPnpmPatch, patchPathBytes } from './pnpm-patch/index.js';
 import { integrityLoss, scopeLoss } from './project-losses.js';
 import { packNpmProject } from './project-pack.js';
 import { purlForName } from './purl.js';
@@ -74,6 +74,7 @@ export class NpmProjectFormat implements ProjectFormat {
   readonly workspaceTool = 'npm' as const;
   /** A pnpm lock's `patchedDependencies`, applied as pnpm 10.28 applies them. */
   readonly applyFrozenPatch = applyPnpmPatch;
+  readonly frozenPatchPathBytes = patchPathBytes;
 
   async detect(root: string): Promise<DetectedProject | undefined> {
     const manifestPath = join(root, 'package.json');
@@ -310,6 +311,7 @@ export class NpmProjectFormat implements ProjectFormat {
     const outcome = await writeNodeModules(project.root, packages, {
       links: options.workspace?.links ?? [],
       members: options.workspace?.members ?? [],
+      importers: options.workspace?.importers,
     });
     return {
       written: outcome.packages > 0 ? [outcome.root] : [],

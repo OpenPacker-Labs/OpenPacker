@@ -124,7 +124,13 @@ parent OS handle (`RootDirectory`, reparse points refused) — openat semantics,
 never a lexical pathname fallback. Path escapes, symlink swaps, and linked
 metadata still fail closed with `UNSAFE_PATH`. The one symlink opm makes, a
 workspace member's link in `node_modules`, goes through the same handles
-([below](#workspace-member-links)).
+([below](#workspace-member-links)). So do the sandbox's directory grants and the
+output a delegated `opm pack` reads, so neither joins a name onto `/dev/fd/N`,
+which names nothing on macOS
+([ADR 0045](../adr/0045-macos-child-io-uses-libc-at-calls.md)). Hard-linking a
+file into `node_modules` (the `layout` level) still goes through `link(2)` on a
+`/dev/fd/N` path on macOS and has not been run there; see "Not covered" in that
+ADR.
 
 ---
 
@@ -320,11 +326,16 @@ Installed 894 packages into /app/node_modules (845 from the store, 0 fetched, 0.
 What it does, in order:
 
 1. **Reads the lock, refuses what it cannot install.** A git or path source, an
-   entry with no `resolved` or no `integrity`, a link or key in a workspace lock
-   that is not a member's, a place the lock names that cannot be written (two
-   names that differ only by case in one directory), and a `package.json` that
-   no longer matches the lock are each named, and nothing is installed or
-   removed. Exit code 3.
+   entry with no `resolved` or no `integrity`, an entry whose `resolved` names a
+   host longer than 253 characters, a link or key in a workspace lock that is
+   not a member's, a place the lock names that cannot be written (two names that
+   differ only by case in one directory), and a `package.json` that no longer
+   matches the lock are each named, and nothing is installed or removed. Exit
+   code 3. A source is named by its scheme, host and path, never its userinfo,
+   query or fragment; one the URL parser refuses, such as the scp-like
+   `git+ssh://git@github.com:o/r.git`, or one with an `@` after its host, is
+   named `git+ssh:[address withheld]`, and a `user:password@host:path` that is
+   no scheme at all, just `[address withheld]`.
 2. **Applies the project's policy to the lock's facts.** `opm.toml`'s `[policy]`
    when there is one, the default otherwise. Every package is judged before any
    is fetched, and one error lists those refused (exit 6). The minimum release
@@ -437,17 +448,34 @@ not places:
   where it is shared: in the project's `node_modules` when it is the version of
   its name most packages and importers want, beside its dependent (or in the
   member) when another version already answers. So one instance has one real
-  path, and one module, as with pnpm and npm, unless versions conflict. Every
-  edge of every importer and snapshot is resolved on the plan with Node's lookup
-  before anything is fetched, and a plan in which one does not find its target
-  is refused.
+  path, and one module, as with pnpm and npm, unless versions conflict. A
+  package with a peer its dependent requires too goes only as high as that peer
+  is still the dependent's own copy, so a UI kit and its hooks load the React
+  their member loads. Where packages that peer each other cannot all be shared
+  (a host and its plugins wanted at several versions by several members), the
+  members that reach them keep what they need in their own `node_modules`, and a
+  lock for which no such layout is found is laid out as before, never refused
+  for a peer. Where no layout keeps a package and its dependent to one copy of a
+  peer they share (a package that depends on an older version of itself and
+  hosts a plugin that peers it, say), the install goes ahead and says so with
+  one line on stderr, for `opm ci` and `opm ci --plan`: how many dependencies
+  load their own copy of a peer, and which first. pnpm's symlinks keep them to
+  one copy; a tree of directories cannot always. Every edge of every importer
+  and snapshot is resolved on the plan with Node's lookup before anything is
+  fetched, and a plan in which one does not find its target is refused.
+- **Each importer runs its own executables.** The executables of a member's
+  direct dependencies are shimmed in the member's own `node_modules/.bin`,
+  wherever the package was written, and the project's in the project's, as pnpm
+  links them; `opm run` and `opm exec` find the member's first. A member's own
+  executables go to the `.bin` of each importer that links the member, and to no
+  other.
 - **A package resolved against several sets of peers**
   (`react-dom@18.2.0(react@18.2.0)` and `react-dom@18.2.0(react@18.3.0)`) is one
   archive, fetched and extracted once, and as many places as dependents need.
 - **A workspace member is linked, not fetched**, at `node_modules/<name>` in the
   project, under the name the importer gives it (its own, or an alias such as
   `"e": "workspace:b@*"`, as pnpm links it), and a member's executables are
-  shimmed in the project's `.bin`.
+  shimmed in the `.bin` of each importer that links it.
 - **The members are the ones the project has.** An importer the lock still lists
   after its member went is left alone, as pnpm leaves it, and a new member with
   no dependencies is installed without being in the lock.
@@ -471,7 +499,7 @@ naming the importer and the dependency:
   reads it.
 
 **Patches** (`patchedDependencies`,
-[ADR 0056](../adr/0056-opm-ci-applies-pnpm-patches.md)) are applied as pnpm
+[ADR 0057](../adr/0057-opm-ci-applies-pnpm-patches.md)) are applied as pnpm
 10.28 applies them, after each archive is proved to be the package the lock
 names and before anything is linked. The project's patches are read from
 `package.json`'s `pnpm.patchedDependencies` (or, when it has none,
@@ -488,14 +516,31 @@ and `opm gc --shared` keeps each while a project links it. `--plan` reports
 `patched: N packages by M patches` and refuses, before anything is fetched: a
 patch file that is missing (exit 4), edited since the lock was written (stale,
 exit 3), outside the project or reached through a link (exit 7), one that names
-a path outside its package or past an archive's bounds (128 segments, 4,096
-bytes, 100,000 files; exit 7) or that pnpm cannot read (exit 3), and a patch
-file over 16 MiB or patch files over 64 MiB together (exit 7). A patch that does
-not apply stops the install with nothing written (`PATCH_FAILED`, exit 3), where
-pnpm warns for a bare-name key and installs the package unpatched; so does one
-too costly to apply, past 256 MiB of characters read, compared and written (a
-file patched again in section after section), which pnpm would run for as long
-as it takes.
+a path outside its package or past an archive's bounds (127 segments and 4,088
+bytes below the package, an archive's 128 and 4,096 less `package/`; a name an
+archive refuses such as `CON`, `aux.js`, `a:b` or `name.`; a name over 255
+bytes; a path that, with the directory the store makes the package in, comes to
+4,096 bytes or more, the store's path counted as written or through its
+symlinks, whichever is longer; and the paths with the directories above them
+past 100,000 files; exit 7), one with a `diff --git ` or `index ` line over
+8,300 characters, the two pnpm reads with a regex that backtracks (exit 7; other
+long header lines and a long commit-message line before the diff are taken), or
+that pnpm cannot read (exit 3), and a patch file over 16 MiB or patch files over
+64 MiB together (exit 7). A patch that does not apply stops the install with
+nothing written (`PATCH_FAILED`, exit 3), where pnpm warns for a bare-name key
+and installs the package unpatched; so does one too costly to apply, past 256
+MiB of characters read, compared and written, and of the paths looked up (a file
+patched again in section after section, a path a hundred directories deep made
+again and again), which pnpm would run for as long as it takes. At install,
+which needs the package's files, a patch that would leave two files an archive
+refuses as a case collision (`lib/X.js` beside `lib/x.js`, or, on a file system
+that folds case, a file created over a twin it finds by another name) stops it
+with exit 7, and so does one that takes the package past 100,000 files, or a
+package that already holds a path too long for the directory its patched copy is
+made in (about 120 bytes deeper than its store entry). A patched entry whose
+installing process was killed before it wrote its record is made again by the
+next install, which records it only if the files in place are the tree the patch
+gives.
 
 `pnpm-workspace.yaml` is read as strictly as the lock: at most 1 MiB, not
 through a link, and without anchors or tags. Every value from these files
@@ -567,6 +612,28 @@ Bare names are **fail-closed**: `opm add lodash` errors unless you pass
 Resolution order is explicit `--source`, then a catalog entry, then the
 ecosystem's registry. A project that has pinned where a package comes from never
 starts reaching the network because a registry publishes the same name.
+
+With no version (`opm add pkg:npm/luxon`), the registry's `latest` dist-tag is
+locked when it has one, as npm and pnpm read a bare name; otherwise the newest
+release that is not a prerelease, and the newest prerelease only when nothing
+else was published. A `latest` inside the policy's minimum release age gives way
+to the newest older release that is not a prerelease. `opm update --latest` and
+`opmx` choose by the same rule.
+
+`opm add`, `opm sync` and `opm update` either finish or leave the project as it
+was. A package in the closure that cannot be downloaded, whose bytes are not the
+ones published, or whose archive cannot be extracted stops them before anything
+outside the store changes: `opm.toml`, the lock and `node_modules` are written
+only once every package is in the store. A failure after that, while linking or
+laying out `node_modules` (a `.bin` that is a file, say), puts `opm.toml`, the
+lock, `package.json`, `node_modules` and opm's own state back as they were; so
+does the next command after a kill. One command changes a project at a time;
+another waits (`--wait <ms>`), then stops with exit code 8, and
+[`opm recover`](opm-recovery.md) lets go of a step this machine cannot see
+([ADR 56](../adr/0056-a-step-finishes-or-leaves-the-project-as-it-was.md)).
+Archives are read as npm writes them: a path longer than a tar header holds is
+taken from its pax record, and a file listed twice with the same bytes is one
+file (one listed twice with different bytes is refused).
 
 ---
 
@@ -644,6 +711,14 @@ opm info pkg:npm/lodash@4.17.21       # digest, size, media type, download URL
 A bare name is fail-closed the same way `opm add` is: `opm versions lodash`
 errors rather than guessing npm because it is popular.
 
+An npm scope can be typed as npm spells it, `pkg:npm/@vercel/sdk`, or as the
+PURL spec encodes it, `pkg:npm/%40vercel/sdk`, wherever a PURL is read (`add`,
+`remove`, `why`, `search`, `versions`, `info`). Output and the lock always carry
+the encoded form, whatever was typed and wherever the package came from (a lock
+an older build wrote with `@` is read the same way and rewritten encoded the
+next time it is written). `opm.toml` keeps what you typed, and is compared with
+the lock as the encoded form.
+
 ### What is checked
 
 An install from a registry is verified three times over, and none of the checks
@@ -683,12 +758,13 @@ resolver produces, in about 15 seconds from cold. What is followed:
   package it names: the target is resolved and policy-checked as itself, its own
   `package.json` keeps its own name, and it is installed under the alias
   (`node_modules/string-width-cjs`). `npm:name`, `npm:@scope/name@range` and
-  `npm:name@tag` are read too; the lock records the version a tag points at;
+  `npm:name@tag` are read too, and so is a plain dist-tag (`"foo": "latest"`,
+  `"foo": "next"`); the lock records the version a tag points at;
 - not a dependency a package **bundles** (`bundleDependencies`): its copies are
   in the package's own archive, so `pkg:npm/npm@10.9.4` is one package, as npm
   resolves it;
 - never development dependencies, optional peers, or a specifier that is not a
-  registry version range or an alias (`github:…`, a URL, a plain dist-tag).
+  registry version range, a dist-tag or an alias (`github:…`, a URL, a file).
   Those are not looked up as the registry's package of that name. In a
   `dependencies` entry they fail the resolve and name the package.
 
@@ -707,13 +783,14 @@ versions locks both, as npm and pnpm do: `opm add tinybench` next to
 dependent; it is held at several only where none does. The second version of a
 name is keyed `<name>.<version>` in `opm.lock.json`; an alias is an entry in the
 requiring package's `aliases`, and `opm list` shows it as `as=[…]`.
-`opm why <name>` takes a manifest alias, a lock key, a package name or an
-install name and says which package requires the entry and under what name.
-`opm remove` leaves the keys a fresh resolve would write (a name left at one
-version is keyed by its name again), so `opm install` still accepts the lock. A
-label in `opm.toml` names one package: `opm add is-number@npm:is-odd` over an
-`is-number` that is another package is refused, and says to remove it or to use
-`--alias`.
+`opm why <name>` takes a manifest alias, a lock key, a package name, an install
+name or a PURL (with a version, the entries at that version) and says which
+package requires the entry and under what name. `opm remove` takes an alias or
+the PURL of a requirement. `opm remove` leaves the keys a fresh resolve would
+write (a name left at one version is keyed by its name again), so `opm install`
+still accepts the lock. A label in `opm.toml` names one package:
+`opm add is-number@npm:is-odd` over an `is-number` that is another package is
+refused, and says to remove it or to use `--alias`.
 
 `opm ci` installs both shapes from a lock without resolving anything, a
 workspace's too ([below](#installing-a-workspace-lock)); `opm add`, `opm sync`
@@ -722,9 +799,10 @@ members.
 
 **Limits.** A package a required peer dependency points at must be one version:
 a closure that needs it at two fails and names who requires what, as npm's
-`ERESOLVE` does. A plain dist-tag (`"foo": "latest"`) as a dependency is
-refused. The locked platform packages are the ones for the machine that
-resolved. See [ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md) and
+`ERESOLVE` does. A dist-tag the package does not have fails the resolve and
+names who asked for it. The locked platform packages are the ones for the
+machine that resolved. See
+[ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md) and
 [ADR 54](../adr/0054-aliases-and-several-versions-in-the-closure.md).
 
 **Release age.** With `minimum_release_age_minutes` set, a version published
@@ -736,6 +814,27 @@ window (no version can be newer than the last change to the document, so nothing
 more is fetched), otherwise the full packument, only for a package changed
 inside the window. A time the registry will not give is _not provided_, which
 the default policy does not wave through.
+
+**Large packuments.** A package's registry document lists every version it has
+published, so the heavy ones are the busy ones: `@prisma/client` is 38.2 MB
+abbreviated, `next` 25.6 MB, `gatsby` 15.7 MB, `typescript` 8.7 MB. opm reads an
+abbreviated packument of up to 64 MiB and a full one of up to 96 MiB, counted as
+the body arrives. Past that the command stops with exit 8 and says which
+package, how much it had read and what the limit is, for example
+`The packument of x exceeds the limit of 67108864 bytes (64.00 MiB): stopped reading at 67174400 bytes (64.06 MiB)`.
+A document that is small enough but holds too many values, or is not JSON, is
+refused as
+`The packument of x is not usable: Provider metadata exceeds 4194304 values`,
+and the parser stops at the limit rather than after it. The bounds limit what
+opm reads, not what it holds: the heaviest 64 MiB document tried took 2,169 to
+2,683 MiB to parse, and under `--max-old-space-size=1536` V8 ended the process
+with exit 134 (`JavaScript heap out of memory`) instead of opm refusing it, so a
+process started with a heap limit below what a document needs can be ended by
+one the bound accepts. When the refused document is the full packument that a
+release-age check needed, the policy message says so after "not captured":
+`publishedAt/evaluationTime not captured for minimum release age: The full packument of x is not usable: ...`.
+A registry that is simply down leaves that message as it was. See the
+[amendment to ADR 44](../adr/0044-a-closure-is-what-the-host-installs.md#amendment-2026-10-12-the-packument-bound).
 
 `--offline` refuses every registry read outright, so an offline build cannot
 quietly start depending on a registry being reachable.
@@ -759,14 +858,14 @@ their verifier evidence can be independently replayed.
 | `opm init`                               | Create `opm.toml` + `.opm/`                                                                                                                                                                                                        |
 | `opm import --native`                    | One-shot: read native project files into `opm.toml`. Native files are not authority after import.                                                                                                                                  |
 | `opm add <spec>`                         | Add to manifest, resolve, lock, install                                                                                                                                                                                            |
-| `opm remove <alias>`                     | Drop from manifest + lock + install                                                                                                                                                                                                |
+| `opm remove <alias\|purl>`               | Drop from manifest + lock + install                                                                                                                                                                                                |
 | `opm install`                            | Materialize lock into `.opm/store` + bins                                                                                                                                                                                          |
 | `opm ci` / `opm install --frozen`        | Install exactly what a committed `package-lock.json` says into `node_modules`, a workspace's too (`-w`, `--include-workspace-root`, `--workspaces[=false]`): no resolving, no scripts ([below](#installing-exactly-a-lock-opm-ci)) |
 | `opm uninstall [alias]`                  | Remove install (manifest/lock kept unless `remove`)                                                                                                                                                                                |
 | `opm sync`                               | Resolve manifest → lock → install (idempotent)                                                                                                                                                                                     |
 | `opm update [alias...] [--latest]`       | Bump selected ranged directs to the newest in-range version and re-solve their closure; exact pins unchanged unless `--latest` rewrites the manifest. Not `sync`.                                                                  |
 | `opm list`                               | Show aliases, PURLs, digests, install status                                                                                                                                                                                       |
-| `opm why <alias>`                        | Why a package is present                                                                                                                                                                                                           |
+| `opm why <alias\|name\|purl>`            | Why a package is present                                                                                                                                                                                                           |
 | `opm run [script] [options] [-- args]`   | Run a `package.json` script, or with `--filter`/`-r`/`-w` in workspace members ([below](#across-the-members-of-a-workspace)). Not sandboxed.                                                                                       |
 | `opm exec [options] <bin> [-- args]`     | Run an executable from `node_modules/.bin`, in the project or in members. Never fetches, never searches PATH (`node` aside). Not sandboxed.                                                                                        |
 | `opm <script\|bin> [args]`               | A word that is no command: the project script of that name, else the bin (`opm typecheck`, `opm --filter a build`).                                                                                                                |
@@ -777,6 +876,7 @@ their verifier evidence can be independently replayed.
 | `opm generations`                        | List the environment history; `*` marks current                                                                                                                                                                                    |
 | `opm rollback [--to N]`                  | Return to the previous generation, or a named one                                                                                                                                                                                  |
 | `opm gc [--keep N]`                      | Remove store paths no retained generation needs                                                                                                                                                                                    |
+| `opm recover [--abandon-step ID]`        | Finish what a killed opm left; with an id, take that step as dead, with `--force` when opm cannot tell (see [recovery](opm-recovery.md))                                                                                           |
 | `opm shell [--json]`                     | Print the environment for this generation                                                                                                                                                                                          |
 | `opm plugin add <name>`                  | Install a delegated adapter plugin (digest-pinned)                                                                                                                                                                                 |
 | `opm plugin list`                        | List installed plugins and their pins                                                                                                                                                                                              |
@@ -831,12 +931,28 @@ opm gc --shared
 
 A project's store entry and its `node_modules` are hard links to an entry's
 files, so an entry in which every file has a link count of one is linked by no
-project and is removed. Entries younger than ten minutes are left alone (an
-install may be about to link them), as are entries any project still uses and
-the archive entry a kept patched copy was made from (`opm ci` checks the archive
-before it adopts the copy, offline too). A `.tree` record whose entry is gone,
-which an install or a collection that stopped half way leaves, is removed once
-it is ten minutes old.
+project and is removed. Entries any project still uses are left alone, and so
+are the archive entry a kept patched copy was made from (`opm ci` checks the
+archive before it adopts the copy, offline too) and entries an install in
+progress is using: `opm ci`, `install`, `add` and `update` claim each entry
+before they look it up and keep the claim until their links hold it, so a
+collection that runs at the same time never takes an entry from under them. A
+claim stops counting when the process that made it ends, where that can be told:
+a claim from another machine sharing the store, or from another container,
+counts until it is removed from `<store>/.leases/` (ADR 0048, amendment
+2026-10-17). An install waits for a collection that is deciding on an entry it
+wants, for 45 seconds at most; it then warns, naming the collection's lease, and
+goes on. Entries younger than ten minutes are left alone too, for an older opm
+that does not claim. A `.tree` record whose entry is gone, which an install or a
+collection that stopped half way leaves, is removed once it is ten minutes old.
+
+An install that has to make its claim in a store with no room left fails with
+the disk error (`ENOSPC`, `EDQUOT`); a store it may only read is adopted from
+without claims. A shared store belongs on a local filesystem: several machines
+that share one over a network filesystem are not supported, and two that share a
+machine id and a host name (an image cloned as it was) read each other's live
+claims as left by an ended boot. If an entry is reported as "missing its tree
+digest", remove the entry the message names and run the command again.
 
 ### Shell environment
 
@@ -864,6 +980,7 @@ opm run lint --if-present     # succeed quietly when there is no `lint`
 opm run build --path ./site   # the package.json in ./site, exactly
 opm exec vitest --version     # node_modules/.bin/vitest, never a download
 opm exec tsc -- -b            # a lone -- right after the bin is dropped
+opm exec tsc --path pkg -- -b # --path straight after the bin is opm's
 ```
 
 `run` reads the `package.json` at the opm project root (the nearest directory at
@@ -871,8 +988,11 @@ or above where you are that holds an `opm.toml`; where you are when there is
 none) and starts each script with that directory as its working directory.
 `exec` looks for the bin in `node_modules/.bin` of that root and of each parent
 directory, nearest first, and runs it where you are. It does not search `PATH`
-and takes a name, never a path. Everything after the bin name goes to the bin,
-so `opm exec vitest --help` is vitest's help.
+and takes a name, never a path. A `--path <dir>` straight after the bin name is
+`opm`'s, as it is before the name; everything from the first other word, or
+after `--`, goes to the bin, so `opm exec vitest --help` is vitest's help and an
+argument the bin calls `--path` is written after `--`
+(`opm exec tool -- --path x`).
 
 What they set up for the child:
 
@@ -1451,7 +1571,15 @@ containment by path strings and cannot consume the stable directory-handle
 authorities every run requires, so runs there fail closed (exit 78 under
 `fail-closed`, `TREE_CONTAINMENT_UNAVAILABLE` otherwise) instead of degrading
 toward ambient execution. This is an explicit capability withdrawal, like the
-Windows metadata refusal above, not a silent downgrade.
+Windows metadata refusal above, not a silent downgrade. The refusal names the
+platform and says where containment exists (a Linux host); for a tool you have
+reviewed and installed in the project, `opm exec <bin>` runs it with your own
+authority and no jail
+([ADR 0047](../adr/0047-opm-run-and-exec-run-the-users-own-scripts.md)).
+Anything that runs an approved executable snapshot (a delegated pack provider, a
+plugin) needs Linux and is refused by name before its file is opened, because a
+descriptor has no path the kernel will execute anywhere else and a named copy
+could be swapped between the check and the run.
 
 **Run tools with `opmx`.** Shims re-enter via `opmx`; ambient direct spawn needs
 `OPENPACKER_ALLOW_AMBIENT_SHIMS=1` (insecure).
@@ -1504,9 +1632,12 @@ opm: hint: HTTPS_PROXY is set, but Node's built-in fetch ignores proxy variables
 
 `opmx` prints the same lines without `internal error`. The exit code is
 unchanged (`9`). Everything printed is redacted: a URL keeps its origin and path
-and loses userinfo, query and fragment, and the value after a credential name
-(`token`, `authorization`, `password`, `api-key`, a bearer) is withheld. A
-failure opm named, such as `POLICY_DENIED` or `OFFLINE`, keeps its single line.
+and loses userinfo, query and fragment (one whose host, as written, is longer
+than 253 characters, which no DNS name can be, is printed as `[url]`, and one
+longer than twice its own length or 600 characters is cut there, ending in `…`),
+and the value after a credential name (`token`, `authorization`, `password`,
+`api-key`, a bearer) is withheld. A failure opm named, such as `POLICY_DENIED`
+or `OFFLINE`, keeps its single line.
 
 The `hint:` line appears only when a cause is a connection fault
 (`ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `ENOTFOUND`, `EAI_AGAIN`, an

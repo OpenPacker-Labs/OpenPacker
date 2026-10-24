@@ -56,6 +56,7 @@ function recording(after?: (operation: string, name: string) => Promise<void>) {
     },
     readDirChild: inner.readDirChild,
     readDirChildWithTypes: inner.readDirChildWithTypes,
+    readDirChildBounded: inner.readDirChildBounded,
     symlinkChild: inner.symlinkChild,
     readlinkChild: async (parent, name) => {
       const text = await inner.readlinkChild(parent, name);

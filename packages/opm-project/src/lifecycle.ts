@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  containmentWithdrawnNote,
   runInSandbox,
   type PackageGrants,
   type SandboxBackend,
@@ -123,6 +124,12 @@ export function sandboxPolicyFromProject(
   };
 }
 
+/** Why containment is missing on this host and what to do, as a sentence. */
+export function platformNote(): string {
+  const note = containmentWithdrawnNote();
+  return note === undefined ? '' : `. ${note}`;
+}
+
 /**
  * Run one lifecycle script inside the jail. Single funnel — install and
  * rebuild paths both call this rather than spawning shell themselves.
@@ -185,7 +192,7 @@ export async function runLifecycleScript(input: {
     throw new OpmError(
       'SANDBOX_UNAVAILABLE',
       `Cannot run ${input.event} for ${input.packageId}: sandbox was not enforced ` +
-        `(backend=${outcome.backend})`,
+        `(backend=${outcome.backend})${platformNote()}`,
     );
   }
   return outcome;

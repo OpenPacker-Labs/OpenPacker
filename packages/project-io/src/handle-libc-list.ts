@@ -23,6 +23,20 @@ export function listEntries(
   dirfd: number,
   display: string,
 ): Entry[] {
+  return scanEntries(api, dirfd, display, Number.POSITIVE_INFINITY).entries;
+}
+
+/**
+ * `listEntries` that stops reading at the first entry past `limit`, so a
+ * directory of millions of names is never held in memory. When it stops early
+ * `exceeded` is true and the entries are the ones read so far.
+ */
+export function scanEntries(
+  api: LibcApi,
+  dirfd: number,
+  display: string,
+  limit: number,
+): { entries: Entry[]; exceeded: boolean } {
   const { koffi, profile } = api;
   const fd = openFd(
     api,
@@ -40,6 +54,7 @@ export function listEntries(
     throw systemError(errno, 'scandir', display);
   }
   const found: Entry[] = [];
+  let exceeded = false;
   try {
     for (;;) {
       koffi.errno(0);
@@ -53,6 +68,10 @@ export function listEntries(
         koffi.decode(record, profile.dirent.nameOffset, 'char', -1),
       );
       if (name === '.' || name === '..') continue;
+      if (found.length >= limit) {
+        exceeded = true;
+        break;
+      }
       const type = Number(
         koffi.decode(record, profile.dirent.typeOffset, 'uint8'),
       );
@@ -62,10 +81,11 @@ export function listEntries(
     api.closedir(stream);
   }
   // Node's readdir returns names in byte order; sort on the UTF-8 bytes once.
-  return found
+  const entries = found
     .map((entry) => ({ entry, key: Buffer.from(entry.name) }))
     .sort((a, b) => Buffer.compare(a.key, b.key))
     .map(({ entry }) => entry);
+  return { entries, exceeded };
 }
 
 export function nodeKind(entry: Dirent): EntryKind {

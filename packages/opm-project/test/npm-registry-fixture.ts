@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
-import { gzipSync } from 'node:zlib';
-import { packTarGzip } from '@openpacker/project-io';
 import {
   ProviderError,
+  ResponseTooLargeError,
   type HttpRequest,
   type HttpResponse,
   type HttpTransport,
 } from '@openpacker/adapter-core';
+import { tarballOf } from './npm-tarball-fixture.js';
 
 /**
  * A stand-in npm registry that behaves like registry.npmjs.org where it
@@ -18,109 +18,7 @@ import {
 
 export const NPM_ORIGIN = 'https://registry.npmjs.org';
 
-/** A ustar entry: a 512-byte header, the body, and padding to a block. */
-function tarEntry(path: string, body: Buffer): Buffer {
-  const header = Buffer.alloc(512);
-  header.write(path, 0, 'utf8');
-  header.write('0000644\0', 100, 'ascii');
-  header.write('0000000\0', 108, 'ascii');
-  header.write('0000000\0', 116, 'ascii');
-  header.write(`${body.length.toString(8).padStart(11, '0')}\0`, 124, 'ascii');
-  header.write('00000000000\0', 136, 'ascii');
-  header.write('        ', 148, 'ascii');
-  header.write('0', 156, 'ascii');
-  header.write('ustar\0' + '00', 257, 'ascii');
-  const checksum = header.reduce((sum, byte) => sum + byte, 0);
-  header.write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148, 'ascii');
-  return Buffer.concat([
-    header,
-    body,
-    Buffer.alloc((512 - (body.length % 512)) % 512),
-  ]);
-}
-
-/**
- * A gzipped ustar archive whose paths are written exactly as given, which
- * `packTarGzip` refuses to do for `package/./dist/index.js`, though a published
- * package (agent-base@7.1.4) is spelled that way.
- */
-export function rawTarball(
-  entries: readonly { path: string; body: string }[],
-): Uint8Array {
-  return new Uint8Array(
-    gzipSync(
-      Buffer.concat([
-        ...entries.map((entry) =>
-          tarEntry(entry.path, Buffer.from(entry.body)),
-        ),
-        Buffer.alloc(1024),
-      ]),
-    ),
-  );
-}
-
-/** A real (if tiny) npm tarball: gzip of a ustar archive of package/package.json. */
-export function tarball(name: string, version: string): Uint8Array {
-  return rawTarball([
-    { path: 'package/package.json', body: JSON.stringify({ name, version }) },
-  ]);
-}
-
-const tarballs = new Map<string, Uint8Array>();
-function tarballOf(
-  name: string,
-  version: string,
-  value: FixtureVersion = {},
-): Uint8Array {
-  const key = `${name}@${version}:${JSON.stringify(
-    [value.files, value.bin],
-    (_key, item) =>
-      item instanceof Uint8Array
-        ? `bytes:${item.length}:${createHash('sha1').update(item).digest('hex')}`
-        : item,
-  )}`;
-  let bytes = tarballs.get(key);
-  if (bytes === undefined) {
-    const literalPaths = Object.keys(value.files ?? {}).some((path) =>
-      path.startsWith('./'),
-    );
-    bytes =
-      value.files === undefined && value.bin === undefined
-        ? tarball(name, version)
-        : literalPaths
-          ? rawTarball([
-              {
-                path: 'package/package.json',
-                body: JSON.stringify({ name, version, main: 'index.js' }),
-              },
-              ...Object.entries(value.files ?? {}).map(([path, contents]) => ({
-                path: `package/${path}`,
-                body: String(contents),
-              })),
-            ])
-          : packTarGzip(
-              Object.entries({
-                'package.json': JSON.stringify({
-                  name,
-                  version,
-                  main: 'index.js',
-                  ...(value.bin !== undefined && { bin: value.bin }),
-                }),
-                'index.js': `module.exports = { name: ${JSON.stringify(name)}, version: ${JSON.stringify(version)} };\n`,
-                ...value.files,
-              }).map(([path, contents]) => ({
-                path: `package/${path}`,
-                contents:
-                  typeof contents === 'string'
-                    ? new TextEncoder().encode(contents)
-                    : contents,
-                executable: path === value.bin || path.startsWith('bin/'),
-              })),
-            );
-    tarballs.set(key, bytes);
-  }
-  return bytes;
-}
+export { rawTarball, tarball, tarEntry } from './npm-tarball-fixture.js';
 
 export interface FixtureVersion {
   dependencies?: Record<string, string>;
@@ -142,6 +40,12 @@ export interface FixtureVersion {
   files?: Record<string, string | Uint8Array>;
   /** `bin` for the package.json inside the archive. */
   bin?: string | Record<string, string>;
+  /** The tarball's bytes exactly, instead of an archive made from the above. */
+  archive?: Uint8Array;
+  /** `dist.integrity` is of these bytes, not of the tarball served. */
+  integrityOf?: Uint8Array;
+  /** The tarball request fails as a dropped connection does. */
+  tarballFails?: boolean;
 }
 
 export interface FixturePackage {
@@ -151,8 +55,29 @@ export interface FixturePackage {
   time?: Record<string, string>;
   /** Last change to the packument; defaults to the same old date. */
   modified?: string;
-  /** Dist-tags besides `latest`, which is the last version listed. */
-  distTags?: Record<string, string>;
+  /**
+   * Dist-tags besides `latest`, which is the last version listed unless this
+   * names it; a tag given as `undefined` is left out of the document.
+   */
+  distTags?: Record<string, string | undefined>;
+  /** Makes the packument as heavy as a real one with many versions. */
+  padding?: Padding;
+  /** The full document served as exactly this text, whatever it is. */
+  fullBody?: string;
+}
+
+/**
+ * What `typescript` (8.7 MB, 260,520 values) and `next` (25.6 MB, 846,076) have
+ * that a fixture does not: weight. The packument is served with a member the
+ * walk never reads, so its size and value count are what a real one's are.
+ */
+export interface Padding {
+  /** Serialized size of the packument, exactly. */
+  bytes?: number;
+  /** At least this many values (empty arrays) in the packument. */
+  values?: number;
+  /** Which document is heavy; the abbreviated one is read first and always. */
+  only?: 'abbreviated' | 'full';
 }
 
 export const OLD = '2026-01-01T00:00:00.000Z';
@@ -178,15 +103,23 @@ function tarballUrl(name: string, version: string): string {
 
 function distFor(name: string, version: string, value?: FixtureVersion) {
   const bytes = tarballOf(name, version, value);
+  const claimed = value?.integrityOf ?? bytes;
   return {
     tarball: tarballUrl(name, version),
-    integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}`,
+    integrity: `sha512-${createHash('sha512').update(claimed).digest('base64')}`,
     size: bytes.byteLength,
   };
 }
 
 function fullVersion(name: string, version: string, value: FixtureVersion) {
-  const { files: _files, bin: _bin, ...document } = value;
+  const {
+    files: _files,
+    bin: _bin,
+    archive: _archive,
+    integrityOf: _integrityOf,
+    tarballFails: _tarballFails,
+    ...document
+  } = value;
   return { name, version, ...document, dist: distFor(name, version, value) };
 }
 
@@ -208,6 +141,36 @@ const json = (value: unknown): HttpResponse => ({
   url: '',
 });
 
+const encoder = new TextEncoder();
+
+function padded(
+  document: Record<string, unknown>,
+  padding: Padding,
+): HttpResponse {
+  const empties =
+    padding.values === undefined
+      ? undefined
+      : Array.from({ length: padding.values }, () => []);
+  const make = (fill: number) =>
+    encoder.encode(
+      JSON.stringify({
+        ...document,
+        ...(empties && { 'x-values': empties }),
+        ...(padding.bytes !== undefined && { 'x-padding': 'x'.repeat(fill) }),
+      }),
+    );
+  const body =
+    padding.bytes === undefined
+      ? make(0)
+      : make(padding.bytes - make(0).length);
+  return {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+    body,
+    url: '',
+  };
+}
+
 export interface RecordedRequest {
   url: string;
   accept: string | undefined;
@@ -218,12 +181,18 @@ export class NpmRegistryFixture implements HttpTransport {
   readonly #packages = new Map<string, FixturePackage>();
 
   readonly #serveFull: boolean;
+  readonly #abbreviatedTime: boolean;
 
+  /**
+   * `abbreviatedTime`: publish times in the abbreviated document too, which
+   * some registries send and registry.npmjs.org does not.
+   */
   constructor(
     packages: readonly FixturePackage[],
-    options: { serveFull?: boolean } = {},
+    options: { serveFull?: boolean; abbreviatedTime?: boolean } = {},
   ) {
     this.#serveFull = options.serveFull ?? true;
+    this.#abbreviatedTime = options.abbreviatedTime ?? false;
     for (const item of packages) this.#packages.set(item.name, item);
   }
 
@@ -242,7 +211,23 @@ export class NpmRegistryFixture implements HttpTransport {
     );
   }
 
+  /** Like a real transport, refuses a body past the bound the request set. */
   async request(request: HttpRequest): Promise<HttpResponse> {
+    const response = await this.answer(request);
+    if (
+      request.maximumBytes !== undefined &&
+      response.body.byteLength > request.maximumBytes
+    )
+      throw new ResponseTooLargeError(
+        request.maximumBytes,
+        response.body.byteLength,
+        'delivered',
+        response.status,
+      );
+    return response;
+  }
+
+  private async answer(request: HttpRequest): Promise<HttpResponse> {
     const accept = request.headers?.accept;
     this.requests.push({ url: request.url, accept });
     if (request.url.endsWith('.tgz')) {
@@ -250,6 +235,8 @@ export class NpmRegistryFixture implements HttpTransport {
       const match = /^(.+)\/-\/[^/]+-(\d[^/]*)\.tgz$/u.exec(
         decodeURIComponent(request.url.slice(NPM_ORIGIN.length + 1)),
       );
+      if (this.#packages.get(match![1]!)?.versions[match![2]!]?.tarballFails)
+        throw new ProviderError('UPSTREAM_ERROR', 'connection reset');
       return {
         status: 200,
         headers: { 'content-type': 'application/octet-stream' },
@@ -304,7 +291,7 @@ export class NpmRegistryFixture implements HttpTransport {
       'dist-tags': { latest: newest, ...found.distTags },
       versions,
       modified,
-      ...(!abbreviated && {
+      ...((!abbreviated || this.#abbreviatedTime) && {
         time: {
           created: OLD,
           modified,
@@ -317,7 +304,18 @@ export class NpmRegistryFixture implements HttpTransport {
         },
       }),
     };
-    return withUrl(json(document));
+    if (!abbreviated && found.fullBody !== undefined)
+      return withUrl({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: encoder.encode(found.fullBody),
+        url: '',
+      });
+    const heavy =
+      found.padding !== undefined &&
+      (found.padding.only ?? (abbreviated ? 'abbreviated' : 'full')) ===
+        (abbreviated ? 'abbreviated' : 'full');
+    return withUrl(heavy ? padded(document, found.padding!) : json(document));
   }
 }
 

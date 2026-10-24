@@ -1,5 +1,5 @@
 /**
- * Applying a patch's effects as pnpm applies them (ADR 0056).
+ * Applying a patch's effects as pnpm applies them (ADR 0057).
  *
  * A port of `@pnpm/patch-package@0.0.1`'s `dist/patch/apply.js`
  * (`executeEffects`, `applyPatch`, `evaluateHunk`) and of `applyPatch` in
@@ -53,8 +53,16 @@ export interface PatchTree {
 /** The tree is not one opm patches; never read as "the patch did not apply". */
 export class PatchRefusal extends Error {
   constructor(
-    /** `UNSAFE_PATH` for a link or a special file, `PATCH_FAILED` otherwise. */
-    readonly code: 'UNSAFE_PATH' | 'PATCH_FAILED',
+    /**
+     * `UNSAFE_PATH` for a link or a special file, `SIZE_LIMIT` for a tree
+     * past the files an archive may hold, `CASE_COLLISION` for two files an
+     * archive would refuse as one, `PATCH_FAILED` otherwise.
+     */
+    readonly code:
+      | 'UNSAFE_PATH'
+      | 'SIZE_LIMIT'
+      | 'CASE_COLLISION'
+      | 'PATCH_FAILED',
     message: string,
   ) {
     super(message);
@@ -74,12 +82,13 @@ type Modification =
 
 /**
  * The work one patch may do, in characters of the package's files read,
- * compared and written, and lines moved. pnpm decodes, splits, joins and
+ * compared and written, lines moved, and paths looked up (`tree.ts`: the
+ * ancestors a lookup walks and the `lstat` of each path named). pnpm decodes, splits, joins and
  * writes a whole file for each section that patches it, so K sections that
  * each change one line of one large file cost K times that file: a 146 KB
  * patch of 2,000 such sections ran for a minute, and a 16 MiB one would run
  * for an hour. A real patch changes a file in one section; the largest of the
- * measured ones (ADR 0056 §9) spends a fraction of a percent of this.
+ * measured ones (ADR 0057 §9) spends a fraction of a percent of this.
  */
 export const PATCH_WORK_BUDGET = 256 * 1024 * 1024;
 
@@ -99,7 +108,7 @@ export class PatchBudget {
     if (this.#spent > this.limit)
       throw new PatchRefusal(
         'PATCH_FAILED',
-        `it is too costly to apply: it would read, compare and write more than ${this.limit} characters of the package's files, which no real patch comes near (a file patched again in section after section), and opm stops there instead of running on as pnpm would`,
+        `it is too costly to apply: it would read, compare and write more than ${this.limit} characters of the package's files and of the paths it names, which no real patch comes near (a file patched again in section after section, a path a hundred directories deep made again and again), and opm stops there instead of running on as pnpm would`,
       );
   }
 }

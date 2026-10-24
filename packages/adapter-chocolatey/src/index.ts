@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { platform } from 'node:os';
 import { promisify } from 'node:util';
 import {
+  echoed,
   ProviderError,
   parsePurl,
   type InstallOptions,
@@ -57,13 +58,13 @@ function chocolateyId(exactPurl: string) {
   if (parsed.type !== 'chocolatey')
     throw new ProviderError(
       'INVALID_PURL',
-      `Not a chocolatey PURL: ${exactPurl}`,
+      `Not a chocolatey PURL: ${echoed(exactPurl)}`,
     );
   const id = [parsed.namespace, parsed.name].filter(Boolean).join('.');
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(id))
     throw new ProviderError(
       'INVALID_PURL',
-      `Not a valid Chocolatey package id: ${id}`,
+      `Not a valid Chocolatey package id: ${echoed(id)}`,
     );
   return {
     id,
@@ -148,7 +149,7 @@ export class ChocolateyProvider implements InstallerProvider {
     if (plan.requiresElevation && !options.allowElevation)
       throw new ProviderError(
         'POLICY_DENIED',
-        `Installing ${exactPurl} needs elevation. Re-run with elevation allowed; ` +
+        `Installing ${echoed(exactPurl)} needs elevation. Re-run with elevation allowed; ` +
           `the command would be: ${plan.command.join(' ')}`,
       );
     const availability = await this.available(options.signal);

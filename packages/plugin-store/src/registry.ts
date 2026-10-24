@@ -19,6 +19,8 @@ import { createHash } from 'node:crypto';
 import {
   assertPackageIdentityMatchesRequest,
   BoundedFetchTransport,
+  echoed,
+  parseUntrustedUrl,
   ProviderError,
   type CatalogProvider,
   type HostLookup,
@@ -106,7 +108,7 @@ export function pluginRegistryModule(
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (context?.transport as HttpTransport | undefined) ?? defaults.transport;
     if (existing !== undefined) return existing;
-    const origin = new URL(endpoint).origin;
+    const origin = parseUntrustedUrl(endpoint).origin;
     const fetch = context?.fetch ?? defaults.fetch;
     return new BoundedFetchTransport({
       allowedOrigins: [origin],
@@ -175,7 +177,10 @@ interface PluginPurl {
 function splitPluginPurl(purl: string): PluginPurl {
   const match = /^pkg:opm-plugin\/(.+?)(?:@([^?#]+))?(?:[?#].*)?$/u.exec(purl);
   if (!match)
-    throw new ProviderError('INVALID_PURL', `Not an opm-plugin PURL: ${purl}`);
+    throw new ProviderError(
+      'INVALID_PURL',
+      `Not an opm-plugin PURL: ${echoed(purl)}`,
+    );
   return {
     name: decodeURIComponent(match[1]!),
     ...(!(match[2] === undefined) && { version: decodeURIComponent(match[2]) }),
@@ -211,7 +216,7 @@ function distributionFor(
   if (!distribution)
     throw new ProviderError(
       'PACKAGE_NOT_FOUND',
-      `${entry.manifest.name}@${entry.manifest.version} is not published as ${PLUGIN_PURL_TYPE}`,
+      `${echoed(entry.manifest.name)}@${echoed(entry.manifest.version)} is not published as ${PLUGIN_PURL_TYPE}`,
     );
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const identity: PackageIdentity = {
@@ -256,8 +261,8 @@ export class PluginRegistryProvider implements CatalogProvider {
     this.#artifacts =
       transport ??
       new BoundedFetchTransport({
-        allowedOrigins: [new URL(this.#endpoint).origin],
-        pinnedOrigins: [new URL(this.#endpoint).origin],
+        allowedOrigins: [parseUntrustedUrl(this.#endpoint).origin],
+        pinnedOrigins: [parseUntrustedUrl(this.#endpoint).origin],
         destinationPolicy: 'classify-and-pin',
         maximumBytes: MAX_PLUGIN_ARTIFACT_BYTES,
       });
@@ -302,7 +307,7 @@ export class PluginRegistryProvider implements CatalogProvider {
     if (latest.length > 1)
       throw new ProviderError(
         'INVALID_PROVIDER_RESPONSE',
-        `Registry claims ${latest.length} latest versions of ${name}; refusing to guess.`,
+        `Registry claims ${latest.length} latest versions of ${echoed(name)}; refusing to guess.`,
       );
     const ordered =
       latest.length === 1
@@ -322,7 +327,7 @@ export class PluginRegistryProvider implements CatalogProvider {
     if (version === undefined)
       throw new ProviderError(
         'INVALID_PURL',
-        `inspect needs an exact PURL, got ${exactPurl}`,
+        `inspect needs an exact PURL, got ${echoed(exactPurl)}`,
       );
     const entry = await this.#client.entry(name, version, signal);
     await this.#client.verifyEntry(entry);
@@ -382,7 +387,7 @@ export class PluginRegistryProvider implements CatalogProvider {
     if (version === undefined)
       throw new ProviderError(
         'INVALID_PURL',
-        `fetchArtifactRecord needs an exact PURL, got ${exactPurl}`,
+        `fetchArtifactRecord needs an exact PURL, got ${echoed(exactPurl)}`,
       );
     const entry = await this.#client.entry(name, version, signal);
     await this.#client.verifyEntry(entry);
@@ -390,7 +395,7 @@ export class PluginRegistryProvider implements CatalogProvider {
     if (!distribution.digest || !distribution.locations?.length)
       throw new ProviderError(
         'ARTIFACT_NOT_FOUND',
-        `Registry has no artifact location or digest for ${exactPurl}.`,
+        `Registry has no artifact location or digest for ${echoed(exactPurl)}.`,
       );
     // Deliberate: only the first published location is tried. Mirror
     // fallback would fetch bytes from origins the operator never configured,
@@ -425,17 +430,20 @@ export class PluginRegistryProvider implements CatalogProvider {
       ...(signal && { signal }),
     });
     if (response.status === 404)
-      throw new ProviderError('ARTIFACT_NOT_FOUND', `Not found: ${uri}`);
+      throw new ProviderError(
+        'ARTIFACT_NOT_FOUND',
+        `Not found: ${echoed(uri)}`,
+      );
     if (response.status >= 400)
       throw new ProviderError(
         'UPSTREAM_UNAVAILABLE',
-        `Plugin artifact fetch returned ${response.status} for ${uri}`,
+        `Plugin artifact fetch returned ${response.status} for ${echoed(uri)}`,
       );
     const bytes = response.body;
     if (bytes.byteLength > MAX_PLUGIN_ARTIFACT_BYTES)
       throw new ProviderError(
         'UPSTREAM_RESPONSE_TOO_LARGE',
-        `Plugin artifact exceeds ${MAX_PLUGIN_ARTIFACT_BYTES} bytes: ${uri}`,
+        `Plugin artifact exceeds ${MAX_PLUGIN_ARTIFACT_BYTES} bytes: ${echoed(uri)}`,
       );
     if (
       distribution.size !== undefined &&
@@ -443,7 +451,7 @@ export class PluginRegistryProvider implements CatalogProvider {
     )
       throw new ProviderError(
         'SIZE_MISMATCH',
-        `Plugin artifact has ${bytes.byteLength} bytes, the registry published ${distribution.size}`,
+        `Plugin artifact has ${bytes.byteLength} bytes, the registry published ${echoed(String(distribution.size))}`,
       );
     const digest = distribution.digest;
     if (digest?.algorithm !== 'sha256' || digest.value === undefined)
@@ -455,7 +463,7 @@ export class PluginRegistryProvider implements CatalogProvider {
     if (actual !== digest.value)
       throw new ProviderError(
         'DIGEST_MISMATCH',
-        `Plugin artifact hashes to sha256:${actual}, the registry published sha256:${digest.value}`,
+        `Plugin artifact hashes to sha256:${actual}, the registry published sha256:${echoed(digest.value)}`,
       );
     return bytes;
   }

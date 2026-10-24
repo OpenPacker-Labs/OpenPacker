@@ -9,7 +9,7 @@ import { onPosix } from './frozen-workspace-fixture.js';
 afterEach(cleanup);
 
 /**
- * An LF and a CRLF checkout of one patch (ADR 0056 §10). The lock records one
+ * An LF and a CRLF checkout of one patch (ADR 0057 §10). The lock records one
  * hash for both, pnpm's, of the text with CRLF made LF; the bytes applied are
  * the file's own, so a CRLF patch inserts lines that end in `\r`, as with
  * pnpm. The two are two packages, and two store entries: the entry is named by
