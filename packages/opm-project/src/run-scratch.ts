@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, readdir, rm } from 'node:fs/promises';
+import { lstat, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   ownerFileProblem,
   readOwnerFile,
   writeOwnerFile,
 } from './owner-file.js';
+import { removeStableTree } from './paths.js';
 import {
   isOwnerAlive,
   type OwnerProbe,
@@ -62,7 +63,7 @@ export async function makeScratch(
     await writeOwnerFile(path, owner);
     await mkdir(tree, { mode: 0o755 });
   } catch (error) {
-    await rm(path, { recursive: true, force: true }).catch(() => undefined);
+    await removeStableTree(path).catch(() => undefined);
     throw error;
   }
   return { path, tree };
@@ -103,6 +104,6 @@ export async function sweepAbandoned(
     if (!name.startsWith(prefix)) continue;
     const path = join(dir, name);
     if (!(await abandoned(path, judge))) continue;
-    await rm(path, { recursive: true, force: true }).catch(() => undefined);
+    await removeStableTree(path).catch(() => undefined);
   }
 }

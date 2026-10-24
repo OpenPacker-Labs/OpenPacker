@@ -216,6 +216,21 @@ Decision:
    - A directory with no `.owner` a minute after it was made was left by a run
      cut short between the two, and is removed; an `.owner` opm cannot read (cut
      short, a newer version, a link) is judged by nobody and left alone.
+   - Whatever removes one (the sweep, `opm gc`, the run itself) removes it
+     through directory handles, as store paths are removed (`removeStableTree`):
+     each directory is opened without following a link and emptied through that
+     descriptor, so a directory swapped for a link while it is removed is
+     refused, never entered. Node's recursive `rm` looks at a directory and then
+     lists it by its path, and enters a link put there in between. Under
+     `sandbox.project_write = true` a run whose entries fit without a view binds
+     the project's store read-write, and a tool there could plant a `.view-*`
+     whose owner reads as ended and race the next sweep into removing files
+     outside the sandbox. On Linux `removeStableTree` gave that same `rm` the
+     path `/proc/self/fd/N/<name>`, which pins the parent and nothing below it;
+     project-io's `removeChild` now walks there as the libc backend does on
+     macOS (ADR 0045). `run-scratch-removal.test.ts` swaps a directory for a
+     link as it is listed, during a sweep and during each removal a run makes;
+     with `rm` the file behind the link was removed.
    - A host with no readable machine id (`/etc/machine-id` and
      `/var/lib/dbus/machine-id` both absent: minimal container images, macOS,
      Windows) removes what a run of its own boot left once that run's pid has
@@ -287,13 +302,13 @@ Limits:
   `store-view-confinement.test.ts`, `store-view-swap.test.ts`,
   `store-view-gc.test.ts`, `store-view-handles.test.ts`,
   `store-view-dispose.test.ts`, `run-scratch.test.ts`,
-  `tool-pinned-version.test.ts`, `fetch-tool-closure.test.ts`,
-  `tool-layout-versions.test.ts` and `tool-peer.test.ts` (opm-project),
-  `opmx-signals.test.ts`, `opmx-run-signals.test.ts` and `opmx-bin-path.test.ts`
-  (apps/opm), and `root-capabilities.test.ts`, `handles.test.ts` and
-  `handles-oracle.test.ts` (sandbox) cover it. The sandboxed ones are skipped
-  where bwrap is absent. The automatic CI lane does not run these suites; the
-  manual one (`ci.yml`) runs them on GitHub's `ubuntu-latest` with no step that
-  installs bubblewrap, and whether that image has it was not checked. The
-  root-only ones (capabilities, a sweep in another PID namespace) are skipped
-  for any other user.
+  `run-scratch-removal.test.ts`, `tool-pinned-version.test.ts`,
+  `fetch-tool-closure.test.ts`, `tool-layout-versions.test.ts` and
+  `tool-peer.test.ts` (opm-project), `opmx-signals.test.ts`,
+  `opmx-run-signals.test.ts` and `opmx-bin-path.test.ts` (apps/opm), and
+  `root-capabilities.test.ts`, `handles.test.ts` and `handles-oracle.test.ts`
+  (sandbox) cover it. The sandboxed ones are skipped where bwrap is absent. The
+  automatic CI lane does not run these suites; the manual one (`ci.yml`) runs
+  them on GitHub's `ubuntu-latest` with no step that installs bubblewrap, and
+  whether that image has it was not checked. The root-only ones (capabilities, a
+  sweep in another PID namespace) are skipped for any other user.

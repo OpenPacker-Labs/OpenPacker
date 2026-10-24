@@ -1,8 +1,9 @@
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { NativeLockEntry } from '@openpacker/adapter-core';
 import { tarballWrapper } from '@openpacker/project-io';
 import { requireAdapterRegistry } from './adapters.js';
+import { removeStableTree } from './paths.js';
 import { makeScratch, sweepAbandoned } from './run-scratch.js';
 import {
   ecosystemFromPurl,
@@ -72,7 +73,7 @@ export async function layOutTool(input: {
   // sandbox binds.
   const scratch = await makeScratch(runs, RUN_PREFIX);
   const root = scratch.tree;
-  const dispose = () => rm(scratch.path, { recursive: true, force: true });
+  const dispose = () => removeStableTree(scratch.path);
   try {
     await format.writeLayout(
       {

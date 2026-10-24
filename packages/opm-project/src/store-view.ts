@@ -1,9 +1,13 @@
 import type { Stats } from 'node:fs';
-import { lstat, readdir, rm, type FileHandle } from 'node:fs/promises';
+import { lstat, readdir, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { materialiseTree } from '@openpacker/project-io';
 import { MAX_INHERITED_HANDLES } from '@openpacker/sandbox';
-import { openStableDirectory, stableHandlePath } from './paths.js';
+import {
+  openStableDirectory,
+  removeStableTree,
+  stableHandlePath,
+} from './paths.js';
 import { makeScratch, sweepAbandoned } from './run-scratch.js';
 import { OpmError } from './types.js';
 
@@ -108,7 +112,7 @@ export async function storeViews(
   const views: string[] = [];
   const dispose = async () => {
     await Promise.all(handles.map((handle) => handle.close().catch(() => {})));
-    for (const view of views) await rm(view, { recursive: true, force: true });
+    for (const view of views) await removeStableTree(view);
   };
   try {
     for (const [store, entries] of viewed) {
