@@ -82,16 +82,11 @@ async function readOwner(
     attempt(reads.bootId),
     attempt(reads.machineId),
   ]);
-  // The /proc this process sees may be another PID namespace's: its `self`
-  // then names another pid, and no start time it gives can be compared.
-  const own =
-    stat !== undefined && Number(stat.split(' ', 1)[0]) === reads.pid
-      ? parseStat(stat)
-      : undefined;
+  const startTime = ownStartTime(stat, reads.pid);
   const owner: ProcessOwner = {
     pid: reads.pid,
     host: safeHost(reads.hostname()),
-    ...(!(own === undefined) && { startTime: own.startTime }),
+    ...(!(startTime === undefined) && { startTime }),
     ...(!(pidNamespace === undefined) && { pidNamespace }),
     ...(!(bootId === undefined || bootId === '') && {
       bootId: placeDigest('boot', bootId),
@@ -101,6 +96,23 @@ async function readOwner(
     }),
   };
   return { owner, whole };
+}
+
+/**
+ * The start time of process `pid` from `stat`, the text of its
+ * `/proc/self/stat`, only when that text names `pid`. The `/proc` this process
+ * sees may be another PID namespace's (`unshare --pid` without
+ * `--mount-proc`): its `self` then names this process by another pid, and its
+ * `/proc/<pid>` are other processes, so no start time read there can be
+ * compared. Undefined then, as where it cannot be read.
+ */
+export function ownStartTime(
+  stat: string | undefined,
+  pid: number,
+): string | undefined {
+  return stat !== undefined && Number(stat.split(' ', 1)[0]) === pid
+    ? parseStat(stat)?.startTime
+    : undefined;
 }
 
 const onLinux = <T>(read: () => Promise<T>): Promise<T | undefined> =>

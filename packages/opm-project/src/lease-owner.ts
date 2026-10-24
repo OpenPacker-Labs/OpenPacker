@@ -31,6 +31,11 @@ import { readFile, readlink } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { placeHex } from './owner-digest.js';
 import {
+  ownStartTime,
+  parseMachineId,
+  type OwnerReads,
+} from './owner-system.js';
+import {
   isOwnerAlive as aliveBy,
   ownerPlace as placeOf,
   systemProbe,
@@ -45,7 +50,11 @@ export const UNKNOWN = '0';
 
 export interface LeaseOwner {
   pid: number;
-  /** Clock ticks after boot when the process started (Linux); `0` elsewhere. */
+  /**
+   * Clock ticks after boot when the process started (Linux), read only from a
+   * `/proc` of its own pid namespace (`ownStartTime` of `owner-system.ts`);
+   * `0` elsewhere.
+   */
   start: string;
   /** The pid namespace's inode (Linux); `0` elsewhere. */
   namespace: string;
@@ -61,13 +70,6 @@ export interface LeaseOwner {
   host: string;
 }
 
-async function readTrimmed(path: string): Promise<string> {
-  return readFile(path, 'utf8').then(
-    (text) => text.trim(),
-    () => '',
-  );
-}
-
 /**
  * The machine a lease names for the machine id `id`: its keyed digest, the one
  * an owner record holds (`placeDigest` of `owner-digest.ts`) without its `d1-`,
@@ -77,58 +79,74 @@ export function leaseMachine(id: string): string {
   return placeHex('machine', id);
 }
 
-async function readMachine(): Promise<string> {
-  for (const path of ['/etc/machine-id', '/var/lib/dbus/machine-id']) {
-    const text = await readTrimmed(path);
-    if (/^[0-9a-f]{32}$/u.test(text)) return leaseMachine(text);
+/**
+ * What this process reads to name itself, on every platform (where a file is
+ * not there, its field is `0`): the reads of `owner-system.ts`, whose files
+ * are read only on Linux, would change the machine of a lease made on a BSD
+ * with a dbus machine id.
+ */
+const systemReads: OwnerReads = {
+  pid: process.pid,
+  hostname,
+  stat: () => readFile('/proc/self/stat', 'utf8'),
+  pidNamespace: async () =>
+    /^pid:\[(\d+)\]$/u.exec(await readlink('/proc/self/ns/pid'))?.[1],
+  bootId: () => readFile('/proc/sys/kernel/random/boot_id', 'utf8'),
+  machineId: async () => {
+    for (const path of ['/etc/machine-id', '/var/lib/dbus/machine-id']) {
+      const id = parseMachineId(await readFile(path, 'utf8').catch(() => ''));
+      if (id !== undefined) return id;
+    }
+    return undefined;
+  },
+};
+
+/** What `read` gives, or `undefined` where it fails. */
+async function attempt(
+  read: () => Promise<string | undefined>,
+): Promise<string | undefined> {
+  try {
+    return await read();
+  } catch {
+    return undefined;
   }
-  return createHash('sha256').update(hostname()).digest('hex').slice(0, 32);
 }
 
-function hostDigest(): string {
-  return createHash('sha256').update(hostname()).digest('hex').slice(0, 16);
-}
-
-async function bootId(): Promise<string> {
-  const text = (await readTrimmed('/proc/sys/kernel/random/boot_id'))
-    .replaceAll('-', '')
-    .toLowerCase();
-  return /^[0-9a-f]{32}$/u.test(text) ? text : UNKNOWN;
-}
-
-async function pidNamespace(): Promise<string> {
-  return readlink('/proc/self/ns/pid').then(
-    (text) => /^pid:\[(\d+)\]$/u.exec(text)?.[1] ?? UNKNOWN,
-    () => UNKNOWN,
-  );
-}
-
-/** When process `pid` started, in clock ticks after boot (Linux). */
-async function startTime(pid: number): Promise<string> {
-  // `pid (comm) state ...`: comm may hold spaces and parentheses, so fields
-  // are counted from the last `)`; starttime (field 22) is the 20th after it.
-  const stat = await readTrimmed(`/proc/${pid}/stat`);
-  const field = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19];
-  return field !== undefined && /^\d+$/u.test(field) ? field : UNKNOWN;
+/** This process as a lease names it, from `reads`. A test seam. */
+export async function readLeaseOwner(reads: OwnerReads): Promise<LeaseOwner> {
+  const [stat, namespace, boot, machineText] = await Promise.all([
+    attempt(reads.stat),
+    attempt(reads.pidNamespace),
+    attempt(reads.bootId),
+    attempt(reads.machineId),
+  ]);
+  // Only from a /proc of this process's own pid namespace, as an owner record.
+  const start = ownStartTime(stat, reads.pid);
+  const bootHex = boot?.trim().replaceAll('-', '').toLowerCase();
+  const machineId =
+    machineText === undefined ? undefined : parseMachineId(machineText);
+  const host = createHash('sha256').update(reads.hostname()).digest('hex');
+  return {
+    pid: reads.pid,
+    start: start ?? UNKNOWN,
+    namespace:
+      namespace !== undefined && /^\d+$/u.test(namespace) ? namespace : UNKNOWN,
+    boot:
+      bootHex !== undefined && /^[0-9a-f]{32}$/u.test(bootHex)
+        ? bootHex
+        : UNKNOWN,
+    // A digest of the host name stands for the machine where there is no id.
+    machine:
+      machineId === undefined ? host.slice(0, 32) : leaseMachine(machineId),
+    host: host.slice(0, 16),
+  };
 }
 
 let current: Promise<LeaseOwner> | undefined;
 
 /** This process, read once. */
 export function currentOwner(): Promise<LeaseOwner> {
-  current ??= Promise.all([
-    startTime(process.pid),
-    pidNamespace(),
-    bootId(),
-    readMachine(),
-  ]).then(([start, namespace, boot, machine]) => ({
-    pid: process.pid,
-    start,
-    namespace,
-    boot,
-    machine,
-    host: hostDigest(),
-  }));
+  current ??= readLeaseOwner(systemReads);
   return current;
 }
 
