@@ -113,6 +113,23 @@ describe('opm gc --shared and the grace period', () => {
     expect(result).toMatchObject({ removed: [], tooNew: 1 });
   });
 
+  it('dates the entry by its directory ctime, which setting its times back moves forward', async () => {
+    const shared = await sharedRoot();
+    const { entry, record } = await publish(shared);
+    // Record and directory both say an hour ago, as a copy that kept times or
+    // a hand-set clock would. Setting them is itself a change of the
+    // directory, so its ctime is now, and that is what is read.
+    const old = new Date(Date.now() - HOUR);
+    await utimes(record, old, old);
+    await utimes(entry, old, old);
+    expect(Date.now() - (await stat(entry)).mtimeMs).toBeGreaterThan(HOUR / 2);
+
+    const result = await collectSharedStore({
+      env: { OPM_STORE_HOME: shared },
+    });
+    expect(result).toMatchObject({ removed: [], tooNew: 1 });
+  });
+
   it('keeps a new entry that has no record, and collects it once it is old', async () => {
     const shared = await sharedRoot();
     const { entry, record } = await publish(shared);
