@@ -107,6 +107,23 @@ describe('a split no layout avoids', () => {
     expect(peerSplitProblems(input, placement)).toHaveLength(1);
   });
 
+  it('is kept in the layout with fewer places when the two ways of pinning leave as many', () => {
+    // The same world beside a host and its plugins that peer one another,
+    // wanted by a member at another version than the project's. Pinning every
+    // split at once and pinning the outermost first each keep the one split
+    // no layout avoids; the first also writes the plugin's package a second
+    // time in the member, which the second does not.
+    const tie = peerWorld('tie-break.json');
+    const placement = planPlacement(tie);
+    expect(placement.problems).toEqual([]);
+    expect(resolutionProblems(tie, placement)).toEqual([]);
+    expect(placement.splits).toBe(1);
+    expect(placement.placed).toHaveLength(13);
+    expect(
+      placement.placed.filter((place) => place.key === 'p1@1.0.0'),
+    ).toHaveLength(1);
+  });
+
   it('takes the layouts the bound allows, no more', () => {
     const placement = planPlacement(input);
     expect(placement.layouts).toBe(22);

@@ -252,23 +252,34 @@ function attemptWith(
     : { best: shared.best, isolated: new Set(), layouts };
 }
 
+/**
+ * Whether `next` is a better layout than `kept`: there is one, and it has fewer
+ * splits, or as many in fewer places. On a tie the layout kept stays.
+ */
+function better(next: Checked | undefined, kept: Checked | undefined): boolean {
+  if (next === undefined) return false;
+  if (kept === undefined) return true;
+  return (
+    next.splits.length < kept.splits.length ||
+    (next.splits.length === kept.splits.length &&
+      next.laid.placed.length < kept.laid.placed.length)
+  );
+}
+
 export function planPlacement(input: PlaceInput): PlannedPlacement {
   const known = knownOf(input);
   // Every split pinned at once is the quick way, and cures nearly every lock.
   // Where a split is left, or no layout fits, the same is tried again pinning
   // the outermost splits only: a pin made for a split that an outer pin would
-  // have cured can itself leave one.
+  // have cured can itself leave one. The second is kept only when it is better
+  // (`better`), so a lock the first lays out without a split is laid out as it
+  // was.
   let attempt = attemptWith(input, known, 'all');
   let layouts = attempt.layouts;
   if (attempt.best === undefined || attempt.best.splits.length > 0) {
     const again = attemptWith(input, known, 'outermost');
     layouts += again.layouts;
-    if (
-      again.best !== undefined &&
-      (attempt.best === undefined ||
-        again.best.splits.length < attempt.best.splits.length)
-    )
-      attempt = again;
+    if (better(again.best, attempt.best)) attempt = again;
   }
   const isolated = attempt.isolated;
   let laid = attempt.best?.laid;
