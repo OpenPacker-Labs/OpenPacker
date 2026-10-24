@@ -1195,6 +1195,17 @@ one), and so do the sandbox's byte limits, which bound the output it keeps (ADR
 `process stopped by SIGINT` (Ctrl-C; `opmx` then ends by the same signal),
 `process timed out after 600000 ms`, or `process aborted`.
 
+A tool has no network unless it is granted one: it reaches nothing outside its
+sandbox, and nothing outside reaches it, a server included. `--allow-network`
+shares this host's network with the run (`opmx --allow-network http-server`),
+and a project grants a package network for every run, and for its lifecycle
+scripts, with `[sandbox.packages."<purl>"] network = true`. When a tool listens
+without either, `opmx` says so on stderr, once, with the port:
+
+```text
+opmx: the tool listens on port 8080, but has no network: nothing outside its sandbox can reach it. Run it with --allow-network to share this host's network.
+```
+
 An installed npm bin runs from a `node_modules` of its package's closure,
 written for the run under `.opm/runs/` beside the project's store and removed
 when it ends, as a tool straight from a registry runs from its own (below): the
@@ -1432,6 +1443,11 @@ project_write = false  # opmx cannot rewrite project source unless true
 minimal_path = true
 timeout_ms = 600000    # lifecycle scripts: wall-clock limit (0: none)
 opmx_timeout_ms = 0    # opmx: wall-clock limit (0, the default: none)
+
+# The host's network for one package, in opmx and its lifecycle scripts
+# (none by default; opmx --allow-network grants it to one run):
+# [sandbox.packages."pkg:npm/http-server"]
+# network = true
 
 # Prefer allowlists (strict mode rejects allow_lifecycle_scripts alone):
 # [policy]

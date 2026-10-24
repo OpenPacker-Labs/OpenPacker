@@ -224,6 +224,10 @@ export async function runInSandbox(
           readwritePaths: readwrite,
           readonlyPaths: readonly,
           network,
+          ...(!network &&
+            !(input.onIsolatedListen === undefined) && {
+              onIsolatedListen: input.onIsolatedListen,
+            }),
           profile,
           legacyFatRoot: resolved.legacyFatRoot,
           maximumStdoutBytes: resolved.maximumStdoutBytes,

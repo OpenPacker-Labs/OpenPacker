@@ -18,6 +18,9 @@ import { OpmError } from './types.js';
  *
  * Default: project + store RO, jail temp RW, network deny, fail-closed.
  * Set policy.projectWrite / sandbox.project_write to allow project mutation.
+ * Network is the host's when `network` is set (`opmx --allow-network`) or the
+ * project grants it to the package (`[sandbox.packages."<purl>"] network`);
+ * otherwise the tool has a network of its own, which nothing else reaches.
  *
  * A tool runs for as long as it runs, as one started by `npx` does: someone
  * started it and stops it, and a server is meant to keep running. Its limit
@@ -40,6 +43,11 @@ export async function runSandboxedPackageProcess(input: {
   pathPrefix?: readonly string[];
   /** Wall-clock limit in whole milliseconds, 0 for none (`opmx --timeout`). */
   timeoutMs?: number;
+  /**
+   * Told the port the tool listens on while it has no network, where nothing
+   * outside its sandbox reaches it (`RunInSandboxInput.onIsolatedListen`).
+   */
+  onIsolatedListen?: (port: number) => void;
   /**
    * Hand the output on as the process writes it, rather than return it in the
    * outcome (`@openpacker/sandbox`'s `RunInSandboxInput.output`).
@@ -103,6 +111,9 @@ export async function runSandboxedPackageProcess(input: {
         pathPrefix: input.pathPrefix,
       }),
       ...(!(input.output === undefined) && { output: input.output }),
+      ...(!(input.onIsolatedListen === undefined) && {
+        onIsolatedListen: input.onIsolatedListen,
+      }),
       ...(!(input.backend === undefined) && { backend: input.backend }),
     });
   } finally {

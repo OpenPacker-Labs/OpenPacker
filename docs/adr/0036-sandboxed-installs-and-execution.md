@@ -396,7 +396,7 @@ runs, by the mock backend and by bwrap, and the limits ending a tree whose
 output is handed on; `opmx-stream.test.ts` (apps/opm) shows the same through
 `opmx`'s spawn, and a split character written whole.
 
-## Amendment (2026-10-24) — a tool someone runs: how long, how much, and what stopped it
+## Amendment (2026-10-24) — a tool someone runs: how long, how much, which network, and what stopped it
 
 `opmx` runs a tool a person started, as `npx` does: a server, a watcher, a REPL.
 Since the amendment above its output reaches the terminal as it is written, and
@@ -437,6 +437,44 @@ the project's. `opmx-timeout.test.ts` (opm-project) pins which limit a run gets,
 and the key's round trip and refusals; `output-sink.test.ts` (sandbox) hands 4.5
 MiB to a sink through the mock backend and bwrap, and still cuts kept output at
 its limit.
+
+### Which network
+
+`opmx http-server` printed its address, and `curl` to it got no answer. A run
+without network is given bwrap's `--unshare-net`: a network namespace of its
+own, with a loopback interface and nothing else. The tool reaches nothing
+outside, which is the point, and nothing outside reaches it, a server included.
+`opmx` could not be told to share the host's network for a run; a project could
+grant it to a package (`[sandbox.packages."<purl>"] network = true`), and
+neither was documented for `opmx`, nor was what happens without it.
+
+Decision:
+
+1. **Network is granted, never assumed, and fails closed.** A tool `opmx` runs
+   has no network unless the run is granted it. `opmx --allow-network`, the
+   spelling `opm pack` uses for the same grant, shares the host's network with
+   that run; a project grants it to a package for every run with
+   `[sandbox.packages."<purl>"] network = true`, as it does for that package's
+   lifecycle scripts (decision 5). Either one leaves out `--unshare-net`, and
+   the masks over network tools (`networkToolMaskFiles`) with it. Nothing else
+   grants it: not a tool's own request, not the absence of a policy.
+2. **A tool that listens without network is told so** (`listen-watch.ts`). While
+   a run has no network, the bwrap backend reads, every 200 ms, the TCP sockets
+   of the run's namespace in `/proc/<pid>/net/tcp` and `tcp6`, from the first
+   process bwrap started there; only a namespace other than the caller's is
+   read, so a run that shares the host's is never reported. The first port in
+   the LISTEN state is handed to the caller (`onIsolatedListen`), once, and
+   `opmx` writes one line to stderr: the port, that nothing outside the sandbox
+   can reach it, and `--allow-network`. Where it cannot be read (a kernel
+   without `/proc/<pid>/task/<pid>/children`, MXC, the mock backend) nothing is
+   said; `opmx --help` and the opm guide say the same in words.
+
+`opmx-network.test.ts` (apps/opm) runs an installed server through bwrap: with
+no grant a request to its port is refused and `opmx` says so, once, with the
+port; with `--allow-network`, and with the project's grant to its package, the
+request is answered and nothing is said. `listen-watch.test.ts` (sandbox) has a
+process listen in a run without network and is told its port, and finds nothing
+told of a process listening in the caller's own namespace.
 
 ### What stopped it
 

@@ -32,6 +32,7 @@ export function parse(argv: string[]) {
   const allowEnv: string[] = [];
   let offline = false;
   let timeoutMs: number | undefined;
+  let allowNetwork = false;
   let i = 0;
   let seenSelector = false;
   while (i < argv.length) {
@@ -104,6 +105,11 @@ export function parse(argv: string[]) {
       i += 1;
       continue;
     }
+    if (arg === '--allow-network') {
+      allowNetwork = true;
+      i += 1;
+      continue;
+    }
     if (arg === '--offline') {
       offline = true;
       i += 1;
@@ -148,6 +154,7 @@ export function parse(argv: string[]) {
     allowEnv,
     offline,
     ...(timeoutMs !== undefined && { timeoutMs }),
+    allowNetwork,
   };
 }
 
@@ -179,6 +186,12 @@ A tool runs until it ends or is stopped (Ctrl-C), as with npx, and all it
 writes reaches the terminal. --timeout <ms> ends it after that many
 milliseconds (0: never); a project sets one with [sandbox] opmx_timeout_ms.
 --timeout wins over the project's; timeout_ms bounds lifecycle scripts only.
+
+A tool has no network unless it is granted one: it reaches nothing outside
+its sandbox, and nothing outside reaches it, a server included.
+--allow-network shares this host's network with the run; a project grants a
+package for every run with [sandbox.packages."<purl>"] network = true. opmx
+says on stderr when a tool listens without it, and on which port.
 
 Tool files are kept once per machine in the shared package store
 (OPM_STORE_HOME, default ~/.cache/openpacker/store; OPM_STORE_HOME=off opts out).

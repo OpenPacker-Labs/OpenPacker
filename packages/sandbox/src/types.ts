@@ -134,6 +134,13 @@ export interface RunInSandboxInput {
   readonlyPaths: readonly string[];
   /** Allow network even without package grant (opmx flag / host install). */
   network?: boolean;
+  /**
+   * Told, once, the first port the process listens on while it runs without
+   * network (neither `network` nor a package grant): in a network namespace of
+   * its own, nothing outside the sandbox can reach it. Only the bwrap backend
+   * can tell; elsewhere it is never called.
+   */
+  onIsolatedListen?: (port: number) => void;
   /** Defaults to package-exec. */
   profile?: SandboxProfile;
   /**
@@ -187,6 +194,8 @@ export interface SandboxBackend {
     readwritePaths: readonly string[];
     readonlyPaths: readonly string[];
     network: boolean;
+    /** `RunInSandboxInput.onIsolatedListen`, given only when `network` is false. */
+    onIsolatedListen?: (port: number) => void;
     /** package-exec uses minimal binds; host-install uses broader. */
     profile: SandboxProfile;
     legacyFatRoot?: boolean;

@@ -116,6 +116,7 @@ export async function runOpmx(
           ...(!(flags.timeoutMs === undefined) && {
             timeoutMs: flags.timeoutMs,
           }),
+          ...(flags.allowNetwork && { network: true }),
         }),
       );
     }
@@ -180,6 +181,7 @@ export async function runOpmx(
       ...(!(pkgId === undefined) && { packageId: pkgId }),
       ...(!(projectPolicy === undefined) && { policy: projectPolicy }),
       ...(!(flags.timeoutMs === undefined) && { timeoutMs: flags.timeoutMs }),
+      ...(flags.allowNetwork && { network: true }),
     };
     const storePaths = Object.values(state.packages).map(
       (pkg) => pkg.storePath,

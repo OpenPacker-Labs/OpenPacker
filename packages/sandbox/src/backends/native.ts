@@ -8,6 +8,7 @@ import {
 import { open, type FileHandle } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { dirname, resolve } from 'node:path';
+import { watchIsolatedListen } from '../listen-watch.js';
 import { SandboxBackendError, assertSnapshot, spawnCapture } from './mock.js';
 import {
   networkToolMaskFiles,
@@ -179,6 +180,9 @@ export function createBwrapBackend(): SandboxBackend {
                 path: input.executableAuthority.path,
                 childFd: 3 + directoryAuthorities.length,
               };
+        const onIsolatedListen = input.network
+          ? undefined
+          : input.onIsolatedListen;
         const argv = buildBwrapArgv({
           bwrap: helper.path,
           command: input.argv,
@@ -203,6 +207,12 @@ export function createBwrapBackend(): SandboxBackend {
           treeContainment: 'pid-namespace',
           ...(!(input.stdin === undefined) && { stdin: input.stdin }),
           ...(!(input.output === undefined) && { output: input.output }),
+          // Unshared, the network is the run's own: a server listening there
+          // is reached by nothing outside, which the caller can say.
+          ...(!(onIsolatedListen === undefined) && {
+            onSpawn: (pid: number) =>
+              watchIsolatedListen(pid, onIsolatedListen),
+          }),
           inheritedFds: [
             ...(input.directoryAuthorities?.map(({ fd }) => fd) ?? []),
             ...(executableHandle === undefined ? [] : [executableHandle.fd]),

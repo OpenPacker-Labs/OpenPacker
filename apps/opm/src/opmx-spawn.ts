@@ -41,6 +41,8 @@ export interface SandboxContext {
   pathPrefix?: readonly string[];
   /** `--timeout`: wall-clock milliseconds, 0 for none; else the project's. */
   timeoutMs?: number;
+  /** `--allow-network`: the run shares the host's network. */
+  network?: boolean;
 }
 
 /**
@@ -54,7 +56,7 @@ export async function runTool(
   args: readonly string[],
   io: CliIo,
   cwd: string,
-  context: Pick<SandboxContext, 'signal' | 'timeoutMs'> = {},
+  context: Pick<SandboxContext, 'signal' | 'timeoutMs' | 'network'> = {},
 ): Promise<number> {
   return runLaidOut(
     await ephemeralNodeRun(tool, bin),
@@ -269,6 +271,16 @@ async function spawnProcess(
       ...(!(sandbox?.timeoutMs === undefined) && {
         timeoutMs: sandbox.timeoutMs,
       }),
+      ...(sandbox?.network === true && { network: true }),
+      // Without network the tool has a namespace of its own: a server it
+      // starts is reached by nothing outside, and says nothing of it.
+      onIsolatedListen: (port) =>
+        io.stderr.write(
+          report(
+            'opmx: ',
+            `the tool listens on port ${port}, but has no network: nothing outside its sandbox can reach it. Run it with --allow-network to share this host's network.`,
+          ),
+        ),
       // The tool's output reaches the terminal as the tool writes it: a
       // server prints that it listens and then serves until it is stopped.
       output: passing.sink,

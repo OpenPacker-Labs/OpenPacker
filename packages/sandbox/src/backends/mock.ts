@@ -216,6 +216,11 @@ export async function spawnCapture(input: {
   output?: OutputSink;
   treeContainment?: 'pid-namespace' | 'test-only';
   inheritedFds?: readonly number[];
+  /**
+   * Called with the child's pid once it is started; what it returns is called
+   * when the child has ended.
+   */
+  onSpawn?: (pid: number) => () => void;
 }): Promise<{
   exitCode: number;
   stdout: string;
@@ -280,6 +285,8 @@ export async function spawnCapture(input: {
         ],
         detached: process.platform !== 'win32',
       });
+      const unwatch =
+        child.pid === undefined ? undefined : input.onSpawn?.(child.pid);
       if (input.stdin !== undefined && child.stdin) {
         // A child that exits before reading closes the pipe early; the close
         // event remains authoritative for the outcome.
@@ -321,10 +328,12 @@ export async function spawnCapture(input: {
       if (signal?.aborted) onAbort();
       child.on('error', (err) => {
         signal?.removeEventListener('abort', onAbort);
+        unwatch?.();
         settled = true;
         reject(err);
       });
       child.on('close', async (code) => {
+        unwatch?.();
         await termination;
         if (settled) return;
         settled = true;
