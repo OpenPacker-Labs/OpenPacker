@@ -244,8 +244,12 @@ describe('scanner equivalence and scaling', () => {
   it('does not grow with the number of candidates', () => {
     // The point of the rewrite: cost tracks bytes, not candidates. The old
     // scanner took ~8s for this shape, a pass per candidate. Compared with
-    // itself over the same bytes rather than with a clock, so a loaded machine
-    // slows both sides alike: the fastest of two interleaved runs each.
+    // itself over the same bytes, the fastest of two interleaved runs each, in
+    // CPU time rather than on the wall clock. A loaded machine does not slow
+    // both sides alike in wall time: each preemption adds a fixed slice, and
+    // the longer run (the thousand) takes more of them, so the wall-clock ratio
+    // of the unchanged scanner reached 45 beside eight busy loops, as high as a
+    // pass per candidate. The CPU this process spends is not preempted.
     const alphabet = '0123456789abcdfghijklmnpqrsvwxyz';
     // Each character takes five *high* bits of a mixed value. Taking `% 32` of
     // an LCG uses its low five bits, whose period is 32 — that produced 32
@@ -277,15 +281,16 @@ describe('scanner equivalence and scaling', () => {
         ['few', few],
         ['many', candidates],
       ] as const) {
-        const started = performance.now();
+        const started = process.cpuUsage();
         expect(scanReferences(files, set)).toEqual([]);
-        fastest[size] = Math.min(fastest[size], performance.now() - started);
+        const spent = process.cpuUsage(started);
+        fastest[size] = Math.min(fastest[size], spent.user + spent.system);
       }
-    // A pass over the bytes per candidate makes the thousand 19 (indexOf) to
-    // 50 (a rolling hash, as the old scanner did) times the ten; this
-    // scanner's automaton makes it 3.5 to 8 (all measured at loads of 24 to
-    // 40, on 2 MiB; 5.2 and 5.7 on the 1 MiB used now).
-    expect(fastest.many).toBeLessThan(12 * fastest.few);
+    // In CPU time this scanner's thousand cost 3.5 to 6.8 times its ten over
+    // 30 runs, and 3.2 to 7.5 over 30 beside eight busy loops; a pass over the
+    // bytes per candidate (indexOf) cost 31 to 39 times. 15 is twice the
+    // highest of the first and about half the lowest of the second.
+    expect(fastest.many).toBeLessThan(15 * fastest.few);
   });
 });
 
