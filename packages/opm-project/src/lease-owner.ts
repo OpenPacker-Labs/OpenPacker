@@ -6,23 +6,28 @@
  * machine id and its host name). A lease's file names spell it in these
  * fields (`store-lease.ts`), `0` for one the process could not read.
  *
- * Where it runs is judged by the one rule every holder opm records is judged
- * by (`ownerPlace` of `process-owner.ts`), each side mapped onto that rule's
- * record (`asProcessOwner`): an owner whose machine id and host name are this
- * machine's and whose boot is not this one ran in a boot that has ended, and
- * is dead. Any other owner in another pid namespace, another boot or on
- * another machine cannot be judged from here, and counts as alive; so does one
- * in this process's namespace when that cannot be read (on Linux, where every
- * process has one: `unreadableNamespaceIsForeign`, as a holder that has a lock
- * file of its own to be reclaimed by may ask).
+ * It is judged by the one rule every holder opm records is judged by
+ * (`process-owner.ts`), each side mapped onto that rule's record
+ * (`asProcessOwner`). Where it runs (`ownerPlace`): an owner whose machine id
+ * and host name are this machine's and whose boot is not this one ran in a
+ * boot that has ended, and is dead. Any other owner in another pid namespace,
+ * another boot or on another machine cannot be judged from here, and counts as
+ * alive; so does one in this process's namespace when that cannot be read (on
+ * Linux, where every process has one: `unreadableNamespaceIsForeign`, as a
+ * holder that has a lock file of its own to be reclaimed by may ask). Whether
+ * its pid here is still it (`isOwnerAlive`): see that function.
  */
 
 import { createHash } from 'node:crypto';
 import { readFile, readlink } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import {
+  isOwnerAlive as aliveBy,
   ownerPlace as placeOf,
+  systemProbe,
   type OwnerPlace,
+  type OwnerProbe,
+  type PlaceOptions,
   type ProcessOwner,
 } from './process-owner.js';
 
@@ -129,6 +134,9 @@ export function asProcessOwner(owner: LeaseOwner): ProcessOwner {
   };
 }
 
+/** The one owner rule, as a holder with a lock file of its own asks it. */
+const RULE: PlaceOptions = { unreadableNamespaceIsForeign: true };
+
 /**
  * Where `owner` runs, seen from `reader`, by the one owner rule: on this
  * machine in a boot that has ended (`ended`), where `reader` cannot judge it
@@ -136,38 +144,30 @@ export function asProcessOwner(owner: LeaseOwner): ProcessOwner {
  * namespace, or a namespace that could not be read), or `here`.
  */
 export function ownerPlace(owner: LeaseOwner, reader: LeaseOwner): OwnerPlace {
-  return placeOf(asProcessOwner(owner), asProcessOwner(reader), {
-    unreadableNamespaceIsForeign: true,
-  });
+  return placeOf(asProcessOwner(owner), asProcessOwner(reader), RULE);
 }
 
 /**
- * Whether `owner` may still be running: false only when it ran in a boot of
- * this machine that has ended, or when no process here has its pid, or the
- * one that has it started at another time.
+ * Whether `owner` may still be running, by the one owner rule (`isOwnerAlive`
+ * of `process-owner.ts`): false only when it ran in a boot of this machine
+ * that has ended, or here when no process has its pid, the process that has it
+ * is a zombie nobody reaped or dead (`X`), or that process started at another
+ * time. Each of those has exited, and cannot release a lease.
  *
- * The pid is judged as the lease always judged it, not by `isOwnerAlive` of
- * `process-owner.ts`, which says more: a pid whose process is dead (`X`) or a
- * zombie whose threads it lists and finds none but the leader is gone there
- * and alive here, and a reader that cannot read its own start time takes
- * every pid here for alive there and compares the owner's here.
+ * A reader that cannot read its own start time is perhaps looking at another
+ * pid namespace's `/proc` (`unshare --pid` without `--mount-proc`), where a
+ * pid's state and start time are another process's: it compares neither, and
+ * takes every pid that answers signal 0 for alive. The signal is the kernel's
+ * answer in the reader's own namespace, so a pid it does not find is gone.
+ *
+ * `reader` is the process judging, this one by default; `probe` is the
+ * system, replaceable in a test.
  */
 export async function isOwnerAlive(
   owner: LeaseOwner,
   reader?: LeaseOwner,
+  probe: OwnerProbe = systemProbe,
 ): Promise<boolean> {
-  const place = ownerPlace(owner, reader ?? (await currentOwner()));
-  if (place !== 'here') return place === 'elsewhere';
-  try {
-    process.kill(owner.pid, 0);
-  } catch (error) {
-    // SAFETY: only the errno code of the failed signal is read.
-    const code = (error as NodeJS.ErrnoException).code;
-    // EPERM: another user's process has the pid, and it runs: whether it is
-    // the owner still depends on when it started (below).
-    if (code !== 'EPERM') return code !== 'ESRCH';
-  }
-  if (owner.start === UNKNOWN) return true;
-  const now = await startTime(owner.pid);
-  return now === UNKNOWN || now === owner.start;
+  const by = reader ?? (await currentOwner());
+  return aliveBy(asProcessOwner(owner), asProcessOwner(by), probe, RULE);
 }
