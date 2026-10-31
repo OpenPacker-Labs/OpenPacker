@@ -52,10 +52,25 @@ export async function runOpmx(
   cwd = process.cwd(),
   options: RunOpmxOptions = {},
 ): Promise<number> {
-  // A command of its own: the project it runs in is fenced before anything
-  // resolves a base, so a link that project holds (`.cache -> /outside`,
-  // committed) names no cache or store (ADR 0034, trusted bases).
-  beginCommand(cwd);
+  // A command of its own: the project it runs in, and the checkouts and tree
+  // around it and around every base the environment names, are fenced before
+  // anything resolves a base, so a link they hold (`.cache -> /outside`,
+  // committed) names no cache or store (ADR 0034, trusted bases). It ends
+  // when this returns.
+  const end = beginCommand(cwd);
+  try {
+    return await runOpmxCommand(argv, io, cwd, options);
+  } finally {
+    end();
+  }
+}
+
+async function runOpmxCommand(
+  argv: string[],
+  io: CliIo,
+  cwd: string,
+  options: RunOpmxOptions,
+): Promise<number> {
   try {
     if (argv.includes('--help') || argv.includes('-h') || argv.length === 0) {
       out(io, help());

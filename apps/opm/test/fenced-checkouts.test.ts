@@ -314,3 +314,52 @@ describe.runIf(POSIX)(
     });
   },
 );
+
+describe.runIf(POSIX)('two commands running at once in one process', () => {
+  it('a second command begun while opmx runs drops none of its fences', async () => {
+    const { base, outside } = await world();
+    // The tree each command runs in is the world's child that holds it, and
+    // the first command's project holds the link with no .git: only the
+    // fence of the project opmx runs in keeps it from being followed.
+    vi.stubEnv('HOME', base);
+    const first = join(base, 'first');
+    vi.stubEnv('XDG_CACHE_HOME', await linkCache(first, outside));
+    await writeFile(
+      join(first, 'package.json'),
+      '{"name":"first","version":"0.0.0"}\n',
+    );
+    const second = join(base, 'second');
+    await mkdir(second);
+
+    // opmx asks the registry for the tool's versions before it opens its
+    // tool cache; the second command begins while it waits there.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((settle) => (release = settle));
+    let asked: () => void = () => undefined;
+    const waiting = new Promise<void>((settle) => (asked = settle));
+    const fixture = registry();
+    const transport = {
+      request: async (request: Parameters<typeof fixture.request>[0]) => {
+        asked();
+        await held;
+        return fixture.request(request);
+      },
+    };
+    const opmx = captured();
+    const running = runOpmx(['pkg:npm/tool'], opmx.io, first, {
+      registryOptions: { transport },
+    });
+    await waiting;
+    const init = captured();
+    expect(
+      await runOpm(['init', '--name', 'second'], init.io, second),
+      init.seen.err,
+    ).toBe(0);
+    release();
+
+    const exit = await running;
+    expect(await readdir(outside, { recursive: true })).toEqual([]);
+    expect(exit, opmx.seen.err).not.toBe(0);
+    expect(opmx.seen.err).toMatch(/linked|ENOTDIR|ELOOP/iu);
+  });
+});

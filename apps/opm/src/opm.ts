@@ -103,10 +103,26 @@ export async function runOpm(
   cwd = process.cwd(),
   options: RunOpmOptions = {},
 ): Promise<number> {
-  // A command of its own: the project it runs in is fenced before anything
-  // resolves a base, so a link that project holds (`.cache -> /outside`,
-  // committed) names no store, cache or configuration (ADR 0034).
-  beginCommand(cwd);
+  // A command of its own: the project it runs in, and the checkouts and tree
+  // around it and around every base the environment names, are fenced before
+  // anything resolves a base, so a link they hold (`.cache -> /outside`,
+  // committed) names no store, cache or configuration (ADR 0034). It ends
+  // when this returns; another command run meanwhile in this process drops
+  // none of its fences.
+  const end = beginCommand(cwd);
+  try {
+    return await runOpmCommand(argv, io, cwd, options);
+  } finally {
+    end();
+  }
+}
+
+async function runOpmCommand(
+  argv: string[],
+  io: CliIo,
+  cwd: string,
+  options: RunOpmOptions,
+): Promise<number> {
   // pnpm and npm put workspace options before the command, and a script's name
   // where a command goes (ADR 0053); say which `run` or `exec` that means first.
   try {

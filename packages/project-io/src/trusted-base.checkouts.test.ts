@@ -499,6 +499,42 @@ describe.runIf(POSIX && ROOT)(
   },
 );
 
+describe.runIf(POSIX)('two commands running at once in one process', () => {
+  it('never drop each other’s fences or bases, and the next command after both forgets them', async () => {
+    const base = await world();
+    vi.stubEnv('HOME', base);
+    // The first command's project, protected by its fence alone: no .git.
+    const first = join(base, 'first');
+    const outside = join(base, 'outside');
+    const cache = await linkedCache(first, outside);
+    await writeFile(join(first, 'package.json'), '{}');
+    // A root the first command takes, itself a link, as a project root may be.
+    await mkdir(join(base, 'real-root'));
+    await symlink(join(base, 'real-root'), join(base, 'root-link'));
+    const second = join(base, 'second');
+    await mkdir(second);
+    vi.stubEnv('XDG_CACHE_HOME', cache);
+
+    const endFirst = beginCommand(first);
+    expect(trustBase(join(base, 'root-link'), 'project root')).toBe(
+      join(base, 'real-root'),
+    );
+    const endSecond = beginCommand(second);
+    // The first is still running: its fence holds, and its root is still taken.
+    await refusedThrough(cache, outside);
+    await (await openStableDirectory(join(base, 'root-link'))).close();
+    endSecond();
+    await refusedThrough(cache, outside);
+    endFirst();
+    endFirst();
+
+    // Nothing is running now: a command begun elsewhere starts afresh.
+    const endThird = beginCommand(second);
+    expect(realBase(cache)).toBe(outside);
+    endThird();
+  });
+});
+
 describe.runIf(process.platform === 'linux' && ROOT)(
   'a checkout found by its .git, however it is named',
   () => {

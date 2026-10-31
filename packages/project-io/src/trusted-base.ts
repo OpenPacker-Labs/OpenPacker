@@ -36,8 +36,9 @@
  * the project the command runs in, every checkout around it and around each
  * base the environment names, the tree it runs in and every root taken
  * (fenced before any base is resolved, {@link beginCommand}). Nothing is ever
- * unfenced while the command runs. A fence added after a base was resolved
- * through a link it holds unmakes that base.
+ * unfenced while a command runs, whichever other command begins meanwhile. A
+ * fence added after a base was resolved through a link it holds unmakes that
+ * base.
  *
  * A base leads to one place for the whole command: a walk under one first
  * checks that its path still leads to the directory it was resolved to, and
@@ -102,6 +103,8 @@ interface Bases {
   environment: Map<string, Resolution>;
   /** Fence key → a path that named it, for what is said. */
   fences: Map<string, string>;
+  /** Commands begun ({@link beginCommand}) and not yet ended. */
+  live: number;
 }
 
 /** How many taken bases are kept; the oldest is forgotten first. Fences are never forgotten. */
@@ -120,15 +123,16 @@ function bases(): Bases {
     taken: new Map(),
     environment: new Map(),
     fences: new Map(),
+    live: 0,
   });
 }
 
 /**
- * Forget every base and every fence: the end of a command. A process that
- * runs one command (the CLI) never needs this; a host that runs several in
- * one process calls {@link beginCommand} at the start of each, and a test
+ * Forget every base and every fence, whatever command is running: a test
  * suite calls this between tests, so that what one took is not a base for the
- * next.
+ * next. A host that runs several commands in one process calls
+ * {@link beginCommand} at the start of each and the function it returns at the
+ * end, which forgets nothing while another command is running.
  */
 export function forgetBases(): void {
   delete (globalThis as Holder)[RECORD];
@@ -564,16 +568,40 @@ export function fenceWorkingProject(
 }
 
 /**
- * Begin a command run in `cwd`: forget what the last one took, then fence the
- * project it runs in, the checkouts and the tree around it and around the
- * bases its environment names, before any base is resolved
- * ({@link fenceWorkingProject}). Every process entry calls it first, and so
- * does a host that runs several commands in one process, at each.
+ * Begin a command run in `cwd`, and return the function that ends it. When no
+ * other command is running, what the last one took is forgotten first; then
+ * the project it runs in, the checkouts and the tree around it and around the
+ * bases its environment names are fenced, before any base is resolved
+ * ({@link fenceWorkingProject}).
+ *
+ * Every process entry calls it first (`opm`, `opmx`), and so
+ * does a host that runs commands in one process, at each, calling what it
+ * returns when the command ends. A command begun while another runs forgets
+ * nothing, so no command drops a fence or a base another is still using; the
+ * fences of both hold for both until the last ends. A caller of the library
+ * that never begins a command is fenced only by the roots it takes and the
+ * checkouts its bases lie in, when it takes them.
  */
 export function beginCommand(
   cwd: string,
   env: NodeJS.ProcessEnv = process.env,
-): void {
-  forgetBases();
-  fenceWorkingProject(cwd, env);
+): () => void {
+  if (bases().live === 0) forgetBases();
+  const record = bases();
+  record.live += 1;
+  let ended = false;
+  const end = () => {
+    if (ended) return;
+    ended = true;
+    // A record forgotten since (a test suite between tests) counts nothing of this one.
+    if ((globalThis as Holder)[RECORD] === record)
+      record.live = Math.max(0, record.live - 1);
+  };
+  try {
+    fenceWorkingProject(cwd, env);
+  } catch (error) {
+    end();
+    throw error;
+  }
+  return end;
 }
