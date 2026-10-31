@@ -687,6 +687,11 @@ Decision:
   sweep, and its files are copies where that is another file system. A run over
   an unwritable store with one entry more than the handles was refused before;
   it now runs.
+- `PROJECT_READ_ONLY` is said only when `access(W_OK)` said this user may not
+  write the project. Where it said they may and a write still fails (a file made
+  immutable, a full disk, a mount made read-only meanwhile), the failure is
+  reported as itself, its code with the file it was writing:
+  `<root>/.opm/project.json: opm may not change it`.
 - A Python console script's launcher lists the generation's Python store roots
   in path order, so activation writes the same launcher the install did.
 

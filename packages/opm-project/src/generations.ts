@@ -36,6 +36,7 @@ import {
   type PlannedPackage,
 } from './activation-current.js';
 import { discoverBins, planBinShims, removeBinShims } from './bins.js';
+import { isRefusal, plainReason } from './fs-reason.js';
 import { readProjectState, writeProjectState } from './install.js';
 import { isStoreView, sweepAbandonedViews } from './store-view.js';
 import { projectStep, type StepOptions } from './project-step.js';
@@ -982,34 +983,50 @@ export async function activateGeneration(input: {
         planned.map(({ record }) => [record.alias, record]),
       ),
     };
+    // What is being written, to name it should it fail: the project said it
+    // may be written, so a refusal here is that file's, and says so as itself.
+    let writing = paths.bin;
     try {
       await ensureStableDirectory(paths.bin);
+      writing = paths.links;
       await ensureStableDirectory(paths.links);
       for (const record of Object.values(previous?.packages ?? {}))
-        await removeBinShims(
-          paths.bin,
-          record.bins.map((bin) => bin.name),
-        );
+        for (const bin of record.bins) {
+          writing = bin.shim;
+          await removeBinShims(paths.bin, [bin.name]);
+        }
       for (const { shims, link } of planned) {
-        for (const { shim, script } of shims)
+        for (const { shim, script } of shims) {
+          writing = shim.shim;
           await writeStableFile(shim.shim, script, 0o755);
+        }
+        writing = link.path;
         await writeStableFile(link.path, link.text);
       }
       await revalidatePreparedTrees(prepared);
+      writing = paths.projectState;
       await writeProjectState(paths.projectState, state);
     } catch (error) {
-      if (!cannotWrite(error)) throw error;
-      throw readOnlyRefusal(
-        stale ?? { path: PROJECT_STATE_SHOWN, why: 'differs' },
-        input.root,
-        error,
-      );
+      throw failedAt(writing, error);
     }
     return state;
   } finally {
     await Promise.all(prepared.map(({ handle }) => handle.close()));
     await store.close();
   }
+}
+
+/**
+ * A system call's failure while activation wrote `path`, as itself (its code)
+ * with the path it was writing: the call's own message names a descriptor
+ * (`/proc/self/fd/N/...`), not the file. Anything else is as it was thrown.
+ */
+function failedAt(path: string, error: unknown): Error {
+  if (!(error instanceof Error)) return new Error(String(error));
+  if (!isRefusal(error)) return error;
+  return new OpmError(String(error.code), `${path}: ${plainReason(error)}`, {
+    cause: error,
+  });
 }
 
 /** The project state's path from its root, as a refusal names it. */

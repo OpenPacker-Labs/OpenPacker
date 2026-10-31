@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
   chmod,
@@ -193,6 +193,33 @@ describe('activating the active generation', () => {
     await writeFile(shim, '#!/bin/sh\nexit 3\n');
     await activate(root);
     expect(await readFile(shim, 'utf8')).toBe(written);
+  });
+
+  it('names the file it could not write, where it may write the project but not that file', async (context) => {
+    const root = await installed();
+    const paths = projectPaths(root);
+    // A shim out of date, so that activation writes; and the project state
+    // immutable, which root may not replace though the directory says it may.
+    await writeFile(join(paths.bin, 'runner'), '#!/bin/sh\nexit 3\n');
+    let held = false;
+    try {
+      execFileSync('chattr', ['+i', paths.projectState], { stdio: 'ignore' });
+      held = true;
+    } catch {
+      // No immutable flag here.
+    }
+    context.skip(
+      !held || process.geteuid?.() !== 0,
+      'cannot make one file unwritable to this user here',
+    );
+    try {
+      await expect(activate(root)).rejects.toMatchObject({
+        code: 'EPERM',
+        message: `${paths.projectState}: opm may not change it`,
+      });
+    } finally {
+      execFileSync('chattr', ['-i', paths.projectState], { stdio: 'ignore' });
+    }
   });
 
   it('rewrites a shim that starts another opmx where it may write, to start this one', async () => {
