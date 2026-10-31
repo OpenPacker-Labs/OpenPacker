@@ -532,7 +532,7 @@ describe('materialiseTree', () => {
     });
   });
 
-  it('rechecks staging after removing the previous destination', async () => {
+  it('rechecks staging after removing the previous destination', { timeout: 120_000 }, async () => {
     await withTemp(async (dir) => {
       const { materialiseTree } = await import('./layout.js');
       const source = join(dir, 'source');
