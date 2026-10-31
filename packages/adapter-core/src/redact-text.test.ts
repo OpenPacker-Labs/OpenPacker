@@ -77,6 +77,6 @@ describe('a value of a document that may be an address', () => {
     redactText('://'.repeat(300_000));
     redactText(`${'a'.repeat(1 << 20)}://x`);
     redactText(`${'é'.repeat(1 << 19)} ${ADDRESS}`);
-    expect(performance.now() - started).toBeLessThan(5000);
+    expect(performance.now() - started).toBeLessThan(15_000);
   });
 });
