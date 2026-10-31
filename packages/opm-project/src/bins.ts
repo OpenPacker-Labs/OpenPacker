@@ -444,6 +444,14 @@ export function shimOpmx(script: string): string | undefined {
   }
 }
 
+/** The names an `opmx` beside `opm`'s own entry is found by, in the order tried. */
+export const OPMX_NAMES = [
+  'opmx',
+  'opmx-main.js',
+  'opmx.js',
+  'opmx.mjs',
+] as const;
+
 /**
  * Absolute `opmx` to embed in shims. PATH lookup is a sandbox bypass:
  * a package bin named `opmx` earlier on PATH would win.
@@ -459,7 +467,7 @@ export function resolveOpmxPath(): string {
   const argv1 = process.argv[1];
   if (argv1) {
     const dir = dirname(resolve(argv1));
-    for (const name of ['opmx', 'opmx-main.js', 'opmx.js', 'opmx.mjs']) {
+    for (const name of OPMX_NAMES) {
       const candidate = join(dir, name);
       if (existsSync(candidate)) return candidate;
     }

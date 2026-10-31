@@ -640,15 +640,18 @@ Decision:
   before. Where they may not (asked with `access(W_OK)` on `.opm`, `.opm/bin`
   and `.opm/links`, before anything is written), such a shim is up to date when
   it is the planned script but for the opmx it names, and that opmx can be
-  started: an absolute path whose final target, links followed (`realpath`), is
-  a regular file this user may execute, or read where the shim starts it with
-  Node (a name ending `.js`, `.mjs` or `.cjs`). A global npm install's
-  `bin/opmx` is a link to the package's `opmx-main.js`, so the link is followed
-  for this one question. It grants nothing: the shim already runs whatever is at
-  that path, and no write follows a link. A project built where opm was
-  installed elsewhere then runs read-only, in CI or a later image stage, as it
-  is. If that opmx is missing, a dangling link, or not a file this user may
-  start, the run is refused, naming the shim and the opmx.
+  started: an absolute path named as `resolveOpmxPath` finds an opmx (`opmx`,
+  `opmx-main.js`, `opmx.js`, `opmx.mjs`, or `opmx.cjs`), whose final target,
+  links followed (`realpath`), is named so too and is a regular file this user
+  may execute, or read where the shim starts it with Node (a name ending `.js`,
+  `.mjs` or `.cjs`). A shim naming `/usr/bin/env`, or a program of another name,
+  is refused: it would run, and it is no opmx. A global npm install's `bin/opmx`
+  is a link to the package's `opmx-main.js`, so the link is followed for this
+  one question. It grants nothing: the shim already runs whatever is at that
+  path, and no write follows a link. A project built where opm was installed
+  elsewhere then runs read-only, in CI or a later image stage, as it is. If that
+  opmx is missing, a dangling link, or not a file this user may start, the run
+  is refused, naming the shim and the opmx.
 - Where something else is out of date, activation writes as before. If this user
   may not write there (EACCES, EPERM, EROFS), the run is refused in one line
   that names the first thing out of date and what to do (code
@@ -657,6 +660,7 @@ Decision:
   ```text
   opmx: .opm/bin/<bin> is out of date for the active generation, and this user may not write <root>: run `opm install` there as its owner
   opmx: .opm/bin/<bin> starts /path/to/opmx, which is missing or not a program, and this user may not write <root>: run `opm install` there as its owner
+  opmx: .opm/bin/<bin> starts /usr/bin/env, which is not an opmx, and this user may not write <root>: run `opm install` there as its owner
   ```
 
 - A store view (more store entries than a sandbox's handles bind one by one, for
@@ -678,8 +682,9 @@ activates with no write, with the shims this opm writes and with shims that
 start another opmx that is there, a file or a global npm link to one, and is
 refused naming a shim or the project state out of date, or a shim whose opmx is
 missing or not executable, or a link that dangles, leads to a directory or to a
-file this user may not run. `store-view-budget.test.ts` binds one entry more
-than the handles from a store it may not write through a view under the
+file this user may not run, or that names `/usr/bin/env`, a program named `foo`,
+or a link named `opmx` to `foo`. `store-view-budget.test.ts` binds one entry
+more than the handles from a store it may not write through a view under the
 temporary directory, and finds nothing left there. `opmx-readonly.test.ts`
 (apps/opm) runs the built opmx where it may write, which activates the project,
 then again with the project read-only: the tool runs and every entry of the

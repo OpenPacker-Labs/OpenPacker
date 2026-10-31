@@ -1036,7 +1036,11 @@ function readOnlyRefusal(
 ): OpmError {
   const what =
     stale.why === 'opmx'
-      ? `${stale.path} starts ${stale.opmx}, which is missing or not a program`
+      ? `${stale.path} starts ${stale.opmx}, which ${
+          stale.problem === 'missing'
+            ? 'is missing or not a program'
+            : 'is not an opmx'
+        }`
       : `${stale.path} is out of date for the active generation`;
   return new OpmError(
     'PROJECT_READ_ONLY',

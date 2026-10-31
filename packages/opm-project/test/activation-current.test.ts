@@ -353,6 +353,47 @@ describe.runIf(process.platform === 'linux' && bwrap !== undefined)(
       },
     );
 
+    it.each([
+      ['/usr/bin/env', async () => '/usr/bin/env'],
+      [
+        'a program named foo',
+        async () => {
+          const dir = await mkdtemp(join(tmpdir(), 'opm-activation-foo-'));
+          temps.push(dir);
+          const foo = join(dir, 'foo');
+          await writeFile(foo, '#!/bin/sh\nexit 0\n');
+          await chmod(foo, 0o755);
+          return foo;
+        },
+      ],
+      [
+        'a link named opmx to a program named foo',
+        async () => {
+          const dir = await mkdtemp(join(tmpdir(), 'opm-activation-foo-'));
+          temps.push(dir);
+          await writeFile(join(dir, 'foo'), '#!/bin/sh\nexit 0\n');
+          await chmod(join(dir, 'foo'), 0o755);
+          await symlink('foo', join(dir, 'opmx'));
+          return join(dir, 'opmx');
+        },
+      ],
+    ])(
+      'is refused, naming the shim, when its shims start %s, which is no opmx',
+      async (_, made) => {
+        const root = await installed();
+        const named = await made();
+        await startingOpmx(root, named);
+        const ran = await activateReadOnly(root);
+        expect(JSON.parse(ran.out), ran.err).toEqual({
+          code: 'PROJECT_READ_ONLY',
+          message:
+            `.opm/bin/runner starts ${named}, which is not an opmx, and ` +
+            `this user may not write ${root}: run \`opm install\` there as ` +
+            'its owner',
+        });
+      },
+    );
+
     it('is refused, naming the project state when that is out of date', async () => {
       const root = await installed();
       const paths = projectPaths(root);
