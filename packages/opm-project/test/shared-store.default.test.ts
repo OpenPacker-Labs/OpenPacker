@@ -571,6 +571,7 @@ describe('opm gc --shared', () => {
       tooNew: 0,
       held: 0,
       records: [],
+      platformRecords: [],
     });
     expect(
       await collectSharedStore({ env: { OPM_STORE_HOME: 'off' } }),

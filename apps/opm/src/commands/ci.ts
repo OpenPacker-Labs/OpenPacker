@@ -197,6 +197,7 @@ const WHY = {
   orphaned: 'needed only by those',
   bundled: "shipped inside a parent's archive",
   workspace: 'outside the workspaces selected',
+  offline: 'optional, not in the local store (offline)',
 } as const;
 
 /** How many packages were left out, and for what, in a clause. */
@@ -298,6 +299,14 @@ export async function runCiCommand(
   );
   const clause = leftOut(result);
   if (clause !== undefined) out(io, `  left out: ${clause}\n`);
+  for (const item of result.skipped)
+    if (item.kind === 'offline')
+      io.stderr.write(
+        report(
+          'opm: warning: ',
+          `left out ${plainLine(item.name)}@${plainLine(item.version)} (${plainLine(item.path)}): ${item.reason}`,
+        ),
+      );
   writePatched(result.patched, io);
   if (result.targets !== undefined)
     out(io, `  platforms: ${describeTargets(result.targets)}\n`);

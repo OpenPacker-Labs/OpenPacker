@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import {
   openStableDirectory,
   readDirChildWithTypes,
+  readStableFile,
   removeStableFile,
   removeStableTree,
   storeKeyFromDigest,
@@ -17,7 +18,9 @@ import { assertEntryName } from './shared-store.js';
 import {
   INTEGRITY_INDEX,
   isIntegrityKey,
+  isPlatformRecord,
   lookupArchiveDigest,
+  parsePlatformRecord,
 } from './shared-store-index.js';
 import { openCollection, type Collection } from './shared-store-lease.js';
 import type { LeaseSteps } from './store-lease.js';
@@ -63,6 +66,12 @@ export interface SharedStoreCollection {
    * older one did, or names none at all.
    */
   records: string[];
+  /**
+   * Platform records removed (or that would be): what an archive declared,
+   * kept for a build an install left out and never stored (ADR 0059), once
+   * older than the minimum age, or at once when malformed.
+   */
+  platformRecords: string[];
 }
 
 /**
@@ -126,6 +135,7 @@ export async function collectSharedStoreWith(
     tooNew: 0,
     held: 0,
     records: [],
+    platformRecords: [],
   };
   if (requested === undefined) return result;
   result.root = requested.root;
@@ -276,6 +286,23 @@ async function collectIndexRecords(
         await removeStableFile(path).catch(() => undefined);
       continue;
     }
+    if (isPlatformRecord(name)) {
+      const judged = await lstat(path, { bigint: true }).catch(() => undefined);
+      if (judged?.isFile() !== true) continue;
+      // Too large to be one is malformed too; one that went is no one's now.
+      const text = await readStableFile(path, 16 * 1024).catch(
+        (error: unknown) => (isMissing(error) ? undefined : ''),
+      );
+      if (text === undefined) continue;
+      const malformed = parsePlatformRecord(text) === undefined;
+      if (!malformed && Number(judged.ctimeMs) >= before) continue;
+      if (dryRun === true) {
+        result.platformRecords.push(path);
+        continue;
+      }
+      if (await retire(index, name, judged)) result.platformRecords.push(path);
+      continue;
+    }
     if (!isIntegrityKey(name)) continue;
     const judged = await lstat(path, { bigint: true }).catch(() => undefined);
     if (judged?.isFile() !== true) continue;
@@ -305,6 +332,36 @@ async function collectIndexRecords(
       // Never over a record written since.
       await link(doomed, path).catch(() => undefined);
     else result.records.push(path);
+    await removeStableFile(doomed).catch(() => undefined);
+  }
+}
+
+/**
+ * Remove the index record `name` if it is still the file `judged` was: moved
+ * aside, and put back when an install wrote it again meanwhile. True when it
+ * was removed.
+ */
+async function retire(
+  index: string,
+  name: string,
+  judged: BigIntStats,
+): Promise<boolean> {
+  const path = join(index, name);
+  const doomed = join(index, `.${name}.collect-${randomUUID()}`);
+  if (
+    !(await rename(path, doomed).then(
+      () => true,
+      () => false,
+    ))
+  )
+    return false;
+  try {
+    const moved = await lstat(doomed, { bigint: true }).catch(() => undefined);
+    if (moved !== undefined && sameRecord(judged, moved)) return true;
+    // Never over a record written since.
+    if (moved !== undefined) await link(doomed, path).catch(() => undefined);
+    return false;
+  } finally {
     await removeStableFile(doomed).catch(() => undefined);
   }
 }

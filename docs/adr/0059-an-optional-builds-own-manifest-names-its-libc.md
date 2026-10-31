@@ -76,3 +76,24 @@ loads one checks the C library first.
   packages it would install; the install reports them as left out.
 - A machine for which the lock names `--libc musl` gets the musl build and
   leaves out the glibc one, by the same rule.
+- _Amended 2026-10-31._ A build left out is never stored, so the next install
+  fetched it again to read its lists, and `opm ci --offline` could never decide
+  it: offline it was "not in the local store". Now, whenever an install reads a
+  marked archive's lists, it records them against the integrity:
+  `by-integrity/<key>.platform`, the declared `os`, `cpu` and `libc` as JSON,
+  written whole and atomically. A later install, online or offline, decides a
+  build that is not in the store from that record and fetches nothing (a build
+  the record says runs here is fetched as before). A malformed record is a miss.
+  `opm gc --shared` removes a platform record once it is older than the minimum
+  age (by ctime), as it removes an entry nothing links, and a malformed one at
+  once; the next install then fetches that archive once more.
+- Offline, a marked package (optional by that mark) that no store holds and no
+  record decides is left out with a warning on stderr (`skipped` kind `offline`;
+  `opm ci` prints `opm: warning: left out …`), as npm leaves out an optional
+  package it cannot get. A required package missing offline is still the
+  `OFFLINE` error, naming only the required ones.
+- `opm ci`'s fetched count includes an archive fetched only to find it does not
+  run here, so the count and the megabytes agree.
+- Tests: `frozen-install.platform-record.test.ts` (one fetch across an install,
+  a second install and an offline one; the counts; an offline install with no
+  record; a required package offline) and `shared-store-gc.platform.test.ts`.

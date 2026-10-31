@@ -180,10 +180,17 @@ export interface FrozenLockSkip {
   /**
    * Why, in one word: left out by the options (`omitted`), for another
    * platform (`platform`), needed only by something left out (`orphaned`),
-   * shipped inside its parent's archive (`bundled`), or outside the
-   * workspaces the install was asked for (`workspace`).
+   * shipped inside its parent's archive (`bundled`), outside the
+   * workspaces the install was asked for (`workspace`), or optional, in no
+   * store and not fetched because the install is offline (`offline`).
    */
-  kind: 'omitted' | 'platform' | 'orphaned' | 'bundled' | 'workspace';
+  kind:
+    | 'omitted'
+    | 'platform'
+    | 'orphaned'
+    | 'bundled'
+    | 'workspace'
+    | 'offline';
   /** The same, in words. */
   reason: string;
 }

@@ -161,6 +161,28 @@ async function installFrozenInStep(
       ({ read, lock, claims } = again);
       from.claims = claims;
     }
+    // Offline, a marked package (optional by that mark) that no store holds
+    // and no record decides is left out, as npm leaves out an optional
+    // package it cannot get; a required one is still refused (ADR 0059).
+    const unavailable = new Set(early?.unavailable.map((pkg) => pkg.path));
+    if (unavailable.size > 0)
+      lock = {
+        ...lock,
+        packages: lock.packages.filter((pkg) => !unavailable.has(pkg.path)),
+        skipped: [
+          ...lock.skipped,
+          ...lock.packages
+            .filter((pkg) => unavailable.has(pkg.path))
+            .map((pkg) => ({
+              path: pkg.path,
+              name: pkg.packageName,
+              version: pkg.version,
+              kind: 'offline' as const,
+              reason:
+                'optional, not in the local store, and opm ci is offline: left out, as npm leaves out an optional package it cannot get',
+            })),
+        ],
+      };
     const stored = await storeArchives({ lock, ...from });
     if (early !== undefined) {
       // An archive fetched to read its lists is fetched, whichever pass keeps
@@ -178,6 +200,13 @@ async function installFrozenInStep(
         stored.fetched += 1;
         stored.fromStore -= 1;
       }
+      // One fetched only to find it does not run here was fetched too, so the
+      // count agrees with the bytes.
+      stored.fetched += new Set(
+        [...early.byPath.values()]
+          .filter((item) => item.fetched && item.leftOut === true)
+          .map((item) => item.digest),
+      ).size;
       stored.fetchedBytes += early.fetchedBytes;
     }
     const fetched = now();

@@ -54,7 +54,9 @@ import {
 } from './shared-store.js';
 import {
   lookupArchiveDigest,
+  lookupArchivePlatform,
   recordArchiveDigest,
+  recordArchivePlatform,
 } from './shared-store-index.js';
 import type { StoreHold } from './shared-store-lease.js';
 import { OpmError } from './types.js';
@@ -94,8 +96,18 @@ interface Stored {
   fetched: boolean;
   /** For a package marked `platformFromArchive`: what its archive declares. */
   platform?: ArchivePlatform;
-  /** Fetched and found not to run here: not extracted, so `path` is empty. */
+  /**
+   * Found not to run here, from its fetched bytes or from what an earlier
+   * install recorded they declare: not extracted, so `path` is empty, and
+   * `digest` is empty when it was not fetched.
+   */
   leftOut?: true;
+  /**
+   * A package marked `platformFromArchive` (optional by that mark) that no
+   * store holds and an offline install cannot fetch: left out, as npm leaves
+   * out an optional package it cannot get.
+   */
+  unavailable?: true;
 }
 
 const DEFAULT_CONCURRENCY = 8;
@@ -236,8 +248,30 @@ export async function storeArchives(input: {
               platform: await platformOfTree(entry.path),
             }),
           };
+        // A build an earlier install left out was never stored; what its
+        // archive declared was recorded instead (ADR 0059).
+        const recorded = readsPlatform(pkg)
+          ? await lookupArchivePlatform(storeRoot, key)
+          : undefined;
+        if (recorded !== undefined && !input.runs!(pkg, recorded))
+          return {
+            path: '',
+            digest: '',
+            fetchedBytes: 0,
+            fetched: false,
+            platform: recorded,
+            leftOut: true,
+          };
       }
       if (transport === undefined) {
+        if (readsPlatform(pkg))
+          return {
+            path: '',
+            digest: '',
+            fetchedBytes: 0,
+            fetched: false,
+            unavailable: true,
+          };
         missing.push(labelOf(pkg));
         return undefined;
       }
@@ -261,6 +295,8 @@ export async function storeArchives(input: {
             platformOfBytes(bytes, inferFormat(pkg.source), input.limits),
           )
         : undefined;
+      if (platform !== undefined && input.shared)
+        await recordArchivePlatform(storeRoot, key, platform);
       if (platform !== undefined && !input.runs!(pkg, platform))
         return {
           path: '',
@@ -327,6 +363,10 @@ export async function storeArchives(input: {
   return {
     byPath,
     platforms,
+    /** Marked packages an offline install could not get, left out (ADR 0059). */
+    unavailable: lock.packages.filter(
+      (pkg) => byPath.get(pkg.path)!.unavailable === true,
+    ),
     leftOut: archives.filter((item) => item.leftOut).length,
     fromStore: archives.filter((item) => !item.fetched).length,
     fetched: archives.filter((item) => item.fetched).length,

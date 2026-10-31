@@ -60,16 +60,47 @@ export async function runSharedGcCommand(
     return 0;
   }
   const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
+  const counted = (count: number, one: string, many: string) =>
+    `${count} ${count === 1 ? one : many}`;
+  const parts = [
+    counted(
+      result.removed.length,
+      'unreferenced entry',
+      'unreferenced entries',
+    ),
+    ...(result.records.length === 0
+      ? []
+      : [
+          counted(
+            result.records.length,
+            'integrity record naming an entry that is gone',
+            'integrity records naming an entry that is gone',
+          ),
+        ]),
+    ...(result.platformRecords.length === 0
+      ? []
+      : [
+          counted(
+            result.platformRecords.length,
+            'platform record of a build left out',
+            'platform records of builds left out',
+          ),
+        ]),
+  ];
+  const listed =
+    parts.length === 1
+      ? parts[0]!
+      : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)!}`;
   out(
     io,
-    `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'}` +
-      (result.records.length === 0
-        ? ''
-        : ` and ${result.records.length} integrity record${result.records.length === 1 ? '' : 's'} naming an entry that is gone`) +
-      ` from ${result.root}; ` +
+    `${verb} ${listed} from ${result.root}; ` +
       `${result.referenced} still used by a project, ${result.held} in use by an install in progress, ${result.tooNew} too new to judge\n`,
   );
-  for (const path of [...result.removed, ...result.records])
+  for (const path of [
+    ...result.removed,
+    ...result.records,
+    ...result.platformRecords,
+  ])
     out(io, `  ${path}\n`);
   return 0;
 }
