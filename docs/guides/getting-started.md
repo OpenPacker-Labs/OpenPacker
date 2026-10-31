@@ -41,7 +41,12 @@ agent sandbox) can point the browser gates and the demo at it instead:
 `PLAYWRIGHT_CHROMIUM=/abs/path/to/chrome npm run test:browser` (also `test:e2e`
 and `demo`; `golden:check` launches no browser, it reads what `demo` wrote). The
 path must be absolute; unset, they launch the Chromium Playwright downloaded
-(`scripts/chromium.mjs`).
+(`scripts/chromium.mjs`). Chromium makes its singleton socket under `TMPDIR`
+(`$TMPDIR/.org.chromium.Chromium.XXXXXX/SingletonSocket`), and a socket path
+holds at most 107 bytes, so a `TMPDIR` longer than about 58 characters makes it
+abort at launch (SIGTRAP; Playwright reports "Target page, context or browser
+has been closed"). Give the browser stages a short `TMPDIR`; a short symlink to
+a longer directory works, since only the path's length counts.
 
 The wasm target and `wasm-bindgen-cli` build only the WASM bindings
 (`@openpacker/embedded/wasm-node` and `/wasm-web`). The CLIs do not load them,
