@@ -163,6 +163,30 @@ describe('the platforms of a pnpm install', () => {
 });
 
 describe('choosing members of a pnpm workspace', () => {
+  // HoBo lists the members of a git submodule in pnpm-workspace.yaml; in a
+  // checkout that has not initialised it they are not there, and the member
+  // that links one cannot be selected. Saying so beats "no member is named".
+  it('names the members the workspace lists that are not on disk, when a filtered member links one', async () => {
+    const w = await pnpmWorld();
+    w.pkg({ name: 'left', version: '1.0.0' });
+    w.importer('.', {}, { name: 'root' });
+    w.importer('packages/app', {
+      dependencies: {
+        lib: ['workspace:*', 'link:../../vendor/lib'],
+        left: ['^1.0.0', '1.0.0'],
+      },
+    });
+    w.importer('vendor/lib', {});
+    await w.write({
+      workspaceYaml: 'packages:\n  - "packages/*"\n  - "vendor/lib"\n',
+    });
+    await rm(join(w.dir, 'vendor'), { recursive: true });
+    await expect(w.install({ workspace: { filter: ['app'] } })).rejects.toThrow(
+      /no workspace member is named "lib".*pnpm-workspace\.yaml lists vendor\/lib, which is not on disk \(a git submodule that is not checked out\?\)/u,
+    );
+    expect(w.registry.requests).toEqual([]);
+  });
+
   it('installs the filtered member, the members it links and what they need, not the project', async () => {
     const w = await fixture();
     await w.install({ workspace: { filter: ['web'] } });

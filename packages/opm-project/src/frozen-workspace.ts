@@ -20,6 +20,8 @@ import {
   type ProjectFormat,
   type WorkspaceTool,
 } from '@openpacker/adapter-core';
+import { lstat } from 'node:fs/promises';
+import { join } from 'node:path';
 import { OpmError } from './types.js';
 import {
   discoverWorkspace,
@@ -65,6 +67,28 @@ export function workspaceFailure(error: WorkspaceError): OpmError {
   return new OpmError(codes[error.code] ?? 'INVALID_MANIFEST', error.message, {
     cause: error,
   });
+}
+
+/**
+ * The members a workspace names by a plain path (no glob) that have no
+ * `package.json` here: what a member that links one cannot find, and what a
+ * git submodule that is not checked out leaves.
+ */
+async function absentLiteralMembers(
+  root: string,
+  patterns: readonly string[],
+): Promise<string[]> {
+  const absent: string[] = [];
+  for (const pattern of patterns) {
+    if (/[*?[\]{}!]/u.test(pattern)) continue;
+    const dir = pattern.replace(/^\.\//u, '').replace(/\/+$/u, '');
+    if (dir === '' || dir === '.' || dir.split('/').includes('..')) continue;
+    const manifest = await lstat(join(root, dir, 'package.json')).catch(
+      () => undefined,
+    );
+    if (manifest === undefined) absent.push(dir);
+  }
+  return absent;
 }
 
 function asksForWorkspace(request: FrozenWorkspaceRequest): boolean {
@@ -146,7 +170,18 @@ export async function prepareFrozenWorkspace(
         ).selected
       : selectNpmWorkspaces(graph, request.select ?? [], { cwd: '' });
   } catch (error) {
-    throw error instanceof WorkspaceError ? workspaceFailure(error) : error;
+    if (!(error instanceof WorkspaceError)) throw error;
+    const failure = workspaceFailure(error);
+    const absent =
+      error.code === 'WORKSPACE_SPEC_UNRESOLVED'
+        ? await absentLiteralMembers(root, found.patterns)
+        : [];
+    if (absent.length === 0) throw failure;
+    throw new OpmError(
+      failure.code,
+      `${failure.message}; ${found.declaredIn} lists ${absent.join(', ')}, which ${absent.length === 1 ? 'is' : 'are'} not on disk (a git submodule that is not checked out?)`,
+      { cause: error },
+    );
   }
   return {
     disk,
