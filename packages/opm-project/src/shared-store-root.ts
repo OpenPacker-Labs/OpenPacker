@@ -6,16 +6,11 @@
  * play, and by `opm gc --shared`, which never publishes anything.
  */
 
-import { lstat, stat } from 'node:fs/promises';
+import { stat, type FileHandle } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { realBase, trustBase } from '@openpacker/project-io';
+import { openRootDirectory, type BaseChooser } from '@openpacker/project-io';
 import { OpmError } from './types.js';
-import {
-  defaultSharedStoreHome,
-  ensureStableDirectory,
-  sharedStoreSetting,
-} from './paths.js';
-import { openPrivateDirectory } from './stable-ops.js';
+import { defaultSharedStoreHome, sharedStoreSetting } from './paths.js';
 
 let defaultEnabled = false;
 
@@ -101,15 +96,16 @@ export async function usableSharedRoot(
  * Make (with `create`) and judge the shared store root, and take it as a base
  * once it is found private.
  *
- * The root as named must not itself be a link: its owner and mode are what is
- * judged, and a link's own are meaningless (ADR 0048). The links on the way to
- * it are the environment's and are taken, as a base's are: none inside a
- * project (`realBase`). The root is made, every directory that was missing
- * mode 0700, and judged through handles opened one no-follow component at a
- * time from its real path, so nothing is made where a link below a base
- * points, and what is judged is what was opened. Only then is it taken
- * (`trustBase`, as a validated store root), so a root that was refused is
- * never a base (ADR 0034).
+ * The root is made first, as `mkdir -p` would (missing directories mode
+ * 0700), then opened relative to its parent's handle with `O_NOFOLLOW`: the
+ * root as named must not itself be a link, whenever one appeared there (its
+ * owner and mode are what is judged, and a link's own are meaningless, ADR
+ * 0048). The links on the way to it are taken as a base's are
+ * (`base-resolve.ts`: none in a fence, none another user put in a sticky
+ * directory). Its owner and mode are judged on that handle, and that handle is
+ * what is taken (`openRootDirectory`), with nothing resolved again, so a root
+ * that was refused is never a base and what was judged is what is used (ADR
+ * 0034).
  */
 export async function ensurePrivateRoot(
   root: string,
@@ -118,19 +114,45 @@ export async function ensurePrivateRoot(
   /** What the root is, in what is said of it. */
   what = 'Shared store root',
 ): Promise<void> {
-  const named = await lstat(root).catch((error: NodeJS.ErrnoException) => {
-    if (create && error.code === 'ENOENT') return undefined;
-    throw error;
+  const handle = await openJudgedRoot(root, {
+    create,
+    lastMayBeLink: false,
+    // The default is ours to create, so it must be exactly private. A root an
+    // operator named may be looser, but never writable by anyone else: whoever
+    // can write here decides what every project on the machine runs.
+    forbidden: explicit ? 0o022 : 0o077,
+    chooser: 'validated private root',
+    what,
   });
-  if (named?.isSymbolicLink() === true) throw linkedRoot(root, what);
-  const real = realBase(root);
-  const handle = await openPrivateDirectory(real, create).catch(
+  await handle.close();
+}
+
+/**
+ * Open the root `root` names (making it, mode 0700, with `create`), judge it
+ * owned by this user and writable by nobody else (no bit of `forbidden`), and
+ * take what was opened as a base on `chooser`'s word. The caller closes the
+ * handle. With `lastMayBeLink` the last component may be a link, judged as
+ * every link on the way is; without, a link there is refused.
+ */
+export async function openJudgedRoot(
+  root: string,
+  options: {
+    create: boolean;
+    lastMayBeLink: boolean;
+    forbidden: number;
+    chooser: BaseChooser;
+    what: string;
+  },
+): Promise<FileHandle> {
+  const { what } = options;
+  const opening = await openRootDirectory(root, options).catch(
     (error: NodeJS.ErrnoException) => {
       if (error.code === 'ELOOP' || error.code === 'ENOTDIR')
         throw linkedRoot(root, what);
       throw error;
     },
   );
+  const { handle } = opening;
   try {
     const info = await handle.stat();
     if (!info.isDirectory()) throw linkedRoot(root, what);
@@ -141,25 +163,18 @@ export async function ensurePrivateRoot(
           'UNSAFE_PATH',
           `${what} ${root} is not owned by the current user`,
         );
-      // The default is ours to create, so it must be exactly private. A root an
-      // operator named may be looser, but never writable by anyone else: whoever
-      // can write here decides what every project on the machine runs.
-      const forbidden = explicit ? 0o022 : 0o077;
-      if ((info.mode & forbidden) !== 0)
+      if ((info.mode & options.forbidden) !== 0)
         throw new OpmError(
           'UNSAFE_PATH',
           `${what} ${root} is accessible to other users (mode ${(info.mode & 0o777).toString(8)}); it must be private to its owner`,
         );
     }
-  } finally {
-    await handle.close();
+    opening.take(options.chooser);
+    return handle;
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    throw error;
   }
-  if (trustBase(root, 'validated private root') !== real)
-    throw new OpmError(
-      'INPUT_CHANGED',
-      `${what} changed while it was checked: ${root}`,
-    );
-  await ensureStableDirectory(root);
 }
 
 function linkedRoot(root: string, what: string): OpmError {
@@ -182,4 +197,26 @@ async function sameDevice(root: string, projectPath: string): Promise<boolean> {
     if (parent === candidate) return false;
     candidate = parent;
   }
+}
+
+/**
+ * Make (with `create`) and judge opmx's tool cache, as the store root is
+ * judged, and take it as a base on its own word ('tool cache'). A cache an
+ * environment names through a link is taken where the link leads, as `mkdir
+ * -p` always took it; the link is judged as every link on the way to a base
+ * is. Returns once it is taken; a cache that is not this user's alone is
+ * refused.
+ */
+export async function openToolCache(
+  cacheRoot: string,
+  create = true,
+): Promise<void> {
+  const handle = await openJudgedRoot(cacheRoot, {
+    create,
+    lastMayBeLink: true,
+    forbidden: 0o022,
+    chooser: 'tool cache',
+    what: 'Tool cache',
+  });
+  await handle.close();
 }

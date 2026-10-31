@@ -11,9 +11,8 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { normalizePinnedOrigin, ProviderError } from '@openpacker/adapter-core';
 import { parseCanonicalJson } from '@openpacker/canonical';
-import { realBase } from '@openpacker/project-io';
 import { openChild, removeChild, renameChild } from './paths.js';
-import { openPrivateDirectory } from './stable-ops.js';
+import { openJudgedRoot } from './shared-store-root.js';
 import { OpmError } from './types.js';
 
 export interface AuthConfig {
@@ -340,12 +339,19 @@ async function writeAuthConfig(
   path: string,
   config: AuthConfig,
 ): Promise<void> {
-  // The directory is opened, and made mode 0700 where missing, one no-follow
-  // component at a time from its base's real path, and the file is written
-  // and renamed through its handle: a link below the base (a config directory
-  // named inside a project that holds a link there) is refused, not followed.
+  // The directory is made mode 0700 where missing, judged this user's alone
+  // and taken as opm's configuration root (ADR 0034), the links on the way to
+  // it judged as a base's are: none in the project the command runs in, none
+  // another user put in a sticky directory. The file is written and renamed
+  // through its handle.
   const name = basename(path);
-  const parent = await openPrivateDirectory(realBase(dirname(path)), true);
+  const parent = await openJudgedRoot(dirname(path), {
+    create: true,
+    lastMayBeLink: true,
+    forbidden: 0o022,
+    chooser: 'config root',
+    what: 'Registry auth configuration directory',
+  });
   try {
     const temporary = `.${name}.${randomUUID()}.tmp`;
     const file = await openChild(

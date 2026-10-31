@@ -1,13 +1,10 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { NativeLockEntry } from '@openpacker/adapter-core';
-import {
-  stableTarget,
-  tarballWrapper,
-  trustBase,
-} from '@openpacker/project-io';
+import { stableTarget, tarballWrapper } from '@openpacker/project-io';
 import { requireAdapterRegistry } from './adapters.js';
 import { removeStableTree } from './paths.js';
+import { openToolCache } from './shared-store-root.js';
 import {
   cannotMake,
   makeScratch,
@@ -101,10 +98,10 @@ export async function layOutTool(input: {
       'UNSUPPORTED_OPERATION',
       'The npm adapter does not write a node_modules layout',
     );
-  // The cache root is a project's root or the tool cache, which every install
-  // into it takes as one too (`projectPaths`; ADR 0034, trusted bases): its
-  // store is reached through the links on the way to it, and none below it.
-  trustBase(input.cacheRoot, 'project root');
+  // The tool cache, judged this user's alone and taken as a base on its own
+  // word, as `fetchTool` took it (ADR 0034, trusted bases): its store is
+  // reached through the links on the way to it, and none below it.
+  await openToolCache(input.cacheRoot);
   // The layout is the scratch's `tree`; its `.owner` stays outside what the
   // sandbox binds.
   const scratch = await runScratch(input.cacheRoot);
