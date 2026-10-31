@@ -32,21 +32,54 @@ least one live oracle. A type that loses its last oracle fails the gate.
 `npm run verify` runs every mandatory lane. Live registry and native
 package-manager lanes stay opt-in and never substitute for offline failure.
 
+## One package's tests at a time
+
+`npm test`, `npm run check:contracts` and `npm run check:generated` run turbo
+through [`scripts/turbo-run.mjs`](../../scripts/turbo-run.mjs), one package at a
+time unless `OPENPACKER_TURBO_CONCURRENCY` says otherwise. Each package's suite
+is one `vitest run`, and Vitest starts a worker per CPU but one; with turbo's
+default of ten tasks at once the verify alone put about 30 runnable test threads
+on a 4-CPU machine. A test that takes half a second alone then took over five,
+past Vitest's 5 s default, although nothing in it was wrong. One package at a
+time keeps the threads within the CPUs on a dedicated 4-CPU machine, and the
+tests' own timeouts stay as they are. The lanes that run one Vitest process
+across many packages (`npm run coverage` and the `run-gate.mjs` gates) already
+did.
+
+A machine with CPUs to spare runs more at once by naming a number of tasks or a
+share of its CPUs, as turbo's `--concurrency` takes them:
+
+```sh
+OPENPACKER_TURBO_CONCURRENCY=4 npm test
+OPENPACKER_TURBO_CONCURRENCY=50% npm run check:contracts
+```
+
+Unset or empty means 1, and so does CI, which sets nothing. A value turbo would
+not take is refused before turbo starts.
+
+A one-time cost belongs outside a test's budget too: a file whose first test
+would compile the PREX schemas (Ajv) compiles them while the file is collected,
+and a test that times its work measures the CPU it spent, not the wall clock.
+
 ## What a test run may touch
 
-Every package's `vitest.config.ts` and the root gate and coverage configs extend
-[`vitest.shared.ts`](../../vitest.shared.ts): a 30 s test and hook bound, and
+The suites that can resolve a store (opm-project, opm, plugin-store and
+plugin-host) and the root gate and coverage configs load
 [`tests/support/stores.setup.ts`](../../tests/support/stores.setup.ts), which
 unsets `OPM_STORE_HOME`, `OPM_TOOL_CACHE` and `OPM_PLUGIN_HOME` and points
 `XDG_CACHE_HOME` and `XDG_DATA_HOME` at a fresh directory per test file, so no
 test reads or writes the caller's shared store, tool cache or plugin store. A
-vitest started from the repository root finds no config there, so it names one:
-`--config scripts/vitest.gate.config.mjs` (`test:pack-parity`, its native lane,
-the CI step) or the coverage config; `tests/unit/repository.test.mjs` refuses a
-root run in a script, a spawned command or a workflow that names neither. The
-opm-project and opm suites and the root runs also fail a test whose environment
-would resolve one of those outside the temporary directory
-([`tests/support/store-guard.ts`](../../tests/support/store-guard.ts)).
+caller that exported `OPM_STORE_HOME` used to have every install of the suite
+use that store, and a test that writes into a store file (two of them check that
+a tampered tree is rebuilt) wrote through a hard link into it: as root, the
+entry's read-only mode does not stop that, and every later install of the
+package failed with "does not match its recorded digest". The opm-project and
+opm suites and the root runs also fail a test whose environment would resolve
+one of those outside the temporary directory
+([`tests/support/store-guard.ts`](../../tests/support/store-guard.ts)), and
+`packages/opm-project/test/store-isolation.test.ts` runs both tampering tests
+with `OPM_STORE_HOME` set and requires that store to stay empty. The setup
+changes no test's time bound.
 
 `HOME` and `XDG_CONFIG_HOME` are left as the caller has them, and a few reads
 through them are not isolated, only read: opm-project looks for an installed

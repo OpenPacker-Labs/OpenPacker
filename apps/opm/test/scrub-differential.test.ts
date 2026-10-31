@@ -56,15 +56,6 @@ function documented(input: string): boolean {
  * the oracle's text, and the oracle must give the first version's text unless the
  * input is of one of the three classes.
  */
-/**
- * Bounds that end a hang, not measures of speed: these property tests compute
- * for 17 to 60 s alone at a load of 30 to 60, and beside eight busy loops on
- * four cores the 40,000 long hosts went past 300 s and the 300,000 strings took
- * 169 s. The two longest get 15 minutes, the others 10.
- */
-const LONG_MS = 600_000;
-const LONGEST_MS = 900_000;
-
 async function disagreements(inputs: Iterable<string>): Promise<string[]> {
   const found: string[] = [];
   let seen = 0;
@@ -132,118 +123,98 @@ describe('scrub gives the first version\u2019s text', () => {
     expect(await disagreements([input])).toEqual([]);
   });
 
-  it(
-    'with one character put in each place an expression reads one',
-    async () => {
-      // Every character of the basic plane, lone surrogates included, in the
-      // places an expression reads one: before, inside and after a scheme, in and
-      // around a name, in a separator, in a bearer token.
-      const places = [
-        (c: string) => `${c}a://h/p`,
-        (c: string) => `a${c}://h/p`,
-        (c: string) => `a://${c}h/p`,
-        (c: string) => `a://h${c}p x`,
-        (c: string) => `x${c}token=v`,
-        (c: string) => `tok${c}en=v`,
-        (c: string) => `token${c}=v`,
-        (c: string) => `token=${c}v w`,
-        (c: string) => `token=Bearer${c}abcdefgh`,
-        (c: string) => `Bearer${c}abcdefgh`,
-        (c: string) => `${c}Bearer abcdefgh`,
-        (c: string) => `a-${c}b://h/p`,
-      ];
-      const everything = function* () {
-        for (let code = 0; code <= 0xffff; code += 1) {
-          const c = String.fromCharCode(code);
-          for (const place of places) yield place(c);
-        }
-        // Beyond the basic plane: the first character of each plane, and a stride.
-        for (let code = 0x10000; code <= 0x10ffff; code += 0x1fff) {
-          const c = String.fromCodePoint(code);
-          for (const place of places) yield place(c);
-        }
-      };
-      expect(await disagreements(everything())).toEqual([]);
-    },
-    LONG_MS,
-  );
-
-  it(
-    'on the texts of the linear-time test, at a size the first version can do',
-    async () => {
-      // The timing test gives `expected` for a mebibyte; this checks it on 16 KiB
-      // of each text. The texts that are one long host are the class: the oracle
-      // gives `[url]` for them and the first version prints the URL.
-      for (const text of HOSTILE) {
-        await breathe();
-        const { input, expected } = build(text, 16 * 1024);
-        expect(scrub(input), text.name).toBe(expected);
-        expect(expectedScrub(input), text.name).toBe(expected);
-        if (text.becomes === undefined && text.unitBecomes === undefined)
-          expect(legacyScrub(input), text.name).toBe(expected);
+  it('with one character put in each place an expression reads one', async () => {
+    // Every character of the basic plane, lone surrogates included, in the
+    // places an expression reads one: before, inside and after a scheme, in and
+    // around a name, in a separator, in a bearer token.
+    const places = [
+      (c: string) => `${c}a://h/p`,
+      (c: string) => `a${c}://h/p`,
+      (c: string) => `a://${c}h/p`,
+      (c: string) => `a://h${c}p x`,
+      (c: string) => `x${c}token=v`,
+      (c: string) => `tok${c}en=v`,
+      (c: string) => `token${c}=v`,
+      (c: string) => `token=${c}v w`,
+      (c: string) => `token=Bearer${c}abcdefgh`,
+      (c: string) => `Bearer${c}abcdefgh`,
+      (c: string) => `${c}Bearer abcdefgh`,
+      (c: string) => `a-${c}b://h/p`,
+    ];
+    const everything = function* () {
+      for (let code = 0; code <= 0xffff; code += 1) {
+        const c = String.fromCharCode(code);
+        for (const place of places) yield place(c);
       }
-    },
-    LONG_MS,
-  );
-
-  it(
-    'on 3,000 strings that begin with a long run',
-    async () => {
-      const random = seeded(0x77aa1);
-      const inputs = function* () {
-        for (let count = 0; count < 3000; count += 1) yield longRun(random);
-      };
-      expect(await disagreements(inputs())).toEqual([]);
-    },
-    LONG_MS,
-  );
-
-  it(
-    'on 300,000 strings made of what it reads',
-    async () => {
-      const random = seeded(0x5c2ab);
-      let changed = 0;
-      const found: string[] = [];
-      for (let count = 0; count < 300_000; count += 1) {
-        if (count % 2000 === 0) await breathe();
-        const input = structured(random);
-        const legacy = legacyScrub(input);
-        const expected = expectedScrub(input);
-        const actual = scrub(input);
-        if (legacy !== input) changed += 1;
-        if (expected !== legacy && !documented(input) && found.length < 5)
-          found.push(
-            `the oracle differs from the first version on ${JSON.stringify(input)}`,
-          );
-        if (actual !== expected && found.length < 5)
-          found.push(
-            `${JSON.stringify(input)}: expected ${JSON.stringify(expected)}, now ${JSON.stringify(actual)}`,
-          );
+      // Beyond the basic plane: the first character of each plane, and a stride.
+      for (let code = 0x10000; code <= 0x10ffff; code += 0x1fff) {
+        const c = String.fromCodePoint(code);
+        for (const place of places) yield place(c);
       }
-      expect(found).toEqual([]);
-      // The corpus is worth something only if it makes the scrubber act.
-      expect(changed).toBeGreaterThan(100_000);
-    },
-    LONGEST_MS,
-  );
+    };
+    expect(await disagreements(everything())).toEqual([]);
+  }, 120_000);
 
-  it(
-    'on 100,000 strings of characters picked one at a time',
-    async () => {
-      const random = seeded(0x1d4f7);
-      let changed = 0;
-      const inputs = function* () {
-        for (let count = 0; count < 100_000; count += 1) {
-          const input = scattered(random);
-          if (legacyScrub(input) !== input) changed += 1;
-          yield input;
-        }
-      };
-      expect(await disagreements(inputs())).toEqual([]);
-      expect(changed).toBeGreaterThan(200);
-    },
-    LONG_MS,
-  );
+  it('on the texts of the linear-time test, at a size the first version can do', async () => {
+    // The timing test gives `expected` for a mebibyte; this checks it on 16 KiB
+    // of each text. The texts that are one long host are the class: the oracle
+    // gives `[url]` for them and the first version prints the URL.
+    for (const text of HOSTILE) {
+      await breathe();
+      const { input, expected } = build(text, 16 * 1024);
+      expect(scrub(input), text.name).toBe(expected);
+      expect(expectedScrub(input), text.name).toBe(expected);
+      if (text.becomes === undefined && text.unitBecomes === undefined)
+        expect(legacyScrub(input), text.name).toBe(expected);
+    }
+  }, 120_000);
+
+  it('on 3,000 strings that begin with a long run', async () => {
+    const random = seeded(0x77aa1);
+    const inputs = function* () {
+      for (let count = 0; count < 3000; count += 1) yield longRun(random);
+    };
+    expect(await disagreements(inputs())).toEqual([]);
+  }, 120_000);
+
+  it('on 300,000 strings made of what it reads', async () => {
+    const random = seeded(0x5c2ab);
+    let changed = 0;
+    const found: string[] = [];
+    for (let count = 0; count < 300_000; count += 1) {
+      if (count % 2000 === 0) await breathe();
+      const input = structured(random);
+      const legacy = legacyScrub(input);
+      const expected = expectedScrub(input);
+      const actual = scrub(input);
+      if (legacy !== input) changed += 1;
+      if (expected !== legacy && !documented(input) && found.length < 5)
+        found.push(
+          `the oracle differs from the first version on ${JSON.stringify(input)}`,
+        );
+      if (actual !== expected && found.length < 5)
+        found.push(
+          `${JSON.stringify(input)}: expected ${JSON.stringify(expected)}, now ${JSON.stringify(actual)}`,
+        );
+    }
+    expect(found).toEqual([]);
+    // The corpus is worth something only if it makes the scrubber act.
+    expect(changed).toBeGreaterThan(100_000);
+  }, 300_000);
+
+  it('on 100,000 strings of characters picked one at a time', async () => {
+    const random = seeded(0x1d4f7);
+    let changed = 0;
+    const inputs = function* () {
+      for (let count = 0; count < 100_000; count += 1) {
+        const input = scattered(random);
+        if (legacyScrub(input) !== input) changed += 1;
+        yield input;
+      }
+    };
+    expect(await disagreements(inputs())).toEqual([]);
+    expect(changed).toBeGreaterThan(200);
+  }, 300_000);
 });
 
 describe('scrub withholds a URL whose host no DNS name could be', () => {
@@ -364,42 +335,38 @@ describe('scrub withholds a URL whose host no DNS name could be', () => {
     expect(scrub(text)).toBe('GET [url] failed');
   });
 
-  it(
-    'on 40,000 strings that hold a URL with a host near the longest there is',
-    async () => {
-      const random = seeded(0x2f7c1);
-      const found: string[] = [];
-      let withheld = 0;
-      let kept = 0;
-      let overlong = 0;
-      for (let count = 0; count < 40_000; count += 1) {
-        if (count % 100 === 0) await breathe();
-        const input = withLongHosts(random);
-        const expected = expectedScrub(input);
-        const legacy = legacyScrub(input);
-        if (scrub(input) !== expected && found.length < 5)
+  it('on 40,000 strings that hold a URL with a host near the longest there is', async () => {
+    const random = seeded(0x2f7c1);
+    const found: string[] = [];
+    let withheld = 0;
+    let kept = 0;
+    let overlong = 0;
+    for (let count = 0; count < 40_000; count += 1) {
+      if (count % 100 === 0) await breathe();
+      const input = withLongHosts(random);
+      const expected = expectedScrub(input);
+      const legacy = legacyScrub(input);
+      if (scrub(input) !== expected && found.length < 5)
+        found.push(
+          `${JSON.stringify(input)}: expected ${JSON.stringify(expected)}`,
+        );
+      // The difference from the first version is the class, and only the class.
+      if (holdsOverlongHost(input)) overlong += 1;
+      if (expected !== legacy) {
+        withheld += 1;
+        if (!documented(input) && found.length < 5)
           found.push(
-            `${JSON.stringify(input)}: expected ${JSON.stringify(expected)}`,
+            `${JSON.stringify(input)}: differs without an overlong host or a cut URL`,
           );
-        // The difference from the first version is the class, and only the class.
-        if (holdsOverlongHost(input)) overlong += 1;
-        if (expected !== legacy) {
-          withheld += 1;
-          if (!documented(input) && found.length < 5)
-            found.push(
-              `${JSON.stringify(input)}: differs without an overlong host or a cut URL`,
-            );
-        } else kept += 1;
-      }
-      expect(found).toEqual([]);
-      // Both sides of the edge are exercised: strings the first version printed
-      // and this withholds, strings it left alone, and strings with an overlong
-      // host that the first version already wrote as `[url]`, because the parser
-      // refuses a host with a `[` or an `@` in it.
-      expect(withheld).toBeGreaterThan(3000);
-      expect(kept).toBeGreaterThan(5000);
-      expect(overlong).toBeGreaterThan(10_000);
-    },
-    LONGEST_MS,
-  );
+      } else kept += 1;
+    }
+    expect(found).toEqual([]);
+    // Both sides of the edge are exercised: strings the first version printed
+    // and this withholds, strings it left alone, and strings with an overlong
+    // host that the first version already wrote as `[url]`, because the parser
+    // refuses a host with a `[` or an `@` in it.
+    expect(withheld).toBeGreaterThan(3000);
+    expect(kept).toBeGreaterThan(5000);
+    expect(overlong).toBeGreaterThan(10_000);
+  }, 300_000);
 });

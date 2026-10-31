@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
 import { createReadStream, readFileSync, writeFileSync } from 'node:fs';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
-import { join, relative, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import {
@@ -65,6 +65,28 @@ import { chromium } from 'playwright';
 import { chromiumLaunchOptions } from './chromium.mjs';
 
 const root = resolve(import.meta.dirname, '..');
+/** Where the universe says the demo's output is; generate-goldens.mjs uses it too. */
+const PORTABLE_OUTPUT = 'file:///OPENPACKER_DEMO_OUTPUT';
+
+/** A materialization with the portable output location made the real one. */
+function realLocations(materialized, output) {
+  const real = pathToFileURL(output).href;
+  return {
+    ...materialized,
+    descriptor: {
+      ...materialized.descriptor,
+      locations: materialized.descriptor.locations.map((location) =>
+        typeof location !== 'string' &&
+        location.uri.startsWith(`${PORTABLE_OUTPUT}/`)
+          ? {
+              ...location,
+              uri: real + location.uri.slice(PORTABLE_OUTPUT.length),
+            }
+          : location,
+      ),
+    },
+  };
+}
 const require = createRequire(import.meta.url);
 const text = new TextEncoder();
 const source = {
@@ -306,10 +328,13 @@ async function fixtureUniverse(output) {
     'openpacker-demo.tar.gz',
     'tool-payload',
   );
+  // The universe names the archive by a location that is the same in every
+  // checkout: the solve, the proof and everything digested from them hold it.
+  // A client that fetches the archive is handed the real file (realLocations).
   tool.locations = [
     {
       transport: 'file',
-      uri: pathToFileURL(toolArchive).href,
+      uri: `${PORTABLE_OUTPUT}/${basename(toolArchive)}`,
       priority: 0,
       rangeSupported: false,
     },
@@ -1038,7 +1063,11 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
     },
   });
   const daemon = await startOpenPackerDaemon({
-    operations,
+    operations: {
+      ...operations,
+      materialize: async (...input) =>
+        realLocations(await operations.materialize(...input), output),
+    },
     store,
     port: 0,
     clock: { now: () => evaluationTime },
@@ -1099,7 +1128,7 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
           if (location.uri.startsWith(pathToFileURL(output).href))
             location.uri = location.uri.replace(
               pathToFileURL(output).href,
-              'file:///OPENPACKER_DEMO_OUTPUT',
+              PORTABLE_OUTPUT,
             );
     await refreshUniverseDigest(goldenUniverse);
     const sdkSolved = (await client.solve(request)).data;
@@ -1328,15 +1357,26 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
 
     const miseCommand = process.env.OPENPACKER_MISE ?? 'mise';
     const miseRoot = join(output, 'mise');
-    for (const directory of ['cache', 'config', 'data', 'state'])
+    for (const directory of ['bin', 'cache', 'config', 'data', 'state'])
       await mkdir(join(miseRoot, directory), { recursive: true });
+    // The plugin runs OPENPACKER_BIN as a program. The built CLI is a .js file
+    // that `tsc` writes without the executable bit (npm sets it only on an
+    // installed bin), so on a fresh checkout the shell refused it (exit 126).
+    // A launcher of the demo's own runs it with this Node.
+    const openpackerBin = join(miseRoot, 'bin', 'openpacker');
+    const quoted = (text) => `'${text.replaceAll("'", `'\\''`)}'`;
+    await writeFile(
+      openpackerBin,
+      `#!/bin/sh\nexec ${quoted(process.execPath)} ${quoted(join(root, 'apps/openpacker-cli/dist/index.js'))} "$@"\n`,
+      { mode: 0o755 },
+    );
     const miseEnv = {
       ...process.env,
       MISE_DATA_DIR: join(miseRoot, 'data'),
       MISE_CACHE_DIR: join(miseRoot, 'cache'),
       MISE_CONFIG_DIR: join(miseRoot, 'config'),
       MISE_STATE_DIR: join(miseRoot, 'state'),
-      OPENPACKER_BIN: join(root, 'apps/openpacker-cli/dist/index.js'),
+      OPENPACKER_BIN: openpackerBin,
       OPENPACKER_URL: daemon.address,
       OPENPACKER_OFFLINE: 'true',
       OPENPACKER_TOOL_DEMO_PURL: 'pkg:npm/%40openpacker/demo-tool',

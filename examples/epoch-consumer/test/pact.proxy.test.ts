@@ -42,7 +42,7 @@ describe('Pact verification of a loopback provider', () => {
       logLevel: 'error',
     });
     for (const name of NAMES) expect(process.env[name]).toBe(UNREACHABLE);
-  });
+  }, 60_000);
 
   it('hides the proxy only from a loopback request, and only while it runs', async () => {
     configureUnreachableProxy();

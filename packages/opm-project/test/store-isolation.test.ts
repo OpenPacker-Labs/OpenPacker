@@ -39,9 +39,12 @@ describe('a test run and the caller stores', () => {
     expect(insideTmp(process.env.XDG_CACHE_HOME ?? '')).toBe(true);
   });
 
-  // Starts a second vitest, which transforms and collects host-fetch.test.ts's
-  // whole import graph before it runs one test: 19 to 21 s at a load of 40
-  // here, so it keeps a bound above the shared 30 s, and the child's own is 90 s.
+  // Starts a second vitest, which transforms and collects the two files' whole
+  // import graphs before it runs a test: about 20 s at a load of 40, so the
+  // test states a bound of its own that only ends a hang, and the child's is
+  // 90 s. Both tests write "tampered" into a store file, which is a hard link
+  // into the shared store when one is in use: as root, its read-only mode does
+  // not stop the write, and the entry is corrupted for every later install.
   it("leaves the caller's store alone while a test tampers with a store file", async () => {
     const sentinel = await mkdtemp(join(tmpdir(), 'opm-caller-store-'));
     try {
@@ -55,8 +58,9 @@ describe('a test run and the caller stores', () => {
           vitest,
           'run',
           'test/host-fetch.test.ts',
+          'test/opm-project.test.ts',
           '-t',
-          'rebuilds a tampered store tree',
+          'rebuilds a tampered store tree|rebuilds store trees only from a verified canonical artifact cache',
         ],
         {
           cwd: packageRoot,

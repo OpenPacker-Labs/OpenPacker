@@ -7,6 +7,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * the one the command returned.
  */
 
+// What main.ts runs is the whole opm CLI: seconds to transform and load under
+// Vitest, more on a loaded machine. Loaded here, while the file is collected,
+// so the test's own import of main.ts only runs the entry and its budget holds
+// no one-time load.
+await import('../src/entry.js');
+await import('../src/opm.js');
+
 describe('the process entry of opm', () => {
   const argv = process.argv;
   const exitCode = process.exitCode;

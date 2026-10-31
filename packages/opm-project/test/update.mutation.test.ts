@@ -105,10 +105,11 @@ describe('updateProject mutation coverage', () => {
       catalogPaths: [fifo],
     });
     const feeding = (async () => {
-      // Opening a FIFO for writing returns once the update has opened it for
-      // reading, i.e. while it is reading its catalogs, after it read the lock
-      // and before it has any catalog. A timer here (200 ms) fired before a
-      // loaded machine had got the update as far as its lock.
+      // Opening the FIFO to write returns once the update has opened it to
+      // read the catalog, which it does after reading the lock (update.ts).
+      // The lock is deleted then, between the two, whatever the machine's
+      // load. A 200 ms sleep was not that: on a loaded machine the lock went
+      // before the update had read it, and an update that finds no lock syncs.
       const handle = await open(fifo, 'w');
       try {
         await rm(paths.lock);
@@ -124,5 +125,5 @@ describe('updateProject mutation coverage', () => {
       code: expect.stringMatching(/^(INPUT_CHANGED|INVALID_LOCK)$/u),
     });
     await feeding;
-  });
+  }, 15_000);
 });

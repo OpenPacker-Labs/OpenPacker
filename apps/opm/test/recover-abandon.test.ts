@@ -172,13 +172,15 @@ describe('opm recover --abandon-step', () => {
 });
 
 describe('how long a command waits for another opm', () => {
-  /** A step held by this process for `ms`. */
-  async function holding(root: string, ms: number) {
+  /** A step held by this process for `ms`, or until `until` settles. */
+  async function holding(root: string, until: number | Promise<void>) {
     let entered!: () => void;
     const inside = new Promise<void>((resolve) => (entered = resolve));
     const held = projectStep(root, {}, async () => {
       entered();
-      await new Promise((resolve) => setTimeout(resolve, ms));
+      await (typeof until === 'number'
+        ? new Promise((resolve) => setTimeout(resolve, until))
+        : until);
     });
     await inside;
     // In an object: a promise returned from here would be waited for.
@@ -187,22 +189,35 @@ describe('how long a command waits for another opm', () => {
 
   it('--wait 0 gives up at once', async () => {
     const root = await project();
-    const { held } = await holding(root, 800);
-    // With two minutes as the default, a run that did not take --wait 0 would
-    // wait them out (and one that waited for the step would succeed: code 0);
-    // 10 s leaves a loaded machine room to run opm once.
-    const before = process.env.OPM_STEP_WAIT_MS;
-    process.env.OPM_STEP_WAIT_MS = '120000';
+    // The step is held until the run has ended, so no clock decides the
+    // outcome. A run that waits says so as it starts to: the step is let go
+    // there, so a run that did not take --wait 0 gets it and succeeds (code
+    // 0) instead of waiting out the 10 s default.
+    delete process.env.OPM_STEP_WAIT_MS;
+    let letGo!: () => void;
+    const { held } = await holding(
+      root,
+      new Promise<void>((resolve) => (letGo = resolve)),
+    );
+    const cap = capture();
+    const io = {
+      stdout: cap.io.stdout,
+      stderr: {
+        write: (text: string) => {
+          cap.io.stderr.write(text);
+          if (cap.err.includes('opm: waiting for')) letGo();
+          return true;
+        },
+      },
+    };
     try {
-      const started = Date.now();
-      const run = await opm(root, 'sync', '--offline', '--wait', '0');
-      expect(run.code).toBe(8);
-      expect(Date.now() - started).toBeLessThan(10_000);
+      const code = await runOpm(['sync', '--offline', '--wait', '0'], io, root);
+      expect(cap.err).not.toContain('opm: waiting for');
+      expect(code).toBe(8);
     } finally {
-      if (before === undefined) delete process.env.OPM_STEP_WAIT_MS;
-      else process.env.OPM_STEP_WAIT_MS = before;
+      letGo();
+      await held;
     }
-    await held;
   });
 
   it('--wait and OPM_STEP_WAIT_MS wait for a step that finishes in time', async () => {
