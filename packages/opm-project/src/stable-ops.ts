@@ -6,24 +6,25 @@
  * them: it is refused when the directory is opened, and what is done in the
  * directory is done through its handle.
  *
- * Node has no handle-relative call for three of them: a rename between two
- * directories, a symbolic link and a hard link. Linux names a child of an open
- * directory by path (`/proc/self/fd/N/name`), so there they are relative to
- * the handles too. macOS and Windows have no such path (ADR 0045): there these
- * three go by the directories' real paths, as their bases were taken, and a
- * concurrent swap below the base could still redirect them. Every other
- * operation here is handle-relative on every platform.
+ * A rename between two directories, a symbolic link and a hard link are made
+ * relative to the directories' handles on every platform that has the calls:
+ * `/proc/self/fd/N` on Linux, `renameat`, `symlinkat` and `linkat` on macOS,
+ * a rename with the target directory's handle on Windows. Windows has no
+ * handle-relative symbolic or hard link: a file is copied there instead of
+ * linked, and a link a rollback puts back is the one thing made by path.
  */
 
+import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { link, open, rename, symlink, type FileHandle } from 'node:fs/promises';
-import { basename, dirname, join, parse, relative, sep } from 'node:path';
+import { symlink, type FileHandle } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import {
   linkChild,
   lstatChild,
+  moveChild,
   readDirChildWithTypes,
   readlinkChild,
-  stableHandlePath,
+  restoreLinkChild,
   stableTarget,
 } from '@openpacker/project-io';
 import {
@@ -36,8 +37,6 @@ import {
   revalidateStableDirectory,
 } from './paths.js';
 import { OpmError } from './types.js';
-
-const HANDLE_PATHS = process.platform === 'linux';
 
 /** Run `work` with `path`'s directory open, checked again afterwards. */
 export async function inParent<T>(
@@ -118,27 +117,23 @@ export async function renameWithin(from: string, to: string): Promise<void> {
   );
 }
 
-/** Rename `from` to `to`, which may be in another directory. */
+/** Rename `from` to `to`, which may be in another directory, relative to both directories' handles. */
 export async function renameAcross(from: string, to: string): Promise<void> {
   if (dirname(from) === dirname(to)) return renameWithin(from, to);
   await inParent(from, (fromParent, fromName) =>
-    inParent(to, async (toParent, toName) => {
-      if (HANDLE_PATHS)
-        await rename(
-          join(stableHandlePath(fromParent), fromName),
-          join(stableHandlePath(toParent), toName),
-        );
-      else await rename(stableTarget(from), stableTarget(to));
-    }),
+    inParent(to, (toParent, toName) =>
+      moveChild(fromParent, fromName, toParent, toName),
+    ),
   );
 }
 
 /** A symbolic link at `path` that says `target`; never followed. */
 export async function symlinkAt(target: string, path: string): Promise<void> {
   await inParent(path, async (parent, name) => {
-    if (HANDLE_PATHS)
-      await symlink(target, join(stableHandlePath(parent), name));
-    else await symlink(target, stableTarget(path));
+    if (process.platform !== 'win32')
+      return restoreLinkChild(parent, name, target);
+    // Windows makes a symbolic link by path only (ADR 0034, "What remains").
+    await symlink(target, stableTarget(path));
   });
 }
 
@@ -148,10 +143,48 @@ export async function readlinkAt(path: string): Promise<string> {
 }
 
 /**
- * `path` as another name of the regular file `existing`, proved afterwards to
- * be the very file that was inspected; anything else is removed and refused.
- * Rejects with the system's error where the file system cannot link (EXDEV,
- * EPERM, EMLINK), for the caller to copy instead.
+ * Give the regular file `name` of `from`, which was `before` when it was
+ * inspected, the new name `as` in `to`: a hard link made under a private
+ * temporary name, proved to be that very file, and only then given its name.
+ * A source swapped since (for a link, which is linked as itself and not
+ * followed, or for another file) leaves nothing behind and is refused with
+ * `INPUT_CHANGED`. Rejects with the system's error where the file system
+ * cannot link (EXDEV, EPERM, EMLINK) for the caller to copy instead; Windows,
+ * which has no handle-relative hard link, rejects with EXDEV too.
+ */
+export async function linkVerified(
+  from: FileHandle,
+  name: string,
+  before: { dev: bigint; ino: bigint },
+  to: FileHandle,
+  as: string,
+  display: string,
+): Promise<void> {
+  if (process.platform === 'win32')
+    throw Object.assign(new Error(`Cannot link here: ${display}`), {
+      code: 'EXDEV',
+    });
+  const temporary = `.${as}.link-${randomUUID()}`;
+  await linkChild(from, name, to, temporary);
+  try {
+    const placed = await lstatChild(to, temporary).catch(() => undefined);
+    if (
+      placed?.isFile() !== true ||
+      placed.dev !== before.dev ||
+      placed.ino !== before.ino
+    )
+      throw new OpmError(
+        'INPUT_CHANGED',
+        `${display} changed while it was linked`,
+      );
+    await linkChild(to, temporary, to, as);
+  } finally {
+    await removeChild(to, temporary, { force: true }).catch(() => undefined);
+  }
+}
+
+/**
+ * `path` as another name of the regular file `existing` ({@link linkVerified}).
  */
 export async function hardLinkAt(
   existing: string,
@@ -162,45 +195,42 @@ export async function hardLinkAt(
       const before = await lstatChild(from, fromName);
       if (!before.isFile())
         throw new OpmError('UNSAFE_PATH', `Not a regular file: ${existing}`);
-      if (HANDLE_PATHS) await linkChild(from, fromName, to, toName);
-      else await link(stableTarget(existing), stableTarget(path));
-      const placed = await lstatChild(to, toName).catch(() => undefined);
-      if (
-        placed?.isFile() !== true ||
-        placed.dev !== before.dev ||
-        placed.ino !== before.ino
-      ) {
-        await removeChild(to, toName, { force: true }).catch(() => undefined);
-        throw new OpmError(
-          'INPUT_CHANGED',
-          `${existing} changed while it was linked to ${path}`,
-        );
-      }
+      await linkVerified(from, fromName, before, to, toName, existing);
     }),
   );
 }
 
-/** Copy the regular file `existing` to a new file `path`, with `mode`. */
+/** How a file is copied: the mode it gets, and whether it keeps its times. */
+export interface CopyAs {
+  /** Given through the new file's handle, past the umask. */
+  mode: number;
+  /** As `cp --preserve=timestamps`. */
+  preserveTimes?: boolean;
+}
+
+/** Copy the regular file `existing` to a new file `path`. */
 export async function copyFileAt(
   existing: string,
   path: string,
-  mode: number,
+  as: CopyAs,
 ): Promise<void> {
   await inParent(existing, (from, fromName) =>
-    inParent(path, (to, toName) => copyChild(from, fromName, to, toName, mode)),
+    inParent(path, (to, toName) => copyChild(from, fromName, to, toName, as)),
   );
 }
 
 /**
  * Copy the regular file `name` of `from` to a new file `as` in `to`, both
- * opened no-follow relative to their directories' handles, with `mode`.
+ * opened no-follow relative to their directories' handles. Every copy opm
+ * makes goes through here: of a shared store file a project may write
+ * (`(mode & 0o777) | 0o200`), of a rollback copy (the mode as it was).
  */
 export async function copyChild(
   from: FileHandle,
   name: string,
   to: FileHandle,
   as: string,
-  mode: number,
+  how: CopyAs,
 ): Promise<void> {
   const source = await openChild(
     from,
@@ -208,7 +238,8 @@ export async function copyChild(
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
   );
   try {
-    if (!(await source.stat()).isFile())
+    const info = await source.stat();
+    if (!info.isFile())
       throw new OpmError('UNSAFE_PATH', `Not a regular file: ${name}`);
     const target = await openChild(
       to,
@@ -240,13 +271,10 @@ export async function copyChild(
         }
         offset += bytesRead;
       }
-      await target.chmod(mode & 0o7777);
-      // As `cp --preserve=timestamps`, where the handle can (the macOS and
-      // Windows handle wrappers have no utimes; ADR 0045).
-      if (typeof target.utimes === 'function') {
-        const { atime, mtime } = await source.stat();
-        await target.utimes(atime, mtime);
-      }
+      await target.chmod(how.mode & 0o7777);
+      // The macOS and Windows handle wrappers have no utimes (ADR 0045).
+      if (how.preserveTimes === true && typeof target.utimes === 'function')
+        await target.utimes(info.atime, info.mtime);
     } finally {
       await target.close();
     }
@@ -255,16 +283,23 @@ export async function copyChild(
   }
 }
 
+/** How a tree is copied: its files hard-linked, or copied with `copy`, keeping their times with `preserveTimes`. */
+export interface TreeCopy {
+  copy: boolean;
+  preserveTimes?: boolean;
+}
+
 /**
  * `target` as a copy of the tree `source`: its directories made with their
  * modes, its links made again saying what they say (never followed), its
- * files hard-linked, or copied with `copy` or where the file system cannot
- * link. Every directory of both trees is opened no-follow from its base.
+ * files hard-linked, or copied (with `copy`, or where the file system cannot
+ * link) with their modes. Every directory of both trees is opened no-follow
+ * from its base.
  */
 export async function copyTree(
   source: string,
   target: string,
-  copy: boolean,
+  how: TreeCopy,
 ): Promise<void> {
   const from = await openStableDirectory(source);
   try {
@@ -274,7 +309,7 @@ export async function copyTree(
     // (0555) could not be filled.
     await makeDirectory(target, 0o700);
     for (const entry of await readDirChildWithTypes(from))
-      await copyEntry(join(source, entry.name), join(target, entry.name), copy);
+      await copyEntry(join(source, entry.name), join(target, entry.name), how);
     await inParent(target, async (parent, name) => {
       const made = await openChild(
         parent,
@@ -296,7 +331,7 @@ export async function copyTree(
 export async function copyEntry(
   source: string,
   target: string,
-  copy: boolean,
+  how: TreeCopy,
 ): Promise<void> {
   const info = await inParent(source, (parent, name) =>
     lstatChild(parent, name),
@@ -306,12 +341,15 @@ export async function copyEntry(
     return;
   }
   if (info.isDirectory()) {
-    await copyTree(source, target, copy);
+    await copyTree(source, target, how);
     return;
   }
-  const mode = Number(info.mode) & 0o7777;
-  if (copy) {
-    await copyFileAt(source, target, mode);
+  const as: CopyAs = {
+    mode: Number(info.mode) & 0o7777,
+    ...(how.preserveTimes === true && { preserveTimes: true }),
+  };
+  if (how.copy) {
+    await copyFileAt(source, target, as);
     return;
   }
   await hardLinkAt(source, target).catch(async (error: unknown) => {
@@ -319,49 +357,6 @@ export async function copyEntry(
     const code = (error as NodeJS.ErrnoException).code;
     // A file system that cannot link here still gets a faithful copy.
     if (code !== 'EXDEV' && code !== 'EPERM' && code !== 'EMLINK') throw error;
-    await copyFileAt(source, target, mode);
+    await copyFileAt(source, target, as);
   });
-}
-
-/**
- * The directory at `real` (a real path: no link on the way to it), opened one
- * no-follow component at a time, each missing directory made mode 0700 with
- * `create`, as `mkdir -p -m 0700` makes what it makes, umask aside. For the
- * places that hold what nobody else may read or write: the shared store root,
- * the auth config.
- */
-export async function openPrivateDirectory(
-  real: string,
-  create: boolean,
-): Promise<FileHandle> {
-  const top = parse(real).root;
-  let handle = await open(
-    top,
-    constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
-  );
-  try {
-    for (const part of relative(top, real).split(sep).filter(Boolean)) {
-      const made =
-        create &&
-        (await mkdirChild(handle, part).then(
-          () => true,
-          (error: NodeJS.ErrnoException) => {
-            if (error.code !== 'EEXIST') throw error;
-            return false;
-          },
-        ));
-      const next = await openChild(
-        handle,
-        part,
-        constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
-      );
-      await handle.close();
-      handle = next;
-      if (made && process.platform !== 'win32') await handle.chmod(0o700);
-    }
-    return handle;
-  } catch (error) {
-    await handle.close().catch(() => undefined);
-    throw error;
-  }
 }

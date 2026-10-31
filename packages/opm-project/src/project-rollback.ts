@@ -172,6 +172,7 @@ async function keepRoot(
   const info = await lstat(source).catch(absent);
   if (info === undefined) return false;
   if (info.isSymbolicLink()) return readlinkAt(source);
-  await copyTree(source, target, copy);
+  // Copied files keep their modes and get new times, as `copyFile` gave them.
+  await copyTree(source, target, { copy });
   return true;
 }

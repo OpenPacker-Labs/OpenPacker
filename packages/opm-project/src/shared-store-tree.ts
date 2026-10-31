@@ -9,11 +9,10 @@
 
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { link, lstat, type FileHandle } from 'node:fs/promises';
+import { lstat, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import {
   assertHandleSegment,
-  linkChild,
   lstatChild,
   StableHandleError,
 } from '@openpacker/project-io';
@@ -27,6 +26,7 @@ import {
   removeChild,
   renameChild,
 } from './paths.js';
+import { copyChild, linkVerified } from './stable-ops.js';
 
 /**
  * Break hardlinks in a project store tree so later writes (lifecycle scripts)
@@ -66,7 +66,11 @@ async function isolateEntries(root: string): Promise<void> {
       if (!info.isFile() || info.nlink <= 1n) continue;
       const tmp = `${entry.name}.copy-${randomUUID()}`;
       try {
-        await copyChild(handle, entry.name, handle, tmp, Number(info.mode));
+        // Writable by its owner, whatever the store's file was: a script
+        // that edits its own file must be able to (ADR 0034, as main had it).
+        await copyChild(handle, entry.name, handle, tmp, {
+          mode: (Number(info.mode) & 0o777) | 0o200,
+        });
         await removeChild(handle, entry.name);
         await renameChild(handle, tmp, entry.name);
       } catch (error) {
@@ -101,11 +105,10 @@ export function assertEntryName(name: string): void {
  * Hard-link every file of `source` into `destination`, a directory made here.
  *
  * Both trees are walked through handles opened one no-follow component at a
- * time. A file is linked relative to the two directories' handles where the
- * platform has that (Linux), and is otherwise linked by name and then checked
- * through the handles; either way a name that is not, afterwards, the very
- * file inspected in `source` is removed and refused. A copy (another file
- * system) is written through the handles.
+ * time. A file is linked relative to the two directories' handles under a
+ * temporary name, and given its own only once it is proved to be the very
+ * file inspected in `source` (`linkVerified`); a copy (another file system,
+ * or Windows) is written through the handles.
  */
 export async function linkTree(
   source: string,
@@ -179,20 +182,25 @@ async function publishFile(
 ): Promise<void> {
   const before = await lstatChild(from, name);
   try {
-    if (paths.linkFile !== undefined)
-      await paths.linkFile(paths.from, paths.to);
-    else if (process.platform === 'linux')
-      await linkChild(from, name, to, name);
-    // macOS has no handle-relative link here (ADR 0045, "Not covered"): the
-    // name is linked by path and proved below to be the inspected file.
-    else await link(paths.from, paths.to);
+    if (paths.linkFile === undefined) {
+      // Through the two directories' handles on every platform that has a
+      // handle-relative link, proved to be the inspected file before it is
+      // given its name (`linkVerified`); Windows copies (EXDEV).
+      await linkVerified(from, name, before, to, name, paths.from);
+      return;
+    }
+    await paths.linkFile(paths.from, paths.to);
   } catch (error) {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
     // A copy is the project's own file, so it stays writable.
-    await copyChild(from, name, to, name, Number(before.mode) | 0o200);
+    await copyChild(from, name, to, name, {
+      mode: (Number(before.mode) & 0o777) | 0o200,
+    });
     return;
   }
+  // The injected link (a test's) was made by path: it must have made the
+  // very file inspected, or it is removed and refused.
   const placed = await lstatChild(to, name).catch(() => undefined);
   if (
     placed?.isFile() !== true ||
@@ -204,69 +212,6 @@ async function publishFile(
       'INPUT_CHANGED',
       `Shared store entry changed while it was linked into the project: ${paths.to}`,
     );
-  }
-}
-
-/**
- * Copy the regular file `name` of `from` to a new file `as` in `to`, both
- * opened no-follow relative to their directories' handles, with `mode`.
- */
-async function copyChild(
-  from: FileHandle,
-  name: string,
-  to: FileHandle,
-  as: string,
-  mode: number,
-): Promise<void> {
-  const source = await openChild(
-    from,
-    name,
-    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-  );
-  try {
-    if (!(await source.stat()).isFile())
-      throw new OpmError(
-        'UNSAFE_PATH',
-        `Store entry is not a regular file: ${name}`,
-      );
-    const target = await openChild(
-      to,
-      as,
-      constants.O_WRONLY |
-        constants.O_CREAT |
-        constants.O_EXCL |
-        constants.O_NOFOLLOW,
-      0o600,
-    );
-    try {
-      const buffer = Buffer.alloc(1024 * 1024);
-      let offset = 0;
-      for (;;) {
-        const { bytesRead } = await source.read(
-          buffer,
-          0,
-          buffer.length,
-          offset,
-        );
-        if (bytesRead === 0) break;
-        let written = 0;
-        while (written < bytesRead) {
-          const { bytesWritten } = await target.write(
-            buffer,
-            written,
-            bytesRead - written,
-            offset + written,
-          );
-          written += bytesWritten;
-        }
-        offset += bytesRead;
-      }
-      await target.chmod(mode & 0o777);
-    } finally {
-      await target.close();
-    }
-  } finally {
-    await source.close();
   }
 }
 

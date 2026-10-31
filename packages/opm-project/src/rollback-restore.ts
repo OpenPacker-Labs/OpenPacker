@@ -158,8 +158,12 @@ async function putTreeBack(live: string, kept: string): Promise<void> {
   try {
     for (const entry of await readdir(live))
       await removeTree(join(live, entry));
+    // As `cp --preserve=timestamps` put them back on main.
     for (const entry of await readdir(kept))
-      await copyEntry(join(kept, entry), join(live, entry), true);
+      await copyEntry(join(kept, entry), join(live, entry), {
+        copy: true,
+        preserveTimes: true,
+      });
     // Last, so a directory that is not writable could still be filled. The
     // mount may not let this process change the mode; the contents are the point.
     await directory.chmod(mode & 0o7777).catch(() => undefined);
