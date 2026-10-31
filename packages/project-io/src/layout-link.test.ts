@@ -185,42 +185,46 @@ describe('materialiseTree link mode', () => {
 });
 
 describe('collectFilesFromHandle over a tree others hard-link', () => {
-  it('does not mistake another link appearing for the tree changing', { timeout: 30_000 }, async () => {
-    const { collectFilesFromHandle } = await import('./layout-collect.js');
-    const { openStableDirectory } = await import('./index.js');
-    const { link, unlink } = await import('node:fs/promises');
-    const { source, dir } = await fixture();
-    const others = join(dir, 'others');
-    await mkdir(others);
-    let churn = true;
-    const churning = (async () => {
-      for (let n = 0; churn; n += 1) {
-        const name = join(others, `n${n % 8}`);
-        await link(join(source, 'lib', 'index.js'), name).catch(
-          () => undefined,
-        );
-        await unlink(name).catch(() => undefined);
-      }
-    })();
-    try {
-      for (let round = 0; round < 150; round += 1) {
-        const handle = await openStableDirectory(source);
-        try {
-          const files = await collectFilesFromHandle(handle, '', 'tree', {
-            linkTolerant: true,
-          });
-          expect(files.map((file) => file.path).sort()).toEqual([
-            'cli.js',
-            'lib/index.js',
-            'package.json',
-          ]);
-        } finally {
-          await handle.close();
+  it(
+    'does not mistake another link appearing for the tree changing',
+    { timeout: 30_000 },
+    async () => {
+      const { collectFilesFromHandle } = await import('./layout-collect.js');
+      const { openStableDirectory } = await import('./index.js');
+      const { link, unlink } = await import('node:fs/promises');
+      const { source, dir } = await fixture();
+      const others = join(dir, 'others');
+      await mkdir(others);
+      let churn = true;
+      const churning = (async () => {
+        for (let n = 0; churn; n += 1) {
+          const name = join(others, `n${n % 8}`);
+          await link(join(source, 'lib', 'index.js'), name).catch(
+            () => undefined,
+          );
+          await unlink(name).catch(() => undefined);
         }
+      })();
+      try {
+        for (let round = 0; round < 150; round += 1) {
+          const handle = await openStableDirectory(source);
+          try {
+            const files = await collectFilesFromHandle(handle, '', 'tree', {
+              linkTolerant: true,
+            });
+            expect(files.map((file) => file.path).sort()).toEqual([
+              'cli.js',
+              'lib/index.js',
+              'package.json',
+            ]);
+          } finally {
+            await handle.close();
+          }
+        }
+      } finally {
+        churn = false;
+        await churning;
       }
-    } finally {
-      churn = false;
-      await churning;
-    }
-  });
+    },
+  );
 });
