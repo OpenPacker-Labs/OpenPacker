@@ -1,0 +1,36 @@
+name: CI advisory
+
+# Fast pull-request feedback. This workflow is not a required check.
+# The merge queue runs Trunk gate (.github/workflows/trunk-gate.yml).
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-advisory-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fast:
+    name: Fast advisory (Ubuntu, Node 22)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run format:check
+      - run: npm run lint:anti-slop
+      - name: Record that this check is advisory
+        run: |
+          set -euo pipefail
+          {
+            echo "### Advisory only"
+            echo ""
+            echo "This pull request workflow is not a required check. The merge queue runs Trunk gate (\`Trunk gate / Required merge queue gate\`) from \`.github/workflows/trunk-gate.yml\`. That job is the only required CI for merging."
+          } >> "$GITHUB_STEP_SUMMARY"

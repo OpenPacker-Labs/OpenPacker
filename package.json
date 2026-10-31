@@ -48,6 +48,8 @@
     "golden:check": "node scripts/generate-goldens.mjs --check",
     "check:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-features",
     "release:sbom:rust": "node scripts/generate-rust-sbom.mjs",
+    "ruleset:apply": "node scripts/github/apply-trunk-ruleset.mjs",
+    "workflows:lint": "actionlint .github/workflows/*.yml",
     "demo": "node scripts/demo.mjs",
     "demo:lock-import": "node scripts/demo-lock-import.mjs",
     "skills:mirror-check": "node scripts/check-skill-mirrors.mjs",
