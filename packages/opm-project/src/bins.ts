@@ -335,20 +335,46 @@ export interface WrittenBinShim {
  * dependencies). Without it a tool that imports a locked dependency fails
  * at runtime even though `opm install` put that dependency on disk.
  */
-export async function writeBinShims(input: {
+export async function writeBinShims(
+  input: BinShimInput,
+): Promise<WrittenBinShim[]> {
+  await ensureStableDirectory(input.binDir);
+  const planned = planBinShims(input);
+  for (const { shim, script } of planned)
+    await writeStableFile(shim.shim, script, 0o755);
+  return planned.map(({ shim }) => shim);
+}
+
+/** What `writeBinShims` writes shims for. */
+export interface BinShimInput {
   binDir: string;
   storeRoot: string;
   bins: readonly BinDeclaration[];
   /** Extra store roots on PYTHONPATH for Python entry points. */
   pythonPath?: readonly string[];
-}): Promise<WrittenBinShim[]> {
-  await ensureStableDirectory(input.binDir);
-  const written: WrittenBinShim[] = [];
+}
+
+/** A shim `writeBinShims` writes: its record, and the script in its file. */
+export interface PlannedBinShim {
+  shim: WrittenBinShim;
+  script: string;
+}
+
+/**
+ * The shims `writeBinShims` writes, and what each file holds, without writing
+ * them: activation compares them with what a project holds (`generations.ts`).
+ * The extra PYTHONPATH roots are in path order, so the same packages give the
+ * same script whoever lists them.
+ */
+export function planBinShims(input: BinShimInput): PlannedBinShim[] {
+  const planned: PlannedBinShim[] = [];
   const storeRoot = resolve(input.storeRoot);
   const binDir = resolve(input.binDir);
   const pythonRoots = [
     storeRoot,
-    ...(input.pythonPath ?? []).map((path) => resolve(path)),
+    ...[...new Set((input.pythonPath ?? []).map((path) => resolve(path)))]
+      .filter((path) => path !== storeRoot)
+      .sort(),
   ];
   for (const bin of input.bins) {
     const name = assertSafeSegment(bin.name, 'bin name');
@@ -381,17 +407,21 @@ export async function writeBinShims(input: {
       pythonRoots,
       opmxPath: resolveOpmxPath(),
     });
-    await writeStableFile(shimPath, script, 0o755);
-    written.push({
-      name,
-      path: bin.path,
-      shim: shimPath,
-      target,
-      ...(!(bin.interpreter === undefined) && { interpreter: bin.interpreter }),
-      ...(!(bin.entry === undefined) && { entry: bin.entry }),
+    planned.push({
+      shim: {
+        name,
+        path: bin.path,
+        shim: shimPath,
+        target,
+        ...(!(bin.interpreter === undefined) && {
+          interpreter: bin.interpreter,
+        }),
+        ...(!(bin.entry === undefined) && { entry: bin.entry }),
+      },
+      script,
     });
   }
-  return written;
+  return planned;
 }
 
 /**

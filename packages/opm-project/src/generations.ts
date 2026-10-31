@@ -12,6 +12,8 @@ import {
 import {
   assertSafeSegment,
   O_DIRECTORY,
+  OPM_DIR,
+  PROJECT_STATE,
   ensureStableDirectory,
   openChild,
   openStableDirectory,
@@ -27,7 +29,12 @@ import {
   storePathForDigest,
   writeStableFile,
 } from './paths.js';
-import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
+import {
+  outOfDate,
+  plannedLink,
+  type PlannedPackage,
+} from './activation-current.js';
+import { discoverBins, planBinShims, removeBinShims } from './bins.js';
 import { readProjectState, writeProjectState } from './install.js';
 import { isStoreView, sweepAbandonedViews } from './store-view.js';
 import { projectStep, type StepOptions } from './project-step.js';
@@ -907,51 +914,98 @@ export async function activateGeneration(input: {
     }
 
     await revalidatePreparedTrees(prepared);
-    await ensureStableDirectory(paths.bin);
-    await ensureStableDirectory(paths.links);
-    const previous = await readProjectState(paths.projectState);
-    for (const record of Object.values(previous?.packages ?? {}))
-      await removeBinShims(
-        paths.bin,
-        record.bins.map((bin) => bin.name),
-      );
-
-    const state: ProjectState = { schemaVersion: 1, packages: {} };
-    for (const { member, alias, bins } of prepared) {
-      const shims = await writeBinShims({
-        binDir: paths.bin,
-        storeRoot: member.storePath,
-        bins,
-      });
-      await writeStableFile(
-        resolveContained(paths.links, alias),
-        `${JSON.stringify(
-          {
+    // A Python console script's launcher puts every Python package of the
+    // generation on PYTHONPATH, as the install that wrote it did.
+    const pythonPath = prepared
+      .filter(({ member }) => member.purl.startsWith('pkg:pypi/'))
+      .map(({ member }) => member.storePath);
+    const planned: PlannedPackage[] = prepared.map(
+      ({ member, alias, bins }) => {
+        const shims = planBinShims({
+          binDir: paths.bin,
+          storeRoot: member.storePath,
+          bins,
+          ...(member.purl.startsWith('pkg:pypi/') && { pythonPath }),
+        });
+        return {
+          record: {
             alias,
             purl: member.purl,
-            storePath: member.storePath,
             digest: member.digest,
+            storePath: member.storePath,
+            bins: shims.map(({ shim }) => shim),
+            installedAt: input.generation.createdAt,
           },
-          null,
-          2,
-        )}\n`,
-      );
-      state.packages[alias] = {
-        alias,
-        purl: member.purl,
-        digest: member.digest,
-        storePath: member.storePath,
-        bins: shims,
-        installedAt: input.generation.createdAt,
-      };
+          shims,
+          link: plannedLink(paths.links, { ...member, alias }),
+        };
+      },
+    );
+    const previous = await readProjectState(paths.projectState);
+    const stale = await outOfDate({
+      root: input.root,
+      statePath: paths.projectState,
+      held: previous,
+      planned,
+    });
+    // What the project holds is what activation would write: it writes
+    // nothing, so a project this user may only read runs as it is.
+    if (stale === undefined && previous !== undefined) {
+      await revalidatePreparedTrees(prepared);
+      return previous;
     }
-    await revalidatePreparedTrees(prepared);
-    await writeProjectState(paths.projectState, state);
+    const state: ProjectState = {
+      schemaVersion: 1,
+      packages: Object.fromEntries(
+        planned.map(({ record }) => [record.alias, record]),
+      ),
+    };
+    try {
+      await ensureStableDirectory(paths.bin);
+      await ensureStableDirectory(paths.links);
+      for (const record of Object.values(previous?.packages ?? {}))
+        await removeBinShims(
+          paths.bin,
+          record.bins.map((bin) => bin.name),
+        );
+      for (const { shims, link } of planned) {
+        for (const { shim, script } of shims)
+          await writeStableFile(shim.shim, script, 0o755);
+        await writeStableFile(link.path, link.text);
+      }
+      await revalidatePreparedTrees(prepared);
+      await writeProjectState(paths.projectState, state);
+    } catch (error) {
+      if (!cannotWrite(error)) throw error;
+      throw new OpmError(
+        'PROJECT_READ_ONLY',
+        `${stale ?? PROJECT_STATE_SHOWN} is out of date for the active ` +
+          `generation, and this user may not write ${input.root}: run ` +
+          '`opm install` there as its owner',
+        { cause: error },
+      );
+    }
     return state;
   } finally {
     await Promise.all(prepared.map(({ handle }) => handle.close()));
     await store.close();
   }
+}
+
+/** The project state's path from its root, as a refusal names it. */
+const PROJECT_STATE_SHOWN = `${OPM_DIR}/${PROJECT_STATE}`;
+
+/** Why a write fails that this user may not make: the project is not theirs to write. */
+const UNWRITABLE = new Set(['EACCES', 'EPERM', 'EROFS']);
+
+/** Whether `error`, or what caused it, says this user may not write where it was writing. */
+function cannotWrite(error: unknown): boolean {
+  let at = error;
+  while (at instanceof Error) {
+    if ('code' in at && UNWRITABLE.has(String(at.code))) return true;
+    at = at.cause;
+  }
+  return false;
 }
 
 async function revalidatePreparedTrees(

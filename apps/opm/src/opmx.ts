@@ -261,6 +261,8 @@ export function exitForError(error: unknown): number {
     case 'PLUGIN_ERROR':
     case 'PLUGIN_FAILED':
     case 'UPSTREAM_UNAVAILABLE':
+    // A project out of date that this user may not write: its owner can fix it.
+    case 'PROJECT_READ_ONLY':
       return EXIT_CODES.unavailable;
     case 'DIGEST_MISMATCH':
     case 'SIZE_MISMATCH':

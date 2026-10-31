@@ -356,9 +356,8 @@ sandbox binds besides the project, and its `node_modules/.bin` is first on PATH
   directory instead, with the same owner record and sweep; that directory must
   be this user's and private (mode 700), or the run is refused. Its files are
   copies where it is on another filesystem than the store. A tool from the tool
-  cache is laid out the same way. This makes the layout no reason a project must
-  be writable; opmx still is one, since `activateGeneration` rewrites the
-  project's bin shims and state on every run.
+  cache is laid out the same way. The layout is then no reason a project must be
+  writable, and nor is activation (the amendment of 2026-10-31).
 
 `opmx-installed-deps.test.ts` (apps/opm) runs an installed bin that requires
 `helper@^1` in a project that also holds `helper@2.0.0` and gets version 1;
@@ -605,3 +604,45 @@ itself, so a shell sees 130 for SIGINT.
 timeout, and by a bare abort, through the mock backend and bwrap, and an MXC run
 by a signal; `opmx-run-signals.test.ts` (apps/opm) finds the signal named when
 `opmx` is sent SIGHUP, SIGINT and SIGTERM.
+
+## Amendment (2026-10-31) — activation writes nothing when the project is up to date
+
+opmx activates the project's current generation before every run of an installed
+tool (`activateGeneration`), and activation removed and rewrote every bin shim,
+every link in `.opm/links` and `.opm/project.json` each time. In a project this
+user may not write (a read-only mount, a CI cache, another user's checkout) opmx
+failed with `EACCES … unlink '/proc/self/fd/N/<bin>'` before it ran anything.
+
+Decision:
+
+- Activation first works out what it would write: each package's record, the
+  script of each shim (`planBinShims`, the same text `writeBinShims` writes),
+  and each link. When the project already holds all of it, activation writes
+  nothing and returns the project state as it is (`outOfDate`,
+  `activation-current.ts`). A record matches on what activation derives from the
+  generation (alias, PURL, digest, store path and bins); when it was installed,
+  and what an install noted besides, do not make it out of date. A shim matches
+  when it is a regular file, executable, holding exactly the script. A shim
+  names the absolute `opmx` that wrote it, so one written by an opm at another
+  path is out of date for this one.
+- Where something is out of date, activation writes as before. If this user may
+  not write there (EACCES, EPERM, EROFS), the run is refused in one line that
+  names the first thing out of date and what to do (code `PROJECT_READ_ONLY`,
+  exit 8, as for `PROJECT_BUSY`):
+
+  ```text
+  opmx: .opm/bin/<bin> is out of date for the active generation, and this user may not write <root>: run `opm install` there as its owner
+  ```
+
+- A Python console script's launcher lists the generation's Python store roots
+  in path order, so activation writes the same launcher the install did.
+
+`activation-current.test.ts` (opm-project) activates an installed project and
+finds every file under `.opm` with the inode, size, mode and modification time
+it had; rewrites a shim out of date in a project it may write; and, in a child
+that bwrap gives the project read-only, activates with no write, and is refused
+naming a shim or the project state out of date. `opmx-readonly.test.ts`
+(apps/opm) runs the built opmx where it may write, which activates the project,
+then again with the project read-only: the tool runs and every entry of the
+project is as it was; with a shim changed, opmx exits 8 with the one line, and
+the shim is left as it was.
