@@ -617,11 +617,14 @@ destroyed. opmx then writes nothing more and aborts the run with
 `stoppedBySignal('SIGPIPE')`. The backend sends the tool's process group
 SIGPIPE, as a shell pipeline ends a writer, and kills what is left of it 200 ms
 later, as it ends any run. opmx says nothing and exits 141, as a writer SIGPIPE
-ends does. A wait on a stream that is behind settles on the first of drain,
-close, error or finish, and removes the listeners for the other three.
-`opmx-pipe.test.ts` (apps/opm) runs `opmx yes | head -1` in bash: one line, exit
-141, and no process of the tool left; `opmx-drain.test.ts` waits fifty times on
-a stream and finds no listener left on it.
+ends does. A run that is stopped lets go of its output streams that are held for
+a sink (`letGoOfHeld`): what they hold is dropped and they close, so a reader
+that never drains cannot keep the run from ending until a second signal. A wait
+on a stream that is behind settles on the first of drain, close, error or
+finish, and removes the listeners for the other three. `opmx-pipe.test.ts`
+(apps/opm) runs `opmx yes | head -1` in bash: one line, exit 141, and no process
+of the tool left; `opmx-drain.test.ts` waits fifty times on a stream and finds
+no listener left on it.
 
 `stop.test.ts` (sandbox) ends a run by each of the three signals, by the
 timeout, and by a bare abort, through the mock backend and bwrap, and an MXC run

@@ -3,6 +3,7 @@ import type { BackendProbe, OutputSink, SandboxBackend } from '../types.js';
 import {
   BoundedOutput,
   handOn,
+  letGoOfHeld,
   SandboxBackendError,
   type OutputLimitKind,
 } from './mock.js';
@@ -217,6 +218,7 @@ export async function collectMxcChild(
     const onAbort = () => {
       aborted = true;
       stoppedBy = signal?.reason;
+      letGoOfHeld(child.stdout, child.stderr);
       terminate();
     };
     signal?.addEventListener('abort', onAbort, { once: true });

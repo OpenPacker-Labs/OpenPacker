@@ -1,8 +1,10 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
-import { BoundedOutput, handOn } from './backends/mock.js';
+import { BoundedOutput, createMockBackend, handOn } from './backends/mock.js';
 import { collectMxcChild } from './backends/mxc.js';
+import { runInSandbox } from './run.js';
+import { scratch } from './test-scratch.js';
 
 /**
  * A sink that cannot take more (a terminal or a pipe that is behind) returns
@@ -100,5 +102,72 @@ describe('an MXC run whose sink is behind', () => {
     next();
     child.emit('close', 0);
     expect((await running).exitCode).toBe(0);
+  });
+});
+
+describe('a run whose sink never takes what it was handed', () => {
+  it('ends when it is stopped, its held output let go', async () => {
+    const root = scratch('op-sandbox-held-');
+    let told: () => void = () => undefined;
+    const behind = new Promise<void>((settle) => (told = settle));
+    const stop = new AbortController();
+    const run = runInSandbox({
+      argv: ['/bin/sh', '-c', 'while :; do echo held held held held; done'],
+      cwd: root,
+      policy: { enabled: true, mode: 'fail-closed', required: true },
+      readwritePaths: [],
+      readonlyPaths: [root],
+      backend: createMockBackend(),
+      output: {
+        // A reader that never drains: the first chunk is never taken.
+        stdout: () => {
+          told();
+          return new Promise<void>(() => undefined);
+        },
+        stderr: () => undefined,
+      },
+      signal: stop.signal,
+    });
+    await behind;
+    stop.abort();
+    expect((await run).exitCode).toBe(124);
+  });
+
+  it('lets an MXC run end too', async () => {
+    // SAFETY: The test double carries exactly the members the collector reads.
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: PassThrough;
+      stderr: PassThrough;
+      kill: ReturnType<typeof vi.fn>;
+    };
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    // The process ends when killed; its streams end only once drained or destroyed.
+    child.kill = vi.fn(() => {
+      const closed = () =>
+        child.stdout.destroyed && child.stderr.destroyed
+          ? child.emit('close', null)
+          : undefined;
+      child.stdout.once('close', closed);
+      child.stderr.once('close', closed);
+      setImmediate(() => child.stderr.end());
+    });
+    const stop = new AbortController();
+    const running = collectMxcChild(
+      child,
+      {
+        ...LIMITS,
+        output: {
+          stdout: () => new Promise<void>(() => undefined),
+          stderr: () => undefined,
+        },
+      },
+      stop.signal,
+    );
+    child.stdout.write('held\n');
+    child.stdout.write('more\n');
+    await new Promise((resolve) => setImmediate(resolve));
+    stop.abort();
+    expect((await running).exitCode).toBe(124);
   });
 });

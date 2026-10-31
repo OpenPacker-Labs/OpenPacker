@@ -339,6 +339,9 @@ export async function spawnCapture(input: {
         if (reason === 'abort' && !aborted) {
           aborted = true;
           stoppedBy = signal?.reason;
+          // A stream held for a sink that never takes what it was handed (a
+          // reader that does not drain) would hold the run's end with it.
+          letGoOfHeld(child.stdout, child.stderr);
         }
         return (termination ??= terminateProcessTree(
           child,
@@ -376,6 +379,22 @@ export async function spawnCapture(input: {
     });
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Let go of a run's output streams that are held for a sink (paused until it
+ * takes what it was handed): what they hold is dropped, as a stopped run's is,
+ * and they close, so the run ends whether or not the sink ever drains.
+ */
+export function letGoOfHeld(
+  ...streams: (NodeJS.ReadableStream | null | undefined)[]
+): void {
+  for (const stream of streams) {
+    if (stream?.isPaused() !== true) continue;
+    // SAFETY: only `destroy` is called, and only where the stream has it.
+    const { destroy } = stream as { destroy?: unknown };
+    if (typeof destroy === 'function') destroy.call(stream);
   }
 }
 
