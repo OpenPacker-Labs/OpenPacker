@@ -24,7 +24,10 @@ afterEach(async () => {
   );
 });
 
-/** A package directory whose path is exactly `bytes` bytes long. */
+/**
+ * A package directory whose path is exactly `bytes` bytes long, made under the
+ * temporary directory, which must therefore be shorter than that.
+ */
 async function packageOfBytes(bytes: number): Promise<string> {
   const base = await mkdtemp(join(tmpdir(), 'pnpm-patch-whole-'));
   temps.push(base);
@@ -171,7 +174,10 @@ describe('the longest path of a patch', () => {
 
 describe('a path the file system itself refuses', () => {
   it('is a refusal naming the path, not a raw ENAMETOOLONG, when reading the tree', async () => {
-    const dir = await packageOfBytes(100);
+    // Any directory the temporary one gives: what the system refuses is the
+    // segment, not the whole path, so its length does not matter here.
+    const dir = await mkdtemp(join(tmpdir(), 'pnpm-patch-whole-'));
+    temps.push(dir);
     await mkdir(join(dir, 'lib'));
     // A segment past NAME_MAX never gets here from a patch (`patchPathProblem`
     // refuses it); this is the net under the arithmetic above.
