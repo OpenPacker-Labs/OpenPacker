@@ -26,7 +26,7 @@
  */
 
 import { constants } from 'node:fs';
-import { chmod, lstat, mkdir, open, readFile, unlink } from 'node:fs/promises';
+import { lstat, readFile, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   PACKAGE_ROOT,
@@ -34,6 +34,12 @@ import {
   quote,
   segmentProblem,
 } from '@openpacker/adapter-core';
+import {
+  mkdirChild,
+  openChild,
+  openStableDirectory,
+  removeChild,
+} from '@openpacker/project-io';
 import { PatchBudget, PatchRefusal, type PatchTree } from './apply.js';
 import type { PatchEffect } from './parse.js';
 
@@ -344,19 +350,40 @@ const sameFile = (
   left.bytes.equals(right.bytes);
 
 /**
+ * Run `work` on the directory that holds `path` below `root`, opened one
+ * no-follow component at a time from the base `root` lies under
+ * (`openStableDirectory`, ADR 0034): a component swapped for a link since the
+ * tree was read is refused, and nothing is removed, made or written where it
+ * points.
+ */
+async function inParent<T>(
+  root: string,
+  path: string,
+  work: (parent: FileHandle, name: string) => Promise<T>,
+): Promise<T> {
+  const segments = path.split('/');
+  const name = segments.pop()!;
+  const parent = await openStableDirectory(join(root, ...segments));
+  try {
+    return await work(parent, name);
+  } finally {
+    await parent.close();
+  }
+}
+
+/**
  * Write what the patch changed: files removed, directories made, files
- * written. A file the tree found absent is created exclusively (`O_EXCL`): if
- * one is there after all (a host that folds case or normalization found its
- * twin under this name, or it came meanwhile) the patch is refused as
- * `CASE_COLLISION`, as extracting an archive that held both fails, and the
- * file is not written over.
+ * written, each through the handle of its directory. A file the tree found
+ * absent is created exclusively (`O_EXCL`): if one is there after all (a host
+ * that folds case or normalization found its twin under this name, or it came
+ * meanwhile) the patch is refused as `CASE_COLLISION`, as extracting an
+ * archive that held both fails, and the file is not written over.
  */
 export async function commitPatchTree(
   root: string,
   before: ReadonlyMap<string, PatchNode | undefined>,
   after: OverlayTree,
 ): Promise<void> {
-  const where = (path: string) => join(root, ...path.split('/'));
   const changed = [...after.nodes].filter(
     ([path, node]) =>
       !sameFile(before.get(path), node) &&
@@ -364,32 +391,50 @@ export async function commitPatchTree(
   );
   for (const [path, node] of changed)
     if (before.get(path)?.kind === 'file' && node?.kind !== 'file')
-      await unlink(where(path));
-  for (const [path, node] of changed)
-    if (node?.kind === 'dir') await mkdir(where(path));
+      await inParent(root, path, (parent, name) => removeChild(parent, name));
+  // Shortest first: a directory the patch makes holds the next it makes.
+  for (const [path, node] of changed
+    .filter(([, node]) => node?.kind === 'dir')
+    .sort(([left], [right]) => left.length - right.length))
+    if (node?.kind === 'dir')
+      await inParent(root, path, (parent, name) => mkdirChild(parent, name));
   for (const [path, node] of changed) {
     if (node?.kind !== 'file') continue;
     const fresh = before.get(path) === undefined;
-    const handle = await open(
-      where(path),
-      constants.O_WRONLY |
-        constants.O_CREAT |
-        (fresh ? constants.O_EXCL : constants.O_TRUNC) |
-        constants.O_NOFOLLOW,
-      node.mode & 0o777,
-    ).catch((error: NodeJS.ErrnoException) => {
-      if (fresh && error.code === 'EEXIST')
-        throw new PatchRefusal(
-          'CASE_COLLISION',
-          `it creates ${quote(shownPath(path))}, and the file system has a file by that name already, one the package was not read to hold: a twin by case or normalization on a file system that folds them, which an archive's extraction refuses too (CASE_COLLISION)`,
-        );
-      throw error;
-    });
-    try {
-      await handle.writeFile(node.bytes);
-    } finally {
-      await handle.close();
-    }
-    await chmod(where(path), node.mode & 0o777);
+    await inParent(root, path, (parent, name) =>
+      writeChild(parent, name, path, node, fresh),
+    );
+  }
+}
+
+/** Write `node` as the file `name` of `parent`, created afresh where `fresh`. */
+async function writeChild(
+  parent: FileHandle,
+  name: string,
+  path: string,
+  node: Extract<PatchNode, { kind: 'file' }>,
+  fresh: boolean,
+): Promise<void> {
+  const handle = await openChild(
+    parent,
+    name,
+    constants.O_WRONLY |
+      constants.O_CREAT |
+      (fresh ? constants.O_EXCL : constants.O_TRUNC) |
+      constants.O_NOFOLLOW,
+    node.mode & 0o777,
+  ).catch((error: NodeJS.ErrnoException) => {
+    if (fresh && error.code === 'EEXIST')
+      throw new PatchRefusal(
+        'CASE_COLLISION',
+        `it creates ${quote(shownPath(path))}, and the file system has a file by that name already, one the package was not read to hold: a twin by case or normalization on a file system that folds them, which an archive's extraction refuses too (CASE_COLLISION)`,
+      );
+    throw error;
+  });
+  try {
+    await handle.writeFile(node.bytes);
+    await handle.chmod(node.mode & 0o777);
+  } finally {
+    await handle.close();
   }
 }
