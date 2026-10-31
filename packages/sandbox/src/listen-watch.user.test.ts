@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { constants } from 'node:fs';
-import { chmod, chown, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { chmod, chown, mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,7 +83,12 @@ describe.runIf(
     findTrustedSandboxHelper('bwrap') !== undefined,
 )('a server run without network by a user who is not root', () => {
   it('is said to listen, on the port it listens on', async (context) => {
-    const base = await mkdtemp(join(tmpdir(), 'op-listen-user-'));
+    // At its real path: the child is handed these paths, and a TMPDIR that is
+    // a link is not its base (ADR 0034: a caller that hands another process an
+    // absolute path spells it the real way).
+    const base = await realpath(
+      await mkdtemp(join(tmpdir(), 'op-listen-user-')),
+    );
     temps.push(base);
     await chmod(base, 0o755);
     // The child's own temporary directory (its jail root) and working directory.
