@@ -13,6 +13,7 @@ import { npmRangeVers } from './range-vers.js';
 import { unsafeNameProblem } from './layout-plan.js';
 import { asBundled, bundledDependencyNames } from './bundled.js';
 import { npmTargetPredicate } from './platform.js';
+import { MAXIMUM_PACKUMENT_BYTES } from './packument-limits.js';
 import {
   compareNpmVersions,
   npmSatisfies,
@@ -1080,7 +1081,7 @@ export class NpmRegistryProvider implements CatalogProvider {
     const response = await this.transport.request({
       url,
       signal,
-      maximumBytes: 8 * 1024 * 1024,
+      maximumBytes: MAXIMUM_PACKUMENT_BYTES,
       headers: {
         accept: 'application/vnd.npm.install-v1+json',
         ...(!(existing?.etag === undefined) && {
