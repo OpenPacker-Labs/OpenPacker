@@ -20,8 +20,12 @@ configureDefaultAdapters();
 describe('the bounds an installed archive is extracted under', () => {
   it('are the bounds a frozen install extracts under, for an npm package', () => {
     expect(installArchiveLimits('npm')).toEqual(
-      frozenArchiveLimits({ acceptRedundantEntries: true }),
+      frozenArchiveLimits({
+        acceptRedundantEntries: true,
+        requireNpmReaderAgreement: true,
+      }),
     );
+    expect(installArchiveLimits('npm').requireNpmReaderAgreement).toBe(true);
     expect(installArchiveLimits('npm').maximumCompressedBytes).toBeGreaterThan(
       DEFAULT_MATERIALIZATION_LIMITS.maximumCompressedBytes,
     );
@@ -34,6 +38,9 @@ describe('the bounds an installed archive is extracted under', () => {
         DEFAULT_MATERIALIZATION_LIMITS,
       );
       expect(installArchiveLimits(ecosystem).acceptRedundantEntries).toBe(
+        undefined,
+      );
+      expect(installArchiveLimits(ecosystem).requireNpmReaderAgreement).toBe(
         undefined,
       );
     },

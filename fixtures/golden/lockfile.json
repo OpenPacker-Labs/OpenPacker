@@ -142,7 +142,7 @@
   "protocolVersion": "1.0-draft",
   "receiptDigest": {
     "algorithm": "sha256",
-    "value": "567c74982770f71cc9197b30e558fb4cf7b1ba1e0c2f1e917bbde552941b7612"
+    "value": "14677fd66d6a45461921ec02dc3bea53994b40c67b20afb24db242a8b868ac7f"
   },
   "rootRequirements": [
     {

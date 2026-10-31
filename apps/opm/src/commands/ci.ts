@@ -2,13 +2,20 @@ import { resolve } from 'node:path';
 import {
   OpmError,
   installFrozen,
-  type FrozenInstallResult,
+  planFrozen,
+  type FrozenInstallInput,
+  type FrozenPlan,
   type FrozenWorkspaceRequest,
   type StepOptions,
 } from '@openpacker/opm-project';
-import type { FrozenOmit } from '@openpacker/adapter-core';
+import {
+  detectNativeTarget,
+  type FrozenOmit,
+  type NativeTarget,
+} from '@openpacker/adapter-core';
 import { out, plainLine } from '@openpacker/canonical';
 import { report } from '../error-report.js';
+import { printPeerNotice } from './ci-peers.js';
 import type { CommandArgs, CommandIo } from './yank.js';
 
 /** What `opm ci` accepts beyond the shared argument shape. */
@@ -70,6 +77,12 @@ function workspaceRequest(args: CiArgs): FrozenWorkspaceRequest {
       'opm ci --workspace needs a member name or directory',
     );
   const select = args.optionValues.get('workspace') ?? [];
+  if (args.options.get('filter') === true)
+    throw new OpmError(
+      'INVALID_SPEC',
+      'opm ci --filter needs a selector (a name, a glob, ./dir, name..., !name)',
+    );
+  const filter = args.optionValues.get('filter') ?? [];
   const workspaces = booleanOption(args, 'workspaces');
   const noWorkspaces = args.options.has('no-workspaces');
   if (noWorkspaces && workspaces === true)
@@ -80,12 +93,97 @@ function workspaceRequest(args: CiArgs): FrozenWorkspaceRequest {
   const ignore = workspaces === false || noWorkspaces;
   return {
     ...(select.length > 0 && { select }),
+    ...(filter.length > 0 && { filter }),
     ...(booleanOption(args, 'include-workspace-root') === true && {
       includeRoot: true,
     }),
     ...(workspaces === true && { all: true }),
     ...(ignore && { ignore: true }),
   };
+}
+
+const PLATFORM_WORD = /^[A-Za-z0-9_-]+$/u;
+
+/** The values of a repeatable platform option, `current` being this machine's. */
+function platformValues(args: CiArgs, name: string): string[] {
+  if (args.options.get(name) === true)
+    throw new OpmError(
+      'INVALID_SPEC',
+      `opm ci --${name} needs a value (or "current" for this machine)`,
+    );
+  const values = (args.optionValues.get(name) ?? []).flatMap((item) =>
+    item.split(',').map((part) => part.trim()),
+  );
+  for (const value of values)
+    if (!PLATFORM_WORD.test(value))
+      throw new OpmError(
+        'INVALID_SPEC',
+        `opm ci --${name} ${JSON.stringify(value)} is not a platform name`,
+      );
+  return values;
+}
+
+/**
+ * `--os`, `--cpu` and `--libc` (repeatable, `current` for this machine) replace
+ * a dimension of the machines to install optional packages for, as pnpm's
+ * `supportedArchitectures` does; `--supported-architectures project` takes the
+ * project's own. A package is installed when it runs on any one machine.
+ */
+function platformRequest(
+  args: CiArgs,
+): Pick<FrozenInstallInput, 'targets' | 'architectures'> {
+  const os = platformValues(args, 'os');
+  const cpu = platformValues(args, 'cpu');
+  const libc = platformValues(args, 'libc');
+  const given = os.length + cpu.length + libc.length > 0;
+  const source = args.options.get('supported-architectures');
+  if (source !== undefined) {
+    if (source !== 'project')
+      throw new OpmError(
+        'INVALID_SPEC',
+        `opm ci --supported-architectures takes "project", not ${JSON.stringify(source)}`,
+      );
+    if (given)
+      throw new OpmError(
+        'INVALID_SPEC',
+        'Pass either --supported-architectures project or --os, --cpu and --libc, not both',
+      );
+    return { architectures: 'project' };
+  }
+  if (!given) return {};
+  const host = detectNativeTarget();
+  const now = (value: string, current: string | undefined) =>
+    value === 'current' ? current : value;
+  const targets: NativeTarget[] = [];
+  for (const o of os.length > 0 ? os : ['current'])
+    for (const c of cpu.length > 0 ? cpu : ['current'])
+      for (const l of libc.length > 0 ? libc : ['current']) {
+        const machine: NativeTarget = {
+          os: now(o, host.os)!,
+          architecture: now(c, host.architecture)!,
+        };
+        const lib = machine.os === 'linux' ? now(l, host.libc) : undefined;
+        if (lib !== undefined) machine.libc = lib;
+        if (
+          !targets.some(
+            (t) =>
+              t.os === machine.os &&
+              t.architecture === machine.architecture &&
+              t.libc === machine.libc,
+          )
+        )
+          targets.push(machine);
+      }
+  return { targets };
+}
+
+function describeTargets(targets: readonly NativeTarget[]): string {
+  return targets
+    .map(
+      (t) =>
+        `${t.os}/${t.architecture}${t.libc === undefined ? '' : `/${t.libc}`}`,
+    )
+    .join(', ');
 }
 
 function megabytes(bytes: number): string {
@@ -101,7 +199,7 @@ const WHY = {
 } as const;
 
 /** How many packages were left out, and for what, in a clause. */
-function leftOut(result: FrozenInstallResult): string | undefined {
+function leftOut(result: Pick<FrozenPlan, 'skipped'>): string | undefined {
   const counts = new Map<keyof typeof WHY, number>();
   for (const item of result.skipped)
     counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1);
@@ -110,6 +208,40 @@ function leftOut(result: FrozenInstallResult): string | undefined {
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([kind, count]) => `${count} ${WHY[kind]}`)
     .join(', ');
+}
+
+/** The packages a lock patches, when it patches any (ADR 0057). */
+function writePatched(
+  patched: { packages: number; patches: number },
+  io: CommandIo,
+): void {
+  if (patched.packages === 0) return;
+  out(
+    io,
+    `  patched: ${patched.packages} package${patched.packages === 1 ? '' : 's'} by ${patched.patches} patch${patched.patches === 1 ? '' : 'es'} from patchedDependencies, each a store entry of its own\n`,
+  );
+}
+
+/**
+ * What `opm ci --plan` says: the install up to the first byte fetched, and
+ * nothing done. The same plan is the same text, so it carries no wall time.
+ */
+function printPlan(plan: FrozenPlan, io: CommandIo, root: string): void {
+  out(
+    io,
+    `Plan for ${resolve(root)} (${plan.lockPath}): nothing was fetched or written\n` +
+      `  ${plan.instances} package${plan.instances === 1 ? '' : 's'} in ${plan.places} place${plan.places === 1 ? '' : 's'} under node_modules, from ${plan.archives} archive${plan.archives === 1 ? '' : 's'}\n`,
+  );
+  const clause = leftOut(plan);
+  if (clause !== undefined) out(io, `  left out: ${clause}\n`);
+  writePatched(plan.patched, io);
+  if (plan.targets !== undefined)
+    out(io, `  platforms: ${describeTargets(plan.targets)}\n`);
+  if (plan.workspace !== undefined)
+    out(
+      io,
+      `  workspace: ${plan.workspace.installed} of ${plan.workspace.members} member${plan.workspace.members === 1 ? '' : 's'} installed, ${plan.workspace.linked} linked at the project\n`,
+    );
 }
 
 /**
@@ -135,15 +267,23 @@ export async function runCiCommand(
       'INVALID_SPEC',
       'Pass only one of --offline or --online',
     );
-  const result = await installFrozen({
+  const request: FrozenInstallInput = {
     root,
     omit: omitted(args),
     workspace: workspaceRequest(args),
+    ...platformRequest(args),
     ...(offline && { offline: true }),
     ...(args.options.has('online') && { offline: false }),
     ...(options.fetch !== undefined && { fetch: options.fetch }),
     ...(options.step !== undefined && { step: options.step }),
-  });
+  };
+  if (args.options.has('plan')) {
+    const plan = await planFrozen(request);
+    printPlan(plan, io, root);
+    if (plan.peers !== undefined) printPeerNotice(io, plan.peers);
+    return 0;
+  }
+  const result = await installFrozen(request);
 
   const noScripts = result.installScripts.length;
   out(
@@ -155,6 +295,9 @@ export async function runCiCommand(
   );
   const clause = leftOut(result);
   if (clause !== undefined) out(io, `  left out: ${clause}\n`);
+  writePatched(result.patched, io);
+  if (result.targets !== undefined)
+    out(io, `  platforms: ${describeTargets(result.targets)}\n`);
   if (result.workspace !== undefined)
     out(
       io,
@@ -183,5 +326,6 @@ export async function runCiCommand(
           `${plainLine(loss.code)}${loss.representedMeaning ? `: ${plainLine(loss.representedMeaning)}` : ''}`,
         ),
       );
+  if (result.peers !== undefined) printPeerNotice(io, result.peers);
   return 0;
 }

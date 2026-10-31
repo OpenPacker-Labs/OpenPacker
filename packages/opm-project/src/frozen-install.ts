@@ -15,7 +15,8 @@
  *  2. judge every package against the project's policy, before any fetch;
  *  3. take each archive from the shared store when it is there (found by the
  *     digest the lock pins) and otherwise fetch it from the lock's own URL,
- *     check it against that digest, and keep it;
+ *     check it against that digest, and keep it; a package the lock patches
+ *     is a patched copy of its archive, kept as an entry of its own;
  *  4. replace `node_modules` with the lock's layout, hard-linked from the store;
  *     in a workspace, each member is linked from its name rather than fetched,
  *     and has a `node_modules` of its own for the versions only it wants.
@@ -24,88 +25,36 @@
  * and left as it is.
  */
 
-import { access } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
-import {
-  detectNativeTarget,
-  echoed,
-  echoedValue,
-  type DetectedProject,
-  type FrozenLock,
-  type FrozenLockPackage,
-  type FrozenLockSkip,
-  type FrozenOmit,
-  type NativeLockEntry,
-  type NativeTarget,
-  type ProjectFormat,
-  type ProjectionResult,
+import { join } from 'node:path';
+import type {
+  FrozenLockPackage,
+  FrozenLockPeers,
+  FrozenLockSkip,
+  NativeLockEntry,
+  NativeTarget,
+  ProjectionResult,
 } from '@openpacker/adapter-core';
 import { removeBelow, removeTree } from '@openpacker/project-io';
-import { requireAdapterRegistry } from './adapters.js';
-import { type FrozenFetchOptions } from './frozen-fetch.js';
 import {
-  assertFrozenAllowed,
-  frozenPolicyDocument,
-  listLines,
-} from './frozen-policy.js';
+  adapterFailure,
+  now,
+  prepareFrozen,
+  type FrozenInstallInput,
+} from './frozen-prepare.js';
+import { checkArchiveIdentities } from './frozen-identity.js';
+import { patchArchives } from './frozen-patch.js';
+import { installScriptFlags, scriptedPackages } from './frozen-scripts.js';
+import { layOutFromStore, type FrozenInstallSeams } from './frozen-layout.js';
+import { projectStep } from './project-step.js';
 import {
   frozenArchiveLimits,
   labelOf,
   openStore,
-  redactSource,
   storeArchives,
 } from './frozen-store.js';
-import { layOutFromStore } from './frozen-layout.js';
-import {
-  prepareFrozenWorkspace,
-  type FrozenWorkspaceRequest,
-} from './frozen-workspace.js';
-import { strongestClaims, type IntegrityClaim } from './integrity.js';
-import { MANIFEST_NAME, projectPaths } from './paths.js';
-import { readManifestFile } from './project.js';
-import { projectStep, type StepOptions } from './project-step.js';
-import {
-  holdSharedStore,
-  type HoldOptions,
-  type StoreHold,
-} from './shared-store-lease.js';
-import type { OpmManifest } from './types.js';
-import { OpmError } from './types.js';
+import { holdSharedStore, type StoreHold } from './shared-store-lease.js';
 
-export interface FrozenInstallInput extends FrozenFetchOptions {
-  /** The project directory: where the manifest, the lock and `node_modules` are. */
-  root: string;
-  /** Which ecosystem's lock, when a project holds more than one. */
-  ecosystem?: string;
-  /** Kinds of dependency to leave out: `dev` for a production install. */
-  omit?: Iterable<FrozenOmit>;
-  /** Which part of a workspace to install (`-w`, `--include-workspace-root`, `--workspaces`). */
-  workspace?: FrozenWorkspaceRequest;
-  /** Fetch nothing. Defaults to the project's `[options] offline`. */
-  offline?: boolean;
-  env?: NodeJS.ProcessEnv;
-  /** The machine to install for; this one by default. */
-  target?: NativeTarget;
-  /** The time policy is evaluated at. */
-  now?: () => string;
-  /** Told what a killed step left and this one finished first. */
-  step?: StepOptions;
-  /** Archives read at the same time. */
-  concurrency?: number;
-  signal?: AbortSignal;
-}
-
-/**
- * Points inside an install where a test runs what may happen meanwhile, such
- * as a concurrent `opm gc --shared`. Not part of the package's API: only
- * `installFrozenWith` takes them, and `index.ts` does not export it.
- */
-export interface FrozenInstallSeams {
-  /** Once every archive is in the store, before any is linked into `node_modules`. */
-  beforeLayout?: () => Promise<void>;
-  /** How the install's hold on the shared store waits, and where it steps. */
-  hold?: HoldOptions;
-}
+export type { FrozenInstallInput, FrozenInstallSeams };
 
 export interface FrozenInstallResult {
   ecosystem: string;
@@ -122,87 +71,18 @@ export interface FrozenInstallResult {
   shared: boolean;
   /** What the lock holds that this machine and these options leave out. */
   skipped: readonly FrozenLockSkip[];
+  /** The machines the install was for, when that is more than this one. */
+  targets?: readonly NativeTarget[];
+  /** Packages patched (store entries made or found), and the patches that did it. */
+  patched: { packages: number; patches: number };
   /** Installed packages that declare an install script. None was run. */
   installScripts: readonly { name: string; version: string; path: string }[];
   /** For a workspace lock: the members the lock holds, and the ones linked here. */
   workspace?: { members: number; linked: number };
+  /** Present when the places do not keep every shared peer to one copy of it. */
+  peers?: FrozenLockPeers;
   layout: ProjectionResult;
   milliseconds: { read: number; fetch: number; layout: number; total: number };
-}
-
-function now(): number {
-  return performance.now();
-}
-
-/** The ecosystem project in `root` whose adapter can read its lock. */
-async function findFrozenProject(
-  root: string,
-  wanted: string | undefined,
-): Promise<{
-  ecosystem: string;
-  format: ProjectFormat;
-  detected: DetectedProject;
-}> {
-  const registry = requireAdapterRegistry();
-  const found: {
-    ecosystem: string;
-    format: ProjectFormat;
-    detected: DetectedProject;
-  }[] = [];
-  const seen = new Set<string>();
-  for (const type of registry.purlTypes()) {
-    if (wanted !== undefined && type !== wanted.toLowerCase()) continue;
-    const format = await registry.projectFormatFor(type).catch(() => undefined);
-    if (format === undefined || seen.has(format.providerId)) continue;
-    seen.add(format.providerId);
-    if (format.readFrozenLock === undefined || format.writeLayout === undefined)
-      continue;
-    if (!(await registry.projectionLevels(type)).layout) continue;
-    const detected = await format.detect(root);
-    if (detected !== undefined)
-      found.push({ ecosystem: format.purlType, format, detected });
-  }
-  if (found.length === 1) return found[0]!;
-  if (found.length === 0)
-    throw new OpmError(
-      'NOT_FOUND',
-      `No project in ${root} has a lock opm can install exactly. It needs a package.json and a package-lock.json side by side`,
-    );
-  throw new OpmError(
-    'AMBIGUOUS_SPEC',
-    `${root} holds locks for more than one ecosystem (${found.map((item) => item.ecosystem).join(', ')}); name one`,
-  );
-}
-
-async function readProjectManifest(
-  root: string,
-): Promise<OpmManifest | undefined> {
-  try {
-    await access(join(root, MANIFEST_NAME));
-  } catch {
-    return undefined;
-  }
-  return readManifestFile(projectPaths(root).manifest);
-}
-
-/** Errors the adapter throws in its own vocabulary, in opm's. */
-function adapterFailure(error: unknown): Error {
-  if (!(error instanceof Error)) return new Error(String(error));
-  if (error instanceof OpmError) return error;
-  const codes: Record<string, string> = {
-    INVALID_LOCKFILE: 'INVALID_LOCK',
-    INVALID_MANIFEST: 'INVALID_MANIFEST',
-    NOT_FOUND: 'NOT_FOUND',
-    UNSAFE_PATH: 'UNSAFE_PATH',
-    LAYOUT_PATHS_INVALID: 'INVALID_LOCK',
-    LAYOUT_TOO_LARGE: 'SIZE_LIMIT',
-  };
-  // SAFETY: provider errors carry an optional string `code`.
-  const code = (error as { code?: unknown }).code;
-  const mapped = typeof code === 'string' ? codes[code] : undefined;
-  return mapped === undefined
-    ? error
-    : new OpmError(mapped, error.message, { cause: error });
 }
 
 export function installFrozen(
@@ -225,55 +105,18 @@ async function installFrozenInStep(
   input: FrozenInstallInput,
   seams: FrozenInstallSeams,
 ): Promise<FrozenInstallResult> {
-  const started = now();
-  const root = resolve(input.root);
-  const env = input.env ?? process.env;
-  const { ecosystem, format, detected } = await findFrozenProject(
+  const {
+    started,
+    read,
     root,
-    input.ecosystem,
-  );
-  const manifest = await readProjectManifest(root);
-  const offline = input.offline ?? manifest?.options.offline ?? false;
-
-  const workspace = await prepareFrozenWorkspace(root, format, input.workspace);
-  let lock: FrozenLock;
-  try {
-    lock = await format.readFrozenLock!(detected, {
-      target: input.target ?? detectNativeTarget(),
-      omit: new Set(input.omit ?? []),
-      ...(workspace !== undefined && { workspace }),
-    });
-  } catch (error) {
-    throw adapterFailure(error);
-  }
-  if (lock.refused.length > 0)
-    throw new OpmError(
-      'UNSUPPORTED_LOCK',
-      `Refusing to install ${lock.lockPath}: it holds ${lock.refused.length} entr${lock.refused.length === 1 ? 'y' : 'ies'} opm ci cannot install, and installing the rest would not be installing the lock:\n${listLines(lock.refused.map((item) => `${echoedValue(item.path)}: ${echoed(item.reason)}`))}`,
-    );
-
-  const evaluationTime = (input.now ?? (() => new Date().toISOString()))();
-  await assertFrozenAllowed(
-    frozenPolicyDocument(manifest?.policy),
-    lock.packages,
+    env,
     ecosystem,
-    evaluationTime,
-  );
-  const unfetchable = lock.packages.filter(
-    (pkg) => pkg.sourceKind === 'git' || pkg.sourceKind === 'path',
-  );
-  if (unfetchable.length > 0)
-    throw new OpmError(
-      'UNSUPPORTED_LOCK',
-      `opm ci installs from archives with a pinned digest, and cannot install ${unfetchable.length} package${unfetchable.length === 1 ? '' : 's'} from a git or path source yet:\n${listLines(unfetchable.map((pkg) => `${labelOf(pkg)}: ${echoed(redactSource(pkg.source))}`))}`,
-    );
-  const claims = new Map<string, IntegrityClaim[]>(
-    lock.packages.map((pkg) => [
-      pkg.path,
-      strongestClaims(pkg.integrity, labelOf(pkg)),
-    ]),
-  );
-  const read = now();
+    format,
+    detected,
+    offline,
+    lock,
+    claims,
+  } = await prepareFrozen(input);
 
   const store = await openStore(root, env);
   let hold: StoreHold | undefined;
@@ -298,8 +141,24 @@ async function installFrozenInStep(
     };
     const stored = await storeArchives({ lock, ...from });
     const fetched = now();
+    // The archives are proved to be the lock's packages before any is patched,
+    // and what declares a script is read from what is installed: the patched
+    // files, where there is a patch (ADR 0057).
+    await checkArchiveIdentities(lock.packages, stored.byPath);
+    const patching = {
+      storeRoot: store.root,
+      shared: store.shared,
+      format,
+      ...(hold !== undefined && { hold }),
+    };
+    const { byPath, patched } = await patchArchives({
+      lock,
+      byPath: stored.byPath,
+      ...patching,
+    });
+    const declares = await installScriptFlags(lock.packages, byPath);
     const entries = lock.packages.map((pkg): NativeLockEntry => {
-      const archive = stored.byPath.get(pkg.path)!;
+      const archive = byPath.get(pkg.path)!;
       return {
         purl: pkg.purl,
         // The package's own name, as a resolved closure's entry has; the
@@ -340,8 +199,8 @@ async function installFrozenInStep(
         throw adapterFailure(error);
       }
     };
-    const pathOf = (pkg: FrozenLockPackage) =>
-      stored.byPath.get(pkg.path)!.path;
+    // What node_modules links from: the patched copy, where there is a patch.
+    const pathOf = (pkg: FrozenLockPackage) => byPath.get(pkg.path)!.path;
     const layout = !store.shared
       ? await write()
       : await layOutFromStore({
@@ -351,15 +210,22 @@ async function installFrozenInStep(
           })),
           write,
           restore: async (gone) => {
+            const packages = lock.packages.filter((pkg) =>
+              gone.has(pathOf(pkg)),
+            );
             const again = await storeArchives({
-              lock: {
-                ...lock,
-                packages: lock.packages.filter((pkg) => gone.has(pathOf(pkg))),
-              },
+              lock: { ...lock, packages },
               ...from,
             });
             stored.fetched += again.fetched;
             stored.fetchedBytes += again.fetchedBytes;
+            // A patched copy is made again, at its own key, from the archive
+            // put back (ADR 0057).
+            await patchArchives({
+              lock: { packages },
+              byPath: again.byPath,
+              ...patching,
+            });
           },
         });
     const done = now();
@@ -373,13 +239,10 @@ async function installFrozenInStep(
       fetchedBytes: stored.fetchedBytes,
       shared: store.shared,
       skipped: lock.skipped,
-      installScripts: lock.packages
-        .filter((pkg) => pkg.hasInstallScript)
-        .map((pkg) => ({
-          name: pkg.packageName,
-          version: pkg.version,
-          path: pkg.path,
-        })),
+      ...(lock.targets !== undefined && { targets: lock.targets }),
+      ...(lock.peers !== undefined && { peers: lock.peers }),
+      installScripts: scriptedPackages(lock.packages, declares, byPath),
+      patched,
       layout,
       ...(lock.workspace !== undefined && {
         workspace: {

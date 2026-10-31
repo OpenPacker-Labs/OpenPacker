@@ -59,6 +59,7 @@ export {
   makeCurrentOwner,
   ownerKey,
   ownerPlace,
+  parseMachineId,
   parseProcessOwner,
   placeDigest,
   systemProbe,
@@ -300,6 +301,7 @@ export {
   type FrozenInstallInput,
   type FrozenInstallResult,
 } from './frozen-install.js';
+export { planFrozen, type FrozenPlan } from './frozen-plan.js';
 export type { FrozenWorkspaceRequest } from './frozen-workspace.js';
 export { MAXIMUM_ARCHIVE_BYTES } from './frozen-fetch.js';
 export {

@@ -1,7 +1,10 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import timers from 'node:timers';
+import timersPromises from 'node:timers/promises';
+import { describe, expect, it, vi } from 'vitest';
 import * as bindings from '@openpacker/embedded/wasm-node';
 import { createEmbeddedResolver } from '@openpacker/embedded';
 import { packageNodeId } from '@openpacker/adapter-core';
@@ -27,6 +30,46 @@ import {
   OperationError,
 } from '../src/operations.js';
 import { createStandaloneReferenceOperations } from '../src/reference.js';
+
+/**
+ * Every timer a backoff could wait on, frozen until the returned function is
+ * called. The global setTimeout is vi.useFakeTimers', which never fires: a
+ * backoff through it never answers. node:timers' setTimeout and
+ * node:timers/promises' setTimeout and scheduler.wait are replaced on the
+ * modules' own objects, and syncBuiltinESMExports hands the replacements to
+ * every `import { setTimeout } from ...` too; each refuses at once, so the
+ * request fails, and is named in `waited`.
+ */
+function freezeTimers(waited: string[]): () => void {
+  const refused = (name: string) => {
+    waited.push(name);
+    return new Error(`${name} was waited on before answering`);
+  };
+  const saved = {
+    setTimeout: timers.setTimeout,
+    promisesSetTimeout: timersPromises.setTimeout,
+    wait: timersPromises.scheduler.wait,
+  };
+  vi.useFakeTimers({ toFake: ['setTimeout'] });
+  timers.setTimeout = Object.assign(
+    (): never => {
+      throw refused('node:timers setTimeout');
+    },
+    { __promisify__: saved.setTimeout.__promisify__ },
+  );
+  timersPromises.setTimeout = () =>
+    Promise.reject(refused('node:timers/promises setTimeout'));
+  timersPromises.scheduler.wait = () =>
+    Promise.reject(refused('node:timers/promises scheduler.wait'));
+  syncBuiltinESMExports();
+  return () => {
+    timers.setTimeout = saved.setTimeout;
+    timersPromises.setTimeout = saved.promisesSetTimeout;
+    timersPromises.scheduler.wait = saved.wait;
+    vi.useRealTimers();
+    syncBuiltinESMExports();
+  };
+}
 
 const digest = (character: string) => ({
   algorithm: 'sha256' as const,
@@ -207,9 +250,11 @@ describe('openpackerd', () => {
     const unavailable = async (): Promise<never> => {
       throw new OperationError('PROVIDER_CAPABILITY_MISSING', 'not configured');
     };
+    let solves = 0;
     const resolver = createEmbeddedResolver({
       ...bindings,
       solve_json: () => {
+        solves += 1;
         throw new Error(
           'RESOURCE_LIMIT: exhaustive resolution proof requires 2000 work units (limit 1000)',
         );
@@ -244,18 +289,36 @@ describe('openpackerd', () => {
         'utf8',
       ),
     ) as SolveRequest;
-    const started = Date.now();
-    const response = await app.inject({
+    // The refusal is the answer, at once: one solve per request, no retry, and
+    // no timer to wait on (every timer is frozen for the second request, so a
+    // backoff before answering never answers or fails the request). Counted,
+    // not timed: a bound of 1000 ms measured the machine's load as much as the
+    // answer.
+    const first = await app.inject({
       method: 'POST',
       url: '/v1/solve',
       payload: request,
     });
-    expect(response.statusCode).toBe(429);
-    expect(response.json()).toMatchObject({
-      code: 'RATE_LIMITED',
-      retryable: true,
-    });
-    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(first.statusCode).toBe(429);
+    expect(solves).toBe(1);
+    const waited: string[] = [];
+    const thaw = freezeTimers(waited);
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/solve',
+        payload: request,
+      });
+      expect(waited).toEqual([]);
+      expect(response.statusCode).toBe(429);
+      expect(response.json()).toMatchObject({
+        code: 'RATE_LIMITED',
+        retryable: true,
+      });
+      expect(solves).toBe(2);
+    } finally {
+      thaw();
+    }
     await app.close();
   });
 

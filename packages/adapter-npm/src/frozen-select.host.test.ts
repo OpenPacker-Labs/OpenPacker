@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { classifyResolved } from './frozen-select.js';
 
 /**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
+/**
  * A lock's `resolved` is read by Node's URL parser further on (the policy's
  * facts, the fetch plan, the error lists), and the parser takes the square of
  * the length of a host of many non-ASCII labels. No DNS name is longer than 253
@@ -95,12 +105,12 @@ describe('classifyResolved, on the host of a source', () => {
   ])(
     'refuses a host of many non-ASCII labels before a URL parser reads it: %s',
     (before, host, after) => {
-      const started = performance.now();
+      const started = cpuMs();
       const outcome = classifyResolved(entry(`${before}${host}${after}`));
       expect(outcome).toEqual(REFUSED);
       // Node's parser takes about a second for the 131,072 characters of this
       // host (4 seconds for the first form, which it reads again and again).
-      expect(performance.now() - started).toBeLessThan(500);
+      expect(cpuMs() - started).toBeLessThan(500);
     },
   );
 });

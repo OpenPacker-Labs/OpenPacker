@@ -1604,7 +1604,7 @@ describe('delegated bins flow', () => {
       const tool = await fetchTool({
         purl: EXACT,
         cacheRoot,
-        fetch: fetchStub(tarRoute),
+        registryOptions: { fetch: fetchStub(tarRoute) },
       });
       expect(tool.bins).toEqual([
         { name: 'demo', path: 'bin/demo', interpreter: 'native' },
@@ -1676,7 +1676,11 @@ describe('ephemeral tool cache', () => {
 
   /** One ephemeral run of the acme tool over a counted network. */
   const run = (net: ReturnType<typeof countingFetch>, cacheRoot: string) =>
-    fetchTool({ purl: EXACT, cacheRoot, fetch: net.fetch });
+    fetchTool({
+      purl: EXACT,
+      cacheRoot,
+      registryOptions: { fetch: net.fetch },
+    });
 
   it('serves a repeat run from the cache without re-downloading bytes', async () => {
     const counts = { inspect: 0, record: 0 };
@@ -1873,7 +1877,7 @@ describe('native interpreter', () => {
       const tool = await fetchTool({
         purl: EXACT,
         cacheRoot,
-        fetch: fetchStub(tarRoute),
+        registryOptions: { fetch: fetchStub(tarRoute) },
       });
       const target = join(tool.storePath, 'bin', 'demo');
       const outcome = await runSandboxedPackageProcess({

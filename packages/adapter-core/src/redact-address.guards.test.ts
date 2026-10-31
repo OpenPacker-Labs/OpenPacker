@@ -3,6 +3,16 @@ import { redactAddress } from './redact-address.js';
 import { LONGEST_HOST_LENGTH } from '@openpacker/canonical';
 
 /**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
+/**
  * Two checks of `redactAddress` that a change to the file could drop without
  * any other test of this package noticing (found by changing the file by hand,
  * one line at a time): the `@` in the query or fragment of a `blob:` URL, and
@@ -36,7 +46,7 @@ describe('a blob URL whose password is split by a ? or a #', () => {
 });
 
 describe('a host no DNS name could be is not handed to the URL parser', () => {
-  const started = () => performance.now();
+  const started = () => cpuMs();
 
   it('is [url] from 254 characters as written, and shown at 253', () => {
     const label = (length: number) =>
@@ -62,6 +72,6 @@ describe('a host no DNS name could be is not handed to the URL parser', () => {
     const before = started();
     expect(redactAddress(`http://${host}`)).toBe('[url]');
     expect(redactAddress(`http://${MARKER}@${host}/p`)).toBe('[url]');
-    expect(performance.now() - before).toBeLessThan(500);
+    expect(cpuMs() - before).toBeLessThan(500);
   });
 });

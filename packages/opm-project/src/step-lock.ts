@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, rmdir, stat, type FileHandle } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename } from 'node:path';
 import { lstatChild } from '@openpacker/project-io';
-import { isRefusal, plainReason } from './fs-reason.js';
+import { isRefusal, opmEntry, plainReason } from './fs-reason.js';
 import {
   openChild,
   openStableDirectory,
@@ -44,7 +44,7 @@ const PARTIAL_AFTER_MS = 5_000;
 const LOCK_FILE_BYTES = 4096;
 
 export interface StepLockHolder {
-  /** `.opm/step-<uuid>.lock`, relative to the project root. */
+  /** `.opm/step-<uuid>.lock`, as a message shows it (control characters are `?`). */
   file: string;
   /** Who holds it; absent when the file cannot be read as a lock. */
   owner?: ProcessOwner;
@@ -228,7 +228,7 @@ async function liveHolders(
   for (const entry of (await readDirChild(dir)).sort()) {
     if (entry === own || !entry.startsWith(PREFIX) || !entry.endsWith(SUFFIX))
       continue;
-    const file = join('.opm', entry);
+    const file = opmEntry(entry);
     if (abandonedFiles?.has(entry) === true) {
       await removeChild(dir, entry, { force: true });
       removed.push({ file });

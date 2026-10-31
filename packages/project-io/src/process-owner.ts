@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { asPlaceDigest } from './owner-digest.js';
 import { currentOwner, systemProbe } from './owner-system.js';
 
 export { placeDigest } from './owner-digest.js';
 export {
   currentOwner,
   makeCurrentOwner,
+  parseMachineId,
   systemProbe,
   type OwnerReads,
 } from './owner-system.js';
@@ -25,8 +25,10 @@ export {
  *   `/var/lib/dbus/machine-id`), never the id: machine-id(5) calls it
  *   confidential, and a record sits in a project that is committed, cached and
  *   shared. A keyed hash (`placeDigest`, `d1-` and 32 hex digits) keeps all the
- *   rule needs, equality; a record an earlier opm wrote with the raw id is read
- *   back as its digest;
+ *   rule needs, equality. {@link currentOwner} writes digests and nothing reads
+ *   a field into a digest: a field is compared as it was given, so a holder
+ *   that writes its own values (a raw id, a digest of its own) compares them
+ *   with the same values on the reader's side;
  * - `host`: the hostname (letters, digits, `.`, `_` and `-`; anything else is
  *   `_`, so that a host name cannot write to a terminal), which is all a
  *   system without a machine id offers;
@@ -85,7 +87,8 @@ export {
  * - its `/proc/<pid>/stat` state is Z (a zombie that nobody reaped) or X
  *   (dead): gone, the process has ended. A Z that leads threads still running
  *   (its main thread exited, the others did not) is the process, and is
- *   alive: `/proc/<pid>/task` lists more than the leader;
+ *   alive: `/proc/<pid>/task` lists more than the leader. A Z whose threads
+ *   cannot be listed is alive too: gone is said only when it is certain;
  * - its start time differs from the recorded one: gone, the pid was reused.
  *   Not compared when this process cannot read its own start time (a `/proc`
  *   of another PID namespace) or the record has none; then it is alive;
@@ -105,8 +108,8 @@ export {
  * The module is the one rule, so a holder with its own record maps its fields
  * onto {@link ProcessOwner} and calls it, whatever it is called there:
  *
- * - A holder that keeps its owner in a directory of its own (a run's scratch,
- *   a lease) writes it with `writeOwnerFile(dir)` right after making the
+ * - A holder that keeps its owner in a **directory** of its own (a run's
+ *   scratch) writes it with `writeOwnerFile(dir)` right after making the
  *   directory and reads it with `readOwnerFile(dir)`: `.owner`, small,
  *   versioned JSON, replaced atomically, never read through a link
  *   (`owner-file.ts`). `ownerKey` is a name and cannot be turned back into an
@@ -115,15 +118,24 @@ export {
  *   and writing the file) is judged by the age of the directory, as an empty
  *   step lock is; a file that is `unreadable` (cut short, a newer version, a
  *   link) is judged by nobody and is left alone.
- * - A holder whose own record has a host-name digest for the machine where the
- *   system has no machine id (a store lease) puts that digest in `machineId`,
- *   on both sides, and a field it writes as `'0'` for unreadable is
- *   `undefined` here. Any text of `[0-9A-Za-z-]{1,64}` is a field; a digest
- *   of the host name is as good as the machine's for the `ended` rule and no
- *   better: a clone of the machine with the same host name is the same machine.
- *   It judges with `ownerPlace(owner, reader, options)` first and
+ * - A holder that keeps its owner in a **file name** (a lease: two files named
+ *   by the owner) keeps its codec and maps both sides to {@link ProcessOwner}:
+ *   `'0'` for unreadable is `undefined`, its machine is `machineId` (a digest
+ *   of the host name where the system has no machine id, put there on both
+ *   sides: `ended` needs the reader's), its boot is `bootId`, its namespace
+ *   `pidNamespace`. Its fields are compared as it wrote them: nothing here
+ *   rewrites a raw machine id or a boot id without dashes into a digest, and
+ *   {@link parseProcessOwner} is for records this module wrote, so such a
+ *   holder builds its owners itself rather than through it. A raw machine id in
+ *   a file name is the confidential id this module keeps out of a project, so
+ *   the lease writes the keyed digest in its codec's own alphabet (`placeHex`,
+ *   hex; a `placeDigest` has a dash), and itself reads the id an earlier opm
+ *   wrote as that digest before it maps an owner here. It judges with
+ *   `ownerPlace(owner, reader, options)` first and
  *   `isOwnerAlive(owner, reader, probe, options)` for what is `here`; both
- *   take {@link PlaceOptions}.
+ *   take {@link PlaceOptions}. A digest of the host name is as good as the
+ *   machine's for the `ended` rule and no better: a clone of the machine with
+ *   the same host name is the same machine.
  * - A start time or a pid read from the system is `systemProbe.stat(pid)`.
  */
 export interface ProcessOwner {
@@ -217,9 +229,13 @@ export async function isOwnerAlive(
   const now = await probe.stat(owner.pid);
   if (now === undefined) return true;
   if (now.state === 'X' || now.state === 'x') return false;
-  // A zombie is gone, unless it is the leader of threads that still run.
-  if (now.state === 'Z' && ((await probe.tasks?.(owner.pid)) ?? 0) <= 1)
-    return false;
+  // A zombie is gone, unless it is the leader of threads that still run. Gone
+  // is said only when the threads were listed and none is left: a list that
+  // cannot be read does not make a zombie gone.
+  if (now.state === 'Z') {
+    const threads = await probe.tasks?.(owner.pid);
+    if (threads !== undefined && threads <= 1) return false;
+  }
   return owner.startTime === undefined || now.startTime === owner.startTime;
 }
 
@@ -272,12 +288,7 @@ export function parseProcessOwner(value: unknown): ProcessOwner | undefined {
     if (text === undefined) continue;
     if (typeof text !== 'string' || !/^[0-9A-Za-z-]{1,64}$/u.test(text))
       return undefined;
-    owner[field] =
-      field === 'machineId'
-        ? asPlaceDigest('machine', text)
-        : field === 'bootId'
-          ? asPlaceDigest('boot', text)
-          : text;
+    owner[field] = text;
   }
   return owner;
 }

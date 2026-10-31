@@ -126,6 +126,8 @@ if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
       '--',
       'vitest',
       'run',
+      '--config',
+      'scripts/vitest.gate.config.mjs',
       'packages/adapters-default/src/standard-pack.native.test.ts',
     ],
     { stdio: 'inherit', shell: false },

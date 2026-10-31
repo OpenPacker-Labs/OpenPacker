@@ -1127,10 +1127,22 @@ describe('serviceability through the registry', () => {
   });
 
   it('never blocks the read on an origin it does not control', async () => {
+    // The origin answers only once released, after the read: a read that
+    // waited for it would never answer. And setTimeout does not run while the
+    // read is in flight, so a read that waits on the check for a bounded time
+    // (a race with a timer) never answers either, where a wall-clock bound
+    // would pass it on a fast machine and fail a correct read on a loaded one.
+    // A read that does not answer fails by the test's timeout.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let asked = 0;
     const app = registry({
       serviceabilityTransport: {
         async request(): Promise<HttpResponse> {
-          await new Promise((resolve) => setTimeout(resolve, 60));
+          asked += 1;
+          await held;
           throw new Error('slow origin');
         },
       },
@@ -1140,14 +1152,20 @@ describe('serviceability through the registry', () => {
       url: '/v1/publish',
       payload: await signed(manifest()),
     });
-    const started = Date.now();
-    const response = await app.inject({
-      method: 'GET',
-      url: '/v1/packages/com.example.demo/versions/1.2.3',
-    });
-    // This registry's latency must not be a function of every publisher's.
-    expect(response.statusCode).toBe(200);
-    expect(Date.now() - started).toBeLessThan(60);
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/v1/packages/com.example.demo/versions/1.2.3',
+      });
+      // This registry's latency must not be a function of every publisher's.
+      expect(response.statusCode).toBe(200);
+      await settle();
+      expect(asked).toBe(1);
+    } finally {
+      vi.useRealTimers();
+      release();
+    }
     await app.close();
   });
 

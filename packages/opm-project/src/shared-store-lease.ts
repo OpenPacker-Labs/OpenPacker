@@ -44,7 +44,8 @@ import {
 import { LeaseReader, sweepLeases } from './store-lease-reader.js';
 import { OpmError } from './types.js';
 
-const STORE_KEY = /^sha256-[0-9a-f]{64}$/u;
+// An archive's entry, or a patched copy of one (ADR 0057).
+const STORE_KEY = /^sha256-[0-9a-f]{64}(?:-patch-[0-9a-f]{64})?$/u;
 
 function assertKey(key: string): string {
   if (!STORE_KEY.test(key))

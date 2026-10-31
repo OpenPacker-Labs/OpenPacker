@@ -388,10 +388,12 @@ export { openStablePath, type StablePathOptions } from './stable-path.js';
 
 // Who holds a directory, and whether that process has ended: the one rule
 // every holder opm records is judged by (`process-owner.ts`).
-export { asPlaceDigest, placeDigest, type PlaceKind } from './owner-digest.js';
+export { placeDigest, placeHex, type PlaceKind } from './owner-digest.js';
 export {
   currentOwner,
   makeCurrentOwner,
+  ownStartTime,
+  parseMachineId,
   parseStat,
   systemProbe,
   type OwnerReads,
