@@ -429,6 +429,76 @@ describe.runIf(POSIX)(
   },
 );
 
+describe.runIf(POSIX && ROOT)(
+  'a link another user may have made, in a directory others may write to',
+  () => {
+    /** `<base>/shared` (mode `mode`) holding `tc -> <base>/victim-private`, owned by `owner`. */
+    async function sharedLink(mode: number, owner: number) {
+      const base = await world();
+      const shared = join(base, 'shared');
+      await mkdir(shared);
+      await chmod(shared, mode);
+      const victim = join(base, 'victim-private');
+      await mkdir(victim, { mode: 0o700 });
+      const link = join(shared, 'tc');
+      await symlink(victim, link);
+      await lchown(link, owner, owner);
+      return { link, victim };
+    }
+
+    it.each([
+      ['writable by anyone, not sticky', 0o777],
+      ['writable by its group', 0o770],
+      ['sticky and writable by anyone', 0o1777],
+    ])(
+      'is not followed in a directory %s when neither the user nor root owns it',
+      async (_, mode) => {
+        const { link, victim } = await sharedLink(mode, NOBODY);
+
+        expect(realBase(link)).toBe(link);
+        // The last component of a tool cache or a config root, taken as it may be.
+        await expect(
+          openRootDirectory(link, { create: true, lastMayBeLink: true }),
+        ).rejects.toMatchObject({ code: expect.stringMatching(REFUSED) });
+        trustBase(link, 'project root');
+        await expect(
+          writeFileAtomic(join(link, 'x.json'), '{}'),
+        ).rejects.toMatchObject({ code: expect.stringMatching(REFUSED) });
+        expect(await readdir(victim)).toEqual([]);
+      },
+    );
+
+    it('is followed when the user or root owns it, or when only its owner may write the directory', async () => {
+      expect(realBase((await sharedLink(0o777, 0)).link)).toMatch(
+        /victim-private$/u,
+      );
+      forgetBases();
+      expect(
+        realBase((await sharedLink(0o777, process.geteuid!())).link),
+      ).toMatch(/victim-private$/u);
+      forgetBases();
+      expect(realBase((await sharedLink(0o755, NOBODY)).link)).toMatch(
+        /victim-private$/u,
+      );
+    });
+
+    it.runIf(glibcLinux())(
+      'is judged the same through the C library’s *at calls (the macOS road)',
+      async () => {
+        const restore = useResolverOpsForTesting(
+          libcDirectoryOps(linuxGlibcProfile()),
+        );
+        try {
+          const theirs = await sharedLink(0o777, NOBODY);
+          expect(realBase(theirs.link)).toBe(theirs.link);
+        } finally {
+          restore();
+        }
+      },
+    );
+  },
+);
+
 describe.runIf(process.platform === 'linux' && ROOT)(
   'a checkout found by its .git, however it is named',
   () => {

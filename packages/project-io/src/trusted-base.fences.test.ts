@@ -270,12 +270,14 @@ describe.runIf(POSIX && ROOT)(
       expect(await readdir(target)).toEqual([]);
     });
 
-    it('is followed when it belongs to the user, or to the directory’s owner', async () => {
+    it('is followed when it belongs to the user, and not when it belongs to the directory’s owner alone, who is not root', async () => {
       const own = await stickyLink(process.geteuid!());
       expect(realBase(own.link)).toBe(own.target);
       forgetBases();
+      // The kernel would follow it; anyone may write the directory, so opm
+      // follows no link there that neither the user nor root made.
       const directoryOwners = await stickyLink(NOBODY, NOBODY);
-      expect(realBase(directoryOwners.link)).toBe(directoryOwners.target);
+      expect(realBase(directoryOwners.link)).toBe(directoryOwners.link);
     });
 
     it.runIf(glibcLinux())(

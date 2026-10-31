@@ -31,11 +31,11 @@
  *
  * A base is resolved by `base-resolve.ts`, one directory handle at a time:
  * no link in a fenced directory or a checkout (a directory holding `.git`) is
- * followed, and none another user put in a sticky directory anyone may write
- * to. A fence is the identity of a directory whose links are its own: the
- * project the command runs in, every checkout around it and around each base
- * the environment names, the tree it runs in and every root taken (fenced
- * before any base is resolved, {@link beginCommand}). Nothing is ever
+ * followed, and none another user may have put in a directory others may
+ * write to. A fence is the identity of a directory whose links are its own:
+ * the project the command runs in, every checkout around it and around each
+ * base the environment names, the tree it runs in and every root taken
+ * (fenced before any base is resolved, {@link beginCommand}). Nothing is ever
  * unfenced while the command runs. A fence added after a base was resolved
  * through a link it holds unmakes that base.
  *
@@ -378,6 +378,7 @@ export function refusalReason(
     case 'fenced':
       return `the link ${refused.link} lies in ${refused.by ?? 'a fenced directory'}, which opm fenced for this command (a checkout, the project or tree it runs in, or a root it took), and opm follows no link there (ADR 0034); ${remedy}`;
     case 'sticky':
+    case 'shared':
       return `the link ${refused.link} belongs to another user and lies in a directory others may write to, so opm does not follow it`;
     case 'changed':
       return `the link ${refused.link} changed while opm was reading it`;

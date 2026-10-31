@@ -20,6 +20,10 @@
  * - **`protected_symlinks`' own rule, whatever the system's setting.** A link
  *   in a sticky directory that anyone may write to is followed only when it
  *   belongs to the user resolving it or to the directory's owner.
+ * - **No link another user may have made.** A link in a directory its group
+ *   or anyone may write to, sticky or not, is followed only when it belongs to
+ *   the user resolving it or to root: whoever may write the directory may
+ *   have put it there, and its last component is judged like any other.
  *
  * A link not followed ends the resolution: the rest of the path is kept as it
  * was written, for the no-follow walk to refuse. A name is judged once, by the
@@ -80,6 +84,8 @@ export type Refusal =
   | 'checkout'
   /** It lies in a sticky directory anyone may write to, and belongs to neither the user nor the directory's owner. */
   | 'sticky'
+  /** It lies in a directory its group or anyone may write to, and belongs to neither the user nor root. */
+  | 'shared'
   /** It changed between being judged and being read. */
   | 'changed';
 
@@ -277,6 +283,7 @@ export function resolverOps(): DirectoryOps {
 
 const S_ISVTX = 0o1000n;
 const S_IWOTH = 0o002n;
+const S_IWGRP = 0o020n;
 /** As many links as one resolution follows before it gives up, as Linux does. */
 const MAXIMUM_LINKS = 40;
 
@@ -321,6 +328,20 @@ function stickyRefuses(
     euid !== undefined &&
     link.uid !== BigInt(euid) &&
     link.uid !== directory.uid
+  );
+}
+
+/** A link in a directory its group or anyone may write to, sticky or not, of neither the user nor root. */
+function sharedRefuses(
+  directory: Pick<Step, 'mode'>,
+  link: Inspected,
+  euid: number | undefined,
+): boolean {
+  return (
+    (directory.mode & (S_IWGRP | S_IWOTH)) !== 0n &&
+    euid !== undefined &&
+    link.uid !== BigInt(euid) &&
+    link.uid !== 0n
   );
 }
 
@@ -414,7 +435,11 @@ export function resolveWith(
       const inside = enclosing();
       const why: Refusal | undefined =
         inside?.why ??
-        (stickyRefuses(top, found, options.euid) ? 'sticky' : undefined);
+        (stickyRefuses(top, found, options.euid)
+          ? 'sticky'
+          : sharedRefuses(top, found, options.euid)
+            ? 'shared'
+            : undefined);
       if (why !== undefined || links >= MAXIMUM_LINKS) {
         if (why !== undefined)
           refused = {

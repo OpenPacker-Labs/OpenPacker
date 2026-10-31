@@ -32,7 +32,9 @@ import {
   usableSharedRoot,
   writeManifestFile,
 } from '../src/index.js';
+import { upsertAuthOrigin } from '../src/auth-config.js';
 import { ensureStableDirectory, writeStableFile } from '../src/paths.js';
+import { openToolCache } from '../src/shared-store-root.js';
 import { permissive } from './closure-support.js';
 import { NpmRegistryFixture } from './npm-registry-fixture.js';
 
@@ -169,6 +171,50 @@ describe.runIf(POSIX && ROOT)(
         initProject({ root: link, name: 'theirs' }),
       ).rejects.toMatchObject({ code: expect.stringMatching(REFUSED) });
       expect(await readdir(target)).toEqual([]);
+    });
+  },
+);
+
+describe.runIf(POSIX && ROOT)(
+  'a link another user may have made, in a directory others may write to, sticky or not',
+  () => {
+    /** `<base>/shared` (mode 0777, not sticky) holding `<name> -> <base>/victim-private` (0700), owned by nobody. */
+    async function theirLink(base: string, name: string) {
+      const shared = join(base, 'shared');
+      await mkdir(shared);
+      await chmod(shared, 0o777);
+      const victim = join(base, 'victim-private');
+      await mkdir(victim, { mode: 0o700 });
+      const link = join(shared, name);
+      await symlink(victim, link);
+      await lchown(link, NOBODY, NOBODY);
+      return { link, victim };
+    }
+
+    it('is not taken as the tool cache, its last component, and nothing is written where it points', async () => {
+      const base = await world();
+      const { link, victim } = await theirLink(base, 'tc');
+
+      await expect(openToolCache(link)).rejects.toMatchObject({
+        code: 'UNSAFE_PATH',
+      });
+      await expect(
+        writeStableFile(join(link, '.opm', 'store', 'x.json'), '{}'),
+      ).rejects.toMatchObject({ code: expect.stringMatching(REFUSED) });
+      expect(await readdir(victim)).toEqual([]);
+    });
+
+    it('is not taken as the configuration root, and no auth configuration is written where it points', async () => {
+      const base = await world();
+      const { link, victim } = await theirLink(base, 'config');
+
+      await expect(
+        upsertAuthOrigin({
+          origin: 'https://registry.internal.example',
+          path: join(link, 'auth.json'),
+        }),
+      ).rejects.toMatchObject({ code: expect.stringMatching(REFUSED) });
+      expect(await readdir(victim)).toEqual([]);
     });
   },
 );
