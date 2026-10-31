@@ -30,7 +30,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { chmod, copyFile, lstat, mkdir, rename } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   PACKAGE_TREE_LIMITS,
@@ -38,6 +38,7 @@ import {
   type FrozenPatch,
   type ProjectFormat,
 } from '@openpacker/adapter-core';
+import { lstatChild } from '@openpacker/project-io';
 import { adapterFailure } from './frozen-prepare.js';
 import { assertBaseFits, longestForm } from './frozen-patch-fit.js';
 import { packageDirectory } from './frozen-scripts.js';
@@ -48,6 +49,7 @@ import {
   removeStableTree,
   storeKeyFromDigest,
 } from './paths.js';
+import { copyChild, makeDirectory, renameWithin } from './stable-ops.js';
 import {
   adoptExistingEntry,
   assertEntryName,
@@ -81,27 +83,39 @@ export function patchedStoreKey(digest: string, patch: string): string {
   return `${storeKeyFromDigest(digest)}-patch-${patch}`;
 }
 
-/** Copy a store tree, every file a writable file of its own. */
+/**
+ * Copy a store tree, every file a writable file of its own. Each directory
+ * of both trees is opened no-follow from the store root it lies in, and each
+ * directory made and file copied through the handle of the directory that
+ * holds it (ADR 0034): a component swapped for a link, or a store root that
+ * leads elsewhere now, is refused before anything is made.
+ */
 async function copyTree(from: string, to: string): Promise<void> {
-  await mkdir(to);
-  const handle = await openStableDirectory(from);
+  await makeDirectory(to);
+  const source = await openStableDirectory(from);
   try {
-    for (const entry of await readDirChildWithTypes(handle)) {
-      assertEntryName(entry.name);
-      const source = join(from, entry.name);
-      const target = join(to, entry.name);
-      if (entry.isDirectory()) await copyTree(source, target);
-      else if (entry.isFile() && !entry.isSymbolicLink()) {
-        await copyFile(source, target);
-        await chmod(target, ((await lstat(source)).mode & 0o777) | 0o200);
-      } else
-        throw new OpmError(
-          'UNSAFE_PATH',
-          `Store entry holds something that is not a file or a directory: ${source}`,
-        );
+    const target = await openStableDirectory(to);
+    try {
+      for (const entry of await readDirChildWithTypes(source)) {
+        assertEntryName(entry.name);
+        if (entry.isDirectory())
+          await copyTree(join(from, entry.name), join(to, entry.name));
+        else if (entry.isFile() && !entry.isSymbolicLink()) {
+          const info = await lstatChild(source, entry.name);
+          await copyChild(source, entry.name, target, entry.name, {
+            mode: (Number(info.mode) & 0o777) | 0o200,
+          });
+        } else
+          throw new OpmError(
+            'UNSAFE_PATH',
+            `Store entry holds something that is not a file or a directory: ${join(from, entry.name)}`,
+          );
+      }
+    } finally {
+      await target.close();
     }
   } finally {
-    await handle.close();
+    await source.close();
   }
 }
 
@@ -267,7 +281,9 @@ async function publishPatched(input: PublishInput): Promise<string> {
       const treeDigest = await buildPatched(input, tmp);
       if (input.shared) await sealTreeReadOnly(tmp);
       try {
-        await rename(tmp, path);
+        // Through the store root's handle: a root that leads elsewhere now is
+        // INPUT_CHANGED, and nothing is published there.
+        await renameWithin(tmp, path);
       } catch (error) {
         // SAFETY: Node file errors carry an optional string `code`.
         const code = (error as NodeJS.ErrnoException).code;

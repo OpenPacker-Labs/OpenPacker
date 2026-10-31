@@ -1,11 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, type FileHandle } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { abandonedByOwner, type AbandonJudge } from '@openpacker/project-io';
 import { writeOwnerFile } from './owner-file.js';
-import { openStableDirectory, removeStableTree } from './paths.js';
+import {
+  openStableDirectory,
+  readDirChild,
+  removeStableTree,
+} from './paths.js';
+import { makeDirectory } from './stable-ops.js';
 import type { ProcessOwner } from './process-owner.js';
 import { OpmError } from './types.js';
 
@@ -56,11 +61,13 @@ export async function makeScratch(
   owner?: ProcessOwner,
 ): Promise<Scratch> {
   const path = join(dir, `${prefix}${randomUUID()}`);
-  await mkdir(path, { mode: 0o755 });
+  // Made through the handle of the directory that holds it, opened no-follow
+  // from its base, as everything in a store or a cache is (ADR 0034).
+  await makeDirectory(path, 0o755);
   const tree = join(path, TREE);
   try {
     await writeOwnerFile(path, owner);
-    await mkdir(tree, { mode: 0o755 });
+    await makeDirectory(tree, 0o755);
   } catch (error) {
     await removeStableTree(path).catch(() => undefined);
     throw error;
@@ -77,7 +84,16 @@ export async function sweepAbandoned(
   prefix: string,
   judge: Judge = {},
 ): Promise<void> {
-  const names = await readdir(dir).catch(() => []);
+  const names = await openStableDirectory(dir).then(
+    async (handle) => {
+      try {
+        return await readDirChild(handle);
+      } finally {
+        await handle.close();
+      }
+    },
+    () => [] as string[],
+  );
   for (const name of names) {
     if (!name.startsWith(prefix)) continue;
     const path = join(dir, name);
@@ -125,7 +141,12 @@ async function openTemporaryRoot(
   path: string,
   create: boolean,
 ): Promise<FileHandle> {
-  if (create) await mkdir(path, { recursive: true, mode: 0o700 });
+  // Made, where it is missing, through the handle of the temporary
+  // directory, its base: never through a link put at its name.
+  if (create)
+    await makeDirectory(path, 0o700).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'EEXIST') throw error;
+    });
   const handle = await openStableDirectory(path);
   try {
     if (process.platform === 'win32') return handle;

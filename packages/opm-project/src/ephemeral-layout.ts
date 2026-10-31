@@ -1,9 +1,9 @@
-import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { NativeLockEntry } from '@openpacker/adapter-core';
 import { stableTarget, tarballWrapper } from '@openpacker/project-io';
 import { requireAdapterRegistry } from './adapters.js';
 import { removeStableTree } from './paths.js';
+import { makeDirectory } from './stable-ops.js';
 import { openToolCache } from './shared-store-root.js';
 import {
   cannotMake,
@@ -35,11 +35,14 @@ async function runScratch(cacheRoot: string): Promise<Scratch> {
   const beside = join(opm, 'runs');
   try {
     await sweepAbandoned(beside, RUN_PREFIX);
-    await mkdir(opm, { recursive: true });
-    // Not recursive: Node's recursive mkdir says ENOENT for EROFS.
-    await mkdir(beside).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== 'EEXIST') throw error;
-    });
+    // Each made through the handle of the directory that holds it, opened
+    // no-follow from the tool cache it lies in (ADR 0034): a link put at
+    // `.opm` or `runs` is refused, and nothing is made where it points. One
+    // at a time, so a read-only file system says EROFS, not ENOENT.
+    for (const dir of [opm, beside])
+      await makeDirectory(dir).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'EEXIST') throw error;
+      });
     return await makeScratch(beside, RUN_PREFIX);
   } catch (error) {
     if (!(error instanceof Error) || !cannotMake(error)) throw error;

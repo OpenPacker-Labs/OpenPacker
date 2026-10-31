@@ -4,7 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { BigIntStats } from 'node:fs';
-import { link, lstat, readdir, rename, stat } from 'node:fs/promises';
+import { link, lstat, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   openStableDirectory,
@@ -14,6 +14,7 @@ import {
   storeKeyFromDigest,
 } from './paths.js';
 import { assertEntryName } from './shared-store.js';
+import { hardLinkAt, renameWithin } from './stable-ops.js';
 import {
   INTEGRITY_INDEX,
   isIntegrityKey,
@@ -25,6 +26,17 @@ import {
   ensurePrivateRoot,
   requestedSharedStore,
 } from './shared-store-root.js';
+
+/**
+ * Put a record moved aside back at `path`, never over one written since: a
+ * hard link through both directories' handles. Windows has no
+ * handle-relative hard link, and links by path (ADR 0034, "What remains").
+ */
+async function putBack(doomed: string, path: string): Promise<void> {
+  if (process.platform === 'win32')
+    await link(doomed, path).catch(() => undefined);
+  else await hardLinkAt(doomed, path).catch(() => undefined);
+}
 
 function isMissing(error: unknown): boolean {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -287,8 +299,9 @@ async function collectIndexRecords(
       continue;
     }
     const doomed = join(index, `.${name}.collect-${randomUUID()}`);
+    // Moved aside, and put back, through the index's handle (ADR 0034).
     if (
-      !(await rename(path, doomed).then(
+      !(await renameWithin(path, doomed).then(
         () => true,
         () => false,
       ))
@@ -303,7 +316,7 @@ async function collectIndexRecords(
       ));
     if (appeared || !sameRecord(judged, moved))
       // Never over a record written since.
-      await link(doomed, path).catch(() => undefined);
+      await putBack(doomed, path);
     else result.records.push(path);
     await removeStableFile(doomed).catch(() => undefined);
   }
@@ -334,8 +347,10 @@ async function collect(
     );
     if (linked !== undefined) return linked;
     if (dryRun === true) return 'removed';
-    // Unpublish atomically, so an install never reads half of it.
-    await rename(entry, doomed).catch((error: unknown) => {
+    // Unpublish atomically, so an install never reads half of it, through
+    // the store root's handle: a root that leads elsewhere now is
+    // INPUT_CHANGED, and nothing there is unpublished.
+    await renameWithin(entry, doomed).catch((error: unknown) => {
       if (!isMissing(error)) throw error;
     });
     await removeStableFile(`${entry}.tree`).catch(() => undefined);
@@ -406,7 +421,7 @@ async function collectOrphanRecords(
     const doomed = join(root, `.${key}.collect-${randomUUID()}`);
     await steps.judged?.(path);
     if (
-      !(await rename(path, doomed).then(
+      !(await renameWithin(path, doomed).then(
         () => true,
         () => false,
       ))
@@ -421,7 +436,7 @@ async function collectOrphanRecords(
     // and compared, `frozen-patch.ts`.)
     if (!sameRecord(judged, moved))
       // Never over a record written since.
-      await link(doomed, path).catch(() => undefined);
+      await putBack(doomed, path);
     else result.removed.push(path);
     await removeStableFile(doomed).catch(() => undefined);
   }

@@ -18,23 +18,24 @@
  *   but a workspace member's, ADR 0048). Any other link fails the install.
  */
 
-import {
-  link,
-  lstat,
-  readdir,
-  readlink,
-  realpath,
-  rename,
-  unlink,
-} from 'node:fs/promises';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import type { BigIntStats } from 'node:fs';
+import { realpath, type FileHandle } from 'node:fs/promises';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { FrozenLock, FrozenLockPackage } from '@openpacker/adapter-core';
 import type { PolicyInput } from '@openpacker/contracts';
+import {
+  lstatChild,
+  readlinkChild,
+  readDirChildWithTypes,
+} from '@openpacker/project-io';
 import {
   detectNpmLifecycleScripts,
   runDeclaredLifecycleScripts,
 } from './lifecycle.js';
+import { openStableDirectory, removeChild, renameChild } from './paths.js';
 import { isolateProjectStoreFromSharedLinks } from './shared-store-tree.js';
+import { linkVerified } from './stable-ops.js';
 import { OpmError } from './types.js';
 
 /** A package whose approved scripts ran. */
@@ -71,37 +72,103 @@ function approvalPolicy(purl: string): PolicyInput {
   } as PolicyInput;
 }
 
+/** As many links one name is followed through, as Linux follows. */
+const MAXIMUM_LINKS = 40;
+
+/** A regular file of the package's own, open where it lies. */
+interface PackageFile {
+  readonly parent: FileHandle;
+  readonly name: string;
+  readonly info: BigIntStats;
+}
+
+/**
+ * The regular file the link `path` (saying `text`) leads to inside `top`,
+ * followed link by link, each directory on the way opened no-follow from the
+ * base it lies under; undefined when it leaves `top`, passes through a link to
+ * a directory, or ends at anything but a regular file.
+ */
+async function fileOfPackage(
+  top: string,
+  path: string,
+  text: string,
+  followed = 0,
+): Promise<PackageFile | undefined> {
+  const target = resolve(dirname(path), text);
+  if (followed >= MAXIMUM_LINKS || !target.startsWith(`${top}${sep}`))
+    return undefined;
+  const parent = await openStableDirectory(dirname(target)).catch(
+    () => undefined,
+  );
+  if (parent === undefined) return undefined;
+  const name = basename(target);
+  try {
+    const info = await lstatChild(parent, name).catch(() => undefined);
+    if (info?.isFile() === true) return { parent, name, info };
+    const next = info?.isSymbolicLink()
+      ? await readlinkChild(parent, name)
+      : undefined;
+    await parent.close();
+    return next === undefined
+      ? undefined
+      : await fileOfPackage(top, target, next, followed + 1);
+  } catch (error) {
+    await parent.close().catch(() => undefined);
+    throw error;
+  }
+}
+
 /**
  * Make each symbolic link under `dir` that names a file under `dir` a hard
- * link to that file, and refuse any other.
+ * link to that file, and refuse any other. Every directory is opened no-follow
+ * from the base it lies under, and the link is read, the file linked and the
+ * new name given through their directories' handles (ADR 0034): a directory
+ * swapped for a link since the script ran is refused, and nothing is linked,
+ * renamed or removed where it points. Exported for its tests.
  */
-async function linksToFiles(
+export async function linksToFiles(
   dir: string,
   label: string,
   top = dir,
 ): Promise<void> {
-  for (const entry of await readdir(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      await linksToFiles(path, label, top);
-      continue;
+  const handle = await openStableDirectory(dir);
+  try {
+    for (const entry of await readDirChildWithTypes(handle)) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await linksToFiles(path, label, top);
+        continue;
+      }
+      if (!entry.isSymbolicLink()) continue;
+      const text = await readlinkChild(handle, entry.name);
+      const file = await fileOfPackage(top, path, text);
+      if (file === undefined)
+        throw new OpmError(
+          'UNSAFE_PATH',
+          `The install script of ${label} left the link ${relative(top, path)} -> ${text}, which is not a file of the package's own; node_modules holds no symlink but a workspace member's`,
+        );
+      const temporary = `.${entry.name}.opm-link-${randomUUID()}`;
+      try {
+        // A hard link proved to be the file that was judged, under a name of
+        // its own, then put in the link's place in one rename.
+        await linkVerified(
+          file.parent,
+          file.name,
+          file.info,
+          handle,
+          temporary,
+          path,
+        );
+        await renameChild(handle, temporary, entry.name);
+      } finally {
+        await file.parent.close();
+        await removeChild(handle, temporary, { force: true }).catch(
+          () => undefined,
+        );
+      }
     }
-    if (!entry.isSymbolicLink()) continue;
-    const text = await readlink(path);
-    const target = resolve(dirname(path), text);
-    const inside = (candidate: string) =>
-      candidate === top || candidate.startsWith(`${top}${sep}`);
-    const real = await realpath(target).catch(() => undefined);
-    const info = real === undefined ? undefined : await lstat(real);
-    if (real === undefined || !inside(real) || !info!.isFile())
-      throw new OpmError(
-        'UNSAFE_PATH',
-        `The install script of ${label} left the link ${relative(top, path)} -> ${text}, which is not a file of the package's own; node_modules holds no symlink but a workspace member's`,
-      );
-    const tmp = `${path}.opm-link`;
-    await link(real, tmp);
-    await unlink(path);
-    await rename(tmp, path);
+  } finally {
+    await handle.close();
   }
 }
 
