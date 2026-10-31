@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
   FixtureHttpTransport,
@@ -32,45 +32,126 @@ import {
  * lock, or a manifest answers a host no DNS name could be without handing it to
  * the URL parser, which takes most of a second on 65,550 characters of it
  * (`@openpacker/canonical`'s `untrusted-url.test.ts` measures that), and says
- * so without repeating any of it. The time is the thing under test.
+ * so without repeating any of it.
+ *
+ * What is under test is that no URL parser is handed such an address, which
+ * is what would take the time. This was a wall-clock bound, 50 ms, and a bound
+ * on a clock fails when the machine is busy, and passes, with the guard gone,
+ * on a machine or a Node fast enough. Every text handed to the global `URL` is
+ * recorded instead (constructed, `URL.parse`, `URL.canParse`), and a test fails
+ * when it was handed the host, however fast it went. The record is shown to see
+ * an ordinary address, so that a recorder that sees nothing cannot pass a test.
+ * What `node:url` parses with its own parser (`fileURLToPath(text)` and the
+ * rest), out of the global's sight, is held to the same rule where it is
+ * written: `apps/opm/test/untrusted-url-sites.test.ts` fails on any that is
+ * not handed a URL `parseUntrustedUrl` made.
  */
 const HOST = 'ß.é.'.repeat(16384);
 const HOSTILE = `https://${HOST}/demo/-/demo-1.1.0.tgz`;
-const FAST_MS = 50;
 const NPM = 'https://registry.npmjs.org';
 
-/** What `run` throws or rejects with, and the least of three tries of how long that took. */
-async function timed(
-  run: () => void,
-): Promise<{ error: Error | undefined; ms: number; value: unknown }> {
-  let error: Error | undefined;
-  let value: unknown;
-  let ms = Infinity;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const started = performance.now();
-    try {
-      value = await run();
-    } catch (caught) {
-      error ??= caught instanceof Error ? caught : new Error(String(caught));
-    }
-    ms = Math.min(ms, performance.now() - started);
+/** Every text the global `URL` was handed since the test began. */
+const parsed: string[] = [];
+
+/** What the parser reads of an argument: a string, or a URL as its text. */
+const asText = (value: string | URL | undefined): string[] =>
+  value === undefined ? [] : [String(value)];
+
+const RealURL = globalThis.URL;
+
+/** The global `URL`, recording what it is handed; what it makes is a `URL` still. */
+class RecordingURL extends RealURL {
+  constructor(url: string | URL, base?: string | URL) {
+    parsed.push(...asText(url), ...asText(base));
+    super(url, base);
   }
-  return { error, ms, value };
+
+  static override parse(url: string | URL, base?: string | URL): URL | null {
+    parsed.push(...asText(url), ...asText(base));
+    return RealURL.parse(url, base);
+  }
+
+  static override canParse(url: string | URL, base?: string | URL): boolean {
+    parsed.push(...asText(url), ...asText(base));
+    return RealURL.canParse(url, base);
+  }
+
+  /** A URL Node made itself is a `URL` here too. */
+  static [Symbol.hasInstance](value: URL | undefined): boolean {
+    return value instanceof RealURL;
+  }
 }
 
-async function expectOpmRefusal(
-  run: () => void,
+beforeEach(() => {
+  parsed.length = 0;
+  vi.stubGlobal('URL', RecordingURL);
+});
+
+/** How many texts handed to a URL parser held the hostile host. */
+const hostileParses = () => parsed.filter((text) => text.includes(HOST)).length;
+
+/** What `run` throws or rejects with, or returns; and that no parser was handed the host. */
+async function observed<T>(
+  run: () => T | Promise<T>,
+): Promise<{ error: Error | undefined; value: T | undefined }> {
+  let error: Error | undefined;
+  let value: T | undefined;
+  try {
+    value = await run();
+  } catch (caught) {
+    error = caught instanceof Error ? caught : new Error(String(caught));
+  }
+  expect(hostileParses(), 'texts with the host handed to a URL parser').toBe(0);
+  return { error, value };
+}
+
+async function expectOpmRefusal<T>(
+  run: () => T | Promise<T>,
   code: string,
 ): Promise<OpmError> {
-  const { error, ms } = await timed(run);
+  const { error } = await observed(run);
   expect(error).toBeInstanceOf(OpmError);
   if (!(error instanceof OpmError)) throw new Error('not an OpmError');
   expect(error.code).toBe(code);
   expect(error.message).not.toContain('ß');
   expect(error.message.length).toBeLessThan(600);
-  expect(ms).toBeLessThan(FAST_MS);
   return error;
 }
+
+describe('the record of what URL parsers are handed', () => {
+  it('sees an address handed to the global URL', () => {
+    void new URL(`${NPM}/demo`);
+    void URL.canParse(`${NPM}/canParse`);
+    void URL.parse('demo', `${NPM}/`);
+    expect(parsed).toEqual([
+      `${NPM}/demo`,
+      `${NPM}/canParse`,
+      'demo',
+      `${NPM}/`,
+    ]);
+    expect(new URL(NPM)).toBeInstanceOf(RealURL);
+    expect(new RealURL(NPM)).toBeInstanceOf(URL);
+  });
+
+  it('sees the ordinary address a lock names when its scheme is read', () => {
+    const lock = {
+      path: 'node_modules/demo',
+      name: 'demo',
+      packageName: 'demo',
+      version: '1.1.0',
+      purl: 'pkg:npm/demo',
+      exactPurl: 'pkg:npm/demo@1.1.0',
+      source: `${NPM}/demo/-/demo-1.1.0.tgz`,
+      sourceKind: 'registry',
+      integrity: 'sha512-x',
+      direct: true,
+      scope: 'runtime',
+      hasInstallScript: false,
+    } satisfies FrozenLockPackage;
+    frozenFacts(lock, 'npm', '2026-10-11T12:00:00.000Z');
+    expect(parsed).toContain(`${NPM}/demo/-/demo-1.1.0.tgz`);
+  });
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -288,10 +369,9 @@ describe('a lock that names a source', () => {
   });
 
   it('reads no scheme out of an address whose host is longer than a name can be', async () => {
-    const { value, ms } = await timed(() =>
+    const { value } = await observed(() =>
       frozenFacts(lockPackage(HOSTILE), 'npm', '2026-10-11T12:00:00.000Z'),
     );
-    expect(ms).toBeLessThan(FAST_MS);
     expect(value).not.toHaveProperty('sourceScheme');
   });
 
@@ -316,12 +396,11 @@ describe('a lock that names a source', () => {
 
 describe('the supply-chain facts of a source', () => {
   it('call such an address exotic, without reading it', async () => {
-    const { value, ms } = await timed(() =>
+    const { value } = await observed(() =>
       captureFactsFromSourceUri('pkg:npm/demo@1.1.0', HOSTILE, {
         evaluationTime: '2026-10-11T12:00:00.000Z',
       }),
     );
-    expect(ms).toBeLessThan(FAST_MS);
     expect(value).toMatchObject({ sourceKind: 'exotic' });
   });
 
@@ -349,12 +428,11 @@ describe('the supply-chain facts of a source', () => {
       },
       warnings: [],
     };
-    const { value, ms } = await timed(() =>
+    const { value } = await observed(() =>
       captureFactsFromInspection(inspection, {
         evaluationTime: '2026-10-11T12:00:00.000Z',
       }),
     );
-    expect(ms).toBeLessThan(FAST_MS);
     expect(value).toMatchObject({ sourceKind: 'registry' });
     expect(value).not.toHaveProperty('sourceScheme');
   });
