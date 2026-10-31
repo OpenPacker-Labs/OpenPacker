@@ -242,7 +242,7 @@ export async function pnpmWorld() {
             ? ''
             : `packages:\n${[...new Set(members.map((m) => `  - ${q(m.split('/').slice(0, -1).join('/') + '/*')}`))].join('\n')}\n`),
       );
-      if (members.length === 0)
+      if (members.length === 0 && options.workspaceYaml === undefined)
         await writeFile(
           join(dir, 'pnpm-workspace.yaml'),
           'packages:\n  - "."\n',

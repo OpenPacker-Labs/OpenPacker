@@ -16,11 +16,18 @@
  * - and a symbolic link the script leaves inside its directory, to a file of
  *   its own, becomes a hard link to that file (`node_modules` holds no symlink
  *   but a workspace member's, ADR 0048). Any other link fails the install.
+ *
+ * They run in dependency order (ADR 0060 §7, `frozen-build-order.ts`): a
+ * package's after those of every approved package it depends on, the lock's
+ * order where nothing says otherwise, and a cycle in the lock's order,
+ * reported.
  */
 
+import { constants } from 'node:fs';
 import {
   link,
   lstat,
+  open,
   readdir,
   readlink,
   realpath,
@@ -30,6 +37,7 @@ import {
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { FrozenLock, FrozenLockPackage } from '@openpacker/adapter-core';
 import type { PolicyInput } from '@openpacker/contracts';
+import { buildOrder } from './frozen-build-order.js';
 import {
   detectNpmLifecycleScripts,
   runDeclaredLifecycleScripts,
@@ -43,6 +51,67 @@ export interface BuiltPackage {
   version: string;
   path: string;
 }
+
+/** The approved scripts that ran, in the order they ran, and the cycles among them. */
+export interface ApprovedBuilds {
+  built: BuiltPackage[];
+  /** Packages that depend on each other, more than one of them approved: run in the lock's order. */
+  cycles: BuiltPackage[][];
+}
+
+const MAXIMUM_MANIFEST_BYTES = 4 * 1024 * 1024;
+const DEPENDENCY_LISTS = [
+  'dependencies',
+  'optionalDependencies',
+  'peerDependencies',
+] as const;
+
+/**
+ * The names the installed `package.json` in `dir` depends on, from its three
+ * lists, read without following a link and bounded; none when it cannot be
+ * read as one.
+ */
+async function dependencyNamesIn(dir: string): Promise<string[]> {
+  let text: string;
+  try {
+    const handle = await open(
+      join(dir, 'package.json'),
+      constants.O_RDONLY | constants.O_NOFOLLOW,
+    );
+    try {
+      const info = await handle.stat();
+      if (!info.isFile() || info.size > MAXIMUM_MANIFEST_BYTES) return [];
+      text = await handle.readFile('utf8');
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return [];
+  }
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(text);
+  } catch {
+    return [];
+  }
+  if (typeof manifest !== 'object' || manifest === null) return [];
+  const names: string[] = [];
+  for (const list of DEPENDENCY_LISTS) {
+    // SAFETY: checked above to be an object; each field is checked below.
+    const value: unknown = (manifest as Record<string, unknown>)[list];
+    if (typeof value !== 'object' || value === null || Array.isArray(value))
+      continue;
+    for (const name of Object.keys(value))
+      if (!names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+const labelOf = (pkg: FrozenLockPackage): BuiltPackage => ({
+  name: pkg.packageName,
+  version: pkg.version,
+  path: pkg.path,
+});
 
 /** Whether the project approved this package's install scripts, by name or `name@version`. */
 export function buildApproved(
@@ -107,21 +176,35 @@ async function linksToFiles(
 
 /**
  * Run the approved install scripts of the packages `lock` places under
- * `root`, each in place, and say which ran. A script that fails stops the
- * install, as it stops npm's.
+ * `root`, each in place and in dependency order, and say which ran. A script
+ * that fails stops the install, as it stops npm's.
  */
 export async function runApprovedBuilds(input: {
   root: string;
-  lock: Pick<FrozenLock, 'packages' | 'approvedBuilds'>;
+  lock: Pick<
+    FrozenLock,
+    'packages' | 'approvedBuilds' | 'skipped' | 'workspace'
+  >;
   /** Whether each package declares an install script, by path. */
   declares: ReadonlyMap<string, boolean>;
-}): Promise<BuiltPackage[]> {
-  const built: BuiltPackage[] = [];
-  if (input.lock.approvedBuilds === undefined) return built;
+}): Promise<ApprovedBuilds> {
+  const approved = input.lock.approvedBuilds;
+  if (approved === undefined) return { built: [], cycles: [] };
   const root = await realpath(input.root);
-  for (const pkg of input.lock.packages) {
-    if (input.declares.get(pkg.path) !== true) continue;
-    if (!buildApproved(input.lock.approvedBuilds, pkg)) continue;
+  const { order, cycles } = await buildOrder({
+    packages: input.lock.packages,
+    runs: (pkg) =>
+      input.declares.get(pkg.path) === true && buildApproved(approved, pkg),
+    links: input.lock.workspace?.layout.links ?? [],
+    stops: new Set(
+      input.lock.skipped
+        .filter((skip) => skip.kind === 'bundled')
+        .map((skip) => skip.path),
+    ),
+    dependencyNames: (dir) => dependencyNamesIn(join(root, ...dir.split('/'))),
+  });
+  const built: BuiltPackage[] = [];
+  for (const pkg of order) {
     const dir = join(root, ...pkg.path.split('/'));
     await isolateProjectStoreFromSharedLinks(dir);
     const declared = await detectNpmLifecycleScripts(dir);
@@ -138,7 +221,7 @@ export async function runApprovedBuilds(input: {
       ],
     });
     await linksToFiles(dir, `${pkg.packageName}@${pkg.version} (${pkg.path})`);
-    built.push({ name: pkg.packageName, version: pkg.version, path: pkg.path });
+    built.push(labelOf(pkg));
   }
-  return built;
+  return { built, cycles: cycles.map((cycle) => cycle.map(labelOf)) };
 }

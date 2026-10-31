@@ -362,7 +362,14 @@ Which entries a machine installs follows npm: `dev`, `optional` and `peer`
 entries are dropped by `--omit`; an optional package for another `os`, `cpu` or
 `libc` is not installed, nor is anything only it needs; a package that is not
 optional and does not run here is an error. The packages that declare an install
-script are counted and listed, and none is run.
+script are counted and listed, and none is run unless the project approved it by
+name, in pnpm's `onlyBuiltDependencies` or `allowBuilds` or Bun's
+`trustedDependencies`
+([ADR 0060](../adr/0060-opm-ci-runs-the-install-scripts-a-project-approved.md)).
+An approved script runs in its package's directory, in the jail, after the
+scripts of every approved package it depends on; the lock's order breaks ties,
+and a cycle of approved packages runs in the lock's order and is named in the
+output.
 
 Measured on a lock of 1,039 entries (894 installed here), against npm's own
 reader of the same lock: no difference in which package is installed at which

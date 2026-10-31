@@ -79,8 +79,13 @@ export interface FrozenInstallResult {
   patched: { packages: number; patches: number };
   /** Installed packages that declare an install script. None was run. */
   installScripts: readonly { name: string; version: string; path: string }[];
-  /** The packages whose approved install scripts ran, in place (ADR 0060). */
+  /** The packages whose approved install scripts ran, in place, in the order they ran (ADR 0060). */
   built: readonly BuiltPackage[];
+  /**
+   * Present when approved packages depend on each other in a cycle: each cycle,
+   * whose scripts ran in the lock's order (ADR 0060 §7).
+   */
+  buildCycles?: readonly (readonly BuiltPackage[])[];
   /** For a workspace lock: the members the lock holds, and the ones linked here. */
   workspace?: { members: number; linked: number };
   /** Present when the places do not keep every shared peer to one copy of it. */
@@ -265,7 +270,11 @@ async function installFrozenInStep(
         });
     // The install scripts the project approved, in place, now that every
     // package they may need is laid out (ADR 0060).
-    const built = await runApprovedBuilds({ root, lock, declares });
+    const { built, cycles } = await runApprovedBuilds({
+      root,
+      lock,
+      declares,
+    });
     const ran = new Set(built.map((item) => item.path));
     const done = now();
     return {
@@ -284,6 +293,7 @@ async function installFrozenInStep(
         (item) => !ran.has(item.path),
       ),
       built,
+      ...(cycles.length > 0 && { buildCycles: cycles }),
       patched,
       layout,
       ...(lock.workspace !== undefined && {
