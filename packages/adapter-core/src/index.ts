@@ -10,14 +10,28 @@ import {
   parseUntrustedUrl,
 } from '@openpacker/canonical';
 import { echoed, echoedValue } from './echo.js';
-import { ProviderError } from './provider-error.js';
-import {
-  MetadataLimitError,
-  ResponseTooLargeError,
-} from './document-refusal.js';
+import { ProviderError, providerErrorForStatus } from './provider-error.js';
+import type { HttpResponse } from './metadata-json.js';
+import { ResponseTooLargeError } from './document-refusal.js';
 export { ECHO_TEXT_LIMIT, echoed, echoedValue } from './echo.js';
 export { isAddress, redactText } from './redact-text.js';
-export { ProviderError } from './provider-error.js';
+export { ProviderError, providerErrorForStatus } from './provider-error.js';
+export {
+  DEFAULT_METADATA_PARSE_COST,
+  MAXIMUM_METADATA_BYTES,
+  assertBoundedProviderMetadata,
+  json,
+  jsonWithCost,
+  text,
+  type HttpResponse,
+  type ProviderMetadataLimits,
+} from './metadata-json.js';
+import { RetentionLedger } from './retention.js';
+export {
+  DEFAULT_RETAINED_BYTES,
+  RetentionLedger,
+  type Release,
+} from './retention.js';
 export { redactAddress, shownScheme } from './redact-address.js';
 export {
   hasOverlongHost,
@@ -54,12 +68,7 @@ export type {
   NativeLayoutMember,
   NativeLayoutWorkspace,
 } from './layout-workspace.js';
-import {
-  CanonicalJsonLimitError,
-  canonicalProjectionDigest,
-  formatDigest,
-  parseCanonicalJson,
-} from '@openpacker/canonical';
+import { canonicalProjectionDigest, formatDigest } from '@openpacker/canonical';
 import { DIGEST_PROJECTIONS, type JsonValue } from '@openpacker/contracts';
 import type {
   Distribution,
@@ -815,15 +824,23 @@ export interface HttpRequest {
   maximumBytes?: number | undefined;
 }
 
-export interface HttpResponse {
-  status: number;
-  headers: Readonly<Record<string, string>>;
-  body: Uint8Array;
-  url: string;
-}
-
 export interface HttpTransport {
   request(request: HttpRequest): Promise<HttpResponse>;
+  /**
+   * Whether asking again for a document this transport already answered gets
+   * the document again, from the origin or from a store of the transport's
+   * own. A holder may let go of a document only of such a transport, because
+   * it can get it back. Absent means no: a transport that replays what it was
+   * recorded with, or answers once from a source that is gone, is kept whole.
+   */
+  readonly refetchable?: boolean | undefined;
+  /**
+   * Where a holder of what this transport returned says what it keeps, so that
+   * a resolve's documents and the objects parsed from them are bounded
+   * together. Present on a transport that keeps documents for a resolve; a
+   * holder uses it only when `refetchable`.
+   */
+  readonly retention?: RetentionLedger | undefined;
 }
 
 export type DestinationPolicy = 'origin-allowlist' | 'classify-and-pin';
@@ -887,6 +904,12 @@ const CROSS_ORIGIN_REDIRECT_HEADERS = new Set([
 const TOKEN68 = /^[A-Za-z0-9\-._~+/]+=*$/u;
 
 export class BoundedFetchTransport implements HttpTransport {
+  /**
+   * The origin is asked again, so a caller may let go of what it was given;
+   * not over a `fetch` it was handed, which may answer from anywhere, a
+   * recorded sequence of answers among them.
+   */
+  readonly refetchable: boolean;
   readonly #allowedOrigins: ReadonlySet<string>;
   readonly #pinnedOrigins: ReadonlySet<string>;
   readonly #pinnedTokenEnvNames: ReadonlyMap<string, string> | undefined;
@@ -930,6 +953,7 @@ export class BoundedFetchTransport implements HttpTransport {
       options.fetch === undefined;
     this.#fetch =
       options.fetch ?? (this.#pinProduction ? pinnedFetch : globalThis.fetch);
+    this.refetchable = options.fetch === undefined;
     this.#lookup =
       options.lookup ?? (this.#pinProduction ? defaultHostLookup : undefined);
     this.#delay = options.delay ?? abortableDelay;
@@ -1488,26 +1512,6 @@ function assertAllowedProviderUrl(
       'INVALID_PROVIDER_ENDPOINT',
       `Provider origin is not allowed: ${url.origin}`,
     );
-}
-
-export function providerErrorForStatus(status: number): ProviderError {
-  if (status === 404)
-    return new ProviderError(
-      'PACKAGE_NOT_FOUND',
-      'Upstream resource was not found',
-      status,
-    );
-  if (status === 429)
-    return new ProviderError(
-      'RATE_LIMITED',
-      'Upstream rate limit exceeded',
-      status,
-    );
-  return new ProviderError(
-    'UPSTREAM_UNAVAILABLE',
-    `Upstream returned ${status}`,
-    status,
-  );
 }
 
 function stripCrossOriginHeaders(
@@ -2270,109 +2274,6 @@ export function semanticLoss(
   if (representedMeaning !== undefined)
     result.representedMeaning = representedMeaning;
   return result;
-}
-
-export function text(response: HttpResponse): string {
-  return new TextDecoder('utf-8', { fatal: true }).decode(response.body);
-}
-
-/** How deep, and how many values, a metadata document may hold by default. */
-const DEFAULT_MAXIMUM_DEPTH = 64;
-const DEFAULT_MAXIMUM_VALUES = 200_000;
-
-/**
- * The shape a metadata document may have once parsed. The defaults suit the
- * small documents most registries serve; a registry whose documents are
- * legitimately large (an npm packument lists every version ever published)
- * states its own, derived from the byte limit it reads under.
- */
-export interface ProviderMetadataLimits {
-  maximumDepth?: number;
-  maximumNodes?: number;
-}
-
-/**
- * The largest metadata document any adapter reads, in bytes, and so the
- * largest one a resolve keeps in memory to read once. An adapter's own bound
- * may be lower; none may be higher, or the resolve stops keeping what it reads
- * and fetches it again. Artifact downloads have their own, larger bound.
- */
-export const MAXIMUM_METADATA_BYTES = 64 * 1024 * 1024;
-
-/**
- * The least a parsed metadata value may weigh, in bytes of the document it came
- * from. A document denser than this (`[1,1,1,...]` is two bytes a value) costs
- * far more to hold than its size says, so the number of values allowed is the
- * byte limit divided by this, never a number of its own.
- */
-export const MINIMUM_BYTES_PER_METADATA_VALUE = 16;
-
-/** How many values a document read under `maximumBytes` may hold. */
-export function metadataValueLimit(maximumBytes: number): number {
-  return Math.floor(maximumBytes / MINIMUM_BYTES_PER_METADATA_VALUE);
-}
-
-export function json<T>(
-  response: HttpResponse,
-  limits: ProviderMetadataLimits = {},
-): T {
-  if (response.status < 200 || response.status >= 300)
-    throw providerErrorForStatus(response.status);
-  // Decoding is inside the try: a body that is not UTF-8 is a refused document
-  // like any other, and `text` throws a bare TypeError for it.
-  let document = '';
-  try {
-    document = text(response);
-    // The limits stop the parse itself: counting values after the tree is built
-    // spends the memory the limit exists to protect.
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    return parseCanonicalJson(document, {
-      maximumValues: limits.maximumNodes ?? DEFAULT_MAXIMUM_VALUES,
-      maximumDepth: limits.maximumDepth ?? DEFAULT_MAXIMUM_DEPTH,
-    }) as T;
-  } catch (error) {
-    if (error instanceof CanonicalJsonLimitError)
-      throw new MetadataLimitError(
-        error.limit,
-        error.maximum,
-        error.visited,
-        error.offset,
-        document.length,
-      );
-    throw new ProviderError(
-      'INVALID_PROVIDER_METADATA',
-      error instanceof Error ? error.message : 'Invalid JSON',
-    );
-  }
-}
-
-export function assertBoundedProviderMetadata(
-  value: unknown,
-  maximumDepth = DEFAULT_MAXIMUM_DEPTH,
-  maximumNodes = DEFAULT_MAXIMUM_VALUES,
-): void {
-  const pending: { value: unknown; depth: number }[] = [{ value, depth: 0 }];
-  let nodes = 0;
-  while (pending.length > 0) {
-    const current = pending.pop()!;
-    nodes += 1;
-    if (nodes > maximumNodes)
-      throw new ProviderError(
-        'UPSTREAM_RESPONSE_TOO_LARGE',
-        `Provider metadata exceeds ${maximumNodes} values`,
-      );
-    if (current.depth > maximumDepth)
-      throw new ProviderError(
-        'INVALID_PROVIDER_METADATA',
-        `Provider metadata exceeds depth ${maximumDepth}`,
-      );
-    if (current.value !== null && typeof current.value === 'object') {
-      for (const child of Array.isArray(current.value)
-        ? current.value
-        : Object.values(current.value))
-        pending.push({ value: child, depth: current.depth + 1 });
-    }
-  }
 }
 
 export function header(

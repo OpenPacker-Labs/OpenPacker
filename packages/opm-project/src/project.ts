@@ -40,6 +40,7 @@ import {
   isPinnedVersion,
   registryHintFor,
   registryTargetFor,
+  targetAsWritten,
 } from './registry-target.js';
 import { defaultRelease } from './default-release.js';
 import {
@@ -87,6 +88,7 @@ import {
   ecosystemFromPurl,
   exactPurl,
   parsePackageSpec,
+  purlAtVersion,
   stripPurlVersion,
 } from './spec.js';
 import {
@@ -712,7 +714,7 @@ async function resolveRequirement(input: {
   const versionHint = input.req.version;
   const candidateExact =
     versionHint && !versionHint.startsWith('^') && !versionHint.startsWith('~')
-      ? exactPurl(stripPurlVersion(requestedPurl), versionHint)
+      ? purlAtVersion(requestedPurl, versionHint)
       : requestedPurl.includes('@')
         ? requestedPurl
         : undefined;
@@ -746,7 +748,7 @@ async function resolveRequirement(input: {
       !versionHint.startsWith('~')
         ? versionHint
         : (guessVersionFromBytes(bytes) ?? '0.0.0');
-    const purl = exactPurl(stripPurlVersion(requestedPurl), version);
+    const purl = purlAtVersion(requestedPurl, version);
     const format = inferFormat(resolved, mediaTypeForEcosystem(ecosystem));
     const mediaType = mediaTypeForEcosystem(ecosystem);
     // discover bins via temp extract for npm
@@ -782,7 +784,7 @@ async function resolveRequirement(input: {
   const keys = [
     candidateExact,
     versionHint && !/[~^<>*]/.test(versionHint)
-      ? exactPurl(stripPurlVersion(requestedPurl), versionHint)
+      ? purlAtVersion(requestedPurl, versionHint)
       : undefined,
     requestedPurl,
     stripPurlVersion(requestedPurl),
@@ -915,8 +917,11 @@ async function resolveRequirement(input: {
         : await input.pool.optionsWithProvider(ecosystem);
     // A range or a dist-tag in the manifest is resolved here; a version is a
     // version. (`candidateExact` treats anything but ^ and ~ as a version.)
+    // Without a codec any hint goes to the plugin as written
+    // (`targetAsWritten`, asked first).
     const registryHint = registryHintFor(ecosystem, versionHint);
     const target =
+      targetAsWritten(ecosystem, requestedPurl, versionHint) ??
       (registryHint === undefined
         ? candidateExact
         : await registryTargetFor({

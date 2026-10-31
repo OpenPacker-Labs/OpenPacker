@@ -51,9 +51,9 @@ import {
 import {
   adoptExistingEntry,
   assertEntryName,
-  recordTreeDigest,
   sealTreeReadOnly,
 } from './shared-store.js';
+import { recordTreeDigest } from './shared-store-record.js';
 import type { StoreHold } from './shared-store-lease.js';
 import { OpmError } from './types.js';
 

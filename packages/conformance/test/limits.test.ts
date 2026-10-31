@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createPrexValidator,
   parseAndValidateContract,
   validateCanonicalValue,
 } from '../src/index.js';
@@ -7,10 +8,16 @@ import {
 const DIGEST_SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/common.schema.json#/$defs/Digest';
 
+// Built while the file is collected: left to its default, the call below
+// builds a validator and adds the whole PREX catalog (about a second of CPU
+// alone) inside the test's time budget, before the duplicate member it is about
+// is even read.
+const prex = createPrexValidator();
+
 describe('PREX canonical contract boundary', () => {
   it('rejects duplicate JSON members before schema validation', () => {
     expect(
-      parseAndValidateContract(DIGEST_SCHEMA, '{"a":1,"a":2}'),
+      parseAndValidateContract(DIGEST_SCHEMA, '{"a":1,"a":2}', prex),
     ).toMatchObject({ valid: false });
   });
 

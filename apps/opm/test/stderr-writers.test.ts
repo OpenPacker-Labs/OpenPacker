@@ -82,7 +82,7 @@ const EXEMPT: ReadonlyArray<{
     reason: 'a constant sentence around an exit status',
   },
   {
-    file: 'opmx.ts',
+    file: 'opmx-spawn.ts',
     starts: 'outcome.stderr',
     reason: "the tool's own stderr, passed through as it wrote it",
   },
@@ -162,12 +162,12 @@ const EXEMPT: ReadonlyArray<{
       "the host installer's own captured stderr (the write is named above)",
   },
   {
-    file: 'opmx.ts',
+    file: 'opmx-spawn.ts',
     starts: 'if (outcome.stderr) io.stderr.write(outcome.stderr)',
     reason: "the tool's own captured stderr (the write is named above)",
   },
   {
-    file: 'opmx.ts',
+    file: 'opmx-spawn.ts',
     starts: 'io.stderr.write(outcome.stderr)',
     reason: "the tool's own captured stderr (the write is named above)",
   },
@@ -194,6 +194,7 @@ describe('what opm writes to stderr', () => {
       new Set([
         'opm.ts',
         'opmx.ts',
+        'opmx-spawn.ts',
         'commands/auth.ts',
         'commands/ci-peers.ts',
         'commands/ci.ts',

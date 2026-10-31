@@ -49,27 +49,28 @@ describe('a patched entry in the shared store, collected', () => {
     await writeFile(join(entry, 'package', 'index.js'), 'patched');
     await writeFile(`${entry}.tree`, `sha256:${'c'.repeat(64)}\n`);
     const stray = join(shared, `.${key}.materialize-0000`);
-    await mkdir(stray);
     const env = { OPM_STORE_HOME: shared };
-    const old = new Date(Date.now() - 3_600_000);
+    // An entry is dated by the newer of its record and its directory's ctime,
+    // which nothing sets back: "old" is the clock gc reads, an hour on.
+    const later = Date.now() + 3_600_000;
 
     await link(join(entry, 'package', 'index.js'), join(project, 'index.js'));
-    await utimes(`${entry}.tree`, old, old);
-    expect(await collectSharedStore({ env })).toMatchObject({
+    expect(await collectSharedStore({ env, now: () => later })).toMatchObject({
       removed: [],
       referenced: 1,
     });
 
+    // A leftover of a materialization, young now and old by the last look.
+    await mkdir(stray);
     await rm(join(project, 'index.js'));
-    await utimes(`${entry}.tree`, new Date(), new Date());
     expect(await collectSharedStore({ env })).toMatchObject({
       removed: [],
       tooNew: 1,
     });
 
-    await utimes(`${entry}.tree`, old, old);
-    await utimes(stray, old, old);
-    expect((await collectSharedStore({ env })).removed).toEqual([stray, entry]);
+    expect(
+      (await collectSharedStore({ env, now: () => later })).removed,
+    ).toEqual([stray, entry]);
     expect(await readdir(shared)).toEqual([]);
   });
 

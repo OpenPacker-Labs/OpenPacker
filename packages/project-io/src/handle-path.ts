@@ -26,6 +26,8 @@ import {
   readdir,
   rename,
   rm,
+  rmdir,
+  unlink,
   type FileHandle,
 } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -234,10 +236,60 @@ export async function removeChild(
   }
   const libc = libcBackend();
   if (libc !== undefined) return libc.removeChild(parent, name, options);
-  await rm(posixChild(parent, name), {
-    force: options.force ?? false,
-    recursive: options.recursive ?? false,
-  });
+  if (options.recursive !== true) {
+    await rm(posixChild(parent, name), { force: options.force ?? false });
+    return;
+  }
+  try {
+    if ((await lstat(posixChild(parent, name))).isDirectory())
+      await removeDirectoryChild(parent, name);
+    else await unlink(posixChild(parent, name));
+  } catch (error) {
+    // SAFETY: only the errno code of the failed removal is read.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (options.force === true && code === 'ENOENT') return;
+    throw error;
+  }
+}
+
+/**
+ * Remove the directory `name` of `parent` and all it holds, a directory handle
+ * at a time, as the libc backend does with `openat` and `unlinkat`.
+ *
+ * Node's recursive `rm` given `/proc/self/fd/N/name` fixes only the parent: it
+ * looks at each directory below and then lists it by its path, so a directory
+ * swapped for a link in between is entered, and what the link points at is
+ * removed. Here each directory is opened without following a link and emptied
+ * through that descriptor; a name that has become a link meanwhile is refused
+ * (ELOOP) or left (rmdir does not follow it), never entered.
+ */
+async function removeDirectoryChild(
+  parent: FileHandle,
+  name: string,
+): Promise<void> {
+  const directory = await open(
+    posixChild(parent, name),
+    constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  try {
+    const entries = await readdir(stableHandlePath(directory), {
+      withFileTypes: true,
+    });
+    for (const entry of entries) {
+      try {
+        if (entry.isDirectory())
+          await removeDirectoryChild(directory, entry.name);
+        else await unlink(posixChild(directory, entry.name));
+      } catch (error) {
+        // An entry that went meanwhile is gone, which is the goal.
+        // SAFETY: only the errno code of the failed removal is read.
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
+  } finally {
+    await directory.close();
+  }
+  await rmdir(posixChild(parent, name));
 }
 
 /**

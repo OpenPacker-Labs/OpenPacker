@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { redactAddress } from './redact-address.js';
 
 /**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
+/**
  * What `redactAddress` prints is built from the URL parser's own components,
  * never from a slice of the text, so a marker put anywhere in an address can
  * come out only where the parser put it in the host or the path. This test
@@ -289,11 +299,11 @@ describe('what redactAddress shows of an address it can read', () => {
   });
 
   it('is linear', () => {
-    const started = performance.now();
+    const started = cpuMs();
     redactAddress('blob:'.repeat(200_000));
     redactAddress(`https://${'a'.repeat(1 << 20)}/x`);
     redactAddress(`git+https://h/${'@'.repeat(1 << 20)}`);
     redactAddress(`x:${'@/'.repeat(1 << 19)}`);
-    expect(performance.now() - started).toBeLessThan(3000);
+    expect(cpuMs() - started).toBeLessThan(3000);
   });
 });

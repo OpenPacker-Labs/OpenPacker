@@ -457,7 +457,8 @@ not places:
   lock for which no such layout is found is laid out as before, never refused
   for a peer. Where no layout keeps a package and its dependent to one copy of a
   peer they share (a package that depends on an older version of itself and
-  hosts a plugin that peers it, say), the install goes ahead and says so with
+  hosts a plugin that peers it, while the project holds another version of a
+  package that needs them both, say), the install goes ahead and says so with
   one line on stderr, for `opm ci` and `opm ci --plan`: how many dependencies
   load their own copy of a peer, and which first. pnpm's symlinks keep them to
   one copy; a tree of directories cannot always. Every edge of every importer
@@ -594,6 +595,12 @@ source = "file:./vendor/demo-tool.tgz"
 offline = false
 layout = "opm"
 ```
+
+`version` is text, never PURL syntax. Where the line itself is what is locked (a
+package from an explicit `source`, or one a plugin without a codec serves), the
+lock's `purl` carries it as the PURL's version, percent-encoded where a PURL
+needs it: `1.2.3+build.5` is locked as `@1.2.3%2Bbuild.5`, the same version once
+read, and a lock that spells it bare still matches.
 
 ### Specs for `opm add`
 
@@ -943,8 +950,10 @@ counts until it is removed from `<store>/.leases/` (ADR 0048, amendment
 2026-10-17). An install waits for a collection that is deciding on an entry it
 wants, for 45 seconds at most; it then warns, naming the collection's lease, and
 goes on. Entries younger than ten minutes are left alone too, for an older opm
-that does not claim. A `.tree` record whose entry is gone, which an install or a
-collection that stopped half way leaves, is removed once it is ten minutes old.
+that does not claim; an entry's age is that of the newer of its `.tree` record
+and the entry directory itself. A `.tree` record whose entry is gone, which an
+install or a collection that stopped half way leaves, is removed once it is ten
+minutes old.
 
 An install that has to make its claim in a store with no room left fails with
 the disk error (`ENOSPC`, `EDQUOT`); a store it may only read is adopted from
@@ -1349,6 +1358,18 @@ different thing tomorrow — but artifact bytes are content-addressed: a repeat
 run whose resolved digest already names a tool-cache entry skips the download
 and rebuilds from the digest-verified store archive, reported as `(cached)`.
 
+An npm tool runs from a `node_modules` of its closure's release, written for the
+run under `<tool cache>/.opm/runs/` and bound read-only with its `.bin` first on
+PATH, so `opmx pkg:npm/cowsay hi` finds `yargs` and a tool can run a dependency
+by name. Store entries are bound one by one while the sandbox's 16 handles
+allow, and past that through one view of their store (ADR 0036). Both are
+removed when the run ends, Ctrl-C and SIGTERM included (a second signal ends
+`opmx` at once). After a SIGKILL or a crash, the next run in the same place, or
+`opm gc` for a project's views, removes them once the process that made them has
+ended, judged by the same owner rule as a step's lock (`.owner`, ADR 0056); what
+another host, container or earlier boot left there and cannot be placed stays,
+and a left-behind view makes `opm gc --shared` keep its entries.
+
 ### Delegated adapter plugins
 
 Third-party ecosystems arrive as delegated adapter plugins (ADR 0039): a
@@ -1542,7 +1563,8 @@ Missing artifacts fail closed with a clear error (no silent network when
 - Package execution (approved lifecycle scripts, `opmx`, host installers) goes
   through `@openpacker/sandbox` — native Bubblewrap jail on Linux,
   **fail-closed** when a jail cannot be enforced
-  ([ADR 0036](../adr/0036-sandboxed-installs-and-execution.md)).
+  ([ADR 0036](../adr/0036-sandboxed-installs-and-execution.md)). The jail leaves
+  root no capabilities: as root it cannot read another user's 0600 file.
 
 ### Sandbox configuration
 
