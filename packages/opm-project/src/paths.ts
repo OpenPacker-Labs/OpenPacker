@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { homedir } from 'node:os';
-import { lstat, open, realpath, type FileHandle } from 'node:fs/promises';
+import { lstat, open, realpath, stat, type FileHandle } from 'node:fs/promises';
 import {
   basename,
   dirname,
@@ -16,14 +16,17 @@ import { echoed } from '@openpacker/adapter-core';
 import {
   O_DIRECTORY,
   handlePathForPlatform,
+  isBase,
   lstatChild,
   mkdirChild,
   openChild,
   removeChild,
   renameChild,
   stableHandlePath as projectIoStableHandlePath,
+  stableTarget,
   supportsStableHandles,
   StableHandleError,
+  trustBase,
 } from '@openpacker/project-io';
 import { OpmError } from './types.js';
 
@@ -53,8 +56,17 @@ export interface ProjectPaths {
   catalog: string;
 }
 
+/**
+ * The paths of the project at `root`, which is taken as a trusted base: its
+ * real path is resolved and recorded now, so every stable walk under it opens
+ * the project where `root` leads, through whatever links lead there, and
+ * refuses a link inside the project. A project reached through a linked home,
+ * `/var` on macOS or a linked directory works as it does for npm, pnpm and
+ * git. The paths keep the spelling `root` was given in.
+ */
 export function projectPaths(root: string): ProjectPaths {
   const resolved = resolve(root);
+  trustBase(resolved);
   const opmDir = join(resolved, OPM_DIR);
   return {
     root: resolved,
@@ -232,17 +244,13 @@ export function storePathForDigest(root: string, digest: string): string {
 }
 
 /**
- * Canonicalize the existing ancestor prefix of a stable target.
- *
- * The no-follow component walk refuses symlinked path components, which would
- * reject every project under a legitimately symlinked ancestor — macOS
- * `/var` → `/private/var` (all of `$TMPDIR`), symlinked home directories,
- * automounters. Honor such a stable pre-existing prefix once by realpath-ing
- * the deepest existing ancestor here; the final component stays lexical so a
- * symlinked target itself is still refused, and the dev/ino identity
- * re-checks against the lexical path still detect a later swap of the prefix.
+ * `path` with every link among its existing ancestors followed (its last
+ * component as written): the longest form the system may see it in. Not what
+ * a stable walk opens, which follows only the links of the base the path lies
+ * under (`openStableDirectory`, ADR 0034); a measure of a path, never a way to
+ * reach one.
  */
-async function canonicalizeStableTarget(path: string): Promise<string> {
+export async function canonicalizeStableTarget(path: string): Promise<string> {
   const absolute = resolve(path);
   const tail: string[] = [basename(absolute)];
   let candidate = dirname(absolute);
@@ -267,11 +275,19 @@ async function canonicalizeStableTarget(path: string): Promise<string> {
   }
 }
 
+/**
+ * Open `path` as a directory (making what is missing when `create`), one
+ * component at a time with `O_NOFOLLOW`. The base it lies under, the project
+ * root `projectPaths` took or one of the environment's (`TMPDIR`, `HOME`, an
+ * XDG or `OPM_*` home), is opened as its real path: the links the system or
+ * the person put on the way to it are taken, and a link anywhere below it is
+ * refused (`@openpacker/project-io` `trusted-base.ts`, ADR 0034).
+ */
 export async function openStableDirectory(
   path: string,
   create = false,
 ): Promise<FileHandle> {
-  const absolute = await canonicalizeStableTarget(path);
+  const absolute = stableTarget(path);
   const root = parse(absolute).root;
   let handle = await open(
     root,
@@ -591,9 +607,11 @@ async function assertNamedDirectory(
   path: string,
   handle: FileHandle,
 ): Promise<void> {
+  // A base is compared through its link, as it was taken; anything below
+  // one by its own name, so a component swapped for a link is noticed.
   const [opened, named] = await Promise.all([
     handle.stat({ bigint: true }),
-    lstat(resolve(path), { bigint: true }),
+    (isBase(path) ? stat : lstat)(resolve(path), { bigint: true }),
   ]);
   if (
     !named.isDirectory() ||

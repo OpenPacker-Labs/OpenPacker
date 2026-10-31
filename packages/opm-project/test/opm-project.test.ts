@@ -857,6 +857,8 @@ describe('fail-closed install paths', () => {
     const alias = join(base, 'alias');
     await mkdir(real);
     await symlink(real, alias, 'dir');
+    // Taken as the project root, as every opm entry point takes it.
+    projectPaths(alias);
 
     await writeStableFile(join(alias, '.opm', 'metadata.json'), '{"ok":true}');
     expect(await readStableFile(join(alias, '.opm', 'metadata.json'))).toBe(
@@ -876,6 +878,7 @@ describe('fail-closed install paths', () => {
     await mkdir(join(real, 'sub'), { recursive: true });
     await mkdir(join(decoy, 'sub'), { recursive: true });
     await symlink(real, alias, 'dir');
+    projectPaths(alias);
 
     const handle = await openStableDirectory(join(alias, 'sub'));
     try {
