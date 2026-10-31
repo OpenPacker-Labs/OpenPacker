@@ -9,6 +9,7 @@ import {
   type SandboxPolicy,
 } from '@openpacker/sandbox';
 import type { PolicyInput } from '@openpacker/contracts';
+import { stableTarget } from '@openpacker/project-io';
 import { OpmError } from './types.js';
 
 const LIFECYCLE_EVENTS = ['preinstall', 'install', 'postinstall'] as const;
@@ -159,13 +160,17 @@ export async function runLifecycleScript(input: {
     | PackageGrants
     | undefined;
 
+  // The jail binds the package at the real path of its base (the sandbox's
+  // assertSafeJailPath), so the script is told that path: a spelling through
+  // a linked TMPDIR or project does not exist inside the jail.
+  const packageDir = stableTarget(input.packageDir);
   const outcome = await runInSandbox({
     argv: [...shell, input.script],
-    cwd: input.packageDir,
+    cwd: packageDir,
     env: {
       npm_lifecycle_event: input.event,
       npm_package_name: input.packageId,
-      INIT_CWD: input.packageDir,
+      INIT_CWD: packageDir,
     },
     policy: sandboxPolicy,
     profile: 'package-exec',
@@ -173,7 +178,7 @@ export async function runLifecycleScript(input: {
     ...(!(grants === undefined) && { grants }),
     // Package tree only — never the whole host (host installers use a
     // separate funnel with broader grants).
-    readwritePaths: [input.packageDir],
+    readwritePaths: [packageDir],
     readonlyPaths: [],
     network: grants?.network === true,
     ...(!(input.directoryAuthority === undefined) && {

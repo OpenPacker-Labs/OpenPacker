@@ -39,6 +39,7 @@ import {
   readStableFile,
   writeStableFile,
 } from '../src/paths.js';
+import { runLifecycleScript } from '../src/lifecycle.js';
 import { permissive } from './closure-support.js';
 import { NpmRegistryFixture } from './npm-registry-fixture.js';
 
@@ -186,6 +187,31 @@ describe.runIf(POSIX)('a project whose base is reached through a link', () => {
 
     // The second pack would hold the first tarball if out/ were not left out.
     expect(await pack()).toEqual(await pack());
+  });
+
+  it('runs a lifecycle script under a TMPDIR that is a link, and tells it where it runs', async () => {
+    const base = await world();
+    const tmp = await linked(base, 'real-tmp', 'tmp-link');
+    vi.stubEnv('TMPDIR', tmp.link);
+    const pkg = await mkdtemp(join(tmpdir(), 'opm-life-'));
+    const real = join(tmp.real, pkg.split('/').at(-1)!);
+
+    const outcome = await runLifecycleScript({
+      event: 'postinstall',
+      script: `${process.execPath} -e "require('fs').writeFileSync('seen', process.env.INIT_CWD + '|' + process.cwd())"`,
+      packageDir: pkg,
+      packageId: 'pkg:npm/linked-postinstall',
+      policy: {
+        ...permissive,
+        allowLifecycleScripts: true,
+        allowedLifecycleScriptPackages: ['pkg:npm/linked-postinstall'],
+        sandboxMode: 'fail-closed',
+        sandboxRequired: true,
+        sandboxPrefer: 'native',
+      },
+    });
+    expect(outcome).toMatchObject({ exitCode: 0, enforced: true });
+    expect(await readFile(join(real, 'seen'), 'utf8')).toBe(`${real}|${real}`);
   });
 
   it('keeps its shared store under a HOME that is a link', async () => {
