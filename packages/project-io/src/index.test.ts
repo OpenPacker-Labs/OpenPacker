@@ -572,6 +572,9 @@ describe('materialiseTree', () => {
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const remaining = await readdir(old).catch(() => [] as string[]);
           if (remaining.length < oldCount) {
+            await mkdir(join(root, staging), { recursive: true }).catch(
+              () => undefined,
+            );
             await writeFile(join(root, staging, 'attacker'), 'late mutation');
             mutated = true;
           }
