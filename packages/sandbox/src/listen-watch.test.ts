@@ -64,6 +64,44 @@ describe.runIf(bwrapReady)('a process run without network', () => {
   });
 });
 
+describe.runIf(bwrapReady)('a process listed as the root’s child', () => {
+  it('is read only while it is the root’s child, not as another process its pid names', async () => {
+    // A server in a network namespace of its own, started by bwrap: its
+    // parent is bwrap, not this process.
+    const child = spawn(
+      '/usr/bin/bwrap',
+      ['--dev-bind', '/', '/', '--unshare-net', process.execPath, '-e', SERVER],
+      { stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    onTestFinished(() => {
+      child.kill('SIGKILL');
+    });
+    let printed = '';
+    await new Promise<void>((settle, fail) => {
+      child.stdout.on('data', (chunk: Buffer) => {
+        printed += chunk.toString('utf8');
+        if (printed.endsWith('\n')) settle();
+      });
+      child.once('exit', (code) =>
+        fail(new Error(`the server ended (${code}) having printed ${printed}`)),
+      );
+    });
+    const port = Number(printed.trim());
+    const [server] = readFileSync(
+      `/proc/${child.pid}/task/${child.pid}/children`,
+      'utf8',
+    )
+      .trim()
+      .split(/\s+/u)
+      .map(Number);
+    // The control: read as bwrap's child, it is said to listen.
+    expect(isolatedListenPort(child.pid!)).toBe(port);
+    // Listed as this process's child, as a pid given to another process
+    // would be, it is not this process's, and is not read.
+    expect(isolatedListenPort(process.pid, () => [server!])).toBeUndefined();
+  });
+});
+
 describe.skipIf(bwrapReady)('a process run without network', () => {
   it.skip('needs bwrap (/usr/bin/bwrap); not checked on this host', () => {});
 });

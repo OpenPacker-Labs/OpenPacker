@@ -20,10 +20,12 @@ import {
  * read (another kernel, no `children` file, a process that ended meanwhile)
  * reports nothing.
  *
- * A child's namespace and its socket table are read through one handle of
+ * A child's parent, namespace and socket table are read through one handle of
  * its `/proc/<pid>` directory: a handle names the process it was opened on,
- * so a pid that ends and is given to another process between the two reads
- * gives nothing, never the other process's table.
+ * so a pid that ends and is given to another process between the reads gives
+ * nothing, never the other process's table, and a pid given to another
+ * process before the handle was opened is not the root's child, and is not
+ * read either.
  */
 
 /** TCP's LISTEN state, as `/proc/<pid>/net/tcp` writes it. */
@@ -60,16 +62,37 @@ function listeningPorts(dir: string): number[] {
   return [...ports].sort((a, b) => a - b);
 }
 
+/** The parent of the process `dir` is the `/proc` directory of, as its `status` says. */
+function parentOf(dir: string): number | undefined {
+  const line = read(`${dir}/status`)
+    ?.split('\n')
+    .find((row) => row.startsWith('PPid:'));
+  const parent = Number(line?.slice('PPid:'.length).trim());
+  return Number.isSafeInteger(parent) ? parent : undefined;
+}
+
+/** The pids `/proc` lists as `pid`'s children, when it lists them. */
+function listedChildren(pid: number): number[] {
+  return (
+    read(`/proc/${pid}/task/${pid}/children`)
+      ?.trim()
+      .split(/\s+/u)
+      .filter(Boolean)
+      .map(Number) ?? []
+  );
+}
+
 /**
  * The lowest port a process started by `rootPid` listens on in a network
  * namespace other than the caller's, if there is one.
  */
-export function isolatedListenPort(rootPid: number): number | undefined {
+export function isolatedListenPort(
+  rootPid: number,
+  childrenOf: (pid: number) => readonly number[] = listedChildren,
+): number | undefined {
   const own = ownNamespace();
   if (own === undefined) return undefined;
-  const children = read(`/proc/${rootPid}/task/${rootPid}/children`);
-  for (const child of children?.trim().split(/\s+/u) ?? []) {
-    const pid = Number(child);
+  for (const pid of childrenOf(rootPid)) {
     if (!Number.isSafeInteger(pid) || pid <= 0) continue;
     let handle: number;
     try {
@@ -81,8 +104,11 @@ export function isolatedListenPort(rootPid: number): number | undefined {
       continue;
     }
     try {
-      // Both reads through the one handle: the same process, or nothing.
+      // Every read through the one handle: the same process, or nothing.
       const dir = `/proc/self/fd/${handle}`;
+      // Still the root's child: a pid that ended and was given to another
+      // process since it was listed names that process, which is not read.
+      if (parentOf(dir) !== rootPid) continue;
       let namespace: string;
       try {
         namespace = readlinkSync(`${dir}/ns/net`);

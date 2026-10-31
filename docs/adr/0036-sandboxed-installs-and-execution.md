@@ -482,30 +482,33 @@ Decision:
    a run has no network, the bwrap backend reads, every 200 ms, the TCP sockets
    of the run's namespace in `/proc/<pid>/net/tcp` and `tcp6`, from the first
    process bwrap started there; only a namespace other than the caller's is
-   read, so a run that shares the host's is never reported. The first port in
-   the LISTEN state is handed to the caller (`onIsolatedListen`), once, and
-   `opmx` writes one line to stderr: the port, that nothing outside the sandbox
-   can reach it, and, if it was meant to be reached from this host, that
-   `--allow-network` shares this host's network, which also gives the tool
-   outbound network and the host's loopback services: the hint names the grant
-   and what it costs, rather than urging it. Run by a user who is not root,
-   bwrap makes the run's namespaces inside a user namespace of its own; the
-   processes there still answer to that user, and `/proc/<pid>/net/tcp` of the
-   first of them is readable by the process that started bwrap (measured with a
-   child of uid 65534 on Linux 6.18; `/proc/<pid>/root/proc/net/tcp`, the other
-   way in, is not needed). Where it cannot be read (a `/proc` mounted with
-   `hidepid`, a kernel without `/proc/<pid>/task/<pid>/children`, MXC, the mock
-   backend) nothing is said; `opmx --help` and the opm guide say the same in
-   words.
+   read, so a run that shares the host's is never reported. That process's
+   parent, namespace and table are read through one handle of its `/proc/<pid>`,
+   and only while its parent is still bwrap: a pid that ended and was given to
+   another process is not read. The first port in the LISTEN state is handed to
+   the caller (`onIsolatedListen`), once, and `opmx` writes one line to stderr:
+   the port, that nothing outside the sandbox can reach it, and, if it was meant
+   to be reached from this host, that `--allow-network` shares this host's
+   network, which also gives the tool outbound network and the host's loopback
+   services: the hint names the grant and what it costs, rather than urging it.
+   Run by a user who is not root, bwrap makes the run's namespaces inside a user
+   namespace of its own; the processes there still answer to that user, and
+   `/proc/<pid>/net/tcp` of the first of them is readable by the process that
+   started bwrap (measured with a child of uid 65534 on Linux 6.18;
+   `/proc/<pid>/root/proc/net/tcp`, the other way in, is not needed). Where it
+   cannot be read (a `/proc` mounted with `hidepid`, a kernel without
+   `/proc/<pid>/task/<pid>/children`, MXC, the mock backend) nothing is said;
+   `opmx --help` and the opm guide say the same in words.
 
 `opmx-network.test.ts` (apps/opm) runs an installed server through bwrap: with
 no grant a request to its port is refused and `opmx` says so, once, with the
 port; with `--allow-network`, and with the project's grant to its package, the
 request is answered and nothing is said. `listen-watch.test.ts` (sandbox) has a
-process listen in a run without network and is told its port, and finds nothing
-told of a process listening in the caller's own namespace;
-`listen-watch.user.test.ts` does the first as uid 65534, through `runInSandbox`
-and an unprivileged bwrap, where the test runs as root.
+process listen in a run without network and is told its port, does not read a
+server in a namespace of its own listed as the child of a process it is not the
+child of, and finds nothing told of a process listening in the caller's own
+namespace; `listen-watch.user.test.ts` does the first as uid 65534, through
+`runInSandbox` and an unprivileged bwrap, where the test runs as root.
 
 ### What a run killed outright leaves
 
