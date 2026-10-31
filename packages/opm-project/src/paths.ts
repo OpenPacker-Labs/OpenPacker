@@ -1,33 +1,23 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { homedir } from 'node:os';
-import { lstat, open, stat, type FileHandle } from 'node:fs/promises';
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  parse,
-  relative,
-  resolve,
-  sep,
-} from 'node:path';
+import { lstat, stat, type FileHandle } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { echoed } from '@openpacker/adapter-core';
 import {
-  O_DIRECTORY,
+  assertBaseUnchanged,
   handlePathForPlatform,
   isBase,
   lstatChild,
-  mkdirChild,
   openChild,
-  realBase,
   removeChild,
   renameChild,
+  sameDirectory,
   stableHandlePath as projectIoStableHandlePath,
-  stableTarget,
   supportsStableHandles,
   StableHandleError,
   trustBase,
+  walkStable,
 } from '@openpacker/project-io';
 import { OpmError } from './types.js';
 
@@ -249,7 +239,7 @@ export function storePathForDigest(root: string, digest: string): string {
 /**
  * Whether `recorded`, a path a record of the project at `root` names, is
  * `derived` (a path below that root) as the record spelled it: the same path
- * below the root, under a root whose real path is this one's. A project is
+ * below the root, under a root that is this one's directory. A project is
  * opened through whatever links lead to it (ADR 0034, trusted bases), and `cd`
  * through one leaves the real path as the working directory, so what an
  * install recorded may name the project another way than it is opened now.
@@ -266,7 +256,9 @@ export function respelled(
   const below = derived.slice(base.length);
   if (!recorded.endsWith(below)) return false;
   const other = recorded.slice(0, recorded.length - below.length);
-  return isAbsolute(other) && realBase(other) === realBase(base);
+  // The same directory, by its identity, whatever names it: a link, a bind
+  // mount, a case variant (ADR 0034, a fence is the directory).
+  return isAbsolute(other) && sameDirectory(other, base);
 }
 
 /**
@@ -281,33 +273,12 @@ export async function openStableDirectory(
   path: string,
   create = false,
 ): Promise<FileHandle> {
-  const absolute = stableTarget(path);
-  const root = parse(absolute).root;
-  let handle = await open(
-    root,
-    constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
-  );
   try {
-    for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
-      if (create)
-        await mkdirChild(handle, part).catch((error: NodeJS.ErrnoException) => {
-          if (error.code !== 'EEXIST') throw error;
-        });
-      const next = await openChild(
-        handle,
-        part,
-        constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
-      );
-      if (!(await next.stat()).isDirectory()) {
-        await next.close();
-        throw new OpmError('UNSAFE_PATH', `Not a directory: ${path}`);
-      }
-      await handle.close();
-      handle = next;
-    }
-    return handle;
+    return await walkStable(path, {
+      create,
+      kindError: () => new OpmError('UNSAFE_PATH', `Not a directory: ${path}`),
+    });
   } catch (error) {
-    await handle.close().catch(() => undefined);
     if (
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       (error as NodeJS.ErrnoException).code === 'ELOOP' ||
@@ -499,7 +470,10 @@ export async function writeStableFile(
 ): Promise<void> {
   const parent = await openStableDirectory(dirname(path), true);
   try {
-    await writeStableFileAt(parent, basename(path), contents, mode, path);
+    await writeStableFileAt(parent, basename(path), contents, mode, path, () =>
+      // Nothing is published under a base that leads somewhere else now.
+      assertBaseUnchanged(path),
+    );
     await assertNamedDirectory(dirname(path), parent);
   } finally {
     await parent.close();
@@ -512,6 +486,8 @@ export async function writeStableFileAt(
   contents: string | Uint8Array,
   mode = 0o644,
   displayPath = name,
+  /** Called just before the file is published; what it throws stops that. */
+  beforePublish?: () => void,
 ): Promise<void> {
   assertSafeSegment(name, 'metadata file name');
   const temporary = `.${name}.${randomUUID()}.tmp`;
@@ -538,6 +514,7 @@ export async function writeStableFileAt(
         'INPUT_CHANGED',
         `Metadata staging file changed before publication: ${displayPath}`,
       );
+    beforePublish?.();
     await renameChild(parent, temporary, name);
     const publishedInfo = await lstatChild(parent, name);
     if (opened.dev !== publishedInfo.dev || opened.ino !== publishedInfo.ino)

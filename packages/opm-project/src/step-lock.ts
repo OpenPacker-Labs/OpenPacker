@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, rmdir, stat, type FileHandle } from 'node:fs/promises';
+import { lstat, stat, type FileHandle } from 'node:fs/promises';
 import { basename } from 'node:path';
-import { lstatChild, stableTarget } from '@openpacker/project-io';
+import { lstatChild } from '@openpacker/project-io';
 import { isRefusal, opmEntry, plainReason } from './fs-reason.js';
 import {
   openChild,
@@ -210,15 +210,23 @@ function held(
       } finally {
         await dir.close();
       }
-      // `opm ci` in a project opm never touched leaves no `.opm` behind.
-      // By name, at the root's real path as the command took it: rmdir(2)
-      // removes only an empty directory and never follows its last
-      // component, so this can remove nothing but an empty `.opm` directly
-      // in the project's root.
-      if (createdOpmDir)
-        await rmdir(stableTarget(paths.opmDir)).catch(() => undefined);
+      // `opm ci` in a project opm never touched leaves no `.opm` behind:
+      // removed only if it is empty, relative to the project root's handle,
+      // which is opened from the root as the command took it (refused if the
+      // root leads elsewhere now, or a component on the way was swapped).
+      if (createdOpmDir) await removeEmptyOpm(paths).catch(() => undefined);
     },
   };
+}
+
+/** `.opm`, if it is empty, through the project root's handle. */
+async function removeEmptyOpm(paths: ProjectPaths): Promise<void> {
+  const root = await openStableDirectory(paths.root);
+  try {
+    await removeChild(root, basename(paths.opmDir), { emptyDirectory: true });
+  } finally {
+    await root.close();
+  }
 }
 
 /** The other lock files whose owner may be running; gone owners' are removed. */

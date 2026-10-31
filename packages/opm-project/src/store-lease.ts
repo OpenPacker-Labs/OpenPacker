@@ -54,6 +54,7 @@ import {
   type FileHandle,
 } from 'node:fs/promises';
 import { join } from 'node:path';
+import { stableTarget } from '@openpacker/project-io';
 import { currentOwner, type LeaseOwner } from './lease-owner.js';
 import { BSD_EXLOCK, openProbe, sameFile } from './store-lease-liveness.js';
 
@@ -209,20 +210,23 @@ function lockFlags(how: Mechanism): number {
  * parent, the store, must be there).
  */
 export async function openLease(
-  directory: string,
+  named: string,
   kind: LeaseKind,
   options: LeaseOptions = {},
 ): Promise<Lease> {
+  // At the real path the store root was taken at, as everything else in the
+  // store is reached; INPUT_CHANGED if the root leads elsewhere now.
+  const directory = stableTarget(named);
   const owner = await currentOwner();
   for (let attempt = 0; ; attempt += 1) {
     // Not recursive: the store is there, and a recursive mkdir reports a
     // read-only filesystem as ENOENT, which reads as a directory removed
-    // meanwhile. By name, deliberately: `directory` is `.leases` in a store
-    // root `ensurePrivateRoot` found owned by this user and writable by nobody
-    // else, so only this user can put a link at it, and the lease only ever
-    // makes new names with O_EXCL and removes those names again: what a link
-    // there could make it touch is files it made itself (ADR 0034, trusted
-    // bases).
+    // meanwhile. By name below the root's real path, deliberately: `.leases`
+    // is in a store root `ensurePrivateRoot` found owned by this user and
+    // writable by nobody else, so only this user can put a link at it, and the
+    // lease only ever makes new names with O_EXCL and removes those names
+    // again: what a link there could make it touch is files it made itself
+    // (ADR 0034, trusted bases).
     await mkdir(directory, { mode: 0o700 }).catch((error: unknown) => {
       if (codeOf(error) !== 'EEXIST') throw error;
     });
@@ -366,10 +370,8 @@ async function holdsItself(
 }
 
 /** Remove what is left of an abandoned lease. */
-export async function removeLease(
-  directory: string,
-  id: string,
-): Promise<void> {
+export async function removeLease(named: string, id: string): Promise<void> {
+  const directory = stableTarget(named);
   for (const file of ['keys', 'lock', 'pending'] as const)
     await unlink(join(directory, `${id}.${file}`)).catch(() => undefined);
 }
