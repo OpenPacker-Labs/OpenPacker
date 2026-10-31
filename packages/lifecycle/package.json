@@ -1,6 +1,6 @@
 {
   "name": "@openpacker/lifecycle",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.0",
   "description": "Deterministic PREX lifecycle reduction",
   "license": "MIT",
   "type": "module",
@@ -32,7 +32,16 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/contracts": "0.1.0"
+    "@openpacker/canonical": "0.0.1-alpha.0",
+    "@openpacker/contracts": "0.0.1-alpha.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tyler-R-Kendrick/OpenPacker.git",
+    "directory": "packages/lifecycle"
   }
 }

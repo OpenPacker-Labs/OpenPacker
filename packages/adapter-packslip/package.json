@@ -1,6 +1,6 @@
 {
   "name": "@openpacker/adapter-packslip",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.0",
   "description": "PREX catalog provider for packslip-signed vendor releases",
   "type": "module",
   "license": "MIT",
@@ -23,13 +23,22 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-core": "0.1.0",
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/contracts": "0.1.0",
-    "@openpacker/packslip": "0.1.0"
+    "@openpacker/adapter-core": "0.0.1-alpha.0",
+    "@openpacker/canonical": "0.0.1-alpha.0",
+    "@openpacker/contracts": "0.0.1-alpha.0",
+    "@openpacker/packslip": "0.0.1-alpha.0"
   },
   "devDependencies": {
-    "@openpacker/packslip-testkit": "0.1.0",
+    "@openpacker/packslip-testkit": "0.0.1-alpha.0",
     "@types/node": "24.2.1"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tyler-R-Kendrick/OpenPacker.git",
+    "directory": "packages/adapter-packslip"
   }
 }

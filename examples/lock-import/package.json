@@ -1,6 +1,6 @@
 {
   "name": "@openpacker/example-lock-import",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.0",
   "private": true,
   "description": "Offline native lock import example for OpenPacker",
   "license": "MIT",
@@ -13,10 +13,10 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-host": "0.1.0",
-    "@openpacker/adapters-default": "0.1.0",
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/embedded": "0.1.0",
-    "@openpacker/lock-import": "0.1.0"
+    "@openpacker/adapter-host": "0.0.1-alpha.0",
+    "@openpacker/adapters-default": "0.0.1-alpha.0",
+    "@openpacker/canonical": "0.0.1-alpha.0",
+    "@openpacker/embedded": "0.0.1-alpha.0",
+    "@openpacker/lock-import": "0.0.1-alpha.0"
   }
 }

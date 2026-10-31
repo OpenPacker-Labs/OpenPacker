@@ -1,6 +1,6 @@
 {
   "name": "@openpacker/plugin-host",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.0",
   "description": "Delegated adapter plugin host: executes installed opm-plugin store entries over the bounded stdio protocol (ADR 0039)",
   "license": "MIT",
   "type": "module",
@@ -23,14 +23,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-core": "0.1.0",
-    "@openpacker/adapter-host": "0.1.0",
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/conformance": "0.1.0",
-    "@openpacker/contracts": "0.1.0",
-    "@openpacker/opm-project": "0.1.0",
-    "@openpacker/pack-provider": "0.1.0",
-    "@openpacker/plugin-store": "0.1.0",
-    "@openpacker/sandbox": "0.1.0"
+    "@openpacker/adapter-core": "0.0.1-alpha.0",
+    "@openpacker/adapter-host": "0.0.1-alpha.0",
+    "@openpacker/canonical": "0.0.1-alpha.0",
+    "@openpacker/conformance": "0.0.1-alpha.0",
+    "@openpacker/contracts": "0.0.1-alpha.0",
+    "@openpacker/opm-project": "0.0.1-alpha.0",
+    "@openpacker/pack-provider": "0.0.1-alpha.0",
+    "@openpacker/plugin-store": "0.0.1-alpha.0",
+    "@openpacker/sandbox": "0.0.1-alpha.0"
   }
 }

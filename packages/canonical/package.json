@@ -1,6 +1,6 @@
 {
   "name": "@openpacker/canonical",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.0",
   "description": "Browser-safe PREX canonical JSON and SHA-256 digests",
   "license": "MIT",
   "type": "module",
@@ -32,6 +32,15 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/contracts": "0.1.0"
+    "@openpacker/contracts": "0.0.1-alpha.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tyler-R-Kendrick/OpenPacker.git",
+    "directory": "packages/canonical"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@openpacker/opm",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.0",
   "description": "Open Package Manager CLI (opm) and package executor (opmx)",
   "license": "MIT",
   "type": "module",
@@ -30,16 +30,16 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-core": "0.1.0",
-    "@openpacker/adapters-default": "0.1.0",
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/opm-project": "0.1.0",
-    "@openpacker/plugin-host": "0.1.0",
-    "@openpacker/plugin-store": "0.1.0"
+    "@openpacker/adapter-core": "0.0.1-alpha.0",
+    "@openpacker/adapters-default": "0.0.1-alpha.0",
+    "@openpacker/canonical": "0.0.1-alpha.0",
+    "@openpacker/opm-project": "0.0.1-alpha.0",
+    "@openpacker/plugin-host": "0.0.1-alpha.0",
+    "@openpacker/plugin-store": "0.0.1-alpha.0"
   },
   "devDependencies": {
-    "@openpacker/packslip-testkit": "0.1.0",
-    "@openpacker/sandbox": "0.1.0",
+    "@openpacker/packslip-testkit": "0.0.1-alpha.0",
+    "@openpacker/sandbox": "0.0.1-alpha.0",
     "@types/node": "24.2.1"
   }
 }
