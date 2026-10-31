@@ -269,4 +269,15 @@ export interface FrozenLock {
    * declares and what its lock entry does.
    */
   archiveRuns?: (pkg: FrozenLockPackage, declared: ArchivePlatform) => boolean;
+  /**
+   * The packages whose install scripts the project approved, in a declaration
+   * package managers read (pnpm's `onlyBuiltDependencies` and `allowBuilds`,
+   * Bun's `trustedDependencies`): a name, or `name@version`. Absent when the
+   * project approves none; no other script is ever run.
+   */
+  approvedBuilds?: {
+    readonly entries: readonly string[];
+    /** Where they were declared, as a message names it. */
+    readonly declaredIn: readonly string[];
+  };
 }

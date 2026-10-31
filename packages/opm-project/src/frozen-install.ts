@@ -45,6 +45,7 @@ import { checkArchiveIdentities } from './frozen-identity.js';
 import { patchArchives } from './frozen-patch.js';
 import { installScriptFlags, scriptedPackages } from './frozen-scripts.js';
 import { layOutFromStore } from './frozen-layout.js';
+import { runApprovedBuilds, type BuiltPackage } from './frozen-builds.js';
 import { projectStep } from './project-step.js';
 import { OpmError } from './types.js';
 import {
@@ -94,6 +95,8 @@ export interface FrozenInstallResult {
   patched: { packages: number; patches: number };
   /** Installed packages that declare an install script. None was run. */
   installScripts: readonly { name: string; version: string; path: string }[];
+  /** The packages whose approved install scripts ran, in place (ADR 0060). */
+  built: readonly BuiltPackage[];
   /** For a workspace lock: the members the lock holds, and the ones linked here. */
   workspace?: { members: number; linked: number };
   /** Present when the places do not keep every shared peer to one copy of it. */
@@ -276,6 +279,10 @@ async function installFrozenInStep(
             });
           },
         });
+    // The install scripts the project approved, in place, now that every
+    // package they may need is laid out (ADR 0060).
+    const built = await runApprovedBuilds({ root, lock, declares });
+    const ran = new Set(built.map((item) => item.path));
     const done = now();
     return {
       ecosystem,
@@ -289,7 +296,10 @@ async function installFrozenInStep(
       skipped: lock.skipped,
       ...(lock.targets !== undefined && { targets: lock.targets }),
       ...(lock.peers !== undefined && { peers: lock.peers }),
-      installScripts: scriptedPackages(lock.packages, declares, byPath),
+      installScripts: scriptedPackages(lock.packages, declares, byPath).filter(
+        (item) => !ran.has(item.path),
+      ),
+      built,
       patched,
       layout,
       ...(lock.workspace !== undefined && {

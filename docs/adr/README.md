@@ -61,6 +61,7 @@ Accepted decisions:
 57. [`opm ci` applies a pnpm lock's patches](0057-opm-ci-applies-pnpm-patches.md)
 58. [A gzip stream may end in zero padding](0058-a-gzip-stream-may-end-in-zero-padding.md)
 59. [An optional build's own manifest names its C library](0059-an-optional-builds-own-manifest-names-its-libc.md)
+60. [`opm ci` runs the install scripts a project approved](0060-opm-ci-runs-the-install-scripts-a-project-approved.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

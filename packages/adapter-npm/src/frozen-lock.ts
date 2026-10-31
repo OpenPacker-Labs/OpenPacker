@@ -33,6 +33,7 @@ import {
   type FrozenManifest,
 } from './frozen-sync.js';
 import { parsePackageLockText } from './lock-tree.js';
+import { approvedBuildsOf } from './approved-builds.js';
 
 export { lockDisagreements, type FrozenManifest };
 
@@ -153,7 +154,15 @@ export async function readFrozenPackageLock(
   // The places are the lock's keys: a lock whose places cannot be written is
   // refused now, before anything is fetched or the project's node_modules goes.
   assertPlaceable(plan);
-  return { ...common, ...plan };
+  // readManifest proved it a JSON object.
+  const approvedBuilds = approvedBuildsOf(
+    JSON.parse(manifestText) as Record<string, unknown>,
+  );
+  return {
+    ...common,
+    ...plan,
+    ...(approvedBuilds !== undefined && { approvedBuilds }),
+  };
 }
 
 /** How the members the lock lists differ from the ones the project declares. */

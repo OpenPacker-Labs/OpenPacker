@@ -250,6 +250,9 @@ export async function readFrozenPnpmLock(
     refused: [],
     ...(workspace !== undefined && { workspace }),
     ...peersOf(model, placement),
+    ...(root.config.approvedBuilds !== undefined && {
+      approvedBuilds: root.config.approvedBuilds,
+    }),
     ...(packages.some((pkg) => pkg.platformFromArchive) && {
       archiveRuns: (pkg: FrozenLockPackage, archive: ArchivePlatform) => {
         const lock = lockOf.get(pkg.path);

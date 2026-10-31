@@ -11,10 +11,11 @@
  * architectures, used to widen the platforms when asked.
  */
 
-import { ProviderError } from '@openpacker/adapter-core';
+import { ProviderError, type FrozenLock } from '@openpacker/adapter-core';
 import { MAXIMUM_MANIFEST_BYTES, readBounded } from '../frozen-read.js';
 import { quote } from './quote.js';
 import { readWorkspaceFile } from './workspace-file.js';
+import { approvedBuildsOf } from '../approved-builds.js';
 
 /** Platforms a project asks pnpm to install optional packages for. */
 export interface SupportedArchitectures {
@@ -35,6 +36,8 @@ export interface PnpmProjectConfig {
   readonly patchesFrom:
     | 'package.json pnpm.patchedDependencies'
     | 'pnpm-workspace.yaml patchedDependencies';
+  /** The packages whose install scripts the project approved (`approved-builds.ts`). */
+  readonly approvedBuilds?: NonNullable<FrozenLock['approvedBuilds']>;
   /** `ignoredOptionalDependencies`, which opm does not apply. */
   readonly ignoredOptionalDependencies: readonly string[];
   /**
@@ -183,7 +186,9 @@ export async function readPnpmProjectConfig(
   const publish = isRecord(manifest['publishConfig'])
     ? manifest['publishConfig']['directory']
     : undefined;
+  const approvedBuilds = approvedBuildsOf(manifest, workspace);
   return {
+    ...(approvedBuilds !== undefined && { approvedBuilds }),
     project: {
       ...own('name'),
       ...own('version'),

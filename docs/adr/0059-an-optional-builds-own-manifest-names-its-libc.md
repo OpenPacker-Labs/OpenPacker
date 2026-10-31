@@ -21,13 +21,17 @@ On a glibc machine `opm ci` therefore extracted every musl build into the store
 and linked it into `node_modules`, where it cannot run. Measured on the projects
 it now installs (registry `unpackedSize`, linux/x64, glibc 2.39):
 
-| Project                 | musl builds a glibc install took | Unpacked |
-| ----------------------- | -------------------------------- | -------- |
-| OpenSesame (pnpm lock)  | 7                                | 322 MiB  |
-| ts-autocode (npm lock)  | 3                                | 307 MiB  |
-| gitlang (npm lock)      | 3                                | 263 MiB  |
-| ceremony (npm lock)     | 5                                | 54 MiB   |
-| HoBo, whole (pnpm lock) | 1                                | 84 MiB   |
+| Project                | musl builds that say so, taken | Unpacked |
+| ---------------------- | ------------------------------ | -------- |
+| OpenSesame (pnpm lock) | 6                              | 312 MiB  |
+| ts-autocode (npm lock) | 3                              | 307 MiB  |
+| gitlang (npm lock)     | 3                              | 263 MiB  |
+| ceremony (npm lock)    | 5                              | 54 MiB   |
+
+A build whose own `package.json` says nothing of its C library stays: neither
+the lock nor the archive says it is for musl. `@libsql/linux-x64-musl`
+(OpenSesame) and `@rivetkit/engine-cli-linux-x64-musl` (HoBo, 85 MiB) are such
+builds; only their names say musl, and a name is not a declaration.
 
 pnpm reads the platform from the lock alone and installs them too; npm reads the
 lock's lists as well. Neither runs them: they are optional, and the binding that
