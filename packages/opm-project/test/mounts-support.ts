@@ -46,6 +46,8 @@ export async function inMounts(body: string): Promise<Report> {
   // it), removed after the test like the project; its mounts were the child's.
   temporary(`${root}-b`);
   temporary(`${root}-alias`);
+  // And the script a killed recovery runs (`killedRecovery`), written beside it.
+  temporary(`${root}-recover.ts`);
   const run = await child(
     root,
     `import { execFileSync } from 'node:child_process';
