@@ -8,7 +8,12 @@ import {
   removeStableTree,
   stableHandlePath,
 } from './paths.js';
-import { makeScratch, sweepAbandoned } from './run-scratch.js';
+import {
+  cannotMake,
+  makeScratch,
+  makeTemporaryScratch,
+  sweepAbandoned,
+} from './run-scratch.js';
 import { OpmError } from './types.js';
 
 const VIEW_PREFIX = '.view-';
@@ -47,7 +52,10 @@ export const sweepAbandonedViews = (store: string): Promise<void> =>
  *
  * The view is made inside the store, the one place sure to be on the same file
  * system and kept by opm. While it is there each entry's files have a second
- * name, so the shared store's `opm gc` counts the entry as in use.
+ * name, so the shared store's `opm gc` counts the entry as in use. Where this
+ * user may not write the store (a read-only project), it is made in the private
+ * `openpacker-runs` under the temporary directory instead, with the same owner
+ * record and sweep, and its files are copies where that is another file system.
  */
 export interface StoreView {
   /** What to bind read-only: the store directories, and lone entries as they are. */
@@ -117,8 +125,14 @@ export async function storeViews(
   try {
     for (const [store, entries] of viewed) {
       await sweepAbandoned(store, VIEW_PREFIX);
-      const { path, tree: view } = await makeScratch(store, VIEW_PREFIX).catch(
-        (error: Error) => {
+      // In a store this user may not write, the view is made under the
+      // temporary directory instead, and links there become copies.
+      const { path, tree: view } = await makeScratch(store, VIEW_PREFIX)
+        .catch((error: Error) => {
+          if (!cannotMake(error)) throw error;
+          return makeTemporaryScratch(VIEW_PREFIX);
+        })
+        .catch((error: Error) => {
           throw new OpmError(
             'SANDBOX_UNAVAILABLE',
             `${unique.length} store entries do not fit in the ${budget} of ` +
@@ -128,8 +142,7 @@ export async function storeViews(
               `there: ${error.message}`,
             { cause: error },
           );
-        },
-      );
+        });
       views.push(path);
       // Opened once, before anything is linked into it, and bound from this
       // handle, which must hold the directory the links went into.

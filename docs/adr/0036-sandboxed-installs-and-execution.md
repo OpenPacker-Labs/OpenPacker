@@ -659,6 +659,14 @@ Decision:
   opmx: .opm/bin/<bin> starts /path/to/opmx, which is missing or not a program, and this user may not write <root>: run `opm install` there as its owner
   ```
 
+- A store view (more store entries than a sandbox's handles bind one by one, for
+  a Python, .NET or native bin or a program in `.opm/bin` no package owns) is
+  made in the store, as before, where this user may write it. Where they may
+  not, it is made in the same private `openpacker-runs` under the temporary
+  directory as a layout is (`makeTemporaryScratch`), with the owner record and
+  sweep, and its files are copies where that is another file system. A run over
+  an unwritable store with one entry more than the handles was refused before;
+  it now runs.
 - A Python console script's launcher lists the generation's Python store roots
   in path order, so activation writes the same launcher the install did.
 
@@ -670,9 +678,12 @@ activates with no write, with the shims this opm writes and with shims that
 start another opmx that is there, a file or a global npm link to one, and is
 refused naming a shim or the project state out of date, or a shim whose opmx is
 missing or not executable, or a link that dangles, leads to a directory or to a
-file this user may not run. `opmx-readonly.test.ts` (apps/opm) runs the built
-opmx where it may write, which activates the project, then again with the
-project read-only: the tool runs and every entry of the project is as it was,
-also when its shim starts another opmx, or a global npm link to one; with a shim
-changed, or the other opmx removed, opmx exits 8 with the one line; where it may
-write, a shim that starts another opmx is rewritten to start this one.
+file this user may not run. `store-view-budget.test.ts` binds one entry more
+than the handles from a store it may not write through a view under the
+temporary directory, and finds nothing left there. `opmx-readonly.test.ts`
+(apps/opm) runs the built opmx where it may write, which activates the project,
+then again with the project read-only: the tool runs and every entry of the
+project is as it was, also when its shim starts another opmx, or a global npm
+link to one, and when a program binds twenty store entries through a view; with
+a shim changed, or the other opmx removed, opmx exits 8 with the one line; where
+it may write, a shim that starts another opmx is rewritten to start this one.

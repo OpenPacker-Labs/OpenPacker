@@ -34,6 +34,7 @@ import {
   installedProject,
 } from './installed-fixture.js';
 import { canSandbox } from './signal-fixture.js';
+import type { FixturePackage } from '../../../packages/opm-project/test/npm-registry-fixture.js';
 
 const bwrap = ['/usr/bin/bwrap', '/bin/bwrap'].find((path) => existsSync(path));
 const opmx = join(appRoot, 'dist', 'opmx-main.js');
@@ -127,9 +128,12 @@ async function snapshot(dir: string): Promise<Record<string, string>> {
  * start this opmx. Skipped, before anything else, where bwrap cannot bind it
  * read-only here.
  */
-async function activated(context: { skip(when: boolean, why: string): void }) {
+async function activated(
+  context: { skip(when: boolean, why: string): void },
+  more: FixturePackage[] = [],
+) {
   expect(existsSync(opmx), 'run: npm run build -w @openpacker/opm').toBe(true);
-  const root = await installedProject([hello]);
+  const root = await installedProject([hello, ...more]);
   const probe = spawnSync(bwrap!, [
     '--dev-bind',
     '/',
@@ -207,6 +211,30 @@ describe.runIf(canSandbox && bwrap !== undefined)(
       const ran = await run(root, ['hello'], env, true);
       expect([ran.status, ran.out, ran.err]).toEqual([0, 'hello\n', '']);
       expect(await snapshot(root)).toEqual(before);
+    });
+
+    it('runs a tool whose store entries are bound through a view, and writes nothing', async (context) => {
+      // More store entries than a sandbox's handles bind one by one: they are
+      // bound through a view, a directory of links made for the run.
+      const fillers = Array.from(
+        { length: 20 },
+        (_, index): FixturePackage => ({
+          name: `filler${index}`,
+          versions: { '1.0.0': { files: { 'index.js': '' } } },
+        }),
+      );
+      const { root, env } = await activated(context, fillers);
+      // A program in .opm/bin no package owns runs with every store entry
+      // bound, as Python, .NET and native bins do.
+      const plain = join(root, '.opm', 'bin', 'plain');
+      await writeFile(plain, "#!/usr/bin/env node\nconsole.log('plain');\n");
+      await chmod(plain, 0o755);
+      const before = await snapshot(root);
+      const ran = await run(root, ['plain'], env, true);
+      expect([ran.status, ran.out, ran.err]).toEqual([0, 'plain\n', '']);
+      expect(await snapshot(root)).toEqual(before);
+      // What the run made under its temporary directory went when it ended.
+      expect(await readdir(join(env.TMPDIR!, 'openpacker-runs'))).toEqual([]);
     });
 
     it('is refused in one line, saying what is out of date and what to do', async (context) => {

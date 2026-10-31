@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { abandonedByOwner, type AbandonJudge } from '@openpacker/project-io';
 import { writeOwnerFile } from './owner-file.js';
 import { removeStableTree } from './paths.js';
 import type { ProcessOwner } from './process-owner.js';
+import { ensurePrivateRoot } from './shared-store-root.js';
 
 /**
  * Directories a run makes for itself and removes when it ends: the store views
@@ -81,4 +83,36 @@ export async function sweepAbandoned(
     if (!(await abandonedByOwner(path, UNOWNED_AFTER_MS, judge))) continue;
     await removeStableTree(path).catch(() => undefined);
   }
+}
+
+/** The directory of this user's under the temporary directory for what a project cannot hold. */
+export const TEMPORARY_RUNS = 'openpacker-runs';
+
+/** Why a scratch directory cannot be made where it belongs: this user may not write there. */
+const UNWRITABLE = new Set(['EACCES', 'EPERM', 'EROFS']);
+
+/** Whether `error` says this user may not write where it was making something. */
+export function cannotMake(error: Error): boolean {
+  return (
+    'code' in error &&
+    typeof error.code === 'string' &&
+    UNWRITABLE.has(error.code)
+  );
+}
+
+/**
+ * A scratch directory in `openpacker-runs` under the temporary directory, for
+ * a run whose project this user may read and not write (a read-only mount, a
+ * CI cache, another user's checkout): that directory must be theirs and
+ * private (mode 700) or nothing is made, and the runs that ended left there
+ * are removed first, as where it belongs.
+ */
+export async function makeTemporaryScratch(
+  prefix: string,
+  owner?: ProcessOwner,
+): Promise<Scratch> {
+  const own = join(tmpdir(), TEMPORARY_RUNS);
+  await ensurePrivateRoot(own, false, true, 'The temporary runs directory');
+  await sweepAbandoned(own, prefix);
+  return await makeScratch(own, prefix, owner);
 }

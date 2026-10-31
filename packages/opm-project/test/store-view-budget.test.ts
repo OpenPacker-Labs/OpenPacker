@@ -1,6 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, rm, rmdir, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+  rmdir,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -151,15 +159,19 @@ describe.runIf(canSandbox)('a run over entries of one store', () => {
     }
   });
 
-  it('refuses one entry more from that store, naming the bound', async (context) => {
+  it('binds one entry more from that store through a view made under the temporary directory', async (context) => {
     const { root, entries, work } = await store(room + 1);
     context.skip(
       (await lock(root)) === undefined,
       'cannot make a directory unwritable on this host',
     );
-    await expect(run(entries, work, requireAll(entries))).rejects.toThrow(
-      `${MAX_INHERITED_HANDLES} handles a sandboxed process may inherit`,
-    );
+    const outcome = await run(entries, work, requireAll(entries));
+    expect([outcome.exitCode, outcome.stdout], outcome.stderr).toEqual([
+      0,
+      entries.map((_, i) => i).join(','),
+    ]);
+    // The view was the run's own, and went when it ended.
+    expect(await readdir(join(tmpdir(), 'openpacker-runs'))).toEqual([]);
   });
 });
 
