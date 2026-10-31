@@ -20,6 +20,7 @@ import {
   mkdtemp,
   readdir,
   readFile,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -245,11 +246,13 @@ describe.runIf(canSandbox && bwrap !== undefined)(
       const { root, env, shim } = await activated(context);
       await writeFile(shim, '#!/bin/sh\nexit 3\n');
       const ran = await run(root, ['hello'], env, true);
+      // The run's working directory is the project, which it knows by its
+      // real path (getcwd), as under a TMPDIR that is a link.
       expect([ran.status, ran.out, ran.err]).toEqual([
         8,
         '',
         'opmx: .opm/bin/hello is out of date for the active generation, and ' +
-          `this user may not write ${root}: run \`opm install\` there as its owner\n`,
+          `this user may not write ${await realpath(root)}: run \`opm install\` there as its owner\n`,
       ]);
       expect(await readFile(shim, 'utf8')).toBe('#!/bin/sh\nexit 3\n');
     });
@@ -281,7 +284,7 @@ describe.runIf(canSandbox && bwrap !== undefined)(
         8,
         '',
         `opmx: .opm/bin/hello starts ${other}, which is missing or not a ` +
-          `program, and this user may not write ${root}: run \`opm install\` ` +
+          `program, and this user may not write ${await realpath(root)}: run \`opm install\` ` +
           'there as its owner\n',
       ]);
     });
