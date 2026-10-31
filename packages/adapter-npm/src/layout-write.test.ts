@@ -231,6 +231,93 @@ describe('NpmProjectFormat.writeLayout', () => {
     );
   });
 
+  // npm links `.bin/<name>` to the script, so `node node_modules/.bin/tsc` runs
+  // tsc; a project's scripts and its people do exactly that. The shim is no
+  // link, so it has to be a program node runs as well as one sh runs.
+  it.each([
+    ['a CommonJS project', undefined],
+    ['an ES module project', 'module'],
+  ])(
+    'runs a node bin when node is handed the shim, in %s',
+    async (_label, type) => {
+      const w = await workspace();
+      if (type !== undefined)
+        await writeFile(
+          join(w.project, 'package.json'),
+          JSON.stringify({ name: 'p', type }),
+        );
+      const entries = [
+        await w.store('cjs-tool@1.0.0', {
+          direct: true,
+          bin: { 'cjs-tool': 'bin/cli.js' },
+          files: {
+            'bin/cli.js': [
+              '#!/usr/bin/env node',
+              "const { realpathSync } = require('node:fs');",
+              'console.log(JSON.stringify({',
+              '  main: require.main === module,',
+              '  argv1: realpathSync(process.argv[1]) === __filename,',
+              '  args: process.argv.slice(2),',
+              '}));',
+              '',
+            ].join('\n'),
+          },
+        }),
+        await w.store('esm-tool@1.0.0', {
+          direct: true,
+          bin: { 'esm-tool': 'cli.mjs' },
+          files: {
+            'cli.mjs': [
+              '#!/usr/bin/env node',
+              "import { realpathSync } from 'node:fs';",
+              "import { pathToFileURL } from 'node:url';",
+              'const main = pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url;',
+              'console.log(JSON.stringify({ main, args: process.argv.slice(2) }));',
+              '',
+            ].join('\n'),
+          },
+        }),
+        await w.store('fails@1.0.0', {
+          direct: true,
+          bin: { fails: 'cli.js' },
+          files: { 'cli.js': 'process.exitCode = 3;\n' },
+        }),
+      ];
+
+      await w.layout(entries);
+
+      const bin = join(w.project, 'node_modules', '.bin');
+      const viaNode = (name: string, args: string[] = []) =>
+        JSON.parse(
+          execFileSync(process.execPath, [join(bin, name), ...args], {
+            cwd: w.project,
+            encoding: 'utf8',
+          }),
+        ) as unknown;
+      expect(viaNode('cjs-tool', ['x', 'two words'])).toEqual({
+        main: true,
+        argv1: true,
+        args: ['x', 'two words'],
+      });
+      expect(viaNode('esm-tool', ['--flag'])).toEqual({
+        main: true,
+        args: ['--flag'],
+      });
+      expect(() =>
+        execFileSync(process.execPath, [join(bin, 'fails')], {
+          cwd: w.project,
+          stdio: 'pipe',
+        }),
+      ).toThrow(expect.objectContaining({ status: 3 }));
+      // And it is still the shell program it was.
+      expect(
+        JSON.parse(
+          execFileSync(join(bin, 'cjs-tool'), ['y'], { encoding: 'utf8' }),
+        ),
+      ).toEqual({ main: true, argv1: true, args: ['y'] });
+    },
+  );
+
   it('honours the interpreter in a shebang and ignores one it cannot trust', async () => {
     const w = await workspace();
     const entries = [

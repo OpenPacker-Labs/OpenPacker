@@ -21,6 +21,7 @@
 
 import { memberLinkProblem } from '@openpacker/project-io';
 import type { Placement } from './layout-plan.js';
+import { placeOfLockPath } from './lock-entry.js';
 
 /** One member link: where it goes and what it says, both relative. */
 export interface LayoutLink {
@@ -110,13 +111,16 @@ export function checkLayoutLinks(
       continue;
     }
     seen.add(link.path);
-    const chain = chainOfPlace(link.path);
-    if (chain === undefined) {
+    // A link may sit in the project's node_modules or a member's own (pnpm
+    // links a member's `link:` dependencies there).
+    const where = placeOfLockPath(link.path);
+    if (where === undefined) {
       problems.push(`${link.path} is not a place under node_modules`);
       continue;
     }
+    const { chain } = where;
     const owner = chain.slice(0, -1);
-    if (owner.length > 0 && !placed.has(placePath(owner)))
+    if (owner.length > 0 && !placed.has(placePath(owner, where.base)))
       problems.push(
         `${link.path} sits in the node_modules of ${owner.join(' > ')}, which the plan does not install`,
       );
@@ -133,8 +137,8 @@ export function checkLayoutLinks(
       .slice(0, -1)
       .map((_, index) => placePath(chain.slice(0, index + 1), base));
   for (const link of valid) {
-    const chain = chainOfPlace(link.path)!;
-    for (const outer of enclosing(chain))
+    const where = placeOfLockPath(link.path)!;
+    for (const outer of enclosing(where.chain, where.base))
       if (linked.has(outer))
         problems.push(`${link.path} is inside the link ${outer}`);
   }

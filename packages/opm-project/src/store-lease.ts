@@ -17,15 +17,19 @@
  * - `proc` (Linux): the holder's `/proc/<pid>/fd` has a descriptor on the lock
  *   file's inode. A dead process has none, and a process that reused the pid
  *   does not have this file open. Where the descriptors cannot be looked at
- *   (the pid is now another user's process), the lease is judged as `pid`.
+ *   (the pid is now another user's process), or this reader's `/proc` may not
+ *   be its own pid namespace's (it cannot read its own start time), the lease
+ *   is judged as `pid`.
  * - `flock` (macOS and the BSDs): the lock is opened with `O_EXLOCK`; a reader
  *   that can take the same lock without waiting knows nobody holds it.
  * - `share` (Windows): the lock is opened with no sharing allowed; a reader
  *   that can open it knows nobody holds it.
  * - `pid`, where none of those held when the lease was made: the holder's pid
- *   is running, and (where the system says) started when the holder did. A
- *   reused pid that cannot be told apart keeps an abandoned lease alive until
- *   that process ends: a delay for a collection, never a wrong removal.
+ *   is running, is not a zombie nobody reaped or dead, and (where the system
+ *   says) started when the holder did: the pid check every holder opm records
+ *   is judged by (`isOwnerAlive` of `process-owner.ts`). A reused pid that
+ *   cannot be told apart keeps an abandoned lease alive until that process
+ *   ends: a delay for a collection, never a wrong removal.
  *
  * The first three are tied to an open file, which the operating system closes
  * when a process dies however it dies, so no lease outlives its holder. Each is

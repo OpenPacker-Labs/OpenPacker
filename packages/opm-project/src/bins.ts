@@ -335,23 +335,69 @@ export interface WrittenBinShim {
  * dependencies). Without it a tool that imports a locked dependency fails
  * at runtime even though `opm install` put that dependency on disk.
  */
-export async function writeBinShims(input: {
+export async function writeBinShims(
+  input: BinShimInput,
+): Promise<WrittenBinShim[]> {
+  await ensureStableDirectory(input.binDir);
+  const planned = planBinShims(input);
+  for (const { shim, script } of planned)
+    await writeStableFile(shim.shim, script, 0o755);
+  return planned.map(({ shim }) => shim);
+}
+
+/** What `writeBinShims` writes shims for. */
+export interface BinShimInput {
   binDir: string;
   storeRoot: string;
   bins: readonly BinDeclaration[];
   /** Extra store roots on PYTHONPATH for Python entry points. */
   pythonPath?: readonly string[];
-}): Promise<WrittenBinShim[]> {
-  await ensureStableDirectory(input.binDir);
-  const written: WrittenBinShim[] = [];
+  /** The package the bins are of, as a notice names it. */
+  owner?: string;
+  /** Where a bin that gets no shim is told of; stderr by default. */
+  notice?: (message: string) => void;
+}
+
+/** A notice on stderr, as opm says what it did not do. */
+const noticeOnStderr = (message: string) =>
+  void process.stderr.write(`opm: ${message}\n`);
+
+/** A shim `writeBinShims` writes: its record, and the script in its file. */
+export interface PlannedBinShim {
+  shim: WrittenBinShim;
+  script: string;
+  /** The same script, starting `opmxPath` instead of this process's opmx. */
+  scriptFor(opmxPath: string): string;
+}
+
+/**
+ * The shims `writeBinShims` writes, and what each file holds, without writing
+ * them: activation compares them with what a project holds (`generations.ts`).
+ * The extra PYTHONPATH roots are in path order, so the same packages give the
+ * same script whoever lists them.
+ */
+export function planBinShims(input: BinShimInput): PlannedBinShim[] {
+  const planned: PlannedBinShim[] = [];
   const storeRoot = resolve(input.storeRoot);
   const binDir = resolve(input.binDir);
   const pythonRoots = [
     storeRoot,
-    ...(input.pythonPath ?? []).map((path) => resolve(path)),
+    ...[...new Set((input.pythonPath ?? []).map((path) => resolve(path)))]
+      .filter((path) => path !== storeRoot)
+      .sort(),
   ];
   for (const bin of input.bins) {
     const name = assertSafeSegment(bin.name, 'bin name');
+    // A shim runs `opmx -- <name>`; a name opmx or a shell could take for an
+    // option has no place among a project's commands. The bin gets no shim,
+    // and the rest of its package installs: it is said, never refused.
+    if (name.startsWith('-')) {
+      (input.notice ?? noticeOnStderr)(
+        `${input.owner ?? 'a package'} declares a bin named ${echoed(name)}, ` +
+          'which would read as an option: it gets no shim',
+      );
+      continue;
+    }
     // "." segments are dropped, not refused. npm bin paths are conventionally
     // written "./lib/tool.js", so rejecting them made a large share of real
     // packages uninstallable while protecting against nothing: only ".."
@@ -368,28 +414,63 @@ export async function writeBinShims(input: {
     }
     const target = resolveContained(storeRoot, ...segments);
     const shimPath = resolveContained(binDir, name);
-    const script = shimScriptFor(bin, {
-      binDir,
-      target,
-      pythonRoots,
-      opmxPath: resolveOpmxPath(),
-    });
-    await writeStableFile(shimPath, script, 0o755);
-    written.push({
-      name,
-      path: bin.path,
-      shim: shimPath,
-      target,
-      ...(!(bin.interpreter === undefined) && { interpreter: bin.interpreter }),
-      ...(!(bin.entry === undefined) && { entry: bin.entry }),
+    const scriptFor = (opmxPath: string) =>
+      shimScriptFor(bin, { binDir, target, pythonRoots, opmxPath });
+    const script = scriptFor(resolveOpmxPath());
+    planned.push({
+      shim: {
+        name,
+        path: bin.path,
+        shim: shimPath,
+        target,
+        ...(!(bin.interpreter === undefined) && {
+          interpreter: bin.interpreter,
+        }),
+        ...(!(bin.entry === undefined) && { entry: bin.entry }),
+      },
+      script,
+      scriptFor,
     });
   }
-  return written;
+  return planned;
 }
+
+/** The line of a shim that names the `opmx` it starts. */
+const SHIM_OPMX =
+  /^const opmx = process\.env\.OPM_OPMX\?\.trim\(\) \|\| ("(?:[^"\\\n]|\\.)*");$/mu;
+
+/**
+ * The `opmx` a shim `writeBinShims` wrote starts, as written in it; undefined
+ * for a file that names none. Whether the rest of the file is that shim is for
+ * its caller to check, against `PlannedBinShim.scriptFor` of what it names.
+ */
+export function shimOpmx(script: string): string | undefined {
+  const named = SHIM_OPMX.exec(script)?.[1];
+  if (named === undefined) return undefined;
+  try {
+    const value: unknown = JSON.parse(named);
+    return typeof value === 'string' ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The names an `opmx` beside `opm`'s own entry is found by, in the order tried. */
+export const OPMX_NAMES = [
+  'opmx',
+  'opmx-main.js',
+  'opmx.js',
+  'opmx.mjs',
+] as const;
 
 /**
  * Absolute `opmx` to embed in shims. PATH lookup is a sandbox bypass:
  * a package bin named `opmx` earlier on PATH would win.
+ *
+ * Beside `opm`'s own entry: `opmx` where a package manager linked the bins,
+ * and in a build, `opmx-main.js`, the file the `opmx` bin names (before
+ * `opmx.js`, which runs only when started by its own path). A build's files
+ * are modules tsc wrote, not programs; the shim starts one with Node.
  */
 export function resolveOpmxPath(): string {
   const fromEnv = process.env.OPM_OPMX?.trim();
@@ -397,7 +478,7 @@ export function resolveOpmxPath(): string {
   const argv1 = process.argv[1];
   if (argv1) {
     const dir = dirname(resolve(argv1));
-    for (const name of ['opmx', 'opmx.js', 'opmx.mjs']) {
+    for (const name of OPMX_NAMES) {
       const candidate = join(dir, name);
       if (existsSync(candidate)) return candidate;
     }
@@ -488,11 +569,21 @@ if (!opmx) {
   );
   process.exit(78);
 }
-const viaOpmx = spawn(opmx, [${binName}, ...args], {
-  stdio: 'inherit',
-  env: process.env,
-  shell: false,
-});
+// A JavaScript opmx (a source build's dist/opmx-main.js) is a module, not a
+// program: tsc leaves it without an execute bit, and Windows runs no script by
+// its name. Node runs it; anything else is run as the program it is.
+// \`--\` first: whatever the name is, opmx reads it as the tool's.
+const viaOpmx = /\\.[cm]?js$/i.test(opmx)
+  ? spawn(process.execPath, [opmx, '--', ${binName}, ...args], {
+      stdio: 'inherit',
+      env: process.env,
+      shell: false,
+    })
+  : spawn(opmx, ['--', ${binName}, ...args], {
+      stdio: 'inherit',
+      env: process.env,
+      shell: false,
+    });
 viaOpmx.on('error', (error) => {
   if (process.env.OPENPACKER_ALLOW_AMBIENT_SHIMS === '1') {
     console.error('opm: opmx unavailable; ambient shim allowed by OPENPACKER_ALLOW_AMBIENT_SHIMS=1');

@@ -90,3 +90,12 @@ with PyYAML and none of the TypeScript reader's logic, so the reader is checked
 against a second reading and not against itself. `sha256` is the hash of the
 fixture the counts were taken from; a test fails if the file changes without the
 counts.
+
+## model-oracle.json
+
+What a frozen install builds from the first four locks (ADR 0055 §4, §5): the
+number of instances (snapshots), tops (importers) and edges of each kind, and a
+SHA-256 over the canonical, sorted list of every edge, written by
+`model-oracle.py` (`python3 model-oracle.py > model-oracle.json`) with PyYAML
+and none of the TypeScript model's logic. `model.test.ts` builds the model with
+the reader and the model and fails on a count or a hash that differs.

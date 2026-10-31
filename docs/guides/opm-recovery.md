@@ -78,25 +78,29 @@ What opm can tell it does not ask about:
   gone from this machine) is let go of without `--force`;
 - a lock that does not say who holds it (empty, cut short, or written by a newer
   opm) is named by the id in its file name and needs `--force`, which removes
-  that lock file and nothing else;
+  that lock file and nothing else (a gone step's copy waits for the next step);
 - a `.opm/.rollback-…` that arrived from another project (a copied `.opm`, a CI
   cache) is never put back here. `opm recover` stops at it and names it;
-  `--abandon-step <id>` removes it and changes nothing else. If the other
-  project shares this very `.opm` (a bind mount or a volume), the copy is its
-  own and is left alone: run `opm recover` there.
+  `--abandon-step <id>` removes it and changes nothing else. The same holds for
+  a project that was **moved to another volume or restored from a backup**
+  (another device and inode, another path): the step that made the copy was
+  never finished here, so removing the copy keeps the project as it is now, and
+  `opm sync` finishes the step. If the other project shares this very `.opm` (a
+  bind mount or a volume), the copy is its own and is left alone: run
+  `opm recover` there.
 
 ## Refusals
 
-| Code                | Exit | Meaning, and what to do                                                                                                                                                                                                                                                                |
-| ------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PROJECT_BUSY`      | 8    | Another step holds the project, or left a lock or copy whose owner cannot be judged; or `--abandon-step` needs `--force`. Wait, or `opm recover --abandon-step <id>`.                                                                                                                  |
-| `STEP_ALIVE`        | 8    | `--abandon-step` named a step that is running on this machine.                                                                                                                                                                                                                         |
-| `UNAVAILABLE`       | 8    | opm could not create its lock (a read-only project), or the file system refused a file or a tree being put back (a read-only or busy volume, a full disk). The message names the path and why; the copy is kept.                                                                       |
-| `ROLLBACK_CONFLICT` | 3    | A copy cannot be put back: `opm.toml`, the lock, `package.json` or `package-lock.json` changed since the step (a hand edit, an `npm install`), a kept file is not what the copy recorded, or a kept tree is missing. Nothing is changed; remove the copy to keep the project as it is. |
-| `INVALID_ROLLBACK`  | 3    | A copy's record is not one this opm writes, or the copy was made in another project. The copy is kept; remove it (for another project's, `--abandon-step` does).                                                                                                                       |
-| `INVALID_SPEC`      | 3    | `--abandon-step` was given something that is not an id, `--force` without it, or `opm recover` an option it does not take.                                                                                                                                                             |
-| `NOT_FOUND`         | 4    | No lock or copy has the id `--abandon-step` was given.                                                                                                                                                                                                                                 |
-| `UNSAFE_PATH`       | 7    | A copy or `.opm` is a link, belongs to another user, or holds a link or a file with other names where a file belongs. Nothing is changed.                                                                                                                                              |
+| Code                | Exit | Meaning, and what to do                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PROJECT_BUSY`      | 8    | Another step holds the project, or left a lock or copy whose owner cannot be judged; or `--abandon-step` needs `--force`. Wait, or `opm recover --abandon-step <id>`.                                                                                                                                                                                                                                  |
+| `STEP_ALIVE`        | 8    | `--abandon-step` named a step that is running on this machine.                                                                                                                                                                                                                                                                                                                                         |
+| `UNAVAILABLE`       | 8    | opm could not create its lock (a read-only project), or the file system refused a file or a tree being put back (a read-only or busy volume, a full disk). A mount point inside `node_modules` is refused before anything is removed. The message names the path and why; the copy is kept, and the project may be part way back: fix it and run `opm recover`, or remove the copy and run `opm sync`. |
+| `ROLLBACK_CONFLICT` | 3    | A copy cannot be put back: `opm.toml`, the lock, `package.json` or `package-lock.json` changed since the step (a hand edit, an `npm install`), a kept file is not what the copy recorded, or a kept tree is missing. Nothing is changed; remove the copy to keep the project as it is.                                                                                                                 |
+| `INVALID_ROLLBACK`  | 3    | A copy's record is not one this opm writes, or the copy was made in another project. The copy is kept; remove it (for another project's, `--abandon-step` does).                                                                                                                                                                                                                                       |
+| `INVALID_SPEC`      | 3    | `--abandon-step` was given something that is not an id, `--force` without it, or `opm recover` an option it does not take.                                                                                                                                                                                                                                                                             |
+| `NOT_FOUND`         | 4    | No lock or copy has the id `--abandon-step` was given.                                                                                                                                                                                                                                                                                                                                                 |
+| `UNSAFE_PATH`       | 7    | A copy or `.opm` is a link, belongs to another user, or holds a link or a file with other names where a file belongs. Nothing is changed.                                                                                                                                                                                                                                                              |
 
 ## What is not covered
 

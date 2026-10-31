@@ -340,3 +340,15 @@ place that removes the whole directory is `opm ci`'s `removeTree`.
 - Sharing a project directory with Windows tools that cannot read junctions
   (older archivers) can copy the target's contents or fail; that is the
   platform's, and the link is still a junction.
+
+## Amendment (2026-10-31): a member's own links
+
+For a pnpm lock, a member's `link:` dependencies are also linked in the member's
+own `node_modules` (`packages/web/node_modules/lib -> ../../lib`), where pnpm
+puts them; code relies on the path (HoBo's `packages/runtime` imports
+`../node_modules/@hobo/wit/src/generated/…`). They are links to members, as
+before, so there is still one copy of each member. The link grammar
+(`project-io` `linkDirectoryProblem`) accepts plain directory names (no dot, no
+`node_modules`) before the first `node_modules`; nothing else changes. The
+project's own links stay, and are the ones `opm ci` counts as linked at the
+project.

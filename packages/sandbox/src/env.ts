@@ -156,6 +156,8 @@ export function scrubEnvironment(input: {
   minimalPath?: boolean;
   /** Argv[0] used to include interpreter dir on PATH. */
   interpreter?: string;
+  /** Directories searched before the rest of PATH, in order (a run's own bins). */
+  pathPrefix?: readonly string[];
 }) {
   const parent = input.parent ?? process.env;
   const granted = new Set(input.grantEnv ?? []);
@@ -187,6 +189,10 @@ export function scrubEnvironment(input: {
   if (input.minimalPath !== false && !granted.has('PATH')) {
     out.PATH = minimalPathValue(input.interpreter);
   }
+  if ((input.pathPrefix?.length ?? 0) > 0)
+    out.PATH = [...input.pathPrefix!, ...(out.PATH ? [out.PATH] : [])].join(
+      ':',
+    );
 
   return out;
 }
@@ -200,11 +206,33 @@ export function scrubEnvironment(input: {
  * stays, and the grant check then names the problem.
  */
 export function defaultJailHomeRoot(): string {
-  let base = tmpdir();
+  // One per user, so that users who share a temporary directory each have
+  // theirs; where there are no uids, the one name.
+  const uid = process.geteuid?.();
+  return join(
+    realTmpdir(),
+    uid === undefined ? JAIL_ROOT_NAME : `${JAIL_ROOT_NAME}-${uid}`,
+  );
+}
+
+/**
+ * The root every user's runs shared before there was one per user. Runs no
+ * longer make homes there, and still remove what ended runs of this user left
+ * in it, where it is this user's own (`sweepJailHomes`).
+ */
+export function sharedJailHomeRoot(): string {
+  return join(realTmpdir(), JAIL_ROOT_NAME);
+}
+
+/** What every jail root's name starts with. */
+const JAIL_ROOT_NAME = 'openpacker-sandbox';
+
+/** The temporary directory's real path, or its lexical one where that cannot be resolved. */
+function realTmpdir(): string {
+  const base = tmpdir();
   try {
-    base = realpathSync.native(base);
+    return realpathSync.native(base);
   } catch {
-    // keep the lexical path
+    return base;
   }
-  return join(base, 'openpacker-sandbox');
 }

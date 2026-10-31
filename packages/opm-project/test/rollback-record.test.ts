@@ -4,6 +4,7 @@ import { ENVIRONMENT_STATE, GENERATIONS_DIR } from '../src/generations.js';
 import { NATIVE_STATE } from '../src/native.js';
 import { OPM_DIR } from '../src/paths.js';
 import {
+  linkDigest,
   parseRollbackRecord,
   ROLLBACK_FILES,
   ROLLBACK_TREES,
@@ -74,5 +75,49 @@ describe('a rollback record read back', () => {
     ['an owner with no pid', { ...ready, owner: { host: 'vm' } }],
   ])('is refused with %s', (_case, value) => {
     expect(parseRollbackRecord(value)).toBeUndefined();
+  });
+});
+
+describe('a row of a record read back (round 5)', () => {
+  const rows = (row: { before: string; mode?: number; link?: string }) =>
+    ROLLBACK_FILES.map((_file, index) => (index === 2 ? row : kept));
+
+  it('is a link only when its digest is the digest of its target', () => {
+    const link = 'target/elsewhere';
+    expect(
+      parseRollbackRecord({
+        ...ready,
+        files: rows({ before: linkDigest(link), link }),
+      }),
+    ).toBeDefined();
+    expect(
+      parseRollbackRecord({
+        ...ready,
+        files: rows({ before: linkDigest('another/target'), link }),
+      }),
+    ).toBeUndefined();
+    expect(
+      parseRollbackRecord({
+        ...ready,
+        files: rows({ before: sha256('bytes'), link }),
+      }),
+    ).toBeUndefined();
+  });
+
+  it('lists at most 32 contents the step told the copy of', () => {
+    const also = (count: number) =>
+      Array.from({ length: count }, (_x, n) => sha256(`write ${n}`));
+    expect(
+      parseRollbackRecord({
+        ...ready,
+        files: rows({ ...kept, also: also(32) }),
+      }),
+    ).toBeDefined();
+    expect(
+      parseRollbackRecord({
+        ...ready,
+        files: rows({ ...kept, also: also(33) }),
+      }),
+    ).toBeUndefined();
   });
 });

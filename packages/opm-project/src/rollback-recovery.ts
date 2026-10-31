@@ -19,7 +19,7 @@ import {
   projectIdentity,
   sharesOpmDir,
 } from './rollback-project.js';
-import { printable } from './fs-reason.js';
+import { opmEntry, printable } from './fs-reason.js';
 import { markerOf, marked, restoreFrom } from './rollback-restore.js';
 import {
   DISCARD_SUFFIX,
@@ -86,7 +86,7 @@ export async function recoverHeldProject(
   const recovered: RecoveredStep[] = [];
   for (const name of (await readdir(paths.opmDir)).sort()) {
     if (!name.startsWith(ROLLBACK_PREFIX)) continue;
-    const copy = join('.opm', name);
+    const copy = opmEntry(name);
     const holder = join(paths.opmDir, name);
     const info = await lstat(holder).catch(absent);
     if (info === undefined) continue;
@@ -116,7 +116,7 @@ export async function recoverHeldProject(
     )
       throw new OpmError(
         'PROJECT_BUSY',
-        `${copy} belongs to a step of ${describeProcessOwner(record.owner)} that may still be running, and opm cannot tell from here. Run this again when it has finished (--wait <ms> waits longer). If that step is dead and cannot be seen from here (another container or host), opm recover --abandon-step ${copyId(name)} says what taking it for dead costs and asks you to confirm.`,
+        `${copy} belongs to a step of ${describeProcessOwner(record.owner)} that may still be running, and opm cannot tell from here. Run this again when it has finished (--wait <ms> waits longer). If that step is dead and cannot be seen from here (another container or host), opm recover --abandon-step ${printable(copyId(name))} says what taking it for dead costs and asks you to confirm.`,
       );
     if (restore) {
       await assertRestorable(paths.root, holder, record, copy);
@@ -236,13 +236,13 @@ export async function foreignCopy(
   made: string,
   shared: boolean,
 ): Promise<OpmError> {
-  const copy = join('.opm', name);
+  const copy = opmEntry(name);
   const there = printable(made);
   const here = printable((await projectIdentity(root)).path);
   return new OpmError(
     'INVALID_ROLLBACK',
     shared
       ? `${copy} was made by the project at ${there}, which shares this .opm directory with ${here}. It is that project's own copy, and opm will not put it back here or remove it from here. opm made no change; run opm recover in ${there}.`
-      : `${copy} was made in another project, ${there}, and this one is ${here}. Putting it back would replace this project's files with that one's, so opm made no change. If it came along by accident (a copied .opm, a cache), run: opm recover --abandon-step ${copyId(name)} (it only removes the copy), or remove ${copy}.`,
+      : `${copy} was made in the project at ${there}, and this project is at ${here}, so opm will not put it back here: it holds the files of that project's step. opm made no change. If this project is that one moved or restored from a backup (another volume, another path), the step that made the copy was never finished: run opm recover --abandon-step ${printable(copyId(name))} (it only removes the copy, as removing ${copy} does) and then opm sync to finish it. If the copy only came along by accident (a copied .opm, a cache), the same command removes it and nothing else is needed.`,
   );
 }

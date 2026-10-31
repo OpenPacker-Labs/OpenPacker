@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { lstat, open, readlink, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { plainReason } from './fs-reason.js';
+import { opmEntry, plainReason, printable } from './fs-reason.js';
 import {
   openChild,
   openStableDirectory,
@@ -49,7 +49,7 @@ export function absent(error: NodeJS.ErrnoException): undefined {
 
 /** Refuse, with nothing changed: the copy or the project is not what it should be. */
 export function refuse(code: string, holder: string, what: string): OpmError {
-  const copy = join('.opm', basename(holder));
+  const copy = opmEntry(basename(holder));
   return new OpmError(
     code,
     `Refusing to put the project back from ${copy}: ${what}. opm made no change; remove ${copy} to keep the project as it is now.`,
@@ -66,12 +66,27 @@ export function cannotPutBack(
   holder: string,
   error: NodeJS.ErrnoException,
 ): OpmError {
-  const copy = join('.opm', basename(holder));
-  const reason = plainReason(error);
+  const copy = opmEntry(basename(holder));
   return new OpmError(
     'UNAVAILABLE',
-    `opm could not put ${name} back from ${copy}: ${reason}. The copy is kept, and the project may be half way through the step that left it. Fix that and run opm recover, or remove ${copy} to keep the project as it is now.`,
+    `opm could not put ${name} back from ${copy}: ${plainReason(error)}. The copy is kept, and the project may be part way back. Fix that and run opm recover to finish. Or remove ${copy} to keep the project as it is now, part way through the step that left the copy (opm sync finishes that step).`,
     { cause: error },
+  );
+}
+
+/**
+ * A tree that has a mount point inside it is refused before anything is
+ * removed: emptying it would take the siblings and then stop at the mount.
+ */
+export function mountInside(
+  name: string,
+  holder: string,
+  inner: string,
+): OpmError {
+  const copy = opmEntry(basename(holder));
+  return new OpmError(
+    'UNAVAILABLE',
+    `opm could not put ${name} back from ${copy}: ${printable(inner)} is a mount point inside it, which opm will not empty. Nothing was changed. Unmount it and run opm recover, or remove ${copy} to keep the project as it is now.`,
   );
 }
 

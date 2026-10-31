@@ -63,7 +63,7 @@ const EXEMPT: ReadonlyArray<{
   },
   {
     file: 'opm.ts',
-    starts: '`\\n${help()}\\n`',
+    starts: '`\\n${helpText()}\\n`',
     reason: "opm's own usage text, after the usage error has been written",
   },
   {
@@ -82,41 +82,9 @@ const EXEMPT: ReadonlyArray<{
     reason: 'a constant sentence around an exit status',
   },
   {
-    file: 'opmx.ts',
-    starts: 'outcome.stderr',
-    reason: "the tool's own stderr, passed through as it wrote it",
-  },
-  {
-    file: 'commands/auth.ts',
-    starts: '`Unknown auth subcommand: ${sub',
-    reason: "the person's own argument, and the usage text",
-  },
-  {
-    file: 'commands/auth.ts',
-    starts: '`opm auth set requires --origin',
-    reason: 'a constant sentence and the usage text',
-  },
-  {
-    file: 'commands/auth.ts',
-    starts: '`opm auth unset requires --origin',
-    reason: 'a constant sentence and the usage text',
-  },
-  {
     file: 'commands/run-child.ts',
     starts: 'chunk',
     reason: "the script's own stderr, passed through as it wrote it",
-  },
-  {
-    file: 'commands/run.ts',
-    starts: '`opm: ${result.failure}',
-    reason:
-      "how a script of the project ended (`describeEnd`): the name of a script in the person's own package.json and an exit status; the run path loads no workspace package (run-load.test.ts). A run over members writes the same through `report` (run-members.ts)",
-  },
-  {
-    file: 'commands/run.ts',
-    starts: '`opm: ${describeEnd(`"${request.bin}"`',
-    reason:
-      'the name the person typed and an exit status; the run path loads no workspace package (run-load.test.ts)',
   },
   {
     file: 'commands/run-child.ts',
@@ -189,14 +157,26 @@ const EXEMPT: ReadonlyArray<{
       "the host installer's own captured stderr (the write is named above)",
   },
   {
-    file: 'opmx.ts',
-    starts: 'if (outcome.stderr) io.stderr.write(outcome.stderr)',
-    reason: "the tool's own captured stderr (the write is named above)",
+    file: 'opmx-spawn.ts',
+    starts: 'written',
+    reason: "the tool's own stderr, handed on as it writes it (`passedOn`)",
   },
   {
-    file: 'opmx.ts',
-    starts: 'io.stderr.write(outcome.stderr)',
-    reason: "the tool's own captured stderr (the write is named above)",
+    file: 'opmx-spawn.ts',
+    starts: 'const watching = [watchReader(io.stdout, lose)',
+    reason:
+      'listens for the reader of stdout and stderr going away (EPIPE, a close), and writes nothing',
+  },
+  {
+    file: 'opmx-spawn.ts',
+    starts: 'const toErr = (written: string) =>',
+    reason:
+      'whether stderr asks the tool to wait until it drains (`whenTaken`), beside the write named above',
+  },
+  {
+    file: 'opmx-spawn.ts',
+    starts: 'passing.err(outcome.stderr)',
+    reason: 'what the sandbox says after the tool, through the same writer',
   },
 ];
 
@@ -221,9 +201,12 @@ describe('what opm writes to stderr', () => {
       new Set([
         'opm.ts',
         'opmx.ts',
+        'opmx-spawn.ts',
         'commands/auth.ts',
+        'commands/ci-peers.ts',
         'commands/ci.ts',
         'commands/packslip.ts',
+        'commands/recover.ts',
         'commands/run-child.ts',
         'commands/run-members.ts',
         'commands/run-output.ts',

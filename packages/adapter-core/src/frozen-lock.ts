@@ -7,6 +7,8 @@
  * verifies, applies policy and writes the layout without knowing the format.
  */
 
+import type { FrozenPatch } from './frozen-patch.js';
+export type * from './frozen-patch.js';
 import type { NativeTarget } from './host-target.js';
 import type { NativeLayoutWorkspace } from './layout-workspace.js';
 import type { WorkspaceMember } from './workspace/members.js';
@@ -49,6 +51,24 @@ export interface FrozenWorkspaceInput {
 export interface FrozenLockOptions {
   /** The machine the install is for, in the ecosystem's own vocabulary. */
   target: NativeTarget;
+  /**
+   * Every machine whose packages are installed, `target` among them: a package
+   * is installed when it runs on any one of them (pnpm's
+   * `supportedArchitectures`). Absent, `target` alone.
+   */
+  targets?: readonly NativeTarget[];
+  /**
+   * `project`: the platforms are the ones the project itself names (a pnpm
+   * project's `supportedArchitectures`), widening the host's. Absent, only
+   * `targets`, else `target`. A format with no such setting refuses it.
+   */
+  architectures?: 'project';
+  /**
+   * The registry a package that has no URL in its lock is fetched from (a pnpm
+   * lock records an integrity and nothing else for one). The public registry
+   * when absent.
+   */
+  registry?: string;
   omit: ReadonlySet<FrozenOmit>;
   /**
    * Set by a host that discovered the project's workspace. A format that
@@ -56,6 +76,24 @@ export interface FrozenLockOptions {
    * judged against the members on disk.
    */
   workspace?: FrozenWorkspaceInput;
+  /**
+   * What archives said they run on, keyed by the lock's integrity value: a
+   * list the lock leaves out is taken from here (a list it has wins), so an
+   * optional package whose own manifest names another platform is left out
+   * like one whose lock entry does. The host fills it from the archives of the
+   * packages a first read marked `platformFromArchive`.
+   */
+  archivePlatforms?: ReadonlyMap<string, ArchivePlatform>;
+}
+
+/**
+ * The platform lists an archive's own manifest declares, in the ecosystem's
+ * vocabulary (npm's `os`, `cpu` and `libc`); absent when it declares none.
+ */
+export interface ArchivePlatform {
+  readonly os?: readonly string[];
+  readonly cpu?: readonly string[];
+  readonly libc?: readonly string[];
 }
 
 /**
@@ -89,6 +127,29 @@ export interface FrozenLockPackage {
   scope: 'runtime' | 'development' | 'optional' | 'peer';
   /** Declares an install script. Nothing here runs it. */
   hasInstallScript: boolean;
+  /**
+   * The lock does not describe the archive (a pnpm lock keeps whether a package
+   * declares an install script elsewhere, and pins the bytes by integrity
+   * alone), so the host reads it once extracted: the install script, for which
+   * `hasInstallScript` is only a default, and the archive's own name and
+   * version, which must be this package's.
+   */
+  scriptsFromArchive?: true;
+  /**
+   * What the archive's own `package.json` must say, read with
+   * `scriptsFromArchive`, as the lock records it: the version, absent when the
+   * lock records none (a pnpm entry for a tarball may not, and its key's version
+   * is the URL), in which case only the name is compared; and the `name` the
+   * lock writes beside the key, when it writes one, which the archive must carry
+   * as well as `packageName`. Without it, `packageName` and `version`.
+   */
+  archiveIdentity?: { readonly name?: string; readonly version?: string };
+  /**
+   * What the lock calls this package when several places hold it (a pnpm
+   * snapshot key, `react-dom@18.2.0(react@18.2.0)`): one id may have several
+   * paths, and two ids may share an archive.
+   */
+  instance?: string;
   /** The registry's deprecation message, when the lock carries one. */
   deprecated?: string;
   /**
@@ -97,6 +158,19 @@ export interface FrozenLockPackage {
    * package unless the project allows that kind of release.
    */
   withdrawn?: 'yanked' | 'quarantined' | 'revoked' | 'delisted';
+  /**
+   * A patch the lock applies to this package's files before they are
+   * installed (pnpm's `patchedDependencies`). The patched files are a package
+   * of their own: never the unpatched archive's, and never another patch's.
+   */
+  patch?: FrozenPatch;
+  /**
+   * The package is optional and its lock entry restricts the platform without
+   * saying which C library (a lock written from registry metadata that lacked
+   * `libc`): the host reads what its archive declares before extracting it,
+   * and asks the format again with `archivePlatforms`.
+   */
+  platformFromArchive?: true;
 }
 
 export interface FrozenLockSkip {
@@ -131,6 +205,12 @@ export interface FrozenExtraction {
    * carry both spellings.
    */
   acceptRedundantEntries: boolean;
+  /**
+   * npm's node-tar and pnpm's `parseTarball` are this ecosystem's tar readers:
+   * an archive they would read differently is refused, not extracted one way
+   * (ADR 0058 §8).
+   */
+  requireNpmReaderAgreement?: boolean;
 }
 
 /** The workspace part of what a frozen install does. */
@@ -145,6 +225,24 @@ export interface FrozenLockWorkspace {
   layout: NativeLayoutWorkspace;
 }
 
+/**
+ * How far the places chosen for a lock that records none keep a package and
+ * its dependent to one copy of a peer they share. Present only when they do
+ * not all: a layout in `node_modules` has no symlinks, so some locks cannot be
+ * laid out so that they do.
+ */
+export interface FrozenLockPeers {
+  /** Edges whose dependency loads another copy of a peer its dependent requires too. */
+  splits: number;
+  /** Whether the places were chosen without peers in view, because no layout with them could be written. */
+  withoutPeers: boolean;
+  /**
+   * The first such edge, named for a person: the dependency, and what needs
+   * it. Each is already quoted, and holds nothing of the lock but names.
+   */
+  first?: { dependency: string; dependent: string };
+}
+
 export interface FrozenLock {
   /** The lock file read, absolute. */
   lockPath: string;
@@ -153,6 +251,8 @@ export interface FrozenLock {
   lockfileVersion: number;
   /** How its archives are to be read. */
   extraction: FrozenExtraction;
+  /** The machines the install was for, when that is more than the host alone. */
+  targets?: readonly NativeTarget[];
   /** What to install, parents before the packages nested in them. */
   packages: FrozenLockPackage[];
   /** What the lock holds that this host and these options leave out. */
@@ -161,4 +261,23 @@ export interface FrozenLock {
   refused: FrozenLockRefusal[];
   /** Present when the lock is a workspace's. */
   workspace?: FrozenLockWorkspace;
+  /** Present when the places do not keep every shared peer to one copy. */
+  peers?: FrozenLockPeers;
+  /**
+   * Present when a package carries `platformFromArchive`: whether that package
+   * runs on the machines this lock was read for, given what its archive
+   * declares and what its lock entry does.
+   */
+  archiveRuns?: (pkg: FrozenLockPackage, declared: ArchivePlatform) => boolean;
+  /**
+   * The packages whose install scripts the project approved, in a declaration
+   * package managers read (pnpm's `onlyBuiltDependencies` and `allowBuilds`,
+   * Bun's `trustedDependencies`): a name, or `name@version`. Absent when the
+   * project approves none; no other script is ever run.
+   */
+  approvedBuilds?: {
+    readonly entries: readonly string[];
+    /** Where they were declared, as a message names it. */
+    readonly declaredIn: readonly string[];
+  };
 }

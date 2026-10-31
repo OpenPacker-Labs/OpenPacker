@@ -12,10 +12,16 @@
 
 import {
   WorkspaceError,
+  parseFilter,
+  resolveWorkspaceLimits,
+  selectMembers,
   selectNpmWorkspaces,
   type FrozenWorkspaceInput,
   type ProjectFormat,
+  type WorkspaceTool,
 } from '@openpacker/adapter-core';
+import { lstat } from 'node:fs/promises';
+import { join } from 'node:path';
 import { OpmError } from './types.js';
 import {
   discoverWorkspace,
@@ -30,6 +36,13 @@ export interface FrozenWorkspaceRequest {
    * need. A directory selects the members one level below it.
    */
   select?: readonly string[];
+  /**
+   * `--filter <selector>`, repeatable: pnpm's grammar (a name, a glob, `./dir`,
+   * `name...`, `!name`), choosing members as `opm run --filter` does; what the
+   * install then reaches is `--workspace`'s (the members they link and what
+   * those need). The root only with `includeRoot`.
+   */
+  filter?: readonly string[];
   /**
    * `--include-workspace-root`: with a selection, the project's own
    * dependencies too. Alone it changes nothing, as in npm.
@@ -56,9 +69,32 @@ export function workspaceFailure(error: WorkspaceError): OpmError {
   });
 }
 
+/**
+ * The members a workspace names by a plain path (no glob) that have no
+ * `package.json` here: what a member that links one cannot find, and what a
+ * git submodule that is not checked out leaves.
+ */
+async function absentLiteralMembers(
+  root: string,
+  patterns: readonly string[],
+): Promise<string[]> {
+  const absent: string[] = [];
+  for (const pattern of patterns) {
+    if (/[*?[\]{}!]/u.test(pattern)) continue;
+    const dir = pattern.replace(/^\.\//u, '').replace(/\/+$/u, '');
+    if (dir === '' || dir === '.' || dir.split('/').includes('..')) continue;
+    const manifest = await lstat(join(root, dir, 'package.json')).catch(
+      () => undefined,
+    );
+    if (manifest === undefined) absent.push(dir);
+  }
+  return absent;
+}
+
 function asksForWorkspace(request: FrozenWorkspaceRequest): boolean {
   return (
     (request.select?.length ?? 0) > 0 ||
+    (request.filter?.length ?? 0) > 0 ||
     request.includeRoot === true ||
     request.all === true ||
     request.ignore === true
@@ -79,22 +115,30 @@ export async function prepareFrozenWorkspace(
   root: string,
   format: ProjectFormat,
   request: FrozenWorkspaceRequest = {},
+  /** Whose rules read the members, when the project's lock decides it (a pnpm lock's are pnpm's). */
+  workspaceTool: WorkspaceTool | undefined = format.workspaceTool,
 ): Promise<FrozenWorkspaceInput | undefined> {
-  if (format.workspaceTool === undefined) {
+  if (workspaceTool === undefined) {
     if (asksForWorkspace(request))
       throw new OpmError(
         'INVALID_SPEC',
-        `${format.purlType} projects have no workspaces; --workspace, --include-workspace-root and --workspaces do not apply`,
+        `${format.purlType} projects have no workspaces; --filter, --workspace, --include-workspace-root and --workspaces do not apply`,
       );
     return undefined;
   }
-  const selecting = (request.select?.length ?? 0) > 0;
+  const filtering = (request.filter?.length ?? 0) > 0;
+  const selecting = (request.select?.length ?? 0) > 0 || filtering;
   if (request.ignore === true && (selecting || request.all === true))
     throw new OpmError(
       'INVALID_SPEC',
-      '--workspaces=false installs no member, so it cannot be combined with --workspace or --workspaces',
+      '--workspaces=false installs no member, so it cannot be combined with --filter, --workspace or --workspaces',
     );
-  const tool = format.workspaceTool;
+  if (filtering && ((request.select?.length ?? 0) > 0 || request.all === true))
+    throw new OpmError(
+      'INVALID_SPEC',
+      "--filter chooses members by pnpm's grammar and --workspace by npm's; pass one of them",
+    );
+  const tool = workspaceTool;
   let discovery: Promise<WorkspaceDiscovery | undefined> | undefined;
   const discover = (): Promise<WorkspaceDiscovery | undefined> =>
     (discovery ??= discoverWorkspace(root, { tool }).catch((error: Error) => {
@@ -108,15 +152,36 @@ export async function prepareFrozenWorkspace(
   if (found === undefined)
     throw new OpmError(
       'INVALID_SPEC',
-      `No workspaces found: ${root} declares none (a package.json "workspaces" field), so there is no member to select`,
+      `No workspaces found: ${root} declares none (${tool === 'pnpm' ? 'no pnpm-workspace.yaml' : 'no package.json "workspaces" field'}), so there is no member to select`,
     );
   let dirs: readonly string[];
   try {
-    dirs = selectNpmWorkspaces(graphOfWorkspace(found), request.select ?? [], {
-      cwd: '',
-    });
+    const graph = graphOfWorkspace(found);
+    dirs = filtering
+      ? selectMembers(
+          graph,
+          (request.filter ?? []).map((selector) =>
+            parseFilter(selector, {
+              cwd: '',
+              limits: resolveWorkspaceLimits(),
+            }),
+          ),
+          { excludeRoot: request.includeRoot !== true },
+        ).selected
+      : selectNpmWorkspaces(graph, request.select ?? [], { cwd: '' });
   } catch (error) {
-    throw error instanceof WorkspaceError ? workspaceFailure(error) : error;
+    if (!(error instanceof WorkspaceError)) throw error;
+    const failure = workspaceFailure(error);
+    const absent =
+      error.code === 'WORKSPACE_SPEC_UNRESOLVED'
+        ? await absentLiteralMembers(root, found.patterns)
+        : [];
+    if (absent.length === 0) throw failure;
+    throw new OpmError(
+      failure.code,
+      `${failure.message}; ${found.declaredIn} lists ${absent.join(', ')}, which ${absent.length === 1 ? 'is' : 'are'} not on disk (a git submodule that is not checked out?)`,
+      { cause: error },
+    );
   }
   return {
     disk,

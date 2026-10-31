@@ -38,6 +38,7 @@ export async function restoreSharedBins(input: {
         ...(!(bin.entry === undefined) && { entry: bin.entry }),
       })),
       ...(record.purl.startsWith('pkg:pypi/') && { pythonPath }),
+      owner: record.purl,
     });
     for (const bin of wanted) restored.add(bin.name);
   }

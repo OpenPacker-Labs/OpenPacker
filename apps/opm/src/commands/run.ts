@@ -139,7 +139,11 @@ export async function runScriptCommand(
     initCwd: resolve(cwd),
     context,
   });
-  if (result.failure !== undefined) io.stderr.write(`opm: ${result.failure}\n`);
+  if (result.failure !== undefined) {
+    // A failure is the rare path: the printer that escapes it loads the library.
+    const { report } = await import('@openpacker/canonical');
+    io.stderr.write(report('opm: ', result.failure));
+  }
   return result.status;
 }
 
@@ -195,8 +199,10 @@ export async function runExecCommand(
     io,
     context.host,
   );
-  if (outcome.code === undefined)
-    io.stderr.write(`opm: ${describeEnd(`"${request.bin}"`, outcome)}\n`);
+  if (outcome.code === undefined) {
+    const { report } = await import('@openpacker/canonical');
+    io.stderr.write(report('opm: ', describeEnd(`"${request.bin}"`, outcome)));
+  }
   return exitStatus(outcome);
 }
 

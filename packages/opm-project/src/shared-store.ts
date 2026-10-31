@@ -38,14 +38,13 @@ import {
 } from '@openpacker/materializer';
 import { stableStoreTreeDigest } from './generations.js';
 import { holdSharedStore } from './shared-store-lease.js';
+import { readTreeRecord, recordTreeDigest } from './shared-store-record.js';
 import { OpmError } from './types.js';
 import {
   assertDigest,
   ensureStableDirectory,
-  readStableFile,
   removeStableTree,
   storeKeyFromDigest,
-  writeStableFile,
 } from './paths.js';
 import {
   assertNoFollowTree,
@@ -76,8 +75,8 @@ export async function materializeThroughSharedStore(input: {
   /** Already resolved by the caller; skips resolving it again. */
   sharedRoot?: string;
   linkFile?: (existingPath: string, newPath: string) => Promise<void>;
-  /** Bounds the archive is extracted under; the materializer's by default. */
-  limits?: MaterializationLimits;
+  /** Required: it carries `requireNpmReaderAgreement` (ADR 0058 §8). */
+  limits: MaterializationLimits;
 }): Promise<{ path: string; shared: boolean; treeDigest?: string }> {
   const digest = assertDigest(input.digest);
   const projectStorePath = input.projectStorePath;
@@ -111,7 +110,7 @@ export async function materializeThroughSharedStore(input: {
         digest,
         format,
         bytes: input.bytes,
-        ...(input.limits !== undefined && { limits: input.limits }),
+        limits: input.limits,
       });
       try {
         await linkTree(published.path, projectStorePath, linkFile);
@@ -163,8 +162,8 @@ export async function publishSharedEntry(input: {
   format: ArchiveFormat;
   bytes: Uint8Array | (() => Promise<Uint8Array>);
   seal?: boolean;
-  /** Bounds the archive is extracted under; the materializer's by default. */
-  limits?: MaterializationLimits;
+  /** Required, as for `materializeThroughSharedStore`. */
+  limits: MaterializationLimits;
 }): Promise<{ path: string; treeDigest: string }> {
   const storeKey = storeKeyFromDigest(input.digest);
   const sharedPath = join(input.sharedRoot, storeKey);
@@ -230,31 +229,8 @@ export async function adoptSharedEntry(
   return treeDigest === undefined ? undefined : { path, treeDigest };
 }
 
-/**
- * Write the digest an entry's tree must hash to.
- *
- * Two installs publishing the same package write the same bytes here, and the
- * second one's atomic replace finds a different inode than it wrote. Same
- * content is not a conflict; different content is.
- */
-async function recordTreeDigest(
-  sharedPath: string,
-  treeDigest: string,
-): Promise<void> {
-  const record = `${treeDigest}\n`;
-  try {
-    await writeStableFile(`${sharedPath}.tree`, record);
-  } catch (error) {
-    if (
-      !(error instanceof OpmError && error.code === 'INPUT_CHANGED') ||
-      (await readStableFile(`${sharedPath}.tree`).catch(() => '')) !== record
-    )
-      throw error;
-  }
-}
-
 /** The recorded tree digest of an entry that is there and intact, else undefined. */
-async function adoptExistingEntry(
+export async function adoptExistingEntry(
   sharedPath: string,
   digest: string,
 ): Promise<string | undefined> {
@@ -285,7 +261,7 @@ async function adoptExistingEntry(
 async function readRecordedTreeDigest(sharedPath: string): Promise<string> {
   let text: string;
   try {
-    text = await readStableFile(`${sharedPath}.tree`);
+    text = await readTreeRecord(`${sharedPath}.tree`);
   } catch (error) {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
@@ -300,7 +276,7 @@ async function readRecordedTreeDigest(sharedPath: string): Promise<string> {
   if (!/^sha256:[0-9a-f]{64}$/u.test(recorded))
     throw new OpmError(
       'VERIFICATION_FAILED',
-      `Shared store tree digest is malformed: ${sharedPath}`,
+      `Shared store tree digest is malformed: ${sharedPath}.tree is not a sha256 digest; a crash cannot leave this (a record is written whole, by a temporary file and a rename), so something else wrote it; remove ${sharedPath} and ${sharedPath}.tree and run the command again`,
     );
   return recorded;
 }
@@ -324,7 +300,7 @@ async function materializeArchive(
   format: ArchiveFormat,
   digest: string,
   destination: string,
-  limits?: MaterializationLimits,
+  limits: MaterializationLimits,
 ): Promise<void> {
   await ensureStableDirectory(dirname(destination));
   const descriptor = await descriptorForBytes({
@@ -339,7 +315,7 @@ async function materializeArchive(
     descriptor,
     destination,
     format,
-    ...(limits !== undefined && { limits }),
+    limits,
   });
 }
 

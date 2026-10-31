@@ -69,22 +69,29 @@ function tooLargeMessage(
 }
 
 /**
- * A metadata document held more values, or nested deeper, than the adapter
- * reads. The parser stops at the first value past the limit, and this says how
- * far it had got: `visited` values begun (the refused one included) in `offset`
- * of `documentLength` characters. A refusal that stopped at the limit has
- * built at most `maximum` values, however large the document claimed to be.
+ * A metadata document held more than the adapter reads: more values, nested
+ * deeper, or a tree that would cost more to hold than the budget (`cost`, in
+ * estimated bytes of heap; an object weighs more than a number). The parser
+ * stops at the first part past the limit, and this says how far it had got:
+ * `visited` values begun (the refused one included) in `offset` of
+ * `documentLength` characters, with `spent` the cost charged by then. A refusal
+ * that stopped at the limit has built no more than the limit, however large the
+ * document claimed to be.
  */
 export class MetadataLimitError extends ProviderError {
   constructor(
-    readonly limit: 'values' | 'depth',
+    readonly limit: 'values' | 'depth' | 'cost',
     readonly maximum: number,
     readonly visited: number,
     readonly offset: number,
     readonly documentLength: number,
     message = limit === 'values'
       ? `Provider metadata exceeds ${maximum} values`
-      : `Provider metadata exceeds depth ${maximum}`,
+      : limit === 'cost'
+        ? `Provider metadata exceeds ${maximum} bytes of parsed size`
+        : `Provider metadata exceeds depth ${maximum}`,
+    /** What the tree had cost when the parser stopped; 0 when not counted. */
+    readonly spent: number = 0,
   ) {
     super('INVALID_PROVIDER_METADATA', message);
     this.name = 'MetadataLimitError';
@@ -99,6 +106,7 @@ export class MetadataLimitError extends ProviderError {
       this.offset,
       this.documentLength,
       `${subject} is not usable: ${this.message}`,
+      this.spent,
     );
   }
 }

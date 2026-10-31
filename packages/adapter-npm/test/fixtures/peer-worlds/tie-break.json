@@ -1,0 +1,88 @@
+{
+  "instances": [
+    { "key": "p0@1.0.0", "name": "p0", "version": "1.0.0", "edges": [] },
+    {
+      "key": "p1@1.0.0",
+      "name": "p1",
+      "version": "1.0.0",
+      "edges": [
+        { "as": "p4", "to": "p4@2.0.0", "peer": true },
+        { "as": "p0", "to": "p0@3.0.0", "peer": true }
+      ]
+    },
+    {
+      "key": "p4@2.0.0",
+      "name": "p4",
+      "version": "2.0.0",
+      "edges": [{ "as": "p0", "to": "p0@3.0.0", "peer": true }]
+    },
+    {
+      "key": "p0@3.0.0",
+      "name": "p0",
+      "version": "3.0.0",
+      "edges": [
+        { "as": "p1", "to": "p1@1.0.0" },
+        { "as": "p4", "to": "p4@2.0.0", "peer": true }
+      ]
+    },
+    { "key": "kp2@1.0.0", "name": "kp2", "version": "1.0.0", "edges": [] },
+    {
+      "key": "kp1@3.0.0",
+      "name": "kp1",
+      "version": "3.0.0",
+      "edges": [
+        { "as": "kp1", "to": "kp1@1.0.0" },
+        { "as": "kp2", "to": "kp2@1.0.0#2" },
+        { "as": "kp4", "to": "kp4@1.0.0", "peer": true }
+      ]
+    },
+    { "key": "kp1@1.0.0", "name": "kp1", "version": "1.0.0", "edges": [] },
+    {
+      "key": "kp4@1.0.0",
+      "name": "kp4",
+      "version": "1.0.0",
+      "edges": [{ "as": "kp1", "to": "kp1@3.0.0", "peer": true }]
+    },
+    {
+      "key": "kp2@1.0.0#2",
+      "name": "kp2",
+      "version": "1.0.0",
+      "edges": [
+        { "as": "kp4", "to": "kp4@1.0.0", "peer": true },
+        { "as": "kp1", "to": "kp1@3.0.0", "peer": true }
+      ]
+    },
+    { "key": "kp2@3.0.0", "name": "kp2", "version": "3.0.0", "edges": [] }
+  ],
+  "tops": [
+    {
+      "id": ".",
+      "dir": "",
+      "edges": [
+        { "as": "p0", "to": "p0@1.0.0" },
+        { "as": "kp2", "to": "kp2@1.0.0" }
+      ],
+      "links": []
+    },
+    {
+      "id": "packages/m0",
+      "dir": "packages/m0",
+      "edges": [
+        { "as": "p1", "to": "p1@1.0.0" },
+        { "as": "p4", "to": "p4@2.0.0" },
+        { "as": "p0", "to": "p0@3.0.0" }
+      ],
+      "links": []
+    },
+    {
+      "id": "packages/zzkept",
+      "dir": "packages/zzkept",
+      "edges": [
+        { "as": "kp1", "to": "kp1@3.0.0" },
+        { "as": "kp2", "to": "kp2@3.0.0" },
+        { "as": "kp4", "to": "kp4@1.0.0" }
+      ],
+      "links": []
+    }
+  ]
+}

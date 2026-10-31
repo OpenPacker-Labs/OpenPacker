@@ -5,6 +5,16 @@ import {
   writtenHostLength,
 } from '../src/url-host.js';
 
+/**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
 /** 131,072 characters of non-ASCII labels: Node's parser takes a second on them. */
 const P = 'ß.é.'.repeat(32768);
 /** Percent-escaped labels, 524,286 characters. */
@@ -252,9 +262,9 @@ describe('the host of a mebibyte', () => {
       `${'blob: '.repeat(MIB / 12)}http://${'a'.repeat(1000)}`,
     ],
   ])('is found in linear time: %s', (_, address) => {
-    const started = performance.now();
+    const started = cpuMs();
     writtenHostLength(address);
-    expect(performance.now() - started).toBeLessThan(2000);
+    expect(cpuMs() - started).toBeLessThan(2000);
   });
 });
 

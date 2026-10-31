@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { parseAndValidateContract } from '../src/index.js';
+import { createPrexValidator, parseAndValidateContract } from '../src/index.js';
 
 const fixtureDirectory = new URL(
   '../../../fixtures/protocol/registry-definition/',
@@ -9,6 +9,13 @@ const fixtureDirectory = new URL(
 
 const SCHEMA =
   'https://openpacker.dev/spec/prex/v1/schemas/registry-definition.schema.json#/$defs/RegistryDefinition';
+
+// One validator for the file, its schema compiled while the file is collected.
+// Left to its default, each call below builds a validator and compiles the PREX
+// catalog again (about 0.4 s of CPU alone each), and the fixtures test paid
+// that once per fixture inside its time budget.
+const prex = createPrexValidator();
+prex.getSchema(SCHEMA);
 
 describe('Registry Definition fixtures', () => {
   it('validates every v1 fixture against the schema', async () => {
@@ -19,7 +26,7 @@ describe('Registry Definition fixtures', () => {
 
     for (const name of names) {
       const text = await readFile(new URL(name, fixtureDirectory), 'utf8');
-      const result = parseAndValidateContract(SCHEMA, text);
+      const result = parseAndValidateContract(SCHEMA, text, prex);
       expect(result.valid, `${name}: ${JSON.stringify(result.errors)}`).toBe(
         true,
       );
@@ -38,6 +45,7 @@ describe('Registry Definition fixtures', () => {
         purlTypes: ['npm'],
         resources: [],
       }),
+      prex,
     );
     expect(result.valid).toBe(false);
   });
@@ -56,6 +64,7 @@ describe('Registry Definition fixtures', () => {
           },
         ],
       }),
+      prex,
     );
     expect(result.valid).toBe(false);
   });

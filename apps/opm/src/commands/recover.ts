@@ -1,4 +1,6 @@
-import { resolve } from 'node:path';
+import { lstat } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { out, report } from '@openpacker/canonical';
 import {
   DEFAULT_STEP_WAIT_MS,
   OpmError,
@@ -47,12 +49,25 @@ export function cliStep(
     get waitMs() {
       return wait();
     },
-    onRecovered: (step) => io.stderr.write(`${describeRecovery(step)}\n`),
+    onRecovered: (step) => io.stderr.write(report('', describeRecovery(step))),
     onWait: (holder) =>
       io.stderr.write(
-        `opm: waiting for ${holder.owner === undefined ? 'a lock opm cannot read' : describeProcessOwner(holder.owner)}, which is changing this project (${holder.file})\n`,
+        report(
+          'opm: ',
+          `waiting for ${holder.owner === undefined ? 'a lock opm cannot read' : describeProcessOwner(holder.owner)}, which is changing this project (${holder.file})`,
+        ),
       ),
   };
+}
+
+/**
+ * The project `opm recover` puts right: the directory itself when opm keeps
+ * its state there (`.opm`, where `opm ci` takes its step lock in an npm or
+ * pnpm project that has no opm.toml), else the opm project it is in.
+ */
+async function recoverRoot(dir: string): Promise<string> {
+  const state = await lstat(join(dir, '.opm')).catch(() => undefined);
+  return state?.isDirectory() === true ? dir : requireOpmRoot(dir);
 }
 
 /** What `opm recover` takes; anything else is refused, not ignored. */
@@ -87,9 +102,7 @@ export async function runRecoverCommand(
   const path = args.options.get('path');
   if (path === true)
     throw new OpmError('INVALID_SPEC', '--path needs a directory');
-  const root = await requireOpmRoot(
-    path === undefined ? cwd : resolve(cwd, path),
-  );
+  const root = await recoverRoot(path === undefined ? cwd : resolve(cwd, path));
   const id = args.options.get('abandon-step');
   const force = args.options.get('force');
   if (id === true)
@@ -109,7 +122,8 @@ export async function runRecoverCommand(
     );
   if (id === undefined) {
     const recovered = await recoverInterruptedSteps(root, step);
-    io.stdout.write(
+    out(
+      io,
       recovered.length === 0
         ? 'Nothing to recover\n'
         : `Recovered ${recovered.length} step${recovered.length === 1 ? '' : 's'}\n`,
@@ -122,22 +136,28 @@ export async function runRecoverCommand(
   });
   const foreign = result.recovered.find((copy) => copy.foreign !== undefined);
   if (foreign !== undefined) {
-    io.stdout.write(
+    out(
+      io,
       `Removed ${foreign.copy}, made for the project at ${printable(foreign.foreign!)}; this project was not changed\n`,
     );
     return 0;
   }
   if (result.owner !== undefined)
-    io.stdout.write(
+    out(
+      io,
       `Took the step of ${describeProcessOwner(result.owner)} to be dead; if it is running on another host it still writes this project\n`,
     );
   for (const lock of result.removedLocks)
-    io.stdout.write(
+    out(
+      io,
       lock.owner === undefined
         ? `Removed ${lock.file}, which does not say who held it\n`
         : `Removed ${lock.file}, held by ${describeProcessOwner(lock.owner)}\n`,
     );
-  io.stdout.write(
+  // A lock that did not say who held it had no owner, and so no copy of its own.
+  if (result.owner === undefined) return 0;
+  out(
+    io,
     result.recovered.length === 0
       ? 'It left no copy to put back\n'
       : `Dealt with ${result.recovered.length} cop${result.recovered.length === 1 ? 'y' : 'ies'} it left (named above)\n`,

@@ -115,29 +115,31 @@ export async function ensurePrivateRoot(
   root: string,
   explicit: boolean,
   create = true,
+  /** What the root is, in what is said of it. */
+  what = 'Shared store root',
 ): Promise<void> {
   const named = await lstat(root).catch((error: NodeJS.ErrnoException) => {
     if (create && error.code === 'ENOENT') return undefined;
     throw error;
   });
-  if (named?.isSymbolicLink() === true) throw linkedRoot(root);
+  if (named?.isSymbolicLink() === true) throw linkedRoot(root, what);
   const real = realBase(root);
   const handle = await openPrivateDirectory(real, create).catch(
     (error: NodeJS.ErrnoException) => {
       if (error.code === 'ELOOP' || error.code === 'ENOTDIR')
-        throw linkedRoot(root);
+        throw linkedRoot(root, what);
       throw error;
     },
   );
   try {
     const info = await handle.stat();
-    if (!info.isDirectory()) throw linkedRoot(root);
+    if (!info.isDirectory()) throw linkedRoot(root, what);
     if (process.platform !== 'win32') {
       const uid = process.geteuid?.();
       if (uid !== undefined && info.uid !== uid)
         throw new OpmError(
           'UNSAFE_PATH',
-          `Shared store root ${root} is not owned by the current user`,
+          `${what} ${root} is not owned by the current user`,
         );
       // The default is ours to create, so it must be exactly private. A root an
       // operator named may be looser, but never writable by anyone else: whoever
@@ -146,7 +148,7 @@ export async function ensurePrivateRoot(
       if ((info.mode & forbidden) !== 0)
         throw new OpmError(
           'UNSAFE_PATH',
-          `Shared store root ${root} is accessible to other users (mode ${(info.mode & 0o777).toString(8)}); it must be private to its owner`,
+          `${what} ${root} is accessible to other users (mode ${(info.mode & 0o777).toString(8)}); it must be private to its owner`,
         );
     }
   } finally {
@@ -155,15 +157,15 @@ export async function ensurePrivateRoot(
   if (trustBase(root, 'validated private root') !== real)
     throw new OpmError(
       'INPUT_CHANGED',
-      `Shared store root changed while it was checked: ${root}`,
+      `${what} changed while it was checked: ${root}`,
     );
   await ensureStableDirectory(root);
 }
 
-function linkedRoot(root: string): OpmError {
+function linkedRoot(root: string, what: string): OpmError {
   return new OpmError(
     'UNSAFE_PATH',
-    `Shared store root is linked or not a directory: ${root}`,
+    `${what} is linked or not a directory: ${root}`,
   );
 }
 

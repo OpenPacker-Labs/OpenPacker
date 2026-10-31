@@ -7,6 +7,7 @@ import {
   cannotPutBack,
   discardCopy,
   isMountError,
+  mountInside,
   putFileBack,
   putLinkBack,
   readKept,
@@ -17,6 +18,7 @@ import {
   ROLLBACK_TREES,
   type RollbackRecord,
 } from './rollback-record.js';
+import { mountPointsInside } from './mount-points.js';
 import { OpmError } from './types.js';
 import {
   copyEntry,
@@ -52,6 +54,10 @@ export async function restoreFrom(
     const live = join(root, tree.path);
     const kept = join(holder, 'trees', String(index));
     const row = record.trees[index];
+    // Before anything is removed: emptying a tree stops at a mount inside it.
+    const [inner] = await mountPointsInside(live);
+    if (inner !== undefined)
+      throw mountInside(tree.path, holder, join(tree.path, inner));
     if (row === undefined || row === false)
       steps.push({
         name: tree.path,
@@ -135,7 +141,9 @@ export async function restoreFrom(
  * A tree back at `live`: the copy renamed over it. Where `live` is a mount
  * point (a volume over node_modules) it cannot be removed, and the copy is on
  * another file system than it, so the directory stays and its contents are
- * replaced by the copy's, which stays whole until they are all in place.
+ * replaced by the copy's. The copy is not touched: it goes with the rest of
+ * the copy, renamed to `….discard` first, so that a kill at any point finds it
+ * whole and puts it back again, never a half-removed one.
  */
 async function putTreeBack(live: string, kept: string): Promise<void> {
   try {
@@ -158,7 +166,6 @@ async function putTreeBack(live: string, kept: string): Promise<void> {
   } finally {
     await directory.close();
   }
-  await removeTree(kept);
 }
 
 /** Where the mark of what was begun on tree or file `index` is kept, in the copy. */

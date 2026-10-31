@@ -215,7 +215,12 @@ export async function child(
      ${body}`,
   );
   const [first, ...rest] = [...command, viteNode, script];
-  return spawn(first!, rest, { stdio: 'ignore', env });
+  // OPM_TEST_CHILD_STDIO=inherit shows what a child prints when it fails.
+  return spawn(first!, rest, {
+    stdio:
+      process.env.OPM_TEST_CHILD_STDIO === 'inherit' ? 'inherit' : 'ignore',
+    env,
+  });
 }
 
 /** How a child process ended. */

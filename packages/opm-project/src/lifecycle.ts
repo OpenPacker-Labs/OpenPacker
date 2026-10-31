@@ -146,6 +146,14 @@ export async function runLifecycleScript(input: {
   /** Test seam: inject a backend. Production callers omit this. */
   backend?: SandboxBackend;
   directoryAuthority?: { fd: number; path: string };
+  /** Visible to the script, read-only: a project's node_modules it resolves its dependencies from. */
+  readonlyPaths?: readonly string[];
+  /**
+   * Directories put before `/usr/bin:/bin` on the script's PATH: the Node
+   * that runs opm and the project's `.bin`, where npm puts them, so a script
+   * that runs `node` finds it.
+   */
+  pathPrefix?: readonly string[];
 }): Promise<SandboxOutcome> {
   if (!lifecycleScriptsAllowed(input.policy, input.packageId)) {
     throw new OpmError(
@@ -156,9 +164,18 @@ export async function runLifecycleScript(input: {
   const shell = input.shell ?? ['/bin/sh', '-c'];
   const sandboxPolicy = sandboxPolicyFromProject(input.policy);
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
-  const grants = input.policy?.sandboxPackageGrants?.[input.packageId] as
-    | PackageGrants
-    | undefined;
+  const declaredGrants = input.policy?.sandboxPackageGrants?.[
+    input.packageId
+  ] as PackageGrants | undefined;
+  // PATH is set here, not taken from the caller's environment: only the
+  // directories named, then the system's.
+  const grants: PackageGrants | undefined =
+    input.pathPrefix === undefined
+      ? declaredGrants
+      : {
+          ...declaredGrants,
+          env: [...(declaredGrants?.env ?? []), 'PATH'],
+        };
 
   // The jail binds the package at the real path of its base (the sandbox's
   // assertSafeJailPath), so the script is told that path: a spelling through
@@ -171,6 +188,9 @@ export async function runLifecycleScript(input: {
       npm_lifecycle_event: input.event,
       npm_package_name: input.packageId,
       INIT_CWD: packageDir,
+      ...(input.pathPrefix !== undefined && {
+        PATH: [...input.pathPrefix, '/usr/bin', '/bin'].join(':'),
+      }),
     },
     policy: sandboxPolicy,
     profile: 'package-exec',
@@ -179,7 +199,7 @@ export async function runLifecycleScript(input: {
     // Package tree only — never the whole host (host installers use a
     // separate funnel with broader grants).
     readwritePaths: [packageDir],
-    readonlyPaths: [],
+    readonlyPaths: [...(input.readonlyPaths ?? [])],
     network: grants?.network === true,
     ...(!(input.directoryAuthority === undefined) && {
       directoryAuthorities: [input.directoryAuthority],
@@ -213,6 +233,8 @@ export async function runDeclaredLifecycleScripts(input: {
   packageId: string;
   policy: PolicyInput | undefined;
   directoryAuthority?: { fd: number; path: string };
+  readonlyPaths?: readonly string[];
+  pathPrefix?: readonly string[];
 }): Promise<{ executed: boolean; outcomes: SandboxOutcome[] }> {
   if (!hasLifecycleScripts(input.declared)) {
     return { executed: false, outcomes: [] };
@@ -233,6 +255,10 @@ export async function runDeclaredLifecycleScripts(input: {
       ...(!(input.directoryAuthority === undefined) && {
         directoryAuthority: input.directoryAuthority,
       }),
+      ...(input.readonlyPaths !== undefined && {
+        readonlyPaths: input.readonlyPaths,
+      }),
+      ...(input.pathPrefix !== undefined && { pathPrefix: input.pathPrefix }),
     });
     outcomes.push(outcome);
     if (outcome.exitCode !== 0) {

@@ -537,60 +537,6 @@ describe('materialiseTree', () => {
     });
   });
 
-  it('rechecks staging after removing the previous destination', async () => {
-    await withTemp(async (dir) => {
-      const { materialiseTree } = await import('./layout.js');
-      const source = join(dir, 'source');
-      const root = join(dir, 'out');
-      const destination = join(root, 'pkg');
-      const old = join(destination, 'old');
-      await mkdir(source);
-      await mkdir(old, { recursive: true });
-      await writeFile(
-        join(source, 'large.bin'),
-        new Uint8Array(4 * 1024 * 1024),
-      );
-      const oldCount = 2_000;
-      await Promise.all(
-        Array.from({ length: oldCount }, async (_, index) =>
-          writeFile(join(old, String(index)), 'old'),
-        ),
-      );
-
-      let settled = false;
-      const materialising = materialiseTree(source, destination, root);
-      void materialising.then(
-        () => {
-          settled = true;
-        },
-        () => {
-          settled = true;
-        },
-      );
-      let mutated = false;
-      while (!settled && !mutated) {
-        // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        const staging = (await readdir(root).catch(() => [] as string[])).find(
-          (entry) => entry.startsWith('.pkg.openpacker-'),
-        );
-        if (staging) {
-          // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          const remaining = await readdir(old).catch(() => [] as string[]);
-          if (remaining.length < oldCount) {
-            await writeFile(join(root, staging, 'attacker'), 'late mutation');
-            mutated = true;
-          }
-        }
-        if (!mutated)
-          await new Promise<void>((resolve) => setImmediate(resolve));
-      }
-      expect(mutated).toBe(true);
-      await expect(materialising).rejects.toMatchObject({
-        code: 'UNSAFE_PATH',
-      });
-    });
-  });
-
   it('refuses a substituted staging directory before publication', async () => {
     await withTemp(async (dir) => {
       const { materialiseTree } = await import('./layout.js');

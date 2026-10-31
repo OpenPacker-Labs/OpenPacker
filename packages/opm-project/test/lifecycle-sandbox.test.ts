@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished } from 'vitest';
 import {
   detectNpmLifecycleScripts,
   hasLifecycleScripts,
@@ -13,6 +13,13 @@ import { observedSandboxForGeneration } from '../src/install.js';
 import { runSandboxedPackageProcess } from '../src/sandbox-run.js';
 import type { PolicyInput } from '@openpacker/contracts';
 import { createMockBackend, type SandboxOutcome } from '@openpacker/sandbox';
+
+/** A directory under the temp directory, removed when the test that made it ends. */
+async function scratch(prefix: string): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), prefix));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  return directory;
+}
 
 // SAFETY: The surrounding boundary establishes the asserted domain contract.
 const allowPolicy: PolicyInput = {
@@ -81,7 +88,7 @@ describe('lifecycle policy gates', () => {
   });
 
   it('detects npm lifecycle scripts from package/package.json', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'opm-life-detect-'));
+    const dir = await scratch('opm-life-detect-');
     await mkdir(join(dir, 'package'), { recursive: true });
     await writeFile(
       join(dir, 'package', 'package.json'),
@@ -98,7 +105,7 @@ describe('lifecycle policy gates', () => {
 
 describe('lifecycle jail execution', () => {
   it('throws SANDBOX_UNAVAILABLE when fail-closed and jail is not enforced', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'opm-life-unenforced-'));
+    const dir = await scratch('opm-life-unenforced-');
     await expect(
       runLifecycleScript({
         event: 'postinstall',
@@ -116,7 +123,7 @@ describe('lifecycle jail execution', () => {
   });
 
   it('throws POLICY_DENIED when scripts are not allowlisted', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'opm-life-deny-'));
+    const dir = await scratch('opm-life-deny-');
     await expect(
       runLifecycleScript({
         event: 'postinstall',
@@ -133,7 +140,7 @@ describe('lifecycle jail execution', () => {
   });
 
   it('contains a malicious postinstall that tries to write outside the package', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'opm-life-escape-'));
+    const root = await scratch('opm-life-escape-');
     const pkg = join(root, 'package');
     await mkdir(pkg, { recursive: true });
     const outside = join(root, 'pwned.txt');
@@ -190,13 +197,14 @@ describe('lifecycle jail execution', () => {
   });
 
   it('runSandboxedPackageProcess denies project writes by default', async () => {
-    const project = await mkdtemp(join(tmpdir(), 'opm-run-ro-'));
+    const project = await scratch('opm-run-ro-');
     const victim = join(project, 'src.js');
     await writeFile(victim, 'good\n');
     // Without a jail this must throw rather than write. With a jail the
     // project tree stays RO. Either way the file stays good.
     try {
       await runSandboxedPackageProcess({
+        timeoutMs: 0,
         argv: [
           process.execPath,
           '-e',
@@ -213,9 +221,10 @@ describe('lifecycle jail execution', () => {
   });
 
   it('runSandboxedPackageProcess refuses when the jail is not enforced', async () => {
-    const project = await mkdtemp(join(tmpdir(), 'opm-run-unenforced-'));
+    const project = await scratch('opm-run-unenforced-');
     await expect(
       runSandboxedPackageProcess({
+        timeoutMs: 0,
         argv: [process.execPath, '-e', 'process.exit(0)'],
         cwd: project,
         projectRoot: project,
@@ -264,7 +273,7 @@ describe('lifecycle jail execution', () => {
   });
 
   it('skips unapproved declared scripts without executing them', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'opm-life-skip-'));
+    const dir = await scratch('opm-life-skip-');
     await mkdir(join(dir, 'package'), { recursive: true });
     const marker = join(dir, 'package', 'ran');
     await writeFile(
@@ -309,7 +318,7 @@ describe('containment withdrawn off Linux', () => {
   };
 
   it('tells a lifecycle script on macOS why it did not run and what to use instead', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'opm-life-macos-'));
+    const dir = await scratch('opm-life-macos-');
     spoofPlatform('darwin');
     const failure = await runLifecycleScript({
       event: 'postinstall',
@@ -327,9 +336,10 @@ describe('containment withdrawn off Linux', () => {
   });
 
   it('tells opmx the same', async () => {
-    const project = await mkdtemp(join(tmpdir(), 'opm-run-macos-'));
+    const project = await scratch('opm-run-macos-');
     spoofPlatform('darwin');
     const failure = await runSandboxedPackageProcess({
+      timeoutMs: 0,
       argv: [process.execPath, '-e', 'process.exit(0)'],
       cwd: project,
       projectRoot: project,
@@ -341,7 +351,7 @@ describe('containment withdrawn off Linux', () => {
   });
 
   it('adds nothing on Linux, where the jail exists', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'opm-life-linux-'));
+    const dir = await scratch('opm-life-linux-');
     const failure = await runLifecycleScript({
       event: 'postinstall',
       script: 'echo hi',

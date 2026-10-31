@@ -8,6 +8,7 @@ export {
   DEFAULT_SANDBOX_POLICY,
   SANDBOX_LOSS,
   type BackendProbe,
+  type OutputSink,
   type PackageGrants,
   type RunInSandboxInput,
   type SandboxBackend,
@@ -31,6 +32,26 @@ export {
 } from './policy.js';
 
 export { packageExecRoRoots } from './backends/native.js';
+
+export {
+  JAIL_HOME_PREFIX,
+  UNOWNED_JAIL_HOME_MS,
+  makeJailHome,
+  openJailRoot,
+  removeJailHome,
+  sweepJailHomes,
+  sweepJailHomesIn,
+  type JailHome,
+  type JailRoot,
+  type SweepSeams,
+} from './jail-home.js';
+
+export {
+  stopMessage,
+  stoppedBySignal,
+  stoppedByTimeout,
+  type RunStop,
+} from './stop.js';
 
 export {
   containmentWithdrawnNote,
@@ -64,14 +85,17 @@ export {
 
 export {
   buildBwrapArgv,
-  buildSeatbeltProfile,
   createBwrapBackend,
   createNativeBackend,
-  createSeatbeltBackend,
   findTrustedSandboxHelper,
   probeNativeBackends,
   reopenExecutableAuthority,
 } from './backends/native.js';
+
+export {
+  buildSeatbeltProfile,
+  createSeatbeltBackend,
+} from './backends/seatbelt.js';
 
 export {
   createMxcBackend,
@@ -81,6 +105,12 @@ export {
 } from './backends/mxc.js';
 
 export { probeBackends, resolveBackend, runInSandbox } from './run.js';
+
+export {
+  boundPaths,
+  inheritedHandleCount,
+  MAX_INHERITED_HANDLES,
+} from './handles.js';
 
 export {
   HostInstallerSandboxError,

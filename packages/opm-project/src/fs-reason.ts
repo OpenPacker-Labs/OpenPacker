@@ -36,3 +36,8 @@ export function printable(text: string): string {
   // eslint-disable-next-line no-control-regex
   return text.replace(/[\u0000-\u001f\u007f-\u009f]/gu, '?');
 }
+
+/** `.opm/<name>` as a message shows it: a name in a project is text from a file. */
+export function opmEntry(name: string): string {
+  return printable(`.opm/${name}`);
+}

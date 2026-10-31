@@ -110,11 +110,17 @@ describe.runIf(process.platform !== 'win32')(
           code: 'INVALID_ROLLBACK',
           message: expect.stringMatching(
             new RegExp(
-              `made in another project, ${await realpath(root)}.*this one is ${await realpath(other)}.*opm recover --abandon-step ${copyId(name)}`,
+              `made in the project at ${await realpath(root)}, and this project is at ${await realpath(other)}.*moved or restored from a backup.*never finished.*opm recover --abandon-step ${copyId(name)}.*then opm sync`,
               'u',
             ),
           ),
         });
+        const { message } = await recoverInterruptedSteps(other).catch(
+          (error: Error) => error,
+        );
+        // Nothing in it claims a replacement that did not happen.
+        expect(message).not.toMatch(/would replace this project's files/u);
+        expect(message).toMatch(/opm made no change/u);
         expect(await snapshot(other)).toEqual(before);
         expect(await copies(other)).toEqual([name]);
       });
