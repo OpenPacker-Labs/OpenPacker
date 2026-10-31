@@ -351,12 +351,22 @@ sandbox binds besides the project, and its `node_modules/.bin` is first on PATH
   lock that cannot be read gives no edges either; it does not stop the run.
 - Python, .NET and native bins, and a file in `.opm/bin` no package owns, run as
   before, the project's store entries bound alone or through a view.
+- Where this user may not write `.opm/runs` (a read-only mount, a tree another
+  user owns), the layout is made in `openpacker-runs` under the temporary
+  directory instead, with the same owner record and sweep; that directory must
+  be this user's and private (mode 700), or the run is refused. Its files are
+  copies where it is on another filesystem than the store. A tool from the tool
+  cache is laid out the same way. This makes the layout no reason a project must
+  be writable; opmx still is one, since `activateGeneration` rewrites the
+  project's bin shims and state on every run.
 
 `opmx-installed-deps.test.ts` (apps/opm) runs an installed bin that requires
 `helper@^1` in a project that also holds `helper@2.0.0` and gets version 1;
 `installed-closure.test.ts` (opm-project) pins the closure and the by-name
 cases; `opmx-run-signals.test.ts` stops an installed declared bin by SIGHUP and
-finds its layout removed.
+finds its layout removed; `tool-layout-readonly.test.ts` lays a tool out from a
+store bwrap binds read-only, and is refused a temporary directory that is not
+private.
 
 ## Amendment (2026-10-24) — a tool's output reaches the terminal as it is written
 

@@ -1,10 +1,12 @@
 import { mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { NativeLockEntry } from '@openpacker/adapter-core';
 import { tarballWrapper } from '@openpacker/project-io';
 import { requireAdapterRegistry } from './adapters.js';
 import { removeStableTree } from './paths.js';
-import { makeScratch, sweepAbandoned } from './run-scratch.js';
+import { makeScratch, sweepAbandoned, type Scratch } from './run-scratch.js';
+import { ensurePrivateRoot } from './shared-store-root.js';
 import {
   ecosystemFromPurl,
   purlPackageName,
@@ -14,6 +16,42 @@ import type { BinDeclaration } from './types.js';
 import { OpmError } from './types.js';
 
 const RUN_PREFIX = 'run-';
+
+/** The directory of this user's under the temporary directory for runs a project cannot hold. */
+const TEMPORARY_RUNS = 'openpacker-runs';
+
+/** Why a layout cannot be made beside its store: this user may not write there. */
+const UNWRITABLE = new Set(['EACCES', 'EPERM', 'EROFS']);
+
+/**
+ * The scratch directory a run's layout is made in: beside the store it links
+ * from (`<cacheRoot>/.opm/runs`), so its files are hard links. Where this user
+ * may not write there, a checkout they may read and not write, it is made in
+ * `openpacker-runs` under the temporary directory, which must be theirs and
+ * private, and its files are copies where that is another filesystem. Either
+ * way the next run made there removes what runs that ended left.
+ */
+async function runScratch(cacheRoot: string): Promise<Scratch> {
+  const opm = join(cacheRoot, '.opm');
+  const beside = join(opm, 'runs');
+  try {
+    await sweepAbandoned(beside, RUN_PREFIX);
+    await mkdir(opm, { recursive: true });
+    // Not recursive: Node's recursive mkdir says ENOENT for EROFS.
+    await mkdir(beside).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'EEXIST') throw error;
+    });
+    return await makeScratch(beside, RUN_PREFIX);
+  } catch (error) {
+    // SAFETY: Node's file system errors carry their errno name in `code`.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === undefined || !UNWRITABLE.has(code)) throw error;
+  }
+  const own = join(tmpdir(), TEMPORARY_RUNS);
+  await ensurePrivateRoot(own, false, true, 'The temporary runs directory');
+  await sweepAbandoned(own, RUN_PREFIX);
+  return await makeScratch(own, RUN_PREFIX);
+}
 
 /** One package of a tool's closure, as the tool cache holds it. */
 export interface ToolPackage {
@@ -66,12 +104,9 @@ export async function layOutTool(input: {
       'UNSUPPORTED_OPERATION',
       'The npm adapter does not write a node_modules layout',
     );
-  const runs = join(input.cacheRoot, '.opm', 'runs');
-  await sweepAbandoned(runs, RUN_PREFIX);
-  await mkdir(runs, { recursive: true });
   // The layout is the scratch's `tree`; its `.owner` stays outside what the
   // sandbox binds.
-  const scratch = await makeScratch(runs, RUN_PREFIX);
+  const scratch = await runScratch(input.cacheRoot);
   const root = scratch.tree;
   const dispose = () => removeStableTree(scratch.path);
   try {
@@ -158,7 +193,10 @@ export interface NodeRun {
 export async function ephemeralNodeRun(
   tool: {
     exactPurl: string;
-    /** Where the layout is made: `<cacheRoot>/.opm/runs`, beside its store. */
+    /**
+     * Where the layout is made: `<cacheRoot>/.opm/runs`, beside its store, or
+     * the temporary directory's `openpacker-runs` where that cannot be written.
+     */
     cacheRoot: string;
     closure: readonly ToolPackage[];
   },
