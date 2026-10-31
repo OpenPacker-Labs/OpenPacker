@@ -12,25 +12,25 @@
         "providerType": "npm-registry",
         "recordsDigest": {
           "algorithm": "sha256",
-          "value": "3bfd04610d8dec5cea3677327ea5688776ac0434ed2006d2f63b21d7885c71d9"
+          "value": "86f0d7f8044cf669a70e4a29ccda513d5312fd5ddf572a843d5e0033c08661fa"
         },
         "retrievedAt": "2026-08-02T00:00:00Z",
         "revision": "sha256:f205ca7467d05b93e5700a867db07bf15c2f463c9b38afd03f4561234c3ffb1e",
         "rootDigest": {
           "algorithm": "sha256",
-          "value": "c2cc24a52f2eccfba614f45fc2f552ae633eec540ddb01640a5e16191fe6837f"
+          "value": "4f81c1bfb2bade162a3b7938781cdf727bf5719796d0f84256dda449496be91f"
         },
-        "snapshotId": "sha256:c2cc24a52f2eccfba614f45fc2f552ae633eec540ddb01640a5e16191fe6837f"
+        "snapshotId": "sha256:4f81c1bfb2bade162a3b7938781cdf727bf5719796d0f84256dda449496be91f"
       }
     },
     "datacontenttype": "application/json",
-    "datadigest": "sha256:ec30c6ffa9e70197fa5bd1f13d7fa3e805718be96f3eac94b465fdc55dc31170",
+    "datadigest": "sha256:63a4bc7d7df7e661b5f84e84dff5ed50c34dbd7ddd72635fb0464a54e127df2f",
     "dataschema": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.catalog.snapshot.created",
     "externalrefs": [],
-    "id": "sha256:888956fa12e51704f2e1d57175ae7f6fa354e930d64de1552557d8a01456a6e5",
+    "id": "sha256:69d0f186ce7982d781cf70dbca599688930344b0d042f3292fec11e61703ed9d",
     "source": "urn:openpacker:demo",
     "specversion": "1.0",
-    "subject": "sha256:c2cc24a52f2eccfba614f45fc2f552ae633eec540ddb01640a5e16191fe6837f",
+    "subject": "sha256:4f81c1bfb2bade162a3b7938781cdf727bf5719796d0f84256dda449496be91f",
     "time": "2026-08-02T00:00:00Z",
     "type": "org.openpacker.catalog.snapshot.created"
   },
@@ -101,21 +101,21 @@
       "schemaVersion": "1",
       "solutionDigest": {
         "algorithm": "sha256",
-        "value": "0f89049e69954ab8525e15d69711570bc514254796b4a25eb02b578e88d66f18"
+        "value": "b4f9b14fac2b90b284c388e16e8ac0ce09ac9059d5de3c836e07a5ebe86ecc90"
       },
       "universeDigest": {
         "algorithm": "sha256",
-        "value": "338e77f934c92454a2a1265ce002674fdfdbb320e31a86725b682a40e0362cca"
+        "value": "59378d254fa994ca1a37e70d4e41badd266d6a7d55b8e487e93d488aeb921532"
       }
     },
     "datacontenttype": "application/json",
-    "datadigest": "sha256:b1bb4a4693fd9dbb21d91ffc1a4eab9e2090f8b1eb4e546738fdb18621783577",
+    "datadigest": "sha256:2916f4443c5dcd2cfaee9c1eec82d7fe4eb83f50b4f32e1581d0419fe4a52762",
     "dataschema": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.resolution.completed",
     "externalrefs": [],
-    "id": "sha256:e5986bf672c327bc268fd7df879ca7a02478ad784889ddb78a705eede35d081a",
+    "id": "sha256:33573af1beea042d3b436a56284714185824bce1fb8b68515a946974446b3abf",
     "source": "urn:openpacker:demo",
     "specversion": "1.0",
-    "subject": "sha256:0f89049e69954ab8525e15d69711570bc514254796b4a25eb02b578e88d66f18",
+    "subject": "sha256:b4f9b14fac2b90b284c388e16e8ac0ce09ac9059d5de3c836e07a5ebe86ecc90",
     "time": "2026-08-02T00:00:00Z",
     "type": "org.openpacker.resolution.completed"
   },
@@ -124,18 +124,18 @@
     "data": {
       "receiptDigest": {
         "algorithm": "sha256",
-        "value": "14677fd66d6a45461921ec02dc3bea53994b40c67b20afb24db242a8b868ac7f"
+        "value": "79d9a94c09f0b5c36f524b9a6915bcc8974051754c0a45d45af4a61c5552234a"
       },
       "schemaVersion": "1"
     },
     "datacontenttype": "application/json",
-    "datadigest": "sha256:e36372e0ebf08ee9d9d6601e2b5c62a1847900d3b2c7a091d6d75c4c246fe0c5",
+    "datadigest": "sha256:e46ab1531fb4381cea73342a50d6f31de2e15ac858928c1fbcc26a545f02829e",
     "dataschema": "https://openpacker.dev/spec/prex/v1/events/data.schema.json#/$defs/org.openpacker.receipt.created",
     "externalrefs": [],
-    "id": "sha256:22de7c403bfd75d548526141b3500b41d24cbbcb633d1c09ecff43fa37d35d3d",
+    "id": "sha256:43d4d8f679cf1084a359de498b0539e8bd0a4a4817b245bf71bd96fb3e424e1c",
     "source": "urn:openpacker:demo",
     "specversion": "1.0",
-    "subject": "sha256:14677fd66d6a45461921ec02dc3bea53994b40c67b20afb24db242a8b868ac7f",
+    "subject": "sha256:79d9a94c09f0b5c36f524b9a6915bcc8974051754c0a45d45af4a61c5552234a",
     "time": "2026-08-02T00:00:00Z",
     "type": "org.openpacker.receipt.created"
   },
