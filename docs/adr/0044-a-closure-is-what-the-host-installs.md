@@ -1940,6 +1940,19 @@ same two documents are now refused at 16 and 64 MiB of cost, in under 0.1 s, at
   if one of them comes within a quarter of 16. It also reads a 1 MiB document of
   the universe golden repeated (8.8 a byte) under the 1 MiB limit, and refuses a
   megabyte of `{"1023":0}`, of `{}` and of `[]` at 16 MiB.
+- A request built from a real lockfile is no denser (measured 2026-10-31).
+  `planLockCapture` and `buildCaptureSolveInput` turned three npm locks into the
+  solve request and universe a client sends `openpackerd`: OpenPacker's own (345
+  packages, 640 KiB), ts-autocode's (432, 818 KiB) and gitlang's (780, 1465
+  KiB). Each costs 8.1 to 8.2 a byte, about half of 16, and gitlang's is past
+  the daemon's 1 MiB byte bound before its cost matters. A lockfile sent as text
+  in one string field costs 2.0 a byte; OpenPacker's `package-lock.json` as
+  JSON, minified, 7.5.
+- What is denser than 16 a byte is a body made almost only of short values: an
+  array of `"1.0.0"` costs 18.8 a byte (the 400 versions of OpenPacker's lock as
+  one array, 18.1), and an array of small integers 45. Such a body is refused
+  once it is past 16/18.8, about 85 percent, of the byte bound. No PREX request
+  is such a list alone, so the bound stays at 16 rather than rising for it.
 
 | Reader                                            | Byte bound                                   | Cost limit                                             | Refused as                                                           |
 | ------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------- |
