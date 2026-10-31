@@ -19,14 +19,24 @@ const ESCAPED = '%C3%A9.'.repeat(14043);
 const SLOW_MS = 300;
 const FAST_MS = 50;
 
+/**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
 function milliseconds(run: () => void): number {
-  const started = performance.now();
+  const started = cpuMs();
   try {
     run();
   } catch {
     // The time is the point.
   }
-  return performance.now() - started;
+  return cpuMs() - started;
 }
 
 /** The least of three runs, so that a pause on a busy machine does not fail a test. */
@@ -63,7 +73,7 @@ function expectRefused(run: () => void): void {
  */
 function freshParserMilliseconds(): number {
   const script =
-    "const started = performance.now(); try { new URL('https://' + 'ß.é.'.repeat(16384) + '/x.tgz'); } catch {} process.stdout.write(String(performance.now() - started));";
+    "const started = process.cpuUsage(); try { new URL('https://' + 'ß.é.'.repeat(16384) + '/x.tgz'); } catch {} const spent = process.cpuUsage(started); process.stdout.write(String((spent.user + spent.system) / 1000));";
   return Number(
     execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' }),
   );

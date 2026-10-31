@@ -14,7 +14,21 @@
 
 import { lstat } from 'node:fs/promises';
 import type { ProjectionResult } from '@openpacker/adapter-core';
+import type { HoldOptions } from './shared-store-lease.js';
 import { OpmError } from './types.js';
+
+/**
+ * Points inside an install where a test runs what may happen meanwhile, such
+ * as a concurrent `opm gc --shared`. Not part of the package's API: only
+ * `installFrozenWith` (`frozen-install.ts`) takes them, and `index.ts` does
+ * not export it.
+ */
+export interface FrozenInstallSeams {
+  /** Once every archive is in the store, before any is linked into `node_modules`. */
+  beforeLayout?: () => Promise<void>;
+  /** How the install's hold on the shared store waits, and where it steps. */
+  hold?: HoldOptions;
+}
 
 export interface LayoutSource {
   /** The shared store entry a package is linked from. */

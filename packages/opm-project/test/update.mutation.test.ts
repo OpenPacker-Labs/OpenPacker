@@ -105,10 +105,14 @@ describe('updateProject mutation coverage', () => {
       catalogPaths: [fifo],
     });
     const feeding = (async () => {
-      await new Promise<void>((resolve) => setTimeout(resolve, 200));
-      await rm(paths.lock);
+      // Opening the FIFO to write returns once the update has opened it to
+      // read the catalog, which it does after reading the lock (update.ts).
+      // The lock is deleted then, between the two, whatever the machine's
+      // load. A 200 ms sleep was not that: on a loaded machine the lock went
+      // before the update had read it, and an update that finds no lock syncs.
       const handle = await open(fifo, 'w');
       try {
+        await rm(paths.lock);
         await handle.write(
           `${JSON.stringify({ schemaVersion: 1, packages: {} }, null, 2)}\n`,
         );

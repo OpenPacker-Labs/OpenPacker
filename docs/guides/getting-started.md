@@ -23,7 +23,7 @@ pip, Cargo, or NuGet install semantics. See
 | ------------------- | ------------------------------------------------------ |
 | Node.js             | `^22.19.0 \|\| >=24` (demos target Node 24)            |
 | npm                 | 11.x with the committed lockfile (`npm ci`)            |
-| Rust                | Stable toolchain (2024 edition workspace)              |
+| Rust                | `1.88.0`, pinned by `rust-toolchain.toml`              |
 | wasm-bindgen-cli    | Pinned `0.2.126`; WASM bindings only (see below)       |
 | mise                | `2026.7.13` only for the full `npm run demo` mise path |
 | Playwright Chromium | Only for browser gates and full demo                   |
@@ -35,6 +35,18 @@ cargo install --locked wasm-bindgen-cli --version 0.2.126
 # Optional for full demo / browser tests:
 npm exec playwright install chromium
 ```
+
+A machine that already has a Chromium and may not download one (a CI image, an
+agent sandbox) can point the browser gates and the demo at it instead:
+`PLAYWRIGHT_CHROMIUM=/abs/path/to/chrome npm run test:browser` (also `test:e2e`
+and `demo`; `golden:check` launches no browser, it reads what `demo` wrote). The
+path must be absolute; unset, they launch the Chromium Playwright downloaded
+(`scripts/chromium.mjs`). Chromium makes its singleton socket under `TMPDIR`
+(`$TMPDIR/.org.chromium.Chromium.XXXXXX/SingletonSocket`), and a socket path
+holds at most 107 bytes, so a `TMPDIR` longer than about 58 characters makes it
+abort at launch (SIGTRAP; Playwright reports "Target page, context or browser
+has been closed"). Give the browser stages a short `TMPDIR`; a short symlink to
+a longer directory works, since only the path's length counts.
 
 The wasm target and `wasm-bindgen-cli` build only the WASM bindings
 (`@openpacker/embedded/wasm-node` and `/wasm-web`). The CLIs do not load them,

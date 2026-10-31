@@ -114,7 +114,7 @@ export async function checkTestInventory(root) {
     readFileSync(join(root, 'package.json'), 'utf8'),
   ).scripts;
   const commands = {
-    test: 'turbo run test && node scripts/run-gate.mjs unit',
+    test: 'node scripts/turbo-run.mjs test && node scripts/run-gate.mjs unit',
     conformance: 'node scripts/run-gate.mjs conformance',
     security: 'node scripts/run-gate.mjs security',
     integration: 'node scripts/run-gate.mjs integration',
@@ -124,7 +124,7 @@ export async function checkTestInventory(root) {
     fuzz: 'node scripts/fuzz-smoke.mjs && node tests/fuzz/upm-auth-config.mjs && node tests/fuzz/upm-maven-pom.mjs',
     coverage: 'node scripts/coverage.mjs',
     parity:
-      'npm exec -- vitest run packages/adapters-default/src/standard-pack.test.ts packages/adapters-default/src/standard-pack.native.test.ts && node --test integrations/mise/test/contract.test.mjs',
+      'npm exec -- vitest run --config scripts/vitest.gate.config.mjs packages/adapters-default/src/standard-pack.test.ts packages/adapters-default/src/standard-pack.native.test.ts && node --test integrations/mise/test/contract.test.mjs',
     nativeParity: 'node scripts/pack-parity-container.mjs',
     live: 'npm run test:live --workspace @openpacker/oci && npm run test:live --workspace @openpacker/adapter-nix',
   };

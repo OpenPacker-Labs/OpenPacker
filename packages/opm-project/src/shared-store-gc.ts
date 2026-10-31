@@ -48,6 +48,17 @@ export interface SharedStoreCollection {
  * running install has claimed (`shared-store-lease.ts`), which is how an entry
  * an install found but has not linked yet stays, and an entry younger than
  * `minimumAgeMs`, for an install that does not claim (an older opm).
+ *
+ * An entry's age is that of the newer of its record (`<entry>.tree`, by mtime)
+ * and the entry directory itself (by ctime, from `lstat`): either one changed
+ * within `minimumAgeMs` makes it too new. The record alone does not date a
+ * publication, because a publish that finds the same record already on disk
+ * does not write it again, and a record outlives its entry when a collection is
+ * interrupted between the two removals or a publish fails before its rename.
+ * The directory's ctime is set when the extraction fills it and moves again
+ * when it is renamed into place (ext4 does, as measured; POSIX leaves it open),
+ * so it dates the publication within the time an extraction takes, and nothing
+ * can set it back.
  */
 export function collectSharedStore(
   input: SharedStoreCollectionInput = {},
@@ -137,8 +148,8 @@ export async function collectSharedStoreWith(
         result.referenced += 1;
         continue;
       }
-      const published = await stat(`${entry}.tree`).catch(() => undefined);
-      if (published !== undefined && now - published.mtimeMs < minimumAge) {
+      const published = await publishedAt(entry);
+      if (published !== undefined && now - published < minimumAge) {
         result.tooNew += 1;
         continue;
       }
@@ -189,6 +200,22 @@ async function collect(
   }
   await removeStableTree(doomed).catch(() => undefined);
   return 'removed';
+}
+
+/**
+ * When `entry` was last published, in ms: the newer of its record's mtime and
+ * the directory's own ctime (never through a link), or undefined when neither
+ * can be read.
+ */
+async function publishedAt(entry: string): Promise<number | undefined> {
+  const [record, directory] = await Promise.all([
+    stat(`${entry}.tree`).catch(() => undefined),
+    lstat(entry).catch(() => undefined),
+  ]);
+  const times = [record?.mtimeMs, directory?.ctimeMs].filter(
+    (time): time is number => time !== undefined,
+  );
+  return times.length === 0 ? undefined : Math.max(...times);
 }
 
 /** True when any file under `entry` has a second name somewhere else. */
