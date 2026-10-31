@@ -17,7 +17,7 @@ const hostile = JSON.stringify({
 });
 
 describe('what a request body may cost to parse', () => {
-  it('refuses a body that costs more than one of the body limit may, as invalid', async () => {
+  it('refuses a body that costs more than one of the body limit may, as too large', async () => {
     const app = createOpenPackerDaemon({
       operations: await createStandaloneReferenceOperations(),
     });
@@ -29,9 +29,10 @@ describe('what a request body may cost to parse', () => {
         headers: { 'content-type': 'application/json' },
         payload: hostile,
       });
-      expect(response.statusCode).toBe(400);
+      expect(response.statusCode).toBe(413);
       expect(response.json()).toMatchObject({
-        status: 400,
+        status: 413,
+        code: 'INVALID_REQUEST',
         detail: 'JSON document exceeds 16777216 bytes of parsed size',
       });
     } finally {
@@ -56,12 +57,36 @@ describe('what a request body may cost to parse', () => {
         headers: { 'content-type': 'application/json' },
         payload: body,
       });
+      expect(refused.statusCode).toBe(413);
       expect(refused.json()).toMatchObject({
-        status: 400,
+        status: 413,
+        code: 'INVALID_REQUEST',
         detail: 'JSON document exceeds 1048576 bytes of parsed size',
       });
     } finally {
       await small.close();
+    }
+  });
+
+  it('answers a body past the byte limit as it answers one past the cost, too large', async () => {
+    const app = createOpenPackerDaemon({
+      operations: await createStandaloneReferenceOperations(),
+      bodyLimit: 1024,
+    });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/identify',
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({ request: 'x'.repeat(2000) }),
+      });
+      expect(response.statusCode).toBe(413);
+      expect(response.json()).toMatchObject({
+        status: 413,
+        code: 'INVALID_REQUEST',
+      });
+    } finally {
+      await app.close();
     }
   });
 });

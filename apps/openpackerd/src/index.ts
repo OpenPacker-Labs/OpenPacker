@@ -5,6 +5,7 @@ import Fastify, {
   type FastifyServerOptions,
 } from 'fastify';
 import {
+  CanonicalJsonLimitError,
   canonicalBytes,
   canonicalDigest,
   documentParseLimits,
@@ -851,6 +852,13 @@ function handleError(
         error.message,
       ),
     );
+  // A body past the byte limit, or one whose parse would cost more than a body
+  // of that many bytes may, is too large, as openpacker-registry answers both.
+  if (tooLarge(error))
+    return sendProblem(
+      reply,
+      problem('INVALID_REQUEST', 413, 'Request body too large', error.message),
+    );
   if (
     error instanceof SyntaxError ||
     error instanceof TypeError ||
@@ -899,6 +907,15 @@ function handleError(
         ? 'The reference service could not complete the request'
         : message,
     ),
+  );
+}
+
+/** A request body refused for its size: its bytes, or what its parse would cost. */
+function tooLarge(error: unknown): error is Error {
+  return (
+    (error instanceof CanonicalJsonLimitError && error.limit === 'cost') ||
+    (error instanceof Error &&
+      (error as { code?: unknown }).code === 'FST_ERR_CTP_BODY_TOO_LARGE')
   );
 }
 

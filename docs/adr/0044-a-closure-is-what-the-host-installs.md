@@ -1946,7 +1946,7 @@ same two documents are now refused at 16 and 64 MiB of cost, in under 0.1 s, at
 | packslip, a signed payload (`parseSignedPayload`) | 4 MiB (`MAX_BUNDLE_BYTES`)                   | 64 MiB                                                 | `SignedPayloadCostError` (`INVALID_STATEMENT`)                       |
 | SDK, a page of events                             | 16 MiB, or `maximumResponseBytes` if smaller | 256 MiB for the whole page, its lines counted together | `RangeError`: `PREX event page would cost more than … bytes to hold` |
 | events, `decodeCloudEvent`                        | the bytes it is given                        | 16 times them, at least 1 MiB                          | `CanonicalJsonLimitError`                                            |
-| `openpackerd`, a request body                     | `bodyLimit` (`requestBytes`, 1 MiB)          | 16 MiB                                                 | 400, as any body the parser refuses                                  |
+| `openpackerd`, a request body                     | `bodyLimit` (`requestBytes`, 1 MiB)          | 16 MiB                                                 | 413 (`INVALID_REQUEST`), as a body past `bodyLimit` is               |
 | `openpacker-registry`, a request body             | `bodyLimit` (4 MiB)                          | 64 MiB                                                 | 413, as a body past `bodyLimit` is                                   |
 | `opm publish`, the pack receipt                   | 4 MiB (`readStableFile`)                     | 64 MiB                                                 | `INVALID_SPEC`: `Invalid pack receipt: …`                            |
 
