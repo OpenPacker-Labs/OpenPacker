@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { EmbeddedResolver } from '@openpacker/embedded';
+import {
+  createEmbeddedResolver,
+  EmbeddedResolver,
+  type EmbeddedBindings,
+} from '@openpacker/embedded';
 import {
   defaultHostEnvironment,
   resolveGraph,
@@ -15,7 +19,10 @@ import { NpmRegistryFixture } from './npm-registry-fixture.js';
  * one engine, so an unsatisfiable closure must reach a caller as the same
  * `UNRESOLVABLE` that names the requirement nothing can meet, whichever build
  * the machine has. A machine with only one of them tests only one of the two
- * ways to throw, so this file hands the resolver each one itself.
+ * ways to throw, so this file hands the resolver each one itself, as a binding
+ * whose `solve_json` throws it: the resolver turns whatever a binding throws
+ * into an `EmbeddedRefusal` (`@openpacker/embedded`), and that is what
+ * `solveGraph` reads.
  */
 
 const throwers = [
@@ -63,14 +70,24 @@ describe('an unsatisfiable closure', () => {
       let refused = 0;
       vi.spyOn(EmbeddedResolver.prototype, 'solve').mockImplementation(
         function (this: EmbeddedResolver, input) {
-          try {
-            return solve.call(this, input);
-          } catch (error) {
-            refused += 1;
-            throw thrown(
-              error instanceof Error ? error.message : String(error),
-            );
-          }
+          // SAFETY: the resolver keeps the binding it was made from as `bindings`.
+          const real = (this as unknown as { bindings: EmbeddedBindings })
+            .bindings;
+          // The same engine, behind a binding that throws as `thrown` does.
+          const binding: EmbeddedBindings = {
+            ...real,
+            solve_json(json) {
+              try {
+                return real.solve_json(json);
+              } catch (error) {
+                refused += 1;
+                throw thrown(
+                  error instanceof Error ? error.message : String(error),
+                );
+              }
+            },
+          };
+          return solve.call(createEmbeddedResolver(binding), input);
         },
       );
       await expect(
