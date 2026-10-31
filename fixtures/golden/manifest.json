@@ -1,7 +1,7 @@
 {
   "entries": [
     {
-      "digest": "sha256:71d0b9eaa4ea006e75f3f25cc54a28a610466472ed21e7e15d875d94c6a187a4",
+      "digest": "sha256:f032ebcc5558b7a24eed5275b105ba6c867546d8f4ebca0997cf8246c05e0c32",
       "file": "fixtures/golden/normalize.json",
       "kind": "normalize"
     },
@@ -11,27 +11,27 @@
       "kind": "identity"
     },
     {
-      "digest": "sha256:605ecb734d34d57424755e6fe053706379e9b7dc019c7f23ccc52a535ea44f4f",
+      "digest": "sha256:f8fe905d457aba5dbfaf781d9046813b7acda862aac7d227d19137b3ea0a07aa",
       "file": "fixtures/golden/enumeration.json",
       "kind": "enumeration"
     },
     {
-      "digest": "sha256:ac72e871eb065bd03dacfa958637fe8ff1a741f3b14534f3bae40927cc809cc3",
+      "digest": "sha256:b7c40930de2565d2f84d3469e6f8e083a0e7d7e3d112c91e4da229d95dedd3fa",
       "file": "fixtures/golden/snapshot.json",
       "kind": "snapshot"
     },
     {
-      "digest": "sha256:3363eb6d07644ca4c70e9d8557b0d93fa01ee1f7c2cf3f3ce21a18e215f5151c",
+      "digest": "sha256:25d52f182be301a8d42fcf4cf982bb45419c93547744f701f64e79477697bc5f",
       "file": "fixtures/golden/universe.json",
       "kind": "universe"
     },
     {
-      "digest": "sha256:92e6e4ec9e2a44d4736847822955ab4b9ae31560f4f6d7a73e089175c3b425d9",
+      "digest": "sha256:610aefe559404eaa2bc5d90ddd1aa8cf7e5168d86fc826de41407e4ed069a1d8",
       "file": "fixtures/golden/solution.json",
       "kind": "solution"
     },
     {
-      "digest": "sha256:b7cc85cf80b9950a2826b8e55793ed09baa189546840339a83e7fca2101541e1",
+      "digest": "sha256:85453e8d15cf90dca61ff49af1f494e77e8f6ae111056cdc6b49465a652e27a8",
       "file": "fixtures/golden/proof.json",
       "kind": "proof"
     },
@@ -41,17 +41,17 @@
       "kind": "explanation"
     },
     {
-      "digest": "sha256:8ad73359a916a81ba7915e678352c48d7e8718394657363519e27ac108e0da6b",
+      "digest": "sha256:5626bd0d07f535f13648b7b5498cd8171a617b1adbad73883983b3d6e2c78ea5",
       "file": "fixtures/golden/unsatisfiable.json",
       "kind": "unsatisfiable"
     },
     {
-      "digest": "sha256:bb204ca67f96240d6a765276463afe5949ac6a8629cb74579cea9a0259c1d99c",
+      "digest": "sha256:e5aa34047d1dbb4f13d1114efc3f2484095a5c3d710285603f7980a3d2e40e41",
       "file": "fixtures/golden/receipt.json",
       "kind": "receipt"
     },
     {
-      "digest": "sha256:4d2c2d50dd6b53d46fdd23f3ebe39b7b642a7cb31204ac550cd5a16277e244b1",
+      "digest": "sha256:e3bf401121025e257e1567988521bf1f88b5e2bb3098239740d8e684407cd65d",
       "file": "fixtures/golden/lockfile.json",
       "kind": "lockfile"
     },
@@ -61,17 +61,17 @@
       "kind": "lifecycle"
     },
     {
-      "digest": "sha256:2a5b72451cdcf550e3a44707cbd0e6bc157a04f54ce87cffe427f8adc5b4e24b",
+      "digest": "sha256:268365562171b6329310d4085653b4a5f2171f9173c66972303047f6d7a7ac74",
       "file": "fixtures/golden/event.json",
       "kind": "event"
     },
     {
-      "digest": "sha256:115eef78961aac450a5820bbc903dd9e74cba3da949ff0e7c93658e82507b154",
+      "digest": "sha256:4c5e8dbf9f2b2ba618218fbb06b7f18dd5e3d19ac789bbf7687e60962bd77456",
       "file": "fixtures/golden/oci.json",
       "kind": "oci"
     },
     {
-      "digest": "sha256:b5b421f6e0036491f8d7737b4f380393767993adb270fa58e973778a9eab7fdf",
+      "digest": "sha256:d077fb64903b6340a4b32f97af64fb34a7ce545103c9f0b659cd166532b076d1",
       "file": "fixtures/golden/ocm.json",
       "kind": "ocm"
     },
