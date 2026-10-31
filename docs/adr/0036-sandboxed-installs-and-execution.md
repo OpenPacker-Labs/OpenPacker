@@ -695,6 +695,14 @@ Decision:
 - A Python console script's launcher lists the generation's Python store roots
   in path order, so activation writes the same launcher the install did.
 
+A shim this opm writes starts `opmx -- <name>`, so that no bin name is read as
+one of opmx's options (a bin named like an option gets no shim at all). An opmx
+from before that reads `--` as the end of its own options with no tool named,
+and stops: `opmx: opmx requires a package or bin name`, exit 2. That is seen
+only where a shim starts an older opmx than the opm that wrote it, as `OPM_OPMX`
+can name, or an opm downgraded in place; `opm install` with the current opm,
+whose opmx the shims then start, fixes it.
+
 `activation-current.test.ts` (opm-project) activates an installed project and
 finds every file under `.opm` with the inode, size, mode and modification time
 it had; rewrites a shim out of date, or one that starts another opmx, in a
