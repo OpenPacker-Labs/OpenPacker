@@ -6,7 +6,14 @@
  * round 3, N-f).
  */
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,8 +48,14 @@ afterEach(async () => {
   );
 });
 
+/**
+ * At its real path, as `opm` and `opmx` are handed their working directory
+ * (getcwd). The test that starts a tool points TMPDIR elsewhere: a project
+ * named through the TMPDIR link then lies under no base of the command's, and
+ * the link, in the tree the command runs in, is not followed (ADR 0034).
+ */
 async function scratch(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'opm-terminal-'));
+  const dir = await mkdtemp(join(await realpath(tmpdir()), 'opm-terminal-'));
   temps.push(dir);
   return dir;
 }
