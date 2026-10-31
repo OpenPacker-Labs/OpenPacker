@@ -34,6 +34,8 @@ import {
   trustBase,
   writeFileAtomic,
 } from './index.js';
+import { useChildBackendForTesting } from './handle-path.js';
+import { glibcBackend, glibcLinux } from './handle-test-support.js';
 import { openProjectDirectory } from './stable-open.js';
 
 const POSIX = process.platform === 'linux' || process.platform === 'darwin';
@@ -328,15 +330,17 @@ describe.runIf(POSIX)('a base in the course of one command', () => {
 
     await unlink(root);
     await symlink(join(base, 'b'), root);
-    (await openStableDirectory(join(root, 'two'))).close();
+    await expect(openStableDirectory(join(root, 'two'))).rejects.toMatchObject({
+      code: 'INPUT_CHANGED',
+    });
     expect(() => trustBase(root, 'project root')).toThrow(
       expect.objectContaining({ code: 'INPUT_CHANGED' }),
     );
-    expect(await readdir(join(base, 'a'))).toEqual(['one', 'two']);
+    expect(await readdir(join(base, 'a'))).toEqual(['one']);
     expect(await readdir(join(base, 'b'))).toEqual([]);
   });
 
-  it('is resolved once from the environment, so a TMPDIR link retargeted later splits nothing', async () => {
+  it('is resolved once from the environment, and a TMPDIR link retargeted later is refused before anything is made or written', async () => {
     const base = await world();
     const tmp = await linked(base, 'first', 'tmp-link');
     await mkdir(join(base, 'second'));
@@ -345,10 +349,51 @@ describe.runIf(POSIX)('a base in the course of one command', () => {
 
     await unlink(tmp.link);
     await symlink('second', tmp.link);
-    (await openStableDirectory(join(tmpdir(), 'two'))).close();
-    expect(await readdir(tmp.real)).toEqual(['one', 'two']);
+    await expect(
+      openStableDirectory(join(tmpdir(), 'two')),
+    ).rejects.toMatchObject({ code: 'INPUT_CHANGED' });
+    await expect(
+      writeFileAtomic(join(tmpdir(), 'one', 'file'), 'x'),
+    ).rejects.toMatchObject({ code: 'INPUT_CHANGED' });
+    await expect(
+      openProjectDirectory(join(tmpdir(), 'three'), true),
+    ).rejects.toMatchObject({ code: 'INPUT_CHANGED' });
+    expect(await readdir(tmp.real, { recursive: true })).toEqual(['one']);
     expect(await readdir(join(base, 'second'))).toEqual([]);
   });
+
+  it.runIf(glibcLinux())(
+    'is refused at publication when it is retargeted while a file is written',
+    async () => {
+      const base = await world();
+      const tmp = await linked(base, 'first', 'tmp-link');
+      await mkdir(join(base, 'second'));
+      vi.stubEnv('TMPDIR', tmp.link);
+      // The glibc backend does the work, so that its open of the temporary
+      // file can retarget the base between the walk and the rename.
+      const inner = glibcBackend();
+      const restore = useChildBackendForTesting({
+        ...inner,
+        openChild: async (parent, name, flags, mode) => {
+          const opened = await inner.openChild(parent, name, flags, mode);
+          if (name.startsWith('.file.')) {
+            await unlink(tmp.link);
+            await symlink('second', tmp.link);
+          }
+          return opened;
+        },
+      });
+      try {
+        await expect(
+          writeFileAtomic(join(tmpdir(), 'file'), 'x'),
+        ).rejects.toMatchObject({ code: 'INPUT_CHANGED' });
+      } finally {
+        restore();
+      }
+      expect(await readdir(tmp.real)).toEqual([]);
+      expect(await readdir(join(base, 'second'))).toEqual([]);
+    },
+  );
 
   it('is forgotten when the command ends: what one command took is no base for the next', async () => {
     const base = await world();

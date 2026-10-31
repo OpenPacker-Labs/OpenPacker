@@ -14,7 +14,6 @@ import { constants } from 'node:fs';
 import {
   access,
   lstat,
-  open,
   readFile,
   stat,
   type FileHandle,
@@ -25,34 +24,41 @@ import {
   dirname,
   extname,
   join,
-  parse,
-  relative,
   resolve,
-  sep,
 } from 'node:path';
 import {
-  O_DIRECTORY,
-  mkdirChild,
   openChild,
   removeChild,
   renameChild,
   supportsStableHandles,
 } from './handle-path.js';
-import { isBase, stableTarget } from './trusted-base.js';
+import { walkStable } from './stable-walk.js';
+import { assertBaseUnchanged, isBase } from './trusted-base.js';
 import { announceWrite } from './write-observer.js';
 
 export { observeWrites, type WriteObserver } from './write-observer.js';
 
 export {
   BASE_VARIABLES,
+  assertBaseUnchanged,
+  beginCommand,
   environmentBases,
+  fenceWorkingProject,
   forgetBases,
   isBase,
   realBase,
+  sameDirectory,
   stableTarget,
   trustBase,
   type BaseChooser,
 } from './trusted-base.js';
+
+export {
+  openRootDirectory,
+  walkStable,
+  type RootOpening,
+  type WalkOptions,
+} from './stable-walk.js';
 
 /** Resolve a command without executing project- or PATH-controlled code. */
 export async function findExecutable(
@@ -158,6 +164,8 @@ export async function writeFileAtomic(
     } finally {
       await file.close();
     }
+    // Nothing is published under a base that leads somewhere else now.
+    assertBaseUnchanged(directory);
     await assertNamedDirectory(directory, parent);
     await renameChild(parent, temporary, name);
     await assertNamedDirectory(directory, parent);
@@ -185,30 +193,7 @@ export async function openStableDirectory(path: string): Promise<FileHandle> {
       path,
       'Atomic project writes require stable directory handles on this platform',
     );
-  const target = stableTarget(path);
-  const root = parse(target).root;
-  let handle = await open(
-    root,
-    constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
-  );
-  try {
-    for (const part of relative(root, target).split(sep).filter(Boolean)) {
-      await mkdirChild(handle, part).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== 'EEXIST') throw error;
-      });
-      const next = await openChild(
-        handle,
-        part,
-        constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
-      );
-      await handle.close();
-      handle = next;
-    }
-    return handle;
-  } catch (error) {
-    await handle.close().catch(() => undefined);
-    throw error;
-  }
+  return walkStable(path, { create: true });
 }
 
 /**

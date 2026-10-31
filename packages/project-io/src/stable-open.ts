@@ -8,17 +8,15 @@
  */
 
 import { constants } from 'node:fs';
-import { mkdir, open, type FileHandle } from 'node:fs/promises';
-import { parse, relative, sep } from 'node:path';
+import { type FileHandle } from 'node:fs/promises';
 import { ProjectIoError } from './index.js';
 import {
   O_DIRECTORY,
   lstatChild,
-  mkdirChild,
   openChild,
   windowsReadReparse,
 } from './handle-path.js';
-import { stableTarget } from './trusted-base.js';
+import { walkStable } from './stable-walk.js';
 
 /**
  * Open the directory `path`, one `O_NOFOLLOW` component at a time. The base it
@@ -29,53 +27,8 @@ export async function openProjectDirectory(
   path: string,
   create: boolean,
 ): Promise<FileHandle> {
-  const absolute = stableTarget(path);
-  const root = parse(absolute).root;
-  let handle = await openDirectory(root, false);
   try {
-    for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
-      if (create)
-        await mkdirChild(handle, part).catch((error: NodeJS.ErrnoException) => {
-          if (error.code !== 'EEXIST') throw error;
-        });
-      const next = await openDirectoryAt(handle, part);
-      await handle.close();
-      handle = next;
-    }
-    return handle;
-  } catch (error) {
-    await handle.close().catch(() => undefined);
-    if (
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      (error as NodeJS.ErrnoException).code === 'ELOOP' ||
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      (error as NodeJS.ErrnoException).code === 'ENOTDIR' ||
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      (error as NodeJS.ErrnoException).code === 'ENOENT'
-    )
-      throw unsafe(path);
-    throw error;
-  }
-}
-
-async function openDirectory(
-  path: string,
-  create: boolean,
-): Promise<FileHandle> {
-  if (create)
-    await mkdir(path).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== 'EEXIST') throw error;
-    });
-  try {
-    const handle = await open(
-      path,
-      constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
-    );
-    if (!(await handle.stat()).isDirectory()) {
-      await handle.close();
-      throw unsafe(path);
-    }
-    return handle;
+    return await walkStable(path, { create, kindError: () => unsafe(path) });
   } catch (error) {
     if (
       // SAFETY: The surrounding boundary establishes the asserted domain contract.

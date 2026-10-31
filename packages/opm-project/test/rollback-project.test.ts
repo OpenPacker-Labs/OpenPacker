@@ -2,6 +2,7 @@ import { cp, readFile, realpath, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
+import { forgetBases } from '@openpacker/project-io';
 import { recoverInterruptedSteps } from '../src/index.js';
 import { snapshotProject } from '../src/project-rollback.js';
 import { copyId } from '../src/rollback-recovery.js';
@@ -72,6 +73,8 @@ describe.runIf(process.platform !== 'win32')(
       const aside = await copyOf(root, 'aside');
       await rename(root, temporary(`${root}-gone`));
       await rename(aside, root);
+      // Recovery is a later command: the root it takes is the one there now.
+      forgetBases();
       expect(await recoverInterruptedSteps(root)).toEqual([
         expect.objectContaining({ restored: true }),
       ]);

@@ -430,7 +430,7 @@ describe.runIf(POSIX)('a store root that is refused', () => {
 describe.runIf(POSIX)(
   'a project root retargeted while a command uses it',
   () => {
-    it('is INPUT_CHANGED the next time the command takes it, and nothing is written at the new target', async () => {
+    it('is INPUT_CHANGED at the next walk and the next taking, and nothing is made at either target', async () => {
       const base = await world();
       await mkdir(join(base, 'a'));
       await mkdir(join(base, 'b'));
@@ -441,11 +441,13 @@ describe.runIf(POSIX)(
 
       await unlink(root);
       await symlink(join(base, 'b'), root);
-      (await openStableDirectory(join(root, 'two'), true)).close();
+      await expect(
+        openStableDirectory(join(root, 'two'), true),
+      ).rejects.toMatchObject({ code: 'INPUT_CHANGED' });
       expect(() =>
         storePathForDigest(root, `sha256:${'0'.repeat(64)}`),
       ).toThrow(expect.objectContaining({ code: 'INPUT_CHANGED' }));
-      expect(await readdir(join(base, 'a'))).toEqual(['one', 'two']);
+      expect(await readdir(join(base, 'a'))).toEqual(['one']);
       expect(await readdir(join(base, 'b'))).toEqual([]);
     });
   },

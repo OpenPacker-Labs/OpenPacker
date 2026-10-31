@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll } from 'vitest';
+import { afterAll, afterEach } from 'vitest';
+import { forgetBases } from '../../packages/project-io/src/trusted-base.js';
 
 /**
  * Fresh store, cache and plugin directories for every test file.
@@ -37,3 +38,10 @@ delete process.env.OPM_PLUGIN_HOME;
 process.env.XDG_CACHE_HOME = join(root, 'cache');
 process.env.XDG_DATA_HOME = join(root, 'data');
 afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+// Each test is a command of its own, as `runOpm` and `runOpmx` begin one: the
+// bases and fences one took are not the next one's, and a TMPDIR a test makes
+// again at the same path is a new directory, not one retargeted mid-command
+// (ADR 0034, trusted bases). The record is the process's, whichever build of
+// project-io wrote it.
+afterEach(() => forgetBases());
