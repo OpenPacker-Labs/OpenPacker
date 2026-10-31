@@ -1,4 +1,5 @@
-import { resolve } from 'node:path';
+import { lstat } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { out, report } from '@openpacker/canonical';
 import {
   DEFAULT_STEP_WAIT_MS,
@@ -59,6 +60,16 @@ export function cliStep(
   };
 }
 
+/**
+ * The project `opm recover` puts right: the directory itself when opm keeps
+ * its state there (`.opm`, where `opm ci` takes its step lock in an npm or
+ * pnpm project that has no opm.toml), else the opm project it is in.
+ */
+async function recoverRoot(dir: string): Promise<string> {
+  const state = await lstat(join(dir, '.opm')).catch(() => undefined);
+  return state?.isDirectory() === true ? dir : requireOpmRoot(dir);
+}
+
 /** What `opm recover` takes; anything else is refused, not ignored. */
 const RECOVER_OPTIONS = ['abandon-step', 'force', 'path', 'wait'];
 
@@ -91,9 +102,7 @@ export async function runRecoverCommand(
   const path = args.options.get('path');
   if (path === true)
     throw new OpmError('INVALID_SPEC', '--path needs a directory');
-  const root = await requireOpmRoot(
-    path === undefined ? cwd : resolve(cwd, path),
-  );
+  const root = await recoverRoot(path === undefined ? cwd : resolve(cwd, path));
   const id = args.options.get('abandon-step');
   const force = args.options.get('force');
   if (id === true)
