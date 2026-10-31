@@ -14,6 +14,7 @@ import {
   report,
   type ToolReport,
 } from './run-fixture.js';
+import { packageShims } from '../src/commands/run-shims.js';
 
 const MARKER = 'vtok_dummy_marker_0123456789abcdef';
 
@@ -43,7 +44,7 @@ describe('opm run: the environment', () => {
     return report(cap.out);
   }
 
-  it('sets the four names and puts every .bin directory first on PATH', async () => {
+  it("sets the names and puts opm's shims, then every .bin directory, first on PATH", async () => {
     const root = await makeProject({
       opm: true,
       name: '@scope/app',
@@ -59,7 +60,10 @@ describe('opm run: the environment', () => {
       initCwd: sub,
     });
     const inherited = (process.env.PATH ?? '').split(delimiter);
-    expect(seen.path.slice(0, 2)).toEqual([
+    // opm's npm, pnpm and yarn lead (ADR 0061), so a script's `npm run`
+    // reaches opm before a project bin of that name.
+    expect(seen.path.slice(0, 3)).toEqual([
+      packageShims().bin,
       join(root, 'node_modules', '.bin'),
       join(dirname(root), 'node_modules', '.bin'),
     ]);

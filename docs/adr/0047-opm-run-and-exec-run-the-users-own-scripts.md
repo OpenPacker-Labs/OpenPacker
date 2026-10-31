@@ -5,6 +5,9 @@
 - Amended by [ADR 0053](0053-opm-run-across-workspace-members.md): the "Limits"
   entry about workspaces is retired (`--filter`, `-r`, `-w`, per-member
   scripts), and §3 gains one name (`exec node`). The rest holds for each member.
+- Amended by [ADR 0061](0061-npm-run-inside-opm-run-runs-opm-run.md): in §11
+  opm's `npm`, `pnpm` and `yarn` shims lead `PATH`, and `npm_execpath` and
+  `npm_node_execpath` are set too.
 - Relates: [ADR 0033](0033-native-supply-chain-capture-and-mitigation.md) (the
   gates a package passes before it is in `node_modules`),
   [ADR 0034](0034-opm-projects-into-native-project-formats.md) (the `layout`
@@ -90,8 +93,10 @@ own repository.
 11. The child inherits `opm`'s environment. `PATH` is the `.bin` directories of
     the project root and of each ancestor, nearest first (as npm does, including
     those that do not exist), followed by the inherited `PATH`; on Windows the
-    variable keeps its existing spelling (`Path`) and the delimiter is `;`. Four
-    names are set and nothing else is added, removed or rewritten:
+    variable keeps its existing spelling (`Path`) and the delimiter is `;`.
+    _Amended by ADR 0061:_ the directory of opm's `npm`, `pnpm` and `yarn` shims
+    comes first, and `npm_execpath` and `npm_node_execpath` are set as well.
+    Four names are set and nothing else is added, removed or rewritten:
     `npm_lifecycle_event` (the step being run, so `pretest` during the hook;
     `exec` for `exec`), `npm_package_name` and `npm_package_version` (when the
     `package.json` has them) and `INIT_CWD`, the directory `opm` was started in,

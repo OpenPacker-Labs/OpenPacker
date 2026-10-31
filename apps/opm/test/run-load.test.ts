@@ -50,14 +50,30 @@ async function loadGraph(
 }
 
 describe('what opm run and opm exec load', () => {
-  it.each(['entry.ts', 'commands/run.ts', 'main.ts'])(
+  // The shims answer a script's `npm run` as cheaply as `opm run` does (ADR 0061).
+  it.each([
+    'entry.ts',
+    'commands/run.ts',
+    'main.ts',
+    'shims/npm.ts',
+    'shims/pnpm.ts',
+    'shims/yarn.ts',
+  ])(
     'nothing but Node and this directory is imported for a value by %s',
     async (entry) => {
       expect([...(await loadGraph(join(src, entry)))]).toEqual([]);
     },
   );
 
-  it.each(['entry.ts', 'commands/run.ts', 'main.ts'])(
+  // The shims answer a script's `npm run` as cheaply as `opm run` does (ADR 0061).
+  it.each([
+    'entry.ts',
+    'commands/run.ts',
+    'main.ts',
+    'shims/npm.ts',
+    'shims/pnpm.ts',
+    'shims/yarn.ts',
+  ])(
     'the workspace commands are not in the load graph of %s: they are imported when a selection asks',
     async (entry) => {
       const files = new Set<string>();

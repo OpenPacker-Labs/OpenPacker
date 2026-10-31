@@ -1,0 +1,4 @@
+#!/bin/sh
+# pnpm inside opm run (ADR 0061): runs a script through opm run, refuses the rest.
+# ${0%/*} is this file's directory, found without any program on PATH.
+exec "${npm_node_execpath:-node}" "${0%/*}/../../dist/shims/pnpm.js" "$@"

@@ -7,6 +7,7 @@ import {
   steps,
   trace,
 } from './workspace-fixture.js';
+import { packageShims } from '../src/commands/run-shims.js';
 
 const posix = describe.skipIf(process.platform === 'win32');
 
@@ -270,11 +271,12 @@ posix('what a member sees', () => {
       name: 'b',
       version: '0.0.1',
     });
-    // The member's .bin first, then each parent's up to the root's.
+    // opm's npm, pnpm and yarn (ADR 0061), then the member's .bin, then each
+    // parent's up to the root's.
     expect(main?.path).toEqual([
+      packageShims().bin,
       join(ws.root, 'packages', 'a', 'node_modules', '.bin'),
       join(ws.root, 'packages', 'node_modules', '.bin'),
-      join(ws.root, 'node_modules', '.bin'),
     ]);
   });
 

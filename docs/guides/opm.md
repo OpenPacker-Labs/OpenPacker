@@ -1020,11 +1020,19 @@ argument the bin calls `--path` is written after `--`
 
 What they set up for the child:
 
-- `PATH` starts with those `.bin` directories, then your own `PATH`.
-- Your environment is inherited. Four names are set and nothing else:
+- `PATH` starts with opm's `npm`, `pnpm` and `yarn`, then those `.bin`
+  directories, then your own `PATH`. A script's `npm run lint`, `npm test`,
+  `pnpm run build`, `pnpm build` or `yarn build` runs through `opm run`, with
+  the arguments that tool would pass, in the package that tool would use (the
+  nearest `package.json`); any other command of theirs (`npm install`,
+  `npm exec`, `pnpm dlx`…) is refused with the opm command to use, and none of
+  them is ever started
+  ([ADR 0061](../adr/0061-npm-run-inside-opm-run-runs-opm-run.md)).
+- Your environment is inherited. These names are set and nothing else:
   `npm_lifecycle_event` (`pretest` while the hook runs, `exec` for `exec`),
-  `npm_package_name`, `npm_package_version` and `INIT_CWD` (where `opm` was
-  started; an outer value is kept).
+  `npm_package_name`, `npm_package_version`, `INIT_CWD` (where `opm` was
+  started; an outer value is kept), `npm_execpath` (opm's npm, for tools such as
+  `run-s` that start it with Node) and `npm_node_execpath`.
 - Stdin, stdout and stderr are yours. No banner is printed.
 - The exit status is the child's, exactly: a script that exits 7 makes `opm`
   exit 7, and a child ended by a signal gives 128 plus its number. A failing

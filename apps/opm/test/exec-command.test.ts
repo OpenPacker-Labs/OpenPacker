@@ -12,6 +12,7 @@ import {
   makeProject,
   report,
 } from './run-fixture.js';
+import { packageShims } from '../src/commands/run-shims.js';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const fixtureCatalog = join(repoRoot, 'fixtures/opm/catalog.json');
@@ -80,7 +81,11 @@ describe('opm exec: running a bin', () => {
     expect(await runOpm(['exec', 'fake-tool'], cap.io, sub)).toBe(0);
     const seen = report(cap.out);
     expect(seen.cwd).toBe(sub);
-    expect(seen.path[0]).toBe(join(root, 'node_modules', '.bin'));
+    // opm's npm, pnpm and yarn first (ADR 0061), then the project's .bin.
+    expect(seen.path.slice(0, 2)).toEqual([
+      packageShims().bin,
+      join(root, 'node_modules', '.bin'),
+    ]);
   });
 
   it('finds a bin in a parent directory', async () => {

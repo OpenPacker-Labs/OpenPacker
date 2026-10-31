@@ -66,10 +66,25 @@ export function pathKey(
   return Object.keys(env).find((key) => key.toLowerCase() === 'path') ?? 'Path';
 }
 
+/**
+ * The `npm`, `pnpm` and `yarn` a script finds first on its PATH, which run the
+ * script back through `opm run` (ADR 0061).
+ */
+export interface RunShims {
+  /** The directory of the shims: `npm`, `pnpm` and `yarn`, and a `.cmd` beside each. */
+  bin: string;
+  /** `npm_execpath`: the npm shim's script, which a tool may start with Node. */
+  npmExecpath: string;
+  /** `npm_node_execpath`: the Node the shims start, the one that runs opm. */
+  node: string;
+}
+
 export interface ScriptEnvironmentInput {
   /** The environment to inherit; never modified. */
   base: Readonly<Record<string, string | undefined>>;
   binDirs: readonly string[];
+  /** Put first on PATH, before the `.bin` directories, and named in `npm_execpath`. */
+  shims?: RunShims | undefined;
   /** `npm_lifecycle_event`: the script being run, or `exec`. */
   event: string;
   packageName?: string | undefined;
@@ -80,10 +95,12 @@ export interface ScriptEnvironmentInput {
 }
 
 /**
- * The child's environment: the inherited one, `PATH` led by the `.bin`
- * directories, and four names set — `npm_lifecycle_event`, `npm_package_name`,
- * `npm_package_version` and `INIT_CWD`. Nothing else is added, removed or
- * rewritten, and nothing here is ever printed.
+ * The child's environment: the inherited one, `PATH` led by the shims'
+ * directory and then the `.bin` directories, and these names set:
+ * `npm_lifecycle_event`, `npm_package_name`, `npm_package_version`, `INIT_CWD`
+ * and, with the shims, `npm_execpath` and `npm_node_execpath`. Nothing else is
+ * added, removed or rewritten (the inherited PATH loses only an earlier copy
+ * of the shims' directory), and nothing here is ever printed.
  */
 export function scriptEnvironment(
   input: ScriptEnvironmentInput,
@@ -93,11 +110,24 @@ export function scriptEnvironment(
     if (value !== undefined) environment[key] = value;
   const key = pathKey(environment, input.platform);
   const delimiter = input.platform === 'win32' ? ';' : ':';
-  const inherited = environment[key];
+  let inherited = environment[key];
+  const shims = input.shims;
+  // A nested run puts the shims first again, so the copy an outer run put
+  // there goes; the rest of the inherited PATH is left as it was written.
+  if (shims !== undefined && inherited?.split(delimiter).includes(shims.bin))
+    inherited = inherited
+      .split(delimiter)
+      .filter((directory) => directory !== shims.bin)
+      .join(delimiter);
   environment[key] = [
+    ...(shims === undefined ? [] : [shims.bin]),
     ...input.binDirs,
     ...(inherited === undefined || inherited === '' ? [] : [inherited]),
   ].join(delimiter);
+  if (shims !== undefined) {
+    environment.npm_execpath = shims.npmExecpath;
+    environment.npm_node_execpath = shims.node;
+  }
   environment.npm_lifecycle_event = input.event;
   if (input.packageName !== undefined)
     environment.npm_package_name = input.packageName;

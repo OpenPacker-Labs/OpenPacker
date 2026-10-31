@@ -179,6 +179,7 @@ export async function runExecCommand(
   const env = scriptEnvironment({
     base: context.env,
     binDirs,
+    shims: context.shims,
     event: 'exec',
     packageName: pkg?.name,
     packageVersion: pkg?.version,

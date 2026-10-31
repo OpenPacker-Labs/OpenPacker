@@ -189,6 +189,7 @@ export async function runExecInWorkspace(
           env: scriptEnvironment({
             base: context.env,
             binDirs,
+            shims: context.shims,
             event: 'exec',
             packageName: pkg?.name,
             packageVersion: pkg?.version,

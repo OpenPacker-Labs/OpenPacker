@@ -62,6 +62,7 @@ Accepted decisions:
 58. [A gzip stream may end in zero padding](0058-a-gzip-stream-may-end-in-zero-padding.md)
 59. [An optional build's own manifest names its C library](0059-an-optional-builds-own-manifest-names-its-libc.md)
 60. [`opm ci` runs the install scripts a project approved](0060-opm-ci-runs-the-install-scripts-a-project-approved.md)
+61. [`npm run` inside `opm run` runs `opm run`](0061-npm-run-inside-opm-run-runs-opm-run.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

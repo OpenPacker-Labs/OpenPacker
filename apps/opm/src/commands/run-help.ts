@@ -15,10 +15,14 @@ export const RUN_HELP = `Run your own scripts and installed executables (no regi
   parent's. It never fetches anything and never searches PATH (node alone is the
   Node that runs opm). When the bin is missing it names the locked package that
   would provide it and exits 4.
-  Both put those .bin directories first on PATH, run with your environment plus
-  npm_lifecycle_event, npm_package_name, npm_package_version and INIT_CWD, pass
+  Both put opm's npm, pnpm and yarn, then those .bin directories, first on PATH,
+  run with your environment plus npm_lifecycle_event, npm_package_name,
+  npm_package_version, INIT_CWD, npm_execpath and npm_node_execpath, pass
   stdin/stdout/stderr through, and exit with the child's own status (128 plus
   the signal number when a signal ended it). A script that does not exist exits 4.
+  A script's npm run, npm test, npm start/stop/restart, pnpm run, pnpm <script>
+  and yarn <script> run through opm run; their other commands (install, exec,
+  publish...) are refused with the opm command to use, never handed to npm.
 In a workspace, run and exec take pnpm's and npm's member options (before or after
 the command: opm --filter a run build, opm run build --filter a):
   --filter <selector>, -F   pnpm's selectors: name, ./dir, {glob}, name..., ...name, ^, !

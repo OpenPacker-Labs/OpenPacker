@@ -109,11 +109,16 @@ async function firstCommandIsBatch(
   const inherited = (context.env.Path ?? context.env.PATH ?? '')
     .split(';')
     .filter((directory) => directory !== '');
-  const { found } = await resolveBin(word, [...binDirs, ...inherited], {
-    platform: context.platform,
-    pathext: context.env.PATHEXT,
-    probe: context.probe,
-  });
+  const shims = context.shims === undefined ? [] : [context.shims.bin];
+  const { found } = await resolveBin(
+    word,
+    [...shims, ...binDirs, ...inherited],
+    {
+      platform: context.platform,
+      pathext: context.env.PATHEXT,
+      probe: context.probe,
+    },
+  );
   return found !== undefined && isBatchFile(found);
 }
 
@@ -196,6 +201,7 @@ export async function runScriptSteps(
     const env = scriptEnvironment({
       base: context.env,
       binDirs,
+      shims: context.shims,
       event,
       packageName: pkg.name,
       packageVersion: pkg.version,

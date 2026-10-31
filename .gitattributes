@@ -10,6 +10,8 @@
 *.ts text eol=lf
 *.js text eol=lf
 *.lock text eol=lf
+# cmd.exe reads a batch file's lines by CRLF; the opm run shims keep it (ADR 0061).
+apps/opm/shims/bin/*.cmd text eol=crlf
 *.crate binary
 *.tgz binary
 *.whl binary
