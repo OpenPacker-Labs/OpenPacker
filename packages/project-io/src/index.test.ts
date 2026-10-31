@@ -14,7 +14,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   applySpanEdits,
   collectFiles,
@@ -31,6 +31,7 @@ import {
   readTextFile,
   removeTree,
   supportsStableTreeLayout,
+  forgetBases,
   trustBase,
   windowsNtHandlePathForm,
   writeFileAtomic,
@@ -355,7 +356,8 @@ describe('materialiseTree', () => {
       await writeFile(join(source, 'package.js'), 'safe');
       const alias = join(dir, 'alias');
       await symlink(real, alias, 'dir');
-      trustBase(alias);
+      trustBase(alias, 'project root');
+      onTestFinished(() => forgetBases());
 
       const result = await materialiseTree(
         join(alias, 'source'),

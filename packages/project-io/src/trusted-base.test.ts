@@ -18,6 +18,7 @@ import {
   realpath,
   rm,
   symlink,
+  unlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -26,6 +27,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BASE_VARIABLES,
   collectFiles,
+  forgetBases,
   materialiseTree,
   openStableDirectory,
   stableTarget,
@@ -40,6 +42,7 @@ const worlds: string[] = [];
 
 afterEach(async () => {
   vi.unstubAllEnvs();
+  forgetBases();
   for (const world of worlds.splice(0))
     await rm(world, { recursive: true, force: true });
 });
@@ -131,7 +134,7 @@ describe.runIf(POSIX)('a base reached through a link', () => {
     await mkdir(join(parent.real, 'project'));
     const root = join(parent.link, 'project');
 
-    expect(trustBase(root)).toBe(join(parent.real, 'project'));
+    expect(trustBase(root, 'project root')).toBe(join(parent.real, 'project'));
     await writesThrough(root, join(parent.real, 'project'));
   });
 
@@ -139,7 +142,7 @@ describe.runIf(POSIX)('a base reached through a link', () => {
     const base = await world();
     const project = await linked(base, 'checkout', 'project');
 
-    trustBase(project.link);
+    trustBase(project.link, 'project root');
     await writesThrough(project.link, project.real);
     const files = await collectFiles(project.link);
     expect(files.map((file) => file.path)).toEqual(['package.json']);
@@ -153,7 +156,7 @@ describe.runIf(POSIX)('a base reached through a link', () => {
       recursive: true,
     });
     await writeFile(join(parent.real, 'project', 'store', 'entry', 'a'), 'a');
-    trustBase(root);
+    trustBase(root, 'project root');
 
     await materialiseTree(
       join(root, 'store', 'entry'),
@@ -174,7 +177,7 @@ describe.runIf(POSIX)('a link below a base', () => {
     await mkdir(join(parent.real, 'project'));
     await mkdir(join(base, 'outside'));
     await symlink(join(base, 'outside'), join(parent.real, 'project', '.opm'));
-    trustBase(root);
+    trustBase(root, 'project root');
 
     await expect(
       openStableDirectory(join(root, '.opm', 'store')),
@@ -214,7 +217,7 @@ describe.runIf(POSIX)('a link below a base', () => {
     const base = await world();
     const root = join(base, 'project');
     await mkdir(join(root, 'node_modules'), { recursive: true });
-    trustBase(root);
+    trustBase(root, 'project root');
     const held = await openStableDirectory(join(root, 'node_modules'));
     await held.close();
 
@@ -243,5 +246,123 @@ describe.runIf(POSIX)('a link below a base', () => {
       openProjectDirectory(join(alias.link, 'sub'), true),
     ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
     expect(await readdir(alias.real)).toEqual([]);
+  });
+});
+
+/** A project at `<base>/project` that holds `.cache -> <base>/outside`. */
+async function projectHoldingLink(
+  base: string,
+): Promise<{ root: string; outside: string }> {
+  const root = join(base, 'project');
+  const outside = join(base, 'outside');
+  await mkdir(root);
+  await mkdir(outside);
+  await symlink(outside, join(root, '.cache'));
+  return { root, outside };
+}
+
+describe.runIf(POSIX)('an environment base inside a taken project', () => {
+  it('is resolved no further than the project, so the link the project holds is refused', async () => {
+    const base = await world();
+    const { root, outside } = await projectHoldingLink(base);
+    vi.stubEnv('XDG_CACHE_HOME', join(root, '.cache'));
+    trustBase(root, 'project root');
+
+    await expect(
+      openStableDirectory(join(root, '.cache', 'pio')),
+    ).rejects.toMatchObject({
+      code: expect.stringMatching(/^(ENOTDIR|ELOOP)$/u),
+    });
+    await expect(
+      openProjectDirectory(join(root, '.cache', 'layout'), true),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    expect(await readdir(outside)).toEqual([]);
+  });
+
+  it('is no base once the project is taken, though it was resolved through the link before', async () => {
+    const base = await world();
+    const { root, outside } = await projectHoldingLink(base);
+    vi.stubEnv('XDG_CACHE_HOME', join(root, '.cache'));
+    expect(stableTarget(join(root, '.cache', 'x'))).toBe(join(outside, 'x'));
+    trustBase(root, 'project root');
+
+    expect(stableTarget(join(root, '.cache', 'x'))).toBe(
+      join(base, 'project', '.cache', 'x'),
+    );
+    await expect(
+      openStableDirectory(join(root, '.cache', 'x')),
+    ).rejects.toMatchObject({
+      code: expect.stringMatching(/^(ENOTDIR|ELOOP)$/u),
+    });
+    expect(await readdir(outside)).toEqual([]);
+  });
+
+  it('is refused below the link too, and when spelled through the real path of a project taken through a link', async () => {
+    const base = await world();
+    const code = await linked(base, 'code-real', 'code');
+    const real = join(code.real, 'project');
+    await mkdir(real);
+    await mkdir(join(base, 'outside'));
+    await symlink(join(base, 'outside'), join(real, '.cache'));
+    trustBase(join(code.link, 'project'), 'project root');
+
+    vi.stubEnv('XDG_CACHE_HOME', join(real, '.cache', 'deeper'));
+    await expect(
+      openStableDirectory(join(real, '.cache', 'deeper', 'x')),
+    ).rejects.toMatchObject({
+      code: expect.stringMatching(/^(ENOTDIR|ELOOP)$/u),
+    });
+    expect(await readdir(join(base, 'outside'))).toEqual([]);
+  });
+});
+
+describe.runIf(POSIX)('a base in the course of one command', () => {
+  it('is INPUT_CHANGED when it is taken again and leads somewhere else, and its first real path is kept', async () => {
+    const base = await world();
+    await mkdir(join(base, 'a'));
+    await mkdir(join(base, 'b'));
+    const root = join(base, 'project');
+    await symlink(join(base, 'a'), root);
+    trustBase(root, 'project root');
+    (await openStableDirectory(join(root, 'one'))).close();
+
+    await unlink(root);
+    await symlink(join(base, 'b'), root);
+    (await openStableDirectory(join(root, 'two'))).close();
+    expect(() => trustBase(root, 'project root')).toThrow(
+      expect.objectContaining({ code: 'INPUT_CHANGED' }),
+    );
+    expect(await readdir(join(base, 'a'))).toEqual(['one', 'two']);
+    expect(await readdir(join(base, 'b'))).toEqual([]);
+  });
+
+  it('is resolved once from the environment, so a TMPDIR link retargeted later splits nothing', async () => {
+    const base = await world();
+    const tmp = await linked(base, 'first', 'tmp-link');
+    await mkdir(join(base, 'second'));
+    vi.stubEnv('TMPDIR', tmp.link);
+    (await openStableDirectory(join(tmpdir(), 'one'))).close();
+
+    await unlink(tmp.link);
+    await symlink('second', tmp.link);
+    (await openStableDirectory(join(tmpdir(), 'two'))).close();
+    expect(await readdir(tmp.real)).toEqual(['one', 'two']);
+    expect(await readdir(join(base, 'second'))).toEqual([]);
+  });
+
+  it('is forgotten when the command ends: what one command took is no base for the next', async () => {
+    const base = await world();
+    const alias = await linked(base, 'real', 'alias');
+    for (const name of BASE_VARIABLES) vi.stubEnv(name, '');
+    trustBase(alias.link, 'project root');
+    (await openStableDirectory(join(alias.link, 'first'))).close();
+
+    forgetBases();
+    await expect(
+      openStableDirectory(join(alias.link, 'second')),
+    ).rejects.toMatchObject({
+      code: expect.stringMatching(/^(ENOTDIR|ELOOP)$/u),
+    });
+    expect(await readdir(alias.real)).toEqual(['first']);
   });
 });

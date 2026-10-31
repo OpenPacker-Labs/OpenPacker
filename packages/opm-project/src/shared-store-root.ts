@@ -6,15 +6,16 @@
  * play, and by `opm gc --shared`, which never publishes anything.
  */
 
-import { lstat, mkdir, stat } from 'node:fs/promises';
+import { lstat, stat } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { trustBase } from '@openpacker/project-io';
+import { realBase, trustBase } from '@openpacker/project-io';
 import { OpmError } from './types.js';
 import {
   defaultSharedStoreHome,
   ensureStableDirectory,
   sharedStoreSetting,
 } from './paths.js';
+import { openPrivateDirectory } from './stable-ops.js';
 
 let defaultEnabled = false;
 
@@ -50,18 +51,10 @@ export interface RequestedStore {
   explicit: boolean;
 }
 
-/**
- * The store this environment asks for. Its root is taken as a trusted base
- * here, where it is read (`trustBase`, ADR 0034): the links on the way to it
- * are the person's, whichever environment named it, and a link below it is
- * refused by every walk.
- */
 export function requestedSharedStore(
   env: NodeJS.ProcessEnv,
 ): RequestedStore | undefined {
-  const requested = requestedStore(env);
-  if (requested !== undefined) trustBase(requested.root);
-  return requested;
+  return requestedStore(env);
 }
 
 function requestedStore(env: NodeJS.ProcessEnv): RequestedStore | undefined {
@@ -104,36 +97,74 @@ export async function usableSharedRoot(
   }
 }
 
+/**
+ * Make (with `create`) and judge the shared store root, and take it as a base
+ * once it is found private.
+ *
+ * The root as named must not itself be a link: its owner and mode are what is
+ * judged, and a link's own are meaningless (ADR 0048). The links on the way to
+ * it are the environment's and are taken, as a base's are: none inside a
+ * project (`realBase`). The root is made, every directory that was missing
+ * mode 0700, and judged through handles opened one no-follow component at a
+ * time from its real path, so nothing is made where a link below a base
+ * points, and what is judged is what was opened. Only then is it taken
+ * (`trustBase`, as a validated store root), so a root that was refused is
+ * never a base (ADR 0034).
+ */
 export async function ensurePrivateRoot(
   root: string,
   explicit: boolean,
   create = true,
 ): Promise<void> {
-  if (create) await mkdir(root, { recursive: true, mode: 0o700 });
-  const info = await lstat(root);
-  if (info.isSymbolicLink() || !info.isDirectory())
-    throw new OpmError(
-      'UNSAFE_PATH',
-      `Shared store root is linked or not a directory: ${root}`,
-    );
-  if (process.platform !== 'win32') {
-    const uid = process.geteuid?.();
-    if (uid !== undefined && info.uid !== uid)
-      throw new OpmError(
-        'UNSAFE_PATH',
-        `Shared store root ${root} is not owned by the current user`,
-      );
-    // The default is ours to create, so it must be exactly private. A root an
-    // operator named may be looser, but never writable by anyone else: whoever
-    // can write here decides what every project on the machine runs.
-    const forbidden = explicit ? 0o022 : 0o077;
-    if ((info.mode & forbidden) !== 0)
-      throw new OpmError(
-        'UNSAFE_PATH',
-        `Shared store root ${root} is accessible to other users (mode ${(info.mode & 0o777).toString(8)}); it must be private to its owner`,
-      );
+  const named = await lstat(root).catch((error: NodeJS.ErrnoException) => {
+    if (create && error.code === 'ENOENT') return undefined;
+    throw error;
+  });
+  if (named?.isSymbolicLink() === true) throw linkedRoot(root);
+  const real = realBase(root);
+  const handle = await openPrivateDirectory(real, create).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ELOOP' || error.code === 'ENOTDIR')
+        throw linkedRoot(root);
+      throw error;
+    },
+  );
+  try {
+    const info = await handle.stat();
+    if (!info.isDirectory()) throw linkedRoot(root);
+    if (process.platform !== 'win32') {
+      const uid = process.geteuid?.();
+      if (uid !== undefined && info.uid !== uid)
+        throw new OpmError(
+          'UNSAFE_PATH',
+          `Shared store root ${root} is not owned by the current user`,
+        );
+      // The default is ours to create, so it must be exactly private. A root an
+      // operator named may be looser, but never writable by anyone else: whoever
+      // can write here decides what every project on the machine runs.
+      const forbidden = explicit ? 0o022 : 0o077;
+      if ((info.mode & forbidden) !== 0)
+        throw new OpmError(
+          'UNSAFE_PATH',
+          `Shared store root ${root} is accessible to other users (mode ${(info.mode & 0o777).toString(8)}); it must be private to its owner`,
+        );
+    }
+  } finally {
+    await handle.close();
   }
+  if (trustBase(root, 'validated private root') !== real)
+    throw new OpmError(
+      'INPUT_CHANGED',
+      `Shared store root changed while it was checked: ${root}`,
+    );
   await ensureStableDirectory(root);
+}
+
+function linkedRoot(root: string): OpmError {
+  return new OpmError(
+    'UNSAFE_PATH',
+    `Shared store root is linked or not a directory: ${root}`,
+  );
 }
 
 async function sameDevice(root: string, projectPath: string): Promise<boolean> {

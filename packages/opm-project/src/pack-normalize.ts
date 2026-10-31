@@ -175,7 +175,11 @@ async function captureProject(
   const excluded = excludePaths.flatMap((path) => {
     const written = resolve(path);
     const inside = pathRelative(resolve(root), written);
-    return inside.startsWith('..') || isAbsolute(inside)
+    // `..` alone or followed by a separator leaves the root; `..dist` is a
+    // name inside it.
+    return inside === '..' ||
+      inside.startsWith(`..${sep}`) ||
+      isAbsolute(inside)
       ? [written]
       : [written, join(stableRoot, inside)];
   });

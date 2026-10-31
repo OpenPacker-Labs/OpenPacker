@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { homedir } from 'node:os';
-import { lstat, open, realpath, stat, type FileHandle } from 'node:fs/promises';
+import { lstat, open, stat, type FileHandle } from 'node:fs/promises';
 import {
   basename,
   dirname,
@@ -57,16 +57,18 @@ export interface ProjectPaths {
 }
 
 /**
- * The paths of the project at `root`, which is taken as a trusted base: its
- * real path is resolved and recorded now, so every stable walk under it opens
- * the project where `root` leads, through whatever links lead there, and
- * refuses a link inside the project. A project reached through a linked home,
- * `/var` on macOS or a linked directory works as it does for npm, pnpm and
- * git. The paths keep the spelling `root` was given in.
+ * The paths of the project at `root`, which is taken as a trusted base on the
+ * word of the command that was given it: its real path is resolved and kept
+ * for the command, so every stable walk under it opens the project where
+ * `root` leads, through whatever links lead there, and refuses a link inside
+ * the project. A project reached through a linked home, `/var` on macOS or a
+ * linked directory works as it does for npm, pnpm and git. A root that leads
+ * somewhere else than when the command first took it is `INPUT_CHANGED`. The
+ * paths keep the spelling `root` was given in.
  */
 export function projectPaths(root: string): ProjectPaths {
   const resolved = resolve(root);
-  trustBase(resolved);
+  trustBase(resolved, 'project root');
   const opmDir = join(resolved, OPM_DIR);
   return {
     root: resolved,
@@ -241,38 +243,6 @@ export function resolveContained(root: string, ...parts: string[]): string {
 
 export function storePathForDigest(root: string, digest: string): string {
   return resolveContained(projectPaths(root).store, storeKeyFromDigest(digest));
-}
-
-/**
- * `path` with every link among its existing ancestors followed (its last
- * component as written): the longest form the system may see it in. Not what
- * a stable walk opens, which follows only the links of the base the path lies
- * under (`openStableDirectory`, ADR 0034); a measure of a path, never a way to
- * reach one.
- */
-export async function canonicalizeStableTarget(path: string): Promise<string> {
-  const absolute = resolve(path);
-  const tail: string[] = [basename(absolute)];
-  let candidate = dirname(absolute);
-  for (;;) {
-    try {
-      const canonical = await realpath(candidate);
-      return join(canonical, ...tail.reverse());
-    } catch (error) {
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'ELOOP' || code === 'ENOTDIR')
-        throw new OpmError(
-          'UNSAFE_PATH',
-          `Directory path is linked or unstable: ${path}`,
-        );
-      if (code !== 'ENOENT') throw error;
-    }
-    const parent = dirname(candidate);
-    if (parent === candidate) return absolute;
-    tail.push(basename(candidate));
-    candidate = parent;
-  }
 }
 
 /**
@@ -587,6 +557,26 @@ export async function removeStableFile(path: string): Promise<void> {
     await assertNamedDirectory(dirname(path), parent);
   } finally {
     await parent.close();
+  }
+}
+
+/**
+ * Rename `from` to `to` inside the directory `parent`, through its handle:
+ * the directory is opened one no-follow component at a time, the rename is
+ * relative to it, and the directory must still be the one its path names
+ * after it. A `parent` swapped for a link is refused, not renamed into.
+ */
+export async function renameStable(
+  parent: string,
+  from: string,
+  to: string,
+): Promise<void> {
+  const handle = await openStableDirectory(parent);
+  try {
+    await renameChild(handle, from, to);
+    await assertNamedDirectory(parent, handle);
+  } finally {
+    await handle.close();
   }
 }
 

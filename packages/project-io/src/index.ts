@@ -46,10 +46,12 @@ export { observeWrites, type WriteObserver } from './write-observer.js';
 export {
   BASE_VARIABLES,
   environmentBases,
+  forgetBases,
   isBase,
   realBase,
   stableTarget,
   trustBase,
+  type BaseChooser,
 } from './trusted-base.js';
 
 /** Resolve a command without executing project- or PATH-controlled code. */

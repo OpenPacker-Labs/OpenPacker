@@ -16,7 +16,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openStableDirectory } from '@openpacker/project-io';
+import { forgetBases, openStableDirectory } from '@openpacker/project-io';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertGrantsNotDangerous,
@@ -29,6 +29,7 @@ import {
 const worlds: string[] = [];
 afterEach(async () => {
   vi.unstubAllEnvs();
+  forgetBases();
   for (const world of worlds.splice(0))
     await rm(world, { recursive: true, force: true });
 });

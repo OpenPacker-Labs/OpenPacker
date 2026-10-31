@@ -5,8 +5,8 @@
  * open directory", and it does not work on macOS, where `/dev/fd/N/child`
  * names nothing (ADR 0045). Every step here goes through `openChild`, so each
  * platform uses the call that is a child open: a swapped ancestor cannot
- * redirect a step, and a symlink in any component is refused rather than
- * followed.
+ * redirect a step, and a symlink in any component below the path's base is
+ * refused rather than followed.
  */
 
 import { constants } from 'node:fs';
@@ -18,6 +18,7 @@ import {
   supportsStableHandles,
 } from './handle-path.js';
 import { StableHandleError } from './handle-support.js';
+import { stableTarget } from './trusted-base.js';
 
 export interface StablePathOptions {
   /** Let the last component be a regular file as well as a directory. */
@@ -26,8 +27,8 @@ export interface StablePathOptions {
 
 /**
  * The open handle of `path`, which must exist and be absolute. Nothing is
- * created. A missing component or a symlink anywhere is an error from the
- * open (`ENOENT`, `ELOOP`, `ENOTDIR`); a last component that is neither a
+ * created. A missing component, or a symlink anywhere below the base `path`
+ * lies under, is an error from the open (`ENOENT`, `ELOOP`, `ENOTDIR`); a last component that is neither a
  * directory nor, with `allowFile`, a regular file is a `StableHandleError`.
  * The caller closes the handle.
  */
@@ -42,13 +43,18 @@ export async function openStablePath(
   if (!isAbsolute(path))
     throw new StableHandleError(`Refusing a relative stable path: ${path}`);
   const allowFile = options.allowFile === true;
-  const root = parse(path).root;
+  // The base `path` lies under is opened as its real path, as every stable
+  // walk opens it (trusted-base.ts); a link anywhere below it is refused. The
+  // sandbox hands this real paths already (`assertSafeJailPath`), so for its
+  // grants nothing changes.
+  const target = stableTarget(path);
+  const root = parse(target).root;
   let handle = await open(
     root,
     constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
   );
   try {
-    const parts = relative(root, path).split(sep).filter(Boolean);
+    const parts = relative(root, target).split(sep).filter(Boolean);
     for (const [index, part] of parts.entries()) {
       const last = index === parts.length - 1;
       // A file is opened non-blocking so a FIFO named as the last component

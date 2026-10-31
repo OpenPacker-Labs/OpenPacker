@@ -12,6 +12,7 @@
  */
 
 import {
+  chmod,
   lstat,
   mkdir,
   mkdtemp,
@@ -20,11 +21,13 @@ import {
   realpath,
   rm,
   symlink,
+  unlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { forgetBases } from '@openpacker/project-io';
 import {
   addPackage,
   enableDefaultSharedStore,
@@ -32,6 +35,7 @@ import {
   packProject,
   projectPaths,
   readManifestFile,
+  storePathForDigest,
   usableSharedRoot,
   writeManifestFile,
 } from '../src/index.js';
@@ -50,6 +54,7 @@ const worlds: string[] = [];
 afterEach(async () => {
   vi.unstubAllEnvs();
   enableDefaultSharedStore(false);
+  forgetBases();
   for (const world of worlds.splice(0))
     await rm(world, { recursive: true, force: true });
 });
@@ -161,34 +166,37 @@ describe.runIf(POSIX)('a project whose base is reached through a link', () => {
     await expectInstalled(project.real);
   });
 
-  it('packs a project under a TMPDIR that is a link, and leaves its own output out', async () => {
-    const base = await world();
-    const tmp = await linked(base, 'real-tmp', 'tmp-link');
-    vi.stubEnv('TMPDIR', tmp.link);
-    const root = await mkdtemp(join(tmpdir(), 'opm-pack-'));
-    await writeFile(
-      join(root, 'package.json'),
-      '{"name":"demo","version":"1.0.0"}\n',
-    );
-    await writeFile(join(root, 'index.js'), 'export const value = 1;\n');
-    const pack = async () => {
-      const outcome = await packProject({
-        root,
-        ecosystem: 'npm',
-        strategy: 'standard',
-        name: 'demo',
-        version: '1.0.0',
-        outputDirectory: join(root, 'out'),
-      });
-      const tarball = outcome.artifacts.find(
-        (artifact) => artifact.nativeRole === 'distribution',
-      )!;
-      return await readFile(tarball.path);
-    };
+  it.each(['out', '..dist'])(
+    'packs a project under a TMPDIR that is a link, and leaves its own output (%s) out',
+    async (output) => {
+      const base = await world();
+      const tmp = await linked(base, 'real-tmp', 'tmp-link');
+      vi.stubEnv('TMPDIR', tmp.link);
+      const root = await mkdtemp(join(tmpdir(), 'opm-pack-'));
+      await writeFile(
+        join(root, 'package.json'),
+        '{"name":"demo","version":"1.0.0"}\n',
+      );
+      await writeFile(join(root, 'index.js'), 'export const value = 1;\n');
+      const pack = async () => {
+        const outcome = await packProject({
+          root,
+          ecosystem: 'npm',
+          strategy: 'standard',
+          name: 'demo',
+          version: '1.0.0',
+          outputDirectory: join(root, output),
+        });
+        const tarball = outcome.artifacts.find(
+          (artifact) => artifact.nativeRole === 'distribution',
+        )!;
+        return await readFile(tarball.path);
+      };
 
-    // The second pack would hold the first tarball if out/ were not left out.
-    expect(await pack()).toEqual(await pack());
-  });
+      // The second pack would hold the first tarball if out/ were not left out.
+      expect(await pack()).toEqual(await pack());
+    },
+  );
 
   it('runs a lifecycle script under a TMPDIR that is a link, and tells it where it runs', async () => {
     const base = await world();
@@ -321,3 +329,82 @@ describe.runIf(POSIX)('a link below the project root', () => {
     expect(await readdir(join(base, 'outside'))).toEqual([]);
   });
 });
+
+/** A project at `<base>/project` holding `.cache -> <base>/outside`, as a checkout may. */
+async function projectHoldingLink(
+  base: string,
+): Promise<{ root: string; outside: string }> {
+  const root = join(base, 'project');
+  const outside = join(base, 'outside');
+  await mkdir(root);
+  await mkdir(outside);
+  await symlink(outside, join(root, '.cache'));
+  return { root, outside };
+}
+
+describe.runIf(POSIX)('a cache directory named inside the project', () => {
+  it('is not where the default shared store goes when the project holds a link there: the install keeps its own store', async () => {
+    const base = await world();
+    const { root, outside } = await projectHoldingLink(base);
+    vi.stubEnv('OPM_STORE_HOME', '');
+    vi.stubEnv('XDG_CACHE_HOME', join(root, '.cache'));
+    enableDefaultSharedStore(true);
+
+    await addTool(root);
+    await expectInstalled(root);
+    expect(await readdir(outside, { recursive: true })).toEqual([]);
+  });
+
+  it('refuses a store OPM_STORE_HOME names through that link, and makes nothing where it points', async () => {
+    const base = await world();
+    const { root, outside } = await projectHoldingLink(base);
+    vi.stubEnv('OPM_STORE_HOME', join(root, '.cache', 'store'));
+
+    await expect(addTool(root)).rejects.toMatchObject({
+      code: 'UNSAFE_PATH',
+    });
+    expect(await readdir(outside, { recursive: true })).toEqual([]);
+  });
+});
+
+describe.runIf(POSIX)('a store root that is refused', () => {
+  it('is never a base: a later walk below it is refused as well', async () => {
+    const base = await world();
+    await linked(base, 'store-real', 'ln');
+    const store = join(base, 'ln', 'store');
+    await mkdir(join(base, 'store-real', 'store'));
+    await chmod(join(base, 'store-real', 'store'), 0o777);
+
+    await expect(
+      usableSharedRoot(join(base, 'project'), { OPM_STORE_HOME: store }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    await expect(
+      openStableDirectory(join(store, 'sha256-entry'), true),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    expect(await readdir(join(base, 'store-real', 'store'))).toEqual([]);
+  });
+});
+
+describe.runIf(POSIX)(
+  'a project root retargeted while a command uses it',
+  () => {
+    it('is INPUT_CHANGED the next time the command takes it, and nothing is written at the new target', async () => {
+      const base = await world();
+      await mkdir(join(base, 'a'));
+      await mkdir(join(base, 'b'));
+      const root = join(base, 'project');
+      await symlink(join(base, 'a'), root);
+      projectPaths(root);
+      (await openStableDirectory(join(root, 'one'), true)).close();
+
+      await unlink(root);
+      await symlink(join(base, 'b'), root);
+      (await openStableDirectory(join(root, 'two'), true)).close();
+      expect(() =>
+        storePathForDigest(root, `sha256:${'0'.repeat(64)}`),
+      ).toThrow(expect.objectContaining({ code: 'INPUT_CHANGED' }));
+      expect(await readdir(join(base, 'a'))).toEqual(['one', 'two']);
+      expect(await readdir(join(base, 'b'))).toEqual([]);
+    });
+  },
+);
