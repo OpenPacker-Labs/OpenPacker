@@ -85,7 +85,10 @@ function scopeProblem(segment: string): string | undefined {
  *
  * The grammar is a `node_modules`, then optionally one scope directory; and,
  * for a package installed there, that package's own `node_modules` with the
- * same again, to any depth.
+ * same again, to any depth. The first `node_modules` may be a workspace
+ * member's own (`packages/web/node_modules`), where pnpm links that member's
+ * `link:` dependencies: the directories before it are plain names, none of
+ * them `node_modules` or starting with a dot.
  */
 export function linkDirectoryProblem(directory: string): string | undefined {
   const bad = `${JSON.stringify(directory)} is not a node_modules directory (or a scope directory in one)`;
@@ -93,6 +96,20 @@ export function linkDirectoryProblem(directory: string): string | undefined {
     return bad;
   const segments = directory.split('/');
   let at = 0;
+  while (
+    at < segments.length &&
+    segments[at] !== 'node_modules' &&
+    sameDirectoryKey(segments[at]!) !== 'node_modules'
+  ) {
+    const segment = segments[at]!;
+    if (
+      segment === '' ||
+      segment.startsWith('.') ||
+      !PACKAGE_BODY.test(segment)
+    )
+      return bad;
+    at += 1;
+  }
   for (;;) {
     if (segments[at] !== 'node_modules') return bad;
     at += 1;

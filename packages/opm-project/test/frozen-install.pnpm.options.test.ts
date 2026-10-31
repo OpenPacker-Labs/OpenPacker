@@ -1,4 +1,12 @@
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  readlink,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { planFrozen } from '../src/index.js';
@@ -204,6 +212,26 @@ describe('choosing members of a pnpm workspace', () => {
     expect(w.load('right/package.json', 'packages/lib')).toMatchObject({
       version: '1.0.0',
     });
+  });
+
+  // pnpm links an importer's `link:` dependency in that importer's own
+  // node_modules, and code relies on the path: HoBo's packages/runtime imports
+  // "../node_modules/@hobo/wit/src/generated/…". A link to a member is the one
+  // symlink node_modules may hold (ADR 0050), and every link to it resolves to
+  // the member's own directory, so there is one copy of it.
+  it("links a member's workspace dependency in the member's own node_modules, as pnpm does", async () => {
+    const w = await fixture();
+    await w.install();
+    const local = join(w.dir, 'packages/web/node_modules/lib');
+    expect((await lstat(local)).isSymbolicLink()).toBe(true);
+    expect(await readlink(local)).toBe('../../lib');
+    expect(await realpath(local)).toBe(
+      await realpath(join(w.dir, 'packages/lib')),
+    );
+    // The project's link stays, for what is hoisted there.
+    expect(
+      (await lstat(join(w.dir, 'node_modules/lib'))).isSymbolicLink(),
+    ).toBe(true);
   });
 
   it('adds the project with --include-workspace-root', async () => {

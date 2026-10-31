@@ -45,6 +45,10 @@ describe('linkDirectoryProblem', () => {
     'node_modules/a/node_modules',
     'node_modules/@s/a/node_modules/@t',
     'node_modules/a/node_modules/b/node_modules',
+    // A workspace member's own, where pnpm links its `link:` dependencies.
+    'packages/a/node_modules',
+    'packages/a/node_modules/@scope',
+    'apps/web/node_modules/b/node_modules',
   ])('accepts %s', (directory) => {
     expect(linkDirectoryProblem(directory)).toBeUndefined();
   });
@@ -62,7 +66,11 @@ describe('linkDirectoryProblem', () => {
     'node_modules/@scope/pkg/lib',
     'node_modules/../x',
     'node_modules/./x',
-    'packages/a/node_modules',
+    'packages/a',
+    'packages/.a/node_modules',
+    'packages/../node_modules',
+    'packages/a/NODE_MODULES',
+    'packages/a/node_modules/b/lib',
     'src',
     '.opm',
     'node_modules\\a',

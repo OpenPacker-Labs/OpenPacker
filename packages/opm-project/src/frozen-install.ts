@@ -295,7 +295,11 @@ async function installFrozenInStep(
       ...(lock.workspace !== undefined && {
         workspace: {
           members: lock.workspace.memberDirs.length,
-          linked: lock.workspace.layout.links.length,
+          // The links in the project's own node_modules; a member's own
+          // links (pnpm's place for its `link:` dependencies) are not counted.
+          linked: lock.workspace.layout.links.filter((link) =>
+            link.path.startsWith('node_modules/'),
+          ).length,
         },
       }),
       milliseconds: {
