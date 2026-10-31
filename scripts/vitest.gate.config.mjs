@@ -8,6 +8,12 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: 15_000,
     hookTimeout: 15_000,
-    setupFiles: [resolve(import.meta.dirname, 'adapter-registry-setup.mjs')],
+    setupFiles: [
+      resolve(import.meta.dirname, 'adapter-registry-setup.mjs'),
+      // Fresh store, cache and plugin directories for every test file, and a
+      // test whose environment would reach the caller's fails.
+      resolve(import.meta.dirname, '../tests/support/stores.setup.ts'),
+      resolve(import.meta.dirname, '../tests/support/store-guard.setup.ts'),
+    ],
   },
 });

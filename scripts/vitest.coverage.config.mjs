@@ -12,6 +12,10 @@ export default defineConfig({
     setupFiles: [
       resolve(import.meta.dirname, 'adapter-registry-setup.mjs'),
       resolve(import.meta.dirname, 'v8-coverage-setup.mjs'),
+      // Fresh store, cache and plugin directories for every test file, and a
+      // test whose environment would reach the caller's fails.
+      resolve(import.meta.dirname, '../tests/support/stores.setup.ts'),
+      resolve(import.meta.dirname, '../tests/support/store-guard.setup.ts'),
     ],
   },
 });
