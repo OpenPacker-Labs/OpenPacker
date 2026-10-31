@@ -12,7 +12,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { MAX_INHERITED_HANDLES } from '@openpacker/sandbox';
+import { jailedPath, MAX_INHERITED_HANDLES } from '@openpacker/sandbox';
 import { runSandboxedPackageProcess } from '../src/index.js';
 import { storesToView } from '../src/store-view.js';
 
@@ -90,12 +90,15 @@ const run = (entries: readonly string[], work: string, program: string) =>
     storePaths: entries,
   });
 
+// The program names each path where the jail has it (`jailedPath`).
 const requireAll = (entries: readonly string[]) =>
-  `process.stdout.write(${JSON.stringify(entries)}.map((p) => require(p + '/package/index.js')).join(','))`;
+  `process.stdout.write(${JSON.stringify(entries.map(jailedPath))}.map((p) => require(p + '/package/index.js')).join(','))`;
 
-/** How many mounts the sandboxed process has at `root` or under it. */
-const mountsUnder = (root: string) =>
-  `process.stdout.write(String(require('fs').readFileSync('/proc/self/mountinfo', 'utf8').split('\\n').filter((line) => { const at = line.split(' ')[4] ?? ''; return at === ${JSON.stringify(root)} || at.startsWith(${JSON.stringify(`${root}/`)}); }).length))`;
+/** How many mounts the sandboxed process has at `store` or under it, where the jail has it. */
+const mountsUnder = (store: string) => {
+  const root = jailedPath(store);
+  return `process.stdout.write(String(require('fs').readFileSync('/proc/self/mountinfo', 'utf8').split('\\n').filter((line) => { const at = line.split(' ')[4] ?? ''; return at === ${JSON.stringify(root)} || at.startsWith(${JSON.stringify(`${root}/`)}); }).length))`;
+};
 
 const canSandbox =
   process.platform === 'linux' &&

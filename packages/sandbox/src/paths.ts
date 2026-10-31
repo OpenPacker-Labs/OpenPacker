@@ -143,6 +143,17 @@ export function assertSafeJailPath(value: string, kind = 'path'): string {
 }
 
 /**
+ * Where a process in the jail finds `path`: at the real path of the base it
+ * lies under, which is where the jail binds a grant ({@link
+ * assertSafeJailPath}). A caller that hands a jailed program a path, in its
+ * argv or its environment, spells it so; spelled through a linked TMPDIR,
+ * HOME or project, it does not exist inside the jail.
+ */
+export function jailedPath(path: string): string {
+  return stableTarget(path);
+}
+
+/**
  * `input` with its working directory and directory authorities at the real
  * path of their base, as {@link assertSafeJailPath} takes a grant: what the
  * jail binds, changes into and is handed by descriptor then name one place,

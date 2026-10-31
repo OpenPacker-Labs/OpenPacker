@@ -13,7 +13,7 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
-import { MAX_INHERITED_HANDLES } from '@openpacker/sandbox';
+import { jailedPath, MAX_INHERITED_HANDLES } from '@openpacker/sandbox';
 import {
   layOutTool,
   runSandboxedPackageProcess,
@@ -97,8 +97,9 @@ const canSandbox =
 describe.runIf(canSandbox)('a tool whose closure is 21 packages', () => {
   it('can bind every package of the closure into the sandbox', async () => {
     const { cacheRoot, closure } = await toolCache();
+    // Each named where the jail has it.
     const read = `for (const p of ${JSON.stringify(
-      closure.map((item) => item.storePath),
+      closure.map((item) => jailedPath(item.storePath)),
     )}) console.log(require(p + '/package/package.json').name)`;
     const outcome = await runSandboxedPackageProcess({
       timeoutMs: 0,

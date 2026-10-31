@@ -70,6 +70,7 @@ export {
 export {
   assertSafeJailPath,
   isPathInside,
+  jailedPath,
   JailPathError,
   normalizeJailPaths,
   networkToolMaskFiles,

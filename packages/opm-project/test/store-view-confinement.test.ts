@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { MAX_INHERITED_HANDLES } from '@openpacker/sandbox';
+import { jailedPath, MAX_INHERITED_HANDLES } from '@openpacker/sandbox';
 import { runSandboxedPackageProcess } from '../src/index.js';
 
 /**
@@ -23,8 +23,13 @@ afterEach(async () => {
   );
 });
 
-/** What the sandboxed process reports of the store and of entry 0. */
-const probe = (store: string, entry: string) => `
+/**
+ * What the sandboxed process reports of the store and of entry 0, each named
+ * where the jail has it (`jailedPath`).
+ */
+const probe = (storeAt: string, entryAt: string) => {
+  const [store, entry] = [jailedPath(storeAt), jailedPath(entryAt)];
+  return `
 const fs = require('fs');
 const attempt = (act) => { try { act(); return 'done'; } catch (error) { return error.code; } };
 const file = ${JSON.stringify(join(entry, 'package', 'index.js'))};
@@ -38,6 +43,7 @@ process.stdout.write(JSON.stringify({
   mkdirInStore: attempt(() => fs.mkdirSync(${JSON.stringify(join(store, 'added'))})),
 }));
 `;
+};
 
 const canSandbox =
   process.platform === 'linux' &&

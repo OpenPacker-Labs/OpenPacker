@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import {
   chmod,
   mkdir,
@@ -84,9 +84,11 @@ function layOut(where: Awaited<ReturnType<typeof places>>) {
           '--dev-bind',
           '/',
           '/',
+          // bwrap makes a mount point through no link: the project is bound
+          // at its real path, where the child's spelling of it leads.
           '--ro-bind',
-          where.cacheRoot,
-          where.cacheRoot,
+          realpathSync(where.cacheRoot),
+          realpathSync(where.cacheRoot),
           process.execPath,
           '--experimental-transform-types',
           '--import',
@@ -129,7 +131,11 @@ describe.runIf(process.platform === 'linux' && bwrap !== undefined)(
         root: string;
         whole: boolean;
       };
-      const runs = join(where.own, `openpacker-runs-${process.geteuid?.()}`);
+      // The layout is at the real path of its base, TMPDIR (ADR 0034).
+      const runs = join(
+        realpathSync(where.own),
+        `openpacker-runs-${process.geteuid?.()}`,
+      );
       expect([whole, root.startsWith(join(runs, 'run-'))]).toEqual([
         true,
         true,

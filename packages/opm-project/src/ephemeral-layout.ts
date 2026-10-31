@@ -1,7 +1,11 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { NativeLockEntry } from '@openpacker/adapter-core';
-import { tarballWrapper } from '@openpacker/project-io';
+import {
+  stableTarget,
+  tarballWrapper,
+  trustBase,
+} from '@openpacker/project-io';
 import { requireAdapterRegistry } from './adapters.js';
 import { removeStableTree } from './paths.js';
 import {
@@ -97,10 +101,18 @@ export async function layOutTool(input: {
       'UNSUPPORTED_OPERATION',
       'The npm adapter does not write a node_modules layout',
     );
+  // The cache root is a project's root or the tool cache, which every install
+  // into it takes as one too (`projectPaths`; ADR 0034, trusted bases): its
+  // store is reached through the links on the way to it, and none below it.
+  trustBase(input.cacheRoot, 'project root');
   // The layout is the scratch's `tree`; its `.owner` stays outside what the
   // sandbox binds.
   const scratch = await runScratch(input.cacheRoot);
-  const root = scratch.tree;
+  // At the real path of its base: that is where the sandbox binds the layout
+  // (ADR 0034, trusted bases), and where a sandboxed process finds its bin
+  // and its `.bin`. Spelled through a linked TMPDIR or project, it does not
+  // exist inside the jail.
+  const root = stableTarget(scratch.tree);
   const dispose = () => removeStableTree(scratch.path);
   try {
     await format.writeLayout(

@@ -4,6 +4,7 @@ import { open, writeFile } from 'node:fs/promises';
 import { createServer, request } from 'node:http';
 import { join } from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
+import { jailedPath } from '@openpacker/sandbox';
 import { runOpmx } from '../src/opmx.js';
 import {
   INSTALLED_TIMEOUT_MS,
@@ -85,7 +86,8 @@ function stopper(path: string): string {
 async function served(flags: string[], opmToml = '', said = false) {
   const root = await installedProject([serve], opmToml);
   const port = await freePort();
-  const stop = stopper(join(root, 'stop'));
+  // The tool is handed the FIFO's path where its jail has it.
+  const stop = jailedPath(stopper(join(root, 'stop')));
   const cap = capture();
   const run = runOpmx(
     [...flags, 'serve', '--', String(port), stop],

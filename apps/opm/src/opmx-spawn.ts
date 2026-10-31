@@ -11,6 +11,7 @@ import {
   type EphemeralTool,
   type NodeRun,
 } from '@openpacker/opm-project';
+import { jailedPath } from '@openpacker/sandbox';
 import { report } from './error-report.js';
 
 export const EXIT_CODES = {
@@ -120,7 +121,7 @@ export async function runLaidOut(
  */
 export async function spawnDeclared(
   bin: { path: string; interpreter?: string; entry?: string; name: string },
-  storePath: string,
+  tree: string,
   args: readonly string[],
   io: CliIo,
   cwd: string,
@@ -130,7 +131,10 @@ export async function spawnDeclared(
   } = {},
 ): Promise<number> {
   const { runtimePaths: given, ...rest } = context;
-  const runtimePaths = given ?? [storePath];
+  // What the tool is told of the store (its program, sys.path) is where the
+  // jail has it: at the real path of its base.
+  const storePath = jailedPath(tree);
+  const runtimePaths = (given ?? [tree]).map(jailedPath);
   const sandboxCtx: SandboxContext = {
     ...rest,
     storePaths: runtimePaths.length > 0 ? runtimePaths : [storePath],
@@ -211,7 +215,13 @@ export async function spawnTool(
   cwd: string,
   sandbox?: SandboxContext,
 ): Promise<number> {
-  return spawnProcess(process.execPath, [target, ...args], io, cwd, sandbox);
+  return spawnProcess(
+    process.execPath,
+    [jailedPath(target), ...args],
+    io,
+    cwd,
+    sandbox,
+  );
 }
 
 /**
