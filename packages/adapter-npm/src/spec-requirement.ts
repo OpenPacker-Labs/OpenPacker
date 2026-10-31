@@ -65,12 +65,7 @@ export function nonRangeRequirement(input: {
   });
   const dependencyField = input.dependencyField;
   const echo = (text: string, limit = 400) => safeEcho(text, limit);
-  if (
-    specKind === 'tag' &&
-    input.followed &&
-    isNpmTagName(tag) &&
-    !input.enforced
-  )
+  if (specKind === 'tag' && input.followed && isNpmTagName(tag))
     return requirement(
       input.optional,
       { dependencyField, range: tag, specKind },
