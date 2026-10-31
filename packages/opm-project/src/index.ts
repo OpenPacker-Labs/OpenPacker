@@ -20,6 +20,10 @@ export type {
 } from './types.js';
 export { OpmError } from './types.js';
 
+// The start of a command: what the last one took is forgotten, and the
+// project it runs in is fenced before any base is resolved (ADR 0034).
+export { beginCommand } from '@openpacker/project-io';
+
 export * from './workspace/index.js';
 
 export { defaultManifest, parseManifest, serializeManifest } from './toml.js';

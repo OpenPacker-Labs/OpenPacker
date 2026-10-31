@@ -16,6 +16,7 @@ import {
 import {
   OpmError,
   addPackage,
+  beginCommand,
   configurePackProviders,
   enableDefaultSharedStore,
   ecosystemFromPurl,
@@ -102,6 +103,10 @@ export async function runOpm(
   cwd = process.cwd(),
   options: RunOpmOptions = {},
 ): Promise<number> {
+  // A command of its own: the project it runs in is fenced before anything
+  // resolves a base, so a link that project holds (`.cache -> /outside`,
+  // committed) names no store, cache or configuration (ADR 0034).
+  beginCommand(cwd);
   // pnpm and npm put workspace options before the command, and a script's name
   // where a command goes (ADR 0053); say which `run` or `exec` that means first.
   try {

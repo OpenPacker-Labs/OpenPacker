@@ -6,6 +6,7 @@ import { registerPlugin } from '@openpacker/plugin-host';
 import {
   OpmError,
   activateGeneration,
+  beginCommand,
   enableDefaultSharedStore,
   projectPaths,
   readEnvironmentState,
@@ -51,6 +52,10 @@ export async function runOpmx(
   cwd = process.cwd(),
   options: RunOpmxOptions = {},
 ): Promise<number> {
+  // A command of its own: the project it runs in is fenced before anything
+  // resolves a base, so a link that project holds (`.cache -> /outside`,
+  // committed) names no cache or store (ADR 0034, trusted bases).
+  beginCommand(cwd);
   try {
     if (argv.includes('--help') || argv.includes('-h') || argv.length === 0) {
       out(io, help());
