@@ -927,6 +927,8 @@ export async function activateGeneration(input: {
           storeRoot: member.storePath,
           bins,
           ...(member.purl.startsWith('pkg:pypi/') && { pythonPath }),
+          // The install that wrote the shims said which bin got none.
+          notice: () => undefined,
         });
         return {
           record: {

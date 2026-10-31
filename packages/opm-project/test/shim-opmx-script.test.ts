@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -106,20 +106,30 @@ describe('the opmx a shim re-enters through', () => {
 
 describe('a bin whose name starts with "-"', () => {
   it.each(['-x', '--allow-network', '--'])(
-    'gets no shim (%s): it would read as an option',
+    'gets no shim (%s), with a notice naming it, and the others theirs',
     async (name) => {
       const project = await mkdtemp(join(tmpdir(), 'opm-shim-dash-'));
       temps.push(project);
       const store = join(project, 'store');
       await mkdir(store);
       await writeFile(join(store, 'cli.js'), '');
-      await expect(
-        writeBinShims({
-          binDir: join(project, 'bin'),
-          storeRoot: store,
-          bins: [{ name, path: 'cli.js' }],
-        }),
-      ).rejects.toMatchObject({ code: expect.stringMatching(/^UNSAFE_/u) });
+      const told: string[] = [];
+      const written = await writeBinShims({
+        binDir: join(project, 'bin'),
+        storeRoot: store,
+        bins: [
+          { name, path: 'cli.js' },
+          { name: 'tool', path: 'cli.js' },
+        ],
+        owner: 'pkg:npm/dashing@1.0.0',
+        notice: (message) => told.push(message),
+      });
+      expect(written.map((shim) => shim.name)).toEqual(['tool']);
+      expect(await readdir(join(project, 'bin'))).toEqual(['tool']);
+      expect(told).toEqual([
+        `pkg:npm/dashing@1.0.0 declares a bin named ${name}, ` +
+          'which would read as an option: it gets no shim',
+      ]);
     },
   );
 });

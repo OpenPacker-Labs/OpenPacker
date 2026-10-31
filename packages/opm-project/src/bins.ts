@@ -352,7 +352,15 @@ export interface BinShimInput {
   bins: readonly BinDeclaration[];
   /** Extra store roots on PYTHONPATH for Python entry points. */
   pythonPath?: readonly string[];
+  /** The package the bins are of, as a notice names it. */
+  owner?: string;
+  /** Where a bin that gets no shim is told of; stderr by default. */
+  notice?: (message: string) => void;
 }
+
+/** A notice on stderr, as opm says what it did not do. */
+const noticeOnStderr = (message: string) =>
+  void process.stderr.write(`opm: ${message}\n`);
 
 /** A shim `writeBinShims` writes: its record, and the script in its file. */
 export interface PlannedBinShim {
@@ -381,12 +389,15 @@ export function planBinShims(input: BinShimInput): PlannedBinShim[] {
   for (const bin of input.bins) {
     const name = assertSafeSegment(bin.name, 'bin name');
     // A shim runs `opmx -- <name>`; a name opmx or a shell could take for an
-    // option has no place among a project's commands.
-    if (name.startsWith('-'))
-      throw new OpmError(
-        'UNSAFE_BIN',
-        `Bin name ${echoed(name)} starts with "-", which reads as an option`,
+    // option has no place among a project's commands. The bin gets no shim,
+    // and the rest of its package installs: it is said, never refused.
+    if (name.startsWith('-')) {
+      (input.notice ?? noticeOnStderr)(
+        `${input.owner ?? 'a package'} declares a bin named ${echoed(name)}, ` +
+          'which would read as an option: it gets no shim',
       );
+      continue;
+    }
     // "." segments are dropped, not refused. npm bin paths are conventionally
     // written "./lib/tool.js", so rejecting them made a large share of real
     // packages uninstallable while protecting against nothing: only ".."

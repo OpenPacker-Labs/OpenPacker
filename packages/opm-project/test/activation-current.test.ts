@@ -51,8 +51,10 @@ afterEach(async () => {
   );
 });
 
-/** A project that installed `runner`, whose one bin is `runner`. */
-async function installed(): Promise<string> {
+/** A project that installed `runner`, whose one bin is `runner`, or `bins`. */
+async function installed(
+  bins: Record<string, string> = { runner: 'cli.js' },
+): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'opm-activation-'));
   temps.push(root);
   await initProject({ root, name: 'activation' });
@@ -67,7 +69,7 @@ async function installed(): Promise<string> {
       name: 'runner',
       versions: {
         '1.0.0': {
-          bin: { runner: 'cli.js' },
+          bin: bins,
           files: { 'cli.js': "#!/usr/bin/env node\nconsole.log('ran');\n" },
         },
       },
@@ -162,6 +164,18 @@ async function npmGlobalOpmx(): Promise<{ link: string; target: string }> {
   await symlink('../lib/node_modules/@openpacker/opm/dist/opmx-main.js', link);
   return { link, target };
 }
+
+describe('a package with a bin whose name starts with "-"', () => {
+  it('is installed and activated, that bin with no shim, the others with theirs', async () => {
+    const root = await installed({ runner: 'cli.js', '-x': 'cli.js' });
+    expect(await readdir(projectPaths(root).bin)).toEqual(['runner']);
+    const state = await activate(root);
+    expect(state.packages.runner!.bins.map((bin) => bin.name)).toEqual([
+      'runner',
+    ]);
+    expect(await readdir(projectPaths(root).bin)).toEqual(['runner']);
+  });
+});
 
 describe('activating the active generation', () => {
   it('writes nothing when the project holds what it would write', async () => {
