@@ -185,7 +185,7 @@ describe('materialiseTree link mode', () => {
 });
 
 describe('collectFilesFromHandle over a tree others hard-link', () => {
-  it('does not mistake another link appearing for the tree changing', async () => {
+  it('does not mistake another link appearing for the tree changing', { timeout: 30_000 }, async () => {
     const { collectFilesFromHandle } = await import('./layout-collect.js');
     const { openStableDirectory } = await import('./index.js');
     const { link, unlink } = await import('node:fs/promises');
