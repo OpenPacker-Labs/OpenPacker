@@ -16,6 +16,7 @@ import {
   lstat,
   open,
   readFile,
+  stat,
   type FileHandle,
 } from 'node:fs/promises';
 import {
@@ -37,9 +38,19 @@ import {
   renameChild,
   supportsStableHandles,
 } from './handle-path.js';
+import { isBase, stableTarget } from './trusted-base.js';
 import { announceWrite } from './write-observer.js';
 
 export { observeWrites, type WriteObserver } from './write-observer.js';
+
+export {
+  BASE_VARIABLES,
+  environmentBases,
+  isBase,
+  realBase,
+  stableTarget,
+  trustBase,
+} from './trusted-base.js';
 
 /** Resolve a command without executing project- or PATH-controlled code. */
 export async function findExecutable(
@@ -158,6 +169,13 @@ export async function writeFileAtomic(
   }
 }
 
+/**
+ * Open `path` as a directory, making what is missing (`mkdir -p`), one
+ * component at a time with `O_NOFOLLOW`. The base `path` lies under (a taken
+ * base, `TMPDIR`, `HOME`, an XDG or `OPM_*` home) is opened as its real path,
+ * so the links the system or the person put on the way to it are taken; a
+ * link anywhere below it is refused (`trusted-base.ts`).
+ */
 export async function openStableDirectory(path: string): Promise<FileHandle> {
   if (!supportsStableHandles())
     throw new ProjectIoError(
@@ -165,13 +183,14 @@ export async function openStableDirectory(path: string): Promise<FileHandle> {
       path,
       'Atomic project writes require stable directory handles on this platform',
     );
-  const root = parse(path).root;
+  const target = stableTarget(path);
+  const root = parse(target).root;
   let handle = await open(
     root,
     constants.O_RDONLY | O_DIRECTORY | constants.O_NOFOLLOW,
   );
   try {
-    for (const part of relative(root, path).split(sep).filter(Boolean)) {
+    for (const part of relative(root, target).split(sep).filter(Boolean)) {
       await mkdirChild(handle, part).catch((error: NodeJS.ErrnoException) => {
         if (error.code !== 'EEXIST') throw error;
       });
@@ -190,13 +209,18 @@ export async function openStableDirectory(path: string): Promise<FileHandle> {
   }
 }
 
+/**
+ * Refuse when `path` no longer names the directory `handle` holds. A base is
+ * compared through its link, as it was taken; anything below one by its own
+ * name, so a component swapped for a link is noticed.
+ */
 export async function assertNamedDirectory(
   path: string,
   handle: FileHandle,
 ): Promise<void> {
   const [opened, named] = await Promise.all([
     handle.stat({ bigint: true }),
-    lstat(path, { bigint: true }),
+    (isBase(path) ? stat : lstat)(path, { bigint: true }),
   ]);
   if (opened.dev !== named.dev || opened.ino !== named.ino)
     throw new ProjectIoError(

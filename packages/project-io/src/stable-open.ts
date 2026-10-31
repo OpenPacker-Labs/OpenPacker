@@ -8,16 +8,8 @@
  */
 
 import { constants } from 'node:fs';
-import { mkdir, open, realpath, type FileHandle } from 'node:fs/promises';
-import {
-  basename,
-  dirname,
-  join,
-  parse,
-  relative,
-  resolve,
-  sep,
-} from 'node:path';
+import { mkdir, open, type FileHandle } from 'node:fs/promises';
+import { parse, relative, sep } from 'node:path';
 import { ProjectIoError } from './index.js';
 import {
   O_DIRECTORY,
@@ -26,44 +18,18 @@ import {
   openChild,
   windowsReadReparse,
 } from './handle-path.js';
+import { stableTarget } from './trusted-base.js';
 
 /**
- * Canonicalize the existing ancestor prefix of a stable target.
- *
- * The no-follow component walk refuses symlinked path components, which would
- * reject every layout under a legitimately symlinked ancestor — macOS
- * `/var` → `/private/var` (all of `$TMPDIR`), symlinked home directories,
- * automounters. Honor such a stable pre-existing prefix once by realpath-ing
- * the deepest existing ancestor here; the final component stays lexical so a
- * symlinked target itself is still refused, and all subsequent traversal is
- * fd-relative, so a later swap of the prefix cannot redirect anything.
+ * Open the directory `path`, one `O_NOFOLLOW` component at a time. The base it
+ * lies under is opened as its real path; every component below it must be a
+ * plain directory (`trusted-base.ts`, ADR 0034).
  */
-async function canonicalizeStableTarget(path: string): Promise<string> {
-  const absolute = resolve(path);
-  const tail: string[] = [basename(absolute)];
-  let candidate = dirname(absolute);
-  for (;;) {
-    try {
-      const canonical = await realpath(candidate);
-      return join(canonical, ...tail.reverse());
-    } catch (error) {
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'ELOOP' || code === 'ENOTDIR') throw unsafe(path);
-      if (code !== 'ENOENT') throw error;
-    }
-    const parent = dirname(candidate);
-    if (parent === candidate) return absolute;
-    tail.push(basename(candidate));
-    candidate = parent;
-  }
-}
-
 export async function openProjectDirectory(
   path: string,
   create: boolean,
 ): Promise<FileHandle> {
-  const absolute = await canonicalizeStableTarget(path);
+  const absolute = stableTarget(path);
   const root = parse(absolute).root;
   let handle = await openDirectory(root, false);
   try {

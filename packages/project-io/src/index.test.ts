@@ -31,6 +31,7 @@ import {
   readTextFile,
   removeTree,
   supportsStableTreeLayout,
+  trustBase,
   windowsNtHandlePathForm,
   writeFileAtomic,
 } from './index.js';
@@ -342,8 +343,9 @@ describe('materialiseTree', () => {
   it('materialises through a symlinked ancestor of the root', async () => {
     // Stock macOS symlinks /var → /private/var, so every $TMPDIR tree has a
     // symlinked ancestor; the same holds for symlinked home directories and
-    // automounters on Linux. The prefix is canonicalized once, then all
-    // traversal is fd-relative, so a later swap cannot redirect anything.
+    // automounters on Linux. The project root is taken as a base, resolved
+    // once (as opm-project's projectPaths does), then all traversal below it
+    // is fd-relative and no-follow, so a later swap cannot redirect anything.
     await withTemp(async (dir) => {
       const { materialiseTree } = await import('./layout.js');
       const real = join(dir, 'real');
@@ -353,6 +355,7 @@ describe('materialiseTree', () => {
       await writeFile(join(source, 'package.js'), 'safe');
       const alias = join(dir, 'alias');
       await symlink(real, alias, 'dir');
+      trustBase(alias);
 
       const result = await materialiseTree(
         join(alias, 'source'),
