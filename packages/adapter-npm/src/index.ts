@@ -1,4 +1,9 @@
-import { canonicalDigest, formatDigest, safeEcho, sha256 } from '@openpacker/canonical';
+import {
+  canonicalDigest,
+  formatDigest,
+  safeEcho,
+  sha256,
+} from '@openpacker/canonical';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
 import { isNpmAlias, parseNpmAlias } from './alias.js';
 import { aliasRequirement } from './alias-requirement.js';
