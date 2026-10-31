@@ -1,14 +1,13 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, mergeConfig } from 'vitest/config';
+import shared from '../../vitest.shared.js';
 
-// opm's process entries turn the user-level store on, and its plugin commands
-// use the user-level plugin store: every test file gets fresh ones, and a test
-// that would reach the caller's fails (tests/support/stores.setup.ts,
-// tests/support/store-guard.setup.ts).
-export default defineConfig({
-  test: {
-    setupFiles: [
-      '../../tests/support/stores.setup.ts',
-      '../../tests/support/store-guard.setup.ts',
-    ],
-  },
-});
+// opm's process entries turn the user-level store on; a test that would reach
+// the caller's fails (tests/support/store-guard.setup.ts).
+export default mergeConfig(
+  shared,
+  defineConfig({
+    test: {
+      setupFiles: ['../../tests/support/store-guard.setup.ts'],
+    },
+  }),
+);

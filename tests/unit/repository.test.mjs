@@ -115,13 +115,31 @@ test('Turbo cannot restore a stale Rust-backed embedded build', () => {
   assert.ok(turbo.globalDependencies.includes('tsconfig.base.json'));
 });
 
-// One vitest default for every package, so a run under load is not failed by
-// a bound some packages raised and others did not; a test that asserts a
-// duration says so itself.
-test('every package and root vitest run extends the one shared default', () => {
+// One shared config for every package and root run: the store isolation, and
+// no time bound. The bounds are the ones each config had before it existed,
+// and none may rise: a test that a loaded machine takes past one is fixed in the
+// test (count the work, wait for an event), not by a longer bound.
+const BOUNDS = {
+  'packages/opm-project': { testTimeout: '15_000', hookTimeout: '15_000' },
+  'scripts/vitest.gate.config.mjs': {
+    testTimeout: '15_000',
+    hookTimeout: '15_000',
+  },
+  'scripts/vitest.coverage.config.mjs': { testTimeout: '30_000' },
+};
+
+/** The time bounds a config states, as `{ testTimeout: '15_000' }`. */
+function statedBounds(text) {
+  return Object.fromEntries(
+    [...text.matchAll(/\b(testTimeout|hookTimeout):\s*([\d_]+)/gu)].map(
+      ([, name, value]) => [name, value],
+    ),
+  );
+}
+
+test('every package and root vitest run extends the one shared config, and no bound rises', () => {
   const shared = readFileSync(join(root, 'vitest.shared.ts'), 'utf8');
-  assert.match(shared, /testTimeout: 30_000/u);
-  assert.match(shared, /hookTimeout: 30_000/u);
+  assert.deepEqual(statedBounds(shared), {}, 'vitest.shared.ts');
   assert.match(shared, /tests\/support\/stores\.setup\.ts/u);
   const workspaces = JSON.parse(
     readFileSync(join(root, 'package.json'), 'utf8'),
@@ -144,7 +162,7 @@ test('every package and root vitest run extends the one shared default', () => {
     assert.ok(existsSync(config), `${workspace} has no vitest.config.ts`);
     const text = readFileSync(config, 'utf8');
     assert.match(text, /'\.\.\/\.\.\/vitest\.shared\.js'/u, workspace);
-    assert.doesNotMatch(text, /testTimeout|hookTimeout/u, workspace);
+    assert.deepEqual(statedBounds(text), BOUNDS[workspace] ?? {}, workspace);
   }
   for (const config of [
     'scripts/vitest.coverage.config.mjs',
@@ -152,14 +170,14 @@ test('every package and root vitest run extends the one shared default', () => {
   ]) {
     const text = readFileSync(join(root, config), 'utf8');
     assert.match(text, /'\.\.\/vitest\.shared\.ts'/u, config);
-    assert.doesNotMatch(text, /testTimeout|hookTimeout/u, config);
+    assert.deepEqual(statedBounds(text), BOUNDS[config], config);
     assert.match(text, /store-guard\.setup\.ts/u, config);
   }
 });
 
 // A vitest started from the repository root finds no vitest.config there, so
 // it runs with vitest's own 5 s bound and none of the store isolation unless it
-// names one of the root configs, which both extend the shared default. Every
+// names one of the root configs, which both extend the shared config. Every
 // such start: the root package.json scripts, what the scripts spawn (an array
 // that holds 'vitest', or createVitest), and the workflows' run lines.
 test('every vitest run from the repository root names a root config', () => {

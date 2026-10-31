@@ -63,23 +63,31 @@ and a test that times its work measures the CPU it spent, not the wall clock.
 
 ## What a test run may touch
 
-The suites that can resolve a store (opm-project, opm, plugin-store and
-plugin-host) and the root gate and coverage configs load
-[`tests/support/stores.setup.ts`](../../tests/support/stores.setup.ts), which
+Every package's `vitest.config.ts` and the root gate and coverage configs extend
+[`vitest.shared.ts`](../../vitest.shared.ts), which loads
+[`tests/support/stores.setup.ts`](../../tests/support/stores.setup.ts): it
 unsets `OPM_STORE_HOME`, `OPM_TOOL_CACHE` and `OPM_PLUGIN_HOME` and points
 `XDG_CACHE_HOME` and `XDG_DATA_HOME` at a fresh directory per test file, so no
 test reads or writes the caller's shared store, tool cache or plugin store. A
-caller that exported `OPM_STORE_HOME` used to have every install of the suite
-use that store, and a test that writes into a store file (two of them check that
-a tampered tree is rebuilt) wrote through a hard link into it: as root, the
+caller that exported `OPM_STORE_HOME` used to have every install of a suite use
+that store, and a test that writes into a store file (two of them check that a
+tampered tree is rebuilt) wrote through a hard link into it: as root, the
 entry's read-only mode does not stop that, and every later install of the
 package failed with "does not match its recorded digest". The opm-project and
 opm suites and the root runs also fail a test whose environment would resolve
 one of those outside the temporary directory
 ([`tests/support/store-guard.ts`](../../tests/support/store-guard.ts)), and
 `packages/opm-project/test/store-isolation.test.ts` runs both tampering tests
-with `OPM_STORE_HOME` set and requires that store to stay empty. The setup
-changes no test's time bound.
+with `OPM_STORE_HOME` set and requires that store to stay empty.
+
+The shared config sets no time bound. A package keeps vitest's 5 s default
+unless its config states one, as before (opm-project 15 s, the gate config 15 s,
+the coverage config 30 s), and `tests/unit/repository.test.mjs` fails a config
+that states another. A vitest started from the repository root finds no config
+there, so it names one: `--config scripts/vitest.gate.config.mjs`
+(`test:pack-parity`, its native lane, the CI step) or the coverage config; the
+same file refuses a root run in a script, a spawned command or a workflow that
+names neither.
 
 `HOME` and `XDG_CONFIG_HOME` are left as the caller has them, and a few reads
 through them are not isolated, only read: opm-project looks for an installed
