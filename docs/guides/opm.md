@@ -1235,7 +1235,9 @@ opmx runs in a project you may only read (a read-only mount, a CI cache, another
 user's checkout) as long as the project is up to date: activating the current
 generation then writes nothing. When a shim or the project state is out of date,
 opmx says which one and stops, exit 8; run `opm install` there as the project's
-owner.
+owner. Shims written by an opm installed at another path still do in a project
+you may only read, as long as the opmx they name is there and can be started;
+where you may write, opmx rewrites them to start itself.
 
 `opmx pkg:<type>/<name>` runs a tool straight from a registry, without a
 project. Registry metadata is re-resolved on every run — an unpinned run is a

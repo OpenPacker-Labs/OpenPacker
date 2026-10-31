@@ -14,6 +14,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
+  chmod,
   lstat,
   mkdir,
   mkdtemp,
@@ -149,6 +150,26 @@ async function activated(context: { skip(when: boolean, why: string): void }) {
   return { root, env, shim };
 }
 
+/**
+ * Make `shim` start an opmx of another opm, at a path outside the project, as
+ * an opm installed there would have written it; that opmx is an executable
+ * file.
+ */
+async function startingAnother(shim: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'opmx-readonly-other-'));
+  temps.push(dir);
+  const other = join(dir, 'opmx');
+  await writeFile(other, '#!/bin/sh\nexit 0\n');
+  await chmod(other, 0o755);
+  const script = await readFile(shim, 'utf8');
+  expect(script).toContain(JSON.stringify(opmx));
+  await writeFile(
+    shim,
+    script.replace(JSON.stringify(opmx), JSON.stringify(other)),
+  );
+  return other;
+}
+
 describe.runIf(canSandbox && bwrap !== undefined)(
   'opmx in a project this user may not write',
   { timeout: INSTALLED_TIMEOUT_MS },
@@ -172,6 +193,38 @@ describe.runIf(canSandbox && bwrap !== undefined)(
           `this user may not write ${root}: run \`opm install\` there as its owner\n`,
       ]);
       expect(await readFile(shim, 'utf8')).toBe('#!/bin/sh\nexit 3\n');
+    });
+
+    it('runs the tool, and writes nothing, when its shims start another opmx that is there', async (context) => {
+      const { root, env, shim } = await activated(context);
+      await startingAnother(shim);
+      const before = await snapshot(root);
+      const ran = await run(root, ['hello'], env, true);
+      expect([ran.status, ran.out, ran.err]).toEqual([0, 'hello\n', '']);
+      expect(await snapshot(root)).toEqual(before);
+    });
+
+    it('is refused in one line, naming the shim, when the opmx it starts is gone', async (context) => {
+      const { root, env, shim } = await activated(context);
+      const other = await startingAnother(shim);
+      await rm(other);
+      const ran = await run(root, ['hello'], env, true);
+      expect([ran.status, ran.out, ran.err]).toEqual([
+        8,
+        '',
+        `opmx: .opm/bin/hello starts ${other}, which is missing or not a ` +
+          `program, and this user may not write ${root}: run \`opm install\` ` +
+          'there as its owner\n',
+      ]);
+    });
+
+    it('rewrites such shims to start this opmx where it may write, as before', async (context) => {
+      const { root, env, shim } = await activated(context);
+      const written = await readFile(shim, 'utf8');
+      await startingAnother(shim);
+      const ran = await run(root, ['hello'], env, false);
+      expect([ran.status, ran.out], ran.err).toEqual([0, 'hello\n']);
+      expect(await readFile(shim, 'utf8')).toBe(written);
     });
   },
 );

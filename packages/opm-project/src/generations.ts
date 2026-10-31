@@ -1,8 +1,8 @@
 import { echoed } from '@openpacker/adapter-core';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, type FileHandle } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { access, lstat, type FileHandle } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import {
   OpmError,
   type BinDeclaration,
@@ -32,6 +32,7 @@ import {
 import {
   outOfDate,
   plannedLink,
+  type OutOfDate,
   type PlannedPackage,
 } from './activation-current.js';
 import { discoverBins, planBinShims, removeBinShims } from './bins.js';
@@ -942,17 +943,36 @@ export async function activateGeneration(input: {
       },
     );
     const previous = await readProjectState(paths.projectState);
-    const stale = await outOfDate({
-      root: input.root,
-      statePath: paths.projectState,
-      held: previous,
-      planned,
-    });
+    const compared = (elsewhere: boolean) =>
+      outOfDate({
+        root: input.root,
+        statePath: paths.projectState,
+        held: previous,
+        planned,
+        elsewhere,
+      });
     // What the project holds is what activation would write: it writes
     // nothing, so a project this user may only read runs as it is.
+    const stale = await compared(false);
     if (stale === undefined && previous !== undefined) {
       await revalidatePreparedTrees(prepared);
       return previous;
+    }
+    // Where it may not write, shims that start another opm's opmx, which is
+    // there to start, are as good: a project built where opm was installed
+    // elsewhere runs read-only as it is. Anything else is refused.
+    if (
+      !(await mayWrite([dirname(paths.projectState), paths.bin, paths.links]))
+    ) {
+      const readOnly = await compared(true);
+      if (readOnly === undefined && previous !== undefined) {
+        await revalidatePreparedTrees(prepared);
+        return previous;
+      }
+      throw readOnlyRefusal(
+        readOnly ?? { path: PROJECT_STATE_SHOWN, why: 'differs' },
+        input.root,
+      );
     }
     const state: ProjectState = {
       schemaVersion: 1,
@@ -977,12 +997,10 @@ export async function activateGeneration(input: {
       await writeProjectState(paths.projectState, state);
     } catch (error) {
       if (!cannotWrite(error)) throw error;
-      throw new OpmError(
-        'PROJECT_READ_ONLY',
-        `${stale ?? PROJECT_STATE_SHOWN} is out of date for the active ` +
-          `generation, and this user may not write ${input.root}: run ` +
-          '`opm install` there as its owner',
-        { cause: error },
+      throw readOnlyRefusal(
+        stale ?? { path: PROJECT_STATE_SHOWN, why: 'differs' },
+        input.root,
+        error,
       );
     }
     return state;
@@ -997,6 +1015,35 @@ const PROJECT_STATE_SHOWN = `${OPM_DIR}/${PROJECT_STATE}`;
 
 /** Why a write fails that this user may not make: the project is not theirs to write. */
 const UNWRITABLE = new Set(['EACCES', 'EPERM', 'EROFS']);
+
+/** Whether this user may write in each of `dirs`, asked without writing. */
+async function mayWrite(dirs: readonly string[]): Promise<boolean> {
+  for (const dir of dirs) {
+    const refused = await access(dir, constants.W_OK).then(
+      () => false,
+      (error: unknown) => cannotWrite(error),
+    );
+    if (refused) return false;
+  }
+  return true;
+}
+
+/** Why opmx cannot run in a project out of date that this user may not write, in one line. */
+function readOnlyRefusal(
+  stale: OutOfDate,
+  root: string,
+  cause?: unknown,
+): OpmError {
+  const what =
+    stale.why === 'opmx'
+      ? `${stale.path} starts ${stale.opmx}, which is missing or not a program`
+      : `${stale.path} is out of date for the active generation`;
+  return new OpmError(
+    'PROJECT_READ_ONLY',
+    `${what}, and this user may not write ${root}: run \`opm install\` there as its owner`,
+    cause === undefined ? undefined : { cause },
+  );
+}
 
 /** Whether `error`, or what caused it, says this user may not write where it was writing. */
 function cannotWrite(error: unknown): boolean {

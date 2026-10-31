@@ -358,6 +358,8 @@ export interface BinShimInput {
 export interface PlannedBinShim {
   shim: WrittenBinShim;
   script: string;
+  /** The same script, starting `opmxPath` instead of this process's opmx. */
+  scriptFor(opmxPath: string): string;
 }
 
 /**
@@ -401,12 +403,9 @@ export function planBinShims(input: BinShimInput): PlannedBinShim[] {
     }
     const target = resolveContained(storeRoot, ...segments);
     const shimPath = resolveContained(binDir, name);
-    const script = shimScriptFor(bin, {
-      binDir,
-      target,
-      pythonRoots,
-      opmxPath: resolveOpmxPath(),
-    });
+    const scriptFor = (opmxPath: string) =>
+      shimScriptFor(bin, { binDir, target, pythonRoots, opmxPath });
+    const script = scriptFor(resolveOpmxPath());
     planned.push({
       shim: {
         name,
@@ -419,9 +418,30 @@ export function planBinShims(input: BinShimInput): PlannedBinShim[] {
         ...(!(bin.entry === undefined) && { entry: bin.entry }),
       },
       script,
+      scriptFor,
     });
   }
   return planned;
+}
+
+/** The line of a shim that names the `opmx` it starts. */
+const SHIM_OPMX =
+  /^const opmx = process\.env\.OPM_OPMX\?\.trim\(\) \|\| ("(?:[^"\\\n]|\\.)*");$/mu;
+
+/**
+ * The `opmx` a shim `writeBinShims` wrote starts, as written in it; undefined
+ * for a file that names none. Whether the rest of the file is that shim is for
+ * its caller to check, against `PlannedBinShim.scriptFor` of what it names.
+ */
+export function shimOpmx(script: string): string | undefined {
+  const named = SHIM_OPMX.exec(script)?.[1];
+  if (named === undefined) return undefined;
+  try {
+    const value: unknown = JSON.parse(named);
+    return typeof value === 'string' ? value : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
+  chmod,
   lstat,
   mkdtemp,
   readdir,
@@ -105,6 +106,35 @@ async function snapshot(dir: string): Promise<Record<string, string>> {
   return seen;
 }
 
+/**
+ * A shim as an opm installed at `opmx` would have written it: the same script
+ * but for the `opmx` it starts.
+ */
+async function startingOpmx(root: string, opmx: string): Promise<string> {
+  const shim = join(projectPaths(root).bin, 'runner');
+  const script = await readFile(shim, 'utf8');
+  const line = /^const opmx = process\.env\.OPM_OPMX\?\.trim\(\) \|\| .*;$/mu;
+  expect(script).toMatch(line);
+  await writeFile(
+    shim,
+    script.replace(
+      line,
+      `const opmx = process.env.OPM_OPMX?.trim() || ${JSON.stringify(opmx)};`,
+    ),
+  );
+  return shim;
+}
+
+/** An `opmx` of another opm, outside the project: an executable file. */
+async function otherOpmx(mode = 0o755): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'opm-activation-opmx-'));
+  temps.push(dir);
+  const opmx = join(dir, 'opmx');
+  await writeFile(opmx, '#!/bin/sh\nexit 0\n');
+  await chmod(opmx, mode);
+  return opmx;
+}
+
 describe('activating the active generation', () => {
   it('writes nothing when the project holds what it would write', async () => {
     const root = await installed();
@@ -119,6 +149,15 @@ describe('activating the active generation', () => {
     const shim = join(projectPaths(root).bin, 'runner');
     const written = await readFile(shim, 'utf8');
     await writeFile(shim, '#!/bin/sh\nexit 3\n');
+    await activate(root);
+    expect(await readFile(shim, 'utf8')).toBe(written);
+  });
+
+  it('rewrites a shim that starts another opmx where it may write, to start this one', async () => {
+    const root = await installed();
+    const shim = join(projectPaths(root).bin, 'runner');
+    const written = await readFile(shim, 'utf8');
+    await startingOpmx(root, await otherOpmx());
     await activate(root);
     expect(await readFile(shim, 'utf8')).toBe(written);
   });
@@ -207,6 +246,40 @@ describe.runIf(process.platform === 'linux' && bwrap !== undefined)(
       });
       expect(await readFile(shim, 'utf8')).toBe('#!/bin/sh\nexit 3\n');
     });
+
+    it('needs no write when its shims start another opmx that is there', async () => {
+      const root = await installed();
+      const opmx = await otherOpmx();
+      const shim = await startingOpmx(root, opmx);
+      const held = await readFile(shim, 'utf8');
+      const ran = await activateReadOnly(root);
+      expect([ran.status, JSON.parse(ran.out)], ran.err).toEqual([
+        0,
+        { packages: ['runner'] },
+      ]);
+      expect(await readFile(shim, 'utf8')).toBe(held);
+    });
+
+    it.each([
+      ['missing', async (opmx: string) => rm(opmx)],
+      ['not executable', async (opmx: string) => chmod(opmx, 0o644)],
+    ])(
+      'is refused, naming the shim, when the opmx it starts is %s',
+      async (_, spoil) => {
+        const root = await installed();
+        const opmx = await otherOpmx();
+        await startingOpmx(root, opmx);
+        await spoil(opmx);
+        const ran = await activateReadOnly(root);
+        expect(JSON.parse(ran.out), ran.err).toEqual({
+          code: 'PROJECT_READ_ONLY',
+          message:
+            `.opm/bin/runner starts ${opmx}, which is missing or not a ` +
+            `program, and this user may not write ${root}: run ` +
+            '`opm install` there as its owner',
+        });
+      },
+    );
 
     it('is refused, naming the project state when that is out of date', async () => {
       const root = await installed();

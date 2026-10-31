@@ -1,6 +1,7 @@
-import { lstat } from 'node:fs/promises';
-import { relative, sep } from 'node:path';
-import type { PlannedBinShim } from './bins.js';
+import { constants } from 'node:fs';
+import { access, lstat } from 'node:fs/promises';
+import { isAbsolute, relative, sep } from 'node:path';
+import { shimOpmx, type PlannedBinShim } from './bins.js';
 import { readStableFile, resolveContained } from './paths.js';
 import type { InstalledPackageRecord, ProjectState } from './types.js';
 
@@ -47,30 +48,71 @@ function sameRecord(
   return keys(held.bins).join('\n') === keys(wanted.bins).join('\n');
 }
 
-/** Whether `path` is a file that holds exactly `text`, read without following a link. */
-async function holds(
+/** What a file holds, read without following a link; undefined for anything but a file. */
+async function fileText(
   path: string,
-  text: string,
   executable: boolean,
-): Promise<boolean> {
+): Promise<string | undefined> {
+  const info = await lstat(path).catch(() => undefined);
+  if (info?.isFile() !== true) return undefined;
+  if (executable && process.platform !== 'win32' && (info.mode & 0o100) === 0)
+    return undefined;
+  return await readStableFile(path).catch(() => undefined);
+}
+
+/**
+ * Whether `path` can be started as a shim starts its `opmx`: an absolute path,
+ * a file and not a link, executable by this user; a JavaScript one, which a
+ * shim starts with Node, readable by them.
+ */
+async function startable(path: string): Promise<boolean> {
+  if (!isAbsolute(path)) return false;
   const info = await lstat(path).catch(() => undefined);
   if (info?.isFile() !== true) return false;
-  if (executable && process.platform !== 'win32' && (info.mode & 0o100) === 0)
-    return false;
-  return (await readStableFile(path).catch(() => undefined)) === text;
+  const mode = /\.[cm]?js$/iu.test(path) ? constants.R_OK : constants.X_OK;
+  return await access(path, mode).then(
+    () => true,
+    () => false,
+  );
+}
+
+/** What is out of date, as a path from the project's root, and why. */
+export type OutOfDate =
+  | { path: string; why: 'differs' }
+  /** A shim that would do, but for the `opmx` it starts, which cannot be started. */
+  | { path: string; why: 'opmx'; opmx: string };
+
+/**
+ * Whether a shim is the one planned. With `elsewhere`, for a project this user
+ * may not write, it is also one that starts another opmx and is otherwise the
+ * same script, while that opmx can be started: a project built where opm was
+ * installed elsewhere runs as it is.
+ */
+async function shimOutOfDate(
+  planned: PlannedBinShim,
+  elsewhere: boolean,
+): Promise<'differs' | { opmx: string } | undefined> {
+  const text = await fileText(planned.shim.shim, true);
+  if (text === planned.script) return undefined;
+  if (!elsewhere || text === undefined) return 'differs';
+  const opmx = shimOpmx(text);
+  if (opmx === undefined || planned.scriptFor(opmx) !== text) return 'differs';
+  return (await startable(opmx)) ? undefined : { opmx };
 }
 
 /**
  * The first thing in the project that is not what activating `planned` would
- * write there, as a path relative to `root` (`/`-separated); undefined when
- * the project holds all of it, and activation then writes nothing.
+ * write there, its path relative to `root` (`/`-separated); undefined when the
+ * project holds all of it, and activation then writes nothing. `elsewhere`
+ * takes a shim that starts another opmx that can be started as up to date.
  */
 export async function outOfDate(input: {
   root: string;
   statePath: string;
   held: ProjectState | undefined;
   planned: readonly PlannedPackage[];
-}): Promise<string | undefined> {
+  elsewhere: boolean;
+}): Promise<OutOfDate | undefined> {
   const shown = (path: string) =>
     relative(input.root, path).split(sep).join('/');
   const held = input.held?.packages ?? {};
@@ -78,11 +120,17 @@ export async function outOfDate(input: {
     Object.keys(held).length !== input.planned.length ||
     input.planned.some(({ record }) => !sameRecord(held[record.alias], record))
   )
-    return shown(input.statePath);
+    return { path: shown(input.statePath), why: 'differs' };
   for (const { shims, link } of input.planned) {
-    for (const { shim, script } of shims)
-      if (!(await holds(shim.shim, script, true))) return shown(shim.shim);
-    if (!(await holds(link.path, link.text, false))) return shown(link.path);
+    for (const planned of shims) {
+      const stale = await shimOutOfDate(planned, input.elsewhere);
+      if (stale === 'differs')
+        return { path: shown(planned.shim.shim), why: 'differs' };
+      if (stale !== undefined)
+        return { path: shown(planned.shim.shim), why: 'opmx', ...stale };
+    }
+    if ((await fileText(link.path, false)) !== link.text)
+      return { path: shown(link.path), why: 'differs' };
   }
   return undefined;
 }
