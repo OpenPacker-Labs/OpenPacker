@@ -18,7 +18,12 @@ import { npmRangeVers } from './range-vers.js';
 import { unsafeNameProblem } from './layout-plan.js';
 import { asBundled, bundledDependencyNames } from './bundled.js';
 import { npmTargetPredicate } from './platform.js';
-import { MAXIMUM_PACKUMENT_BYTES } from './packument-limits.js';
+import {
+  aboutPackument,
+  FULL_PACKUMENT_LIMITS,
+  MAXIMUM_PACKUMENT_BYTES,
+  PACKUMENT_LIMITS,
+} from './packument-limits.js';
 import {
   compareNpmVersions,
   npmSatisfies,
@@ -46,6 +51,8 @@ import {
   ProviderError,
   providerErrorForStatus,
   rangeToConstraint,
+  ResponseTooLargeError,
+  MetadataLimitError,
   semanticLoss,
   sourceRef,
   verifyNativeDigest,
@@ -853,9 +860,24 @@ export class NpmRegistryProvider implements CatalogProvider {
         maximumBytes: FULL_PACKUMENT_LIMIT,
         headers: { accept: 'application/json' },
       });
-      return json<{ time?: Record<string, string> }>(response).time;
+      return json<{ time?: Record<string, string> }>(
+        response,
+        FULL_PACKUMENT_LIMITS,
+      ).time;
     } catch (error) {
       if (signal?.aborted) throw error;
+      if (
+        error instanceof ResponseTooLargeError ||
+        error instanceof MetadataLimitError ||
+        (error instanceof ProviderError &&
+          error.code === 'INVALID_PROVIDER_METADATA')
+      ) {
+        throw aboutPackument(
+          npmName(parsed.namespace, parsed.name),
+          error as ProviderError,
+          'full packument',
+        );
+      }
       return undefined;
     }
   }
@@ -1083,40 +1105,45 @@ export class NpmRegistryProvider implements CatalogProvider {
     const existing = this.#records.get(key);
     const name = npmName(parsed.namespace, parsed.name);
     const url = `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(name)}`;
-    const response = await this.transport.request({
-      url,
-      signal,
-      maximumBytes: MAXIMUM_PACKUMENT_BYTES,
-      headers: {
-        accept: 'application/vnd.npm.install-v1+json',
-        ...(!(existing?.etag === undefined) && {
-          'if-none-match': existing.etag,
+    try {
+      const response = await this.transport.request({
+        url,
+        signal,
+        maximumBytes: MAXIMUM_PACKUMENT_BYTES,
+        headers: {
+          accept: 'application/vnd.npm.install-v1+json',
+          ...(!(existing?.etag === undefined) && {
+            'if-none-match': existing.etag,
+          }),
+        },
+      });
+      if (response.status === 304) {
+        if (!existing)
+          throw new ProviderError(
+            'STALE_METADATA',
+            `Received 304 without cached metadata for ${key}`,
+            304,
+          );
+        const revalidated = { ...existing, retrievedAt: this.clock.now() };
+        this.#records.set(key, revalidated);
+        return revalidated;
+      }
+      const body = json<NpmPackument>(response, PACKUMENT_LIMITS);
+      const record: ProviderRecord<NpmPackument> = {
+        key,
+        endpoint: response.url,
+        ...(!(header(response, 'etag') === undefined) && {
+          etag: header(response, 'etag'),
         }),
-      },
-    });
-    if (response.status === 304) {
-      if (!existing)
-        throw new ProviderError(
-          'STALE_METADATA',
-          `Received 304 without cached metadata for ${key}`,
-          304,
-        );
-      const revalidated = { ...existing, retrievedAt: this.clock.now() };
-      this.#records.set(key, revalidated);
-      return revalidated;
+        body,
+        rawBody: response.body,
+        retrievedAt: this.clock.now(),
+      };
+      this.#records.set(record.key, record);
+      return record;
+    } catch (error) {
+      throw aboutPackument(name, error as ProviderError);
     }
-    const record: ProviderRecord<NpmPackument> = {
-      key,
-      endpoint: response.url,
-      ...(!(header(response, 'etag') === undefined) && {
-        etag: header(response, 'etag'),
-      }),
-      body: json<NpmPackument>(response),
-      rawBody: response.body,
-      retrievedAt: this.clock.now(),
-    };
-    this.#records.set(record.key, record);
-    return record;
   }
 }
 
