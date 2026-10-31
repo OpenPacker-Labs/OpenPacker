@@ -181,12 +181,16 @@ read from the last handle, as the system names that directory
 (`/proc/self/fd/N`, `fcntl(F_GETPATH)` on macOS).
 
 **What a project holds is the project's, not the person's.** Every taken root is
-fenced, and so, before any base is resolved, is the project a command runs in:
-`beginCommand` fences the nearest directory above the working directory's real
-path that holds `opm.toml`, `opm.lock.json`, `package.json` or `.git`, or the
-working directory itself when none does. The search stops below the home
-directory, and neither the home directory, a directory above it nor a file
-system's root is ever fenced, so the person's own links
+fenced, and so, before any base is resolved, are the project a command runs in
+and the checkout that holds it: `beginCommand` fences the nearest directory
+above the working directory's real path that holds `opm.toml`, `opm.lock.json`,
+`package.json` or `.git` (or the working directory itself when none does), and
+the nearest that holds `.git`, a directory or the gitfile of a worktree. So a
+command run in a monorepo's package (`repo/packages/a`, with a `package.json` of
+its own) fences that package and the repository's root, and a link committed at
+the root (`repo/.cache -> /outside`) is the checkout's. The search stops below
+the home directory, and neither the home directory, a directory above it nor a
+file system's root is ever fenced, so the person's own links
 (`~/.cache -> /data/cache`) stay theirs. A fence lasts for the whole command and
 is never forgotten to make room, and a fence added after a base was resolved
 through a link in it unmakes that base, which is resolved again (and refused)
@@ -304,12 +308,13 @@ before, so a lifecycle script that edits its own file can.
   being resolved, is the base it then leads to, within the two rules. The check
   that a base still leads where it did asks the system (`stat`), which follows
   links as it will; only the identity it answers is used.
-- The project a command runs in is found by its markers. A checkout whose
-  working directory holds none of them, below a marked directory with a
-  `package.json` of its own (a monorepo's package), fences that package, not the
-  checkout's root. Code that uses the library without `beginCommand` is fenced
-  by the projects it takes, when it takes them; what it wrote through a link
-  before then is not undone.
+- The project a command runs in is found by its markers, and the checkout that
+  holds it by `.git`. A tree that is not a git checkout (an exported archive, a
+  checkout of another version control system, a `.git` at or above the home
+  directory) fences only the nearest marked directory, so a link committed above
+  it there is followed. Code that uses the library without `beginCommand` is
+  fenced by the projects it takes, when it takes them; what it wrote through a
+  link before then is not undone.
 
 ### What this guarantees
 
@@ -344,13 +349,14 @@ Each failed before this change (on 9aeb116, or for the parts the review of
 - `project-io/src/trusted-base.fences.test.ts`: a fence held through a bind
   mount of the project, kept past 600 other bases, and unmaking a base taken
   through its link before it came; the project a command runs in fenced before
-  any base is resolved, found by its markers, and never the home directory or a
-  root; a link another user owns in a sticky directory not followed, through
-  `/proc/self/fd` and through glibc's `*at` calls, and one the user or the
-  directory's owner owns followed; the glibc resolution equal to the procfs one;
-  and moves, links and link restores between two open directories, through both
-  backends, acting where the directories were opened, a source that is a link
-  linked as itself;
+  any base is resolved, found by its markers, with the checkout that holds it
+  (its `.git` a directory or a gitfile) when the command runs in a monorepo's
+  package, and never the home directory or a root; a link another user owns in a
+  sticky directory not followed, through `/proc/self/fd` and through glibc's
+  `*at` calls, and one the user or the directory's owner owns followed; the
+  glibc resolution equal to the procfs one; and moves, links and link restores
+  between two open directories, through both backends, acting where the
+  directories were opened, a source that is a link linked as itself;
 - `opm-project/test/symlinked-base.test.ts`: `opm init` and `opm add` with a
   `node_modules` layout under a `TMPDIR` link, the macOS shape, a linked parent,
   a root that is a link, and a shared store under a linked `HOME` and
@@ -378,8 +384,12 @@ Each failed before this change (on 9aeb116, or for the parts the review of
   retargeted;
 - `opm/test/fenced-project.test.ts`: `opmx pkg:…` and `opm auth set` in a
   checkout that holds a link where `XDG_CACHE_HOME` or `XDG_CONFIG_HOME` points,
-  with no store or cache named elsewhere: refused, nothing made outside; and two
-  commands in one process, each taking its project where it is when it begins;
+  with no store or cache named elsewhere: refused, nothing made outside;
+  `opmx pkg:…` and `opm add` run in a monorepo's package while the link is at
+  the checkout's root (`.git` a directory, and a gitfile): refused, the default
+  store not used, an explicit one through the link refused, nothing made
+  outside; and two commands in one process, each taking its project where it is
+  when it begins;
 - `sandbox/src/trusted-base.test.ts`: a jail run in, and binding, a directory
   under a linked `TMPDIR` and under the macOS shape (with an authority opened
   through the link), and the user home known by its real path; and a grant

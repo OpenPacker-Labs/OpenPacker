@@ -32,8 +32,9 @@
  * A base is resolved by `base-resolve.ts`, one directory handle at a time:
  * no link in a fenced directory is followed, and none another user put in a
  * sticky directory anyone may write to. A fence is the identity of a
- * directory whose links are its own: the project the command runs in (fenced
- * before any base is resolved, {@link beginCommand}), every root taken, and
+ * directory whose links are its own: the project the command runs in and the
+ * checkout that holds it (fenced before any base is resolved,
+ * {@link beginCommand}), every root taken, and
  * nothing is ever unfenced while the command runs. A fence added after a base
  * was resolved through a link it holds unmakes that base.
  *
@@ -415,18 +416,21 @@ function present(path: string): boolean {
 }
 
 /**
- * Fence the project the command runs in: the nearest directory, from the
- * working directory's real path up, that holds a project marker, else the
- * working directory itself. Its links are the project's (`.cache -> /outside`,
- * committed), so no base is resolved through one, whatever the environment
- * names there. The search stops below the home directory, and neither the
- * home directory, a directory above it nor a file system's root is ever
- * fenced: the person's own links (`~/.cache -> /data/cache`) are theirs.
- * Returns the directory fenced, if any.
+ * Fence the project the command runs in, and the checkout it lies in: the
+ * nearest directory, from the working directory's real path up, that holds a
+ * project marker (else the working directory itself), and the nearest that
+ * holds `.git`, a directory or a gitfile (a worktree's). Their links are the
+ * project's and the checkout's (`.cache -> /outside`, committed at the root
+ * of a monorepo whose package the command runs in), so no base is resolved
+ * through one, whatever the environment names there. The search stops below
+ * the home directory, and neither the home directory, a directory above it
+ * nor a file system's root is ever fenced: the person's own links
+ * (`~/.cache -> /data/cache`) are theirs. Returns the directories fenced,
+ * the project's first.
  */
-export function fenceWorkingProject(cwd: string): string | undefined {
+export function fenceWorkingProject(cwd: string): string[] {
   const start = resolveBase(cwd);
-  if (start.identity === undefined) return undefined;
+  if (start.identity === undefined) return [];
   let home: string | undefined;
   try {
     home = resolveBase(homedir()).real;
@@ -435,23 +439,35 @@ export function fenceWorkingProject(cwd: string): string | undefined {
   }
   const outside = (dir: string) =>
     dir === parse(dir).root || (home !== undefined && under(home, dir));
-  let chosen: string | undefined;
-  for (let dir = start.real; !outside(dir); dir = dirname(dir))
-    if (PROJECT_MARKERS.some((marker) => present(join(dir, marker)))) {
-      chosen = dir;
+  let project: string | undefined;
+  let checkout: string | undefined;
+  for (let dir = start.real; !outside(dir); dir = dirname(dir)) {
+    if (
+      project === undefined &&
+      PROJECT_MARKERS.some((marker) => present(join(dir, marker)))
+    )
+      project = dir;
+    if (present(join(dir, '.git'))) {
+      checkout = dir;
       break;
     }
-  if (chosen === undefined && !outside(start.real)) chosen = start.real;
-  if (chosen === undefined) return undefined;
-  const identity = identityOf(chosen);
-  if (identity === undefined) return undefined;
-  addFence(identity, chosen);
-  return chosen;
+  }
+  if (project === undefined && !outside(start.real)) project = start.real;
+  const fenced: string[] = [];
+  for (const dir of [project, checkout]) {
+    if (dir === undefined || fenced.includes(dir)) continue;
+    const identity = identityOf(dir);
+    if (identity === undefined) continue;
+    addFence(identity, dir);
+    fenced.push(dir);
+  }
+  return fenced;
 }
 
 /**
  * Begin a command run in `cwd`: forget what the last one took, then fence the
- * project it runs in before any base is resolved ({@link fenceWorkingProject}).
+ * project it runs in, and the checkout that holds it, before any base is
+ * resolved ({@link fenceWorkingProject}).
  * Every process entry calls it first, and so does a host that runs several
  * commands in one process, at each.
  */

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   mkdir,
   mkdtemp,
@@ -7,9 +8,11 @@ import {
   rm,
   symlink,
   unlink,
+  writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { enableDefaultSharedStore } from '@openpacker/opm-project';
 import { NpmRegistryFixture } from '../../../packages/opm-project/test/npm-registry-fixture.js';
@@ -105,6 +108,137 @@ describe.runIf(POSIX)('a command run in a checkout that holds a link', () => {
     expect(await readdir(outside, { recursive: true })).toEqual([]);
   });
 });
+
+const fixtureTgz = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../fixtures/opm/demo-tool-1.1.0.tgz',
+);
+const DEMO = 'pkg:npm/@openpacker/demo-tool@1.1.0';
+
+/**
+ * A monorepo checkout (`.git` a directory, or a gitfile as a worktree has)
+ * that commits `.cache -> <world>/outside` at its root, and its package
+ * `packages/a` with a `package.json` of its own, an opm project that can add
+ * the demo tool offline.
+ */
+async function monorepo(git: 'directory' | 'gitfile'): Promise<{
+  root: string;
+  pkg: string;
+  outside: string;
+}> {
+  const world = await mkdtemp(join(await realpath(tmpdir()), 'opm-mono-'));
+  worlds.push(world);
+  const root = join(world, 'repo');
+  const outside = join(world, 'outside');
+  const pkg = join(root, 'packages', 'a');
+  await mkdir(pkg, { recursive: true });
+  await mkdir(outside);
+  if (git === 'directory') await mkdir(join(root, '.git'));
+  else
+    await writeFile(
+      join(root, '.git'),
+      `gitdir: ${join(world, 'main', '.git', 'worktrees', 'repo')}\n`,
+    );
+  await symlink(outside, join(root, '.cache'));
+  await writeFile(
+    join(pkg, 'package.json'),
+    '{"name":"a","version":"0.0.0"}\n',
+  );
+  vi.stubEnv('OPM_STORE_HOME', '');
+  vi.stubEnv('OPM_TOOL_CACHE', '');
+  vi.stubEnv('HOME', join(world, 'home'));
+  vi.stubEnv('XDG_CACHE_HOME', join(root, '.cache'));
+  enableDefaultSharedStore(true);
+  return { root, pkg, outside };
+}
+
+/** `opm init` in `pkg`, and a catalog that serves the demo tool from its archive. */
+async function demoProject(pkg: string): Promise<void> {
+  expect(await runOpm(['init', '--name', 'a'], captured().io, pkg)).toBe(0);
+  const bytes = await readFile(fixtureTgz);
+  await mkdir(join(pkg, '.opm'), { recursive: true });
+  await writeFile(
+    join(pkg, '.opm/catalog.json'),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      packages: {
+        [DEMO]: {
+          purl: DEMO,
+          version: '1.1.0',
+          digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}`,
+          size: bytes.byteLength,
+          format: 'tar+gzip',
+          mediaType: 'application/vnd.npm.package+gzip',
+          source: `file:${fixtureTgz}`,
+          bins: [{ name: 'demo-tool', path: 'package/bin/demo-tool.js' }],
+        },
+      },
+    })}\n`,
+  );
+}
+
+describe.runIf(POSIX)(
+  'a command run in a package of a monorepo whose checkout root holds a link',
+  () => {
+    it.each(['directory', 'gitfile'] as const)(
+      'opmx pkg:… makes no tool cache or store through the root’s link (.git a %s)',
+      async (git) => {
+        const { pkg, outside } = await monorepo(git);
+        const registry = new NpmRegistryFixture([
+          {
+            name: 'tool',
+            versions: {
+              '1.0.0': {
+                bin: { tool: 'cli.js' },
+                files: { 'cli.js': "process.stdout.write('ran\\n');\n" },
+              },
+            },
+          },
+        ]);
+        const { seen, io } = captured();
+
+        const exit = await runOpmx(['pkg:npm/tool@1.0.0'], io, pkg, {
+          registryOptions: { transport: registry },
+        });
+        expect(exit, seen.err).not.toBe(0);
+        expect(seen.err).toMatch(/linked|unstable|ENOTDIR|ELOOP/iu);
+        expect(await readdir(outside, { recursive: true })).toEqual([]);
+      },
+    );
+
+    it.each(['directory', 'gitfile'] as const)(
+      'opm add keeps the package’s own store, not the default one through the root’s link (.git a %s)',
+      async (git) => {
+        const { pkg, outside } = await monorepo(git);
+        await demoProject(pkg);
+        const { seen, io } = captured();
+
+        expect(
+          await runOpm(['add', DEMO, '--offline'], io, pkg),
+          seen.err,
+        ).toBe(0);
+        expect(await readdir(outside, { recursive: true })).toEqual([]);
+      },
+    );
+
+    it.each(['directory', 'gitfile'] as const)(
+      'opm add refuses a store OPM_STORE_HOME names through the root’s link (.git a %s)',
+      async (git) => {
+        const { root, pkg, outside } = await monorepo(git);
+        await demoProject(pkg);
+        vi.stubEnv('OPM_STORE_HOME', join(root, '.cache', 'store'));
+        const { seen, io } = captured();
+
+        expect(
+          await runOpm(['add', DEMO, '--offline'], io, pkg),
+          seen.err,
+        ).not.toBe(0);
+        expect(seen.err).toMatch(/linked|unstable|ENOTDIR|ELOOP/iu);
+        expect(await readdir(outside, { recursive: true })).toEqual([]);
+      },
+    );
+  },
+);
 
 describe.runIf(POSIX)('commands run one after another in one process', () => {
   it('each take their project where it is when they begin', async () => {

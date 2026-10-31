@@ -165,7 +165,7 @@ describe.runIf(POSIX)('the project a command runs in', () => {
     expect(await readdir(outside)).toEqual([]);
   });
 
-  it('is the nearest directory with a project marker above the working directory, else the working directory', async () => {
+  it('is the nearest directory with a project marker above the working directory, else the working directory, and the checkout that holds it', async () => {
     const base = await world();
     vi.stubEnv('HOME', join(base, 'home'));
     await mkdir(join(base, 'repo', 'packages', 'a', 'src'), {
@@ -173,12 +173,49 @@ describe.runIf(POSIX)('the project a command runs in', () => {
     });
     await writeFile(join(base, 'repo', 'package.json'), '{}');
     await writeFile(join(base, 'repo', 'packages', 'a', 'package.json'), '{}');
-    expect(
-      fenceWorkingProject(join(base, 'repo', 'packages', 'a', 'src')),
-    ).toBe(join(base, 'repo', 'packages', 'a'));
+    const src = join(base, 'repo', 'packages', 'a', 'src');
+    expect(fenceWorkingProject(src)).toEqual([
+      join(base, 'repo', 'packages', 'a'),
+    ]);
+    await mkdir(join(base, 'repo', '.git'));
+    forgetBases();
+    expect(fenceWorkingProject(src)).toEqual([
+      join(base, 'repo', 'packages', 'a'),
+      join(base, 'repo'),
+    ]);
     await mkdir(join(base, 'loose'));
-    expect(fenceWorkingProject(join(base, 'loose'))).toBe(join(base, 'loose'));
+    expect(fenceWorkingProject(join(base, 'loose'))).toEqual([
+      join(base, 'loose'),
+    ]);
   });
+
+  it.each(['a directory', 'a gitfile, as a worktree has'])(
+    'fences a monorepo’s checkout root, its .git %s, though the command runs in one of its packages',
+    async (kind) => {
+      const base = await world();
+      const { root, outside } = await projectHoldingLink(base);
+      if (kind === 'a directory') await mkdir(join(root, '.git'));
+      else
+        await writeFile(
+          join(root, '.git'),
+          `gitdir: ${join(base, 'main', '.git', 'worktrees', 'project')}\n`,
+        );
+      const pkg = join(root, 'packages', 'a');
+      await mkdir(pkg, { recursive: true });
+      await writeFile(join(pkg, 'package.json'), '{}');
+      vi.stubEnv('HOME', join(base, 'home'));
+      vi.stubEnv('XDG_CACHE_HOME', join(root, '.cache'));
+
+      beginCommand(pkg);
+      await expect(
+        openStableDirectory(join(root, '.cache', 'openpacker', 'x')),
+      ).rejects.toMatchObject({ code: expect.stringMatching(REFUSED) });
+      await expect(
+        writeFileAtomic(join(root, '.cache', 'note'), 'x'),
+      ).rejects.toMatchObject({ code: expect.stringMatching(REFUSED) });
+      expect(await readdir(outside)).toEqual([]);
+    },
+  );
 
   it('is never the home directory, a directory above it or the root: the person’s own links stay theirs', async () => {
     const base = await world();
@@ -192,7 +229,7 @@ describe.runIf(POSIX)('the project a command runs in', () => {
 
     beginCommand(join(home, 'work'));
     beginCommand(home);
-    expect(fenceWorkingProject('/')).toBeUndefined();
+    expect(fenceWorkingProject('/')).toEqual([]);
     await writeFileAtomic(join(home, '.cache', 'note'), 'x');
     expect(await readFile(join(base, 'cache-real', 'note'), 'utf8')).toBe('x');
   });
