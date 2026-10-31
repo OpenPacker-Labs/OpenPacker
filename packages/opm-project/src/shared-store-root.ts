@@ -8,6 +8,7 @@
 
 import { lstat, mkdir, stat } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { trustBase } from '@openpacker/project-io';
 import { OpmError } from './types.js';
 import {
   defaultSharedStoreHome,
@@ -49,9 +50,21 @@ export interface RequestedStore {
   explicit: boolean;
 }
 
+/**
+ * The store this environment asks for. Its root is taken as a trusted base
+ * here, where it is read (`trustBase`, ADR 0034): the links on the way to it
+ * are the person's, whichever environment named it, and a link below it is
+ * refused by every walk.
+ */
 export function requestedSharedStore(
   env: NodeJS.ProcessEnv,
 ): RequestedStore | undefined {
+  const requested = requestedStore(env);
+  if (requested !== undefined) trustBase(requested.root);
+  return requested;
+}
+
+function requestedStore(env: NodeJS.ProcessEnv): RequestedStore | undefined {
   const setting = sharedStoreSetting(env);
   if (setting.kind === 'path') return { root: setting.root, explicit: true };
   // Windows cannot hard-link through directory handles here, so the default

@@ -32,6 +32,7 @@ import {
   packProject,
   projectPaths,
   readManifestFile,
+  usableSharedRoot,
   writeManifestFile,
 } from '../src/index.js';
 import {
@@ -212,6 +213,29 @@ describe.runIf(POSIX)('a project whose base is reached through a link', () => {
     });
     expect(outcome).toMatchObject({ exitCode: 0, enforced: true });
     expect(await readFile(join(real, 'seen'), 'utf8')).toBe(`${real}|${real}`);
+  });
+
+  it('keeps a shared store that an environment it is handed names behind a link', async () => {
+    const base = await world();
+    await linked(base, 'store-real', 'ln');
+    const store = join(base, 'ln', 'store');
+    const env = { OPM_STORE_HOME: store };
+
+    expect(await usableSharedRoot(join(base, 'project'), env)).toBe(store);
+    const handle = await openStableDirectory(join(store, 'sha256-entry'), true);
+    await handle.close();
+    expect(await readdir(join(base, 'store-real', 'store'))).toEqual([
+      'sha256-entry',
+    ]);
+    await mkdir(join(base, 'outside'));
+    await symlink(
+      join(base, 'outside'),
+      join(base, 'store-real/store/swapped'),
+    );
+    await expect(
+      openStableDirectory(join(store, 'swapped', 'x'), true),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    expect(await readdir(join(base, 'outside'))).toEqual([]);
   });
 
   it('keeps its shared store under a HOME that is a link', async () => {
