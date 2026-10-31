@@ -31,12 +31,12 @@ safety rail removed, and it was a defect in what #43 shipped.
 
 ## Layers as merged
 
-| Layer | What                                           | PR                                                                                                                                       | Commit    |
-| ----- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| 1 + 2 | Validate on publish; serviceability from reads | [#44](https://github.com/OpenPacker-Labs/OpenPacker/pull/44)                                                                            | `29fb4b1` |
-| 3     | Revocation list and key rotation               | [#45](https://github.com/OpenPacker-Labs/OpenPacker/pull/45)                                                                            | `b61927a` |
+| Layer | What                                           | PR                                                                                                                                     | Commit    |
+| ----- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| 1 + 2 | Validate on publish; serviceability from reads | [#44](https://github.com/OpenPacker-Labs/OpenPacker/pull/44)                                                                           | `29fb4b1` |
+| 3     | Revocation list and key rotation               | [#45](https://github.com/OpenPacker-Labs/OpenPacker/pull/45)                                                                           | `b61927a` |
 | 4     | Holders, quotas, rename/transfer               | [#48](https://github.com/OpenPacker-Labs/OpenPacker/pull/48) (superseded [#46](https://github.com/OpenPacker-Labs/OpenPacker/pull/46)) | `74a5d03` |
-| 5     | Read-time negotiation; FTS5 search             | [#47](https://github.com/OpenPacker-Labs/OpenPacker/pull/47)                                                                            | `2a8c03c` |
+| 5     | Read-time negotiation; FTS5 search             | [#47](https://github.com/OpenPacker-Labs/OpenPacker/pull/47)                                                                           | `2a8c03c` |
 
 ## Decisions worth keeping
 

@@ -24,12 +24,12 @@
 
 ## Merge
 
-| Field     | Value                                                       |
-| --------- | ----------------------------------------------------------- |
+| Field     | Value                                                      |
+| --------- | ---------------------------------------------------------- |
 | PR        | [#1](https://github.com/OpenPacker-Labs/OpenPacker/pull/1) |
-| Merge SHA | `d39d5daab048047733ed26cdf1ade9e48023a87e`                  |
-| Method    | squash-merge                                                |
-| CI        | not used as finish gate                                     |
+| Merge SHA | `d39d5daab048047733ed26cdf1ade9e48023a87e`                 |
+| Method    | squash-merge                                               |
+| CI        | not used as finish gate                                    |
 
 ## Local gates used at finish
 

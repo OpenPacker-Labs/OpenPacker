@@ -35,8 +35,8 @@ User-resolved open questions: no require-pin profile; first-party pin-mode now
 
 ## Stack layers
 
-| Layer | Branch                                       | Scope                                                              | PR                                                                        |
-| ----- | -------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| Layer | Branch                                       | Scope                                                              | PR                                                                       |
+| ----- | -------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------ |
 | 01    | sdlc/host-fetch-deferred-01-pin-mode         | Extract classify-and-pin into BoundedFetchTransport (undici Agent) | [#120](https://github.com/OpenPacker-Labs/OpenPacker/pull/120) `55b7f41` |
 | 02    | sdlc/host-fetch-deferred-02-adr              | ADR 0041 decision record                                           | [#121](https://github.com/OpenPacker-Labs/OpenPacker/pull/121) `b87b319` |
 | 03    | sdlc/host-fetch-deferred-03-artifact-origins | `[plugins.<id>] artifact_origins` union env pins                   | [#122](https://github.com/OpenPacker-Labs/OpenPacker/pull/122) `d319565` |

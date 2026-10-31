@@ -34,9 +34,8 @@ thread or in an ADR.
 
 Conduct reports follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Send them
 through GitHub private reporting for `OpenPacker-Labs/OpenPacker`
-(<https://github.com/OpenPacker-Labs/OpenPacker/security/advisories/new>)
-and/or contact [@Tyler-R-Kendrick](https://github.com/Tyler-R-Kendrick) on
-GitHub.
+(<https://github.com/OpenPacker-Labs/OpenPacker/security/advisories/new>) and/or
+contact [@Tyler-R-Kendrick](https://github.com/Tyler-R-Kendrick) on GitHub.
 
 ## Releases
 
@@ -48,10 +47,10 @@ Publishing credentials stay outside the repository.
 ## Continuity
 
 If the BDFL is unavailable, no one else is authorized to publish a release of
-`OpenPacker-Labs/OpenPacker` or to change this file, unless a successor is
-named in this section on the default branch. A successor is named only by a
-commit from the BDFL that updates this section. Until then, issues and pull
-requests wait, and the last published tree stands.
+`OpenPacker-Labs/OpenPacker` or to change this file, unless a successor is named
+in this section on the default branch. A successor is named only by a commit
+from the BDFL that updates this section. Until then, issues and pull requests
+wait, and the last published tree stands.
 
 If no successor is named, anyone may fork the repository under its license and
 maintain the fork. This document does not appoint a foundation or a committee to
