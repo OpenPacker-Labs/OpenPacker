@@ -11,7 +11,7 @@ import {
   readDirChildWithTypes,
   removeChild,
   renameChild,
-  writeOwnerFile,
+  writeOwnerFileAt,
   type AbandonJudge,
   type ProcessOwner,
 } from '@openpacker/project-io';
@@ -25,7 +25,8 @@ import { JailPathError } from './paths.js';
  * removing what it made) never removes it, and with whatever the tool wrote to
  * its home it stayed in the temporary directory for good. So each run's
  * directory `home-<uuid>` holds who made it, in `.owner`, written before
- * anything else (`writeOwnerFile`, ADR 0056's record), and the home itself in
+ * anything else (`writeOwnerFileAt`, ADR 0056's record, through a handle of
+ * the directory, as `home` and its `tmp` are made), and the home itself in
  * `home`, which is all the sandbox binds of it: a tool never writes its owner,
  * and in the package-exec profile with the temporary directory under /tmp or
  * /var/tmp (which bwrap mounts empty) it does not see it either. Where the
@@ -63,6 +64,10 @@ export const UNOWNED_JAIL_HOME_MS = 7 * 24 * 60 * 60 * 1000;
 /** The directory inside a run's directory that is the jail's home. */
 const HOME = 'home';
 
+/** How a directory made here is opened again: as a directory, never through a link. */
+const DIRECTORY =
+  constants.O_RDONLY | O_DIRECTORY | (constants.O_NOFOLLOW ?? 0);
+
 /** A tombstone: a home renamed away, to be removed. */
 const TOMBSTONE = /^\.home-.+\.sweep-[0-9a-f-]{36}$/u;
 
@@ -82,12 +87,13 @@ export interface JailRoot {
 
 /**
  * Open the jail root `path`, making it (0700) when it is not there, and
- * refuse it unless it is a directory this process's user owns that no one
- * else may write. It sits in the temporary directory, which every user can
- * write: a root another user made, or left writable, would let that user put
- * a home there whose owner this run then judges, or a link where a home goes.
- * The checks are made on the handle every later step goes through, never on
- * the path again.
+ * refuse it unless it is a directory this process's user owns that others may
+ * not write. It sits in the temporary directory, which every user can write: a
+ * root another user made, or left writable by all, would let that user put a
+ * home there whose owner this run then judges, or a link where a home goes. A
+ * root of this user's that its group may read or write (an older opm made it
+ * under umask 002, or 022) is made 0700. The checks, and that change, are made
+ * on the handle every later step goes through, never on the path again.
  */
 export async function openJailRoot(path: string): Promise<JailRoot> {
   await mkdir(path, { recursive: true, mode: 0o700 });
@@ -110,11 +116,13 @@ export async function openJailRoot(path: string): Promise<JailRoot> {
         'root',
         `${path} is owned by uid ${info.uid}, not by this user (uid ${uid}); remove it, or set TMPDIR to a directory of your own`,
       );
-    if (process.platform !== 'win32' && (info.mode & 0o022) !== 0)
+    if (process.platform !== 'win32' && (info.mode & 0o002) !== 0)
       throw new JailPathError(
         'root',
-        `${path} can be written by its group or by others (mode ${(info.mode & 0o777).toString(8)}); it must be writable by its owner alone`,
+        `${path} can be written by others (mode ${(info.mode & 0o777).toString(8)}); it must be writable by its owner alone`,
       );
+    if (process.platform !== 'win32' && (info.mode & 0o077) !== 0)
+      await handle.chmod(0o700);
     return { path, handle };
   } catch (error) {
     await handle.close().catch(() => undefined);
@@ -143,11 +151,22 @@ export async function makeJailHome(
     );
     try {
       await made.chmod(0o700);
+      // The owner first, then the home and its tmp, each through the handle
+      // of the directory it goes in, never by a path.
+      await writeOwnerFileAt(made, owner);
+      await mkdirChild(made, HOME);
+      const homeDir = await openChild(made, HOME, DIRECTORY);
+      try {
+        await homeDir.chmod(0o700);
+        await mkdirChild(homeDir, 'tmp');
+        const tmp = await openChild(homeDir, 'tmp', DIRECTORY);
+        await tmp.chmod(0o700).finally(() => tmp.close());
+      } finally {
+        await homeDir.close();
+      }
     } finally {
       await made.close();
     }
-    await writeOwnerFile(path, owner);
-    await mkdir(join(home, 'tmp'), { recursive: true, mode: 0o700 });
   } catch (error) {
     await removeJailHome(root, { path, home });
     throw error;

@@ -510,11 +510,11 @@ and an unprivileged bwrap, where the test runs as root.
 ### What a run killed outright leaves
 
 Every run gives its process a home of its own (`$HOME`, with `$TMPDIR` in it)
-under `$TMPDIR/openpacker-sandbox` and removes it when the run ends, a signal
-included. A run killed outright (SIGKILL, a crash, a second signal while `opmx`
-removes what it made) left it there, with whatever the tool wrote, and nothing
-ever removed it: seven of them were in this machine's `/tmp` from one day's test
-runs.
+under `$TMPDIR/openpacker-sandbox-<uid>` and removes it when the run ends, a
+signal included. A run killed outright (SIGKILL, a crash, a second signal while
+`opmx` removes what it made) left it there, with whatever the tool wrote, and
+nothing ever removed it: seven of them were in this machine's `/tmp` from one
+day's test runs.
 
 Decision (`jail-home.ts`):
 
@@ -561,14 +561,19 @@ Decision (`jail-home.ts`):
    (`openJailRoot`). It sits in the temporary directory, which every user can
    write, and its ownership was never checked: a root another user made, or left
    writable, would let that user put a home there whose owner a run then judges,
-   or a link where a home goes. A run opens the root once, without following a
-   link, and refuses it unless that handle is a directory owned by its effective
-   uid and writable by its owner alone (made 0700 when it is not there); every
-   home is made, judged and removed through that handle, the run's own included
-   (`removeChild`), never by the root's path again. A root per uid
-   (`openpacker-sandbox-<uid>`) was not taken: it would strand what earlier runs
-   left in the shared root, and a root another user made in its place would
-   still need refusing.
+   or a link where a home goes. The root is one per user,
+   `openpacker-sandbox-<uid>`, so users who share `/tmp` each have theirs. A run
+   opens it once, without following a link, and refuses it unless that handle is
+   a directory owned by its effective uid that others may not write; one of this
+   user's that its group may read or write (an older opm made it under umask 002
+   or 022) is made 0700 through the handle, and one made new is 0700. Every home
+   is made, judged and removed through that handle, the run's own included
+   (`removeChild`), never by the root's path again; a home's `.owner`, `home`
+   and `home/tmp` are made through a handle of the home's directory
+   (`writeOwnerFileAt`, `mkdirChild`). Runs make nothing in the root all users
+   shared before (`openpacker-sandbox`), and every run still removes from it
+   what ended runs of this user left, where it is this user's own, so nothing an
+   earlier opm left is stranded; one another user made there is left alone.
 
 `jail-home-sweep.test.ts` (sandbox) leaves homes in a jail root and runs through
 `runInSandbox`: a home whose owner is a pid that has ended is removed; one whose
@@ -580,9 +585,12 @@ homes remove each once. Through bwrap, a run's `.owner` names this process and
 the tool cannot read it. A home whose owner is a running `sleep`, and one a
 second process holds through `runInSandbox`, are kept. A home swapped for a link
 after it is listed is judged as what is opened. A root made 0777, and one owned
-by uid 65534, are refused; a tool that moves the root away and leaves a link to
-a decoy in its place does not make the run remove the decoy's directory of its
-home's name.
+by uid 65534, are refused; one of this user's at 0775 or 0755 is made 0700 and
+used; the root is named by the uid, and a shared `openpacker-sandbox` and an
+`openpacker-sandbox-65534` another user made beside it do not stop a run, which
+still removes a dead home this user left in the shared root; a tool that moves
+the root away and leaves a link to a decoy in its place does not make the run
+remove the decoy's directory of its home's name.
 
 ### What stopped it
 

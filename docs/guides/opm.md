@@ -1258,9 +1258,9 @@ removed when the run ends, Ctrl-C and SIGTERM included (a second signal ends
 ended, judged by the same owner rule as a step's lock (`.owner`, ADR 0056); what
 another host, container or earlier boot left there and cannot be placed stays,
 and a left-behind view makes `opm gc --shared` keep its entries. The home each
-run gives its tool, under `$TMPDIR/openpacker-sandbox`, is judged the same way
-by the next sandboxed run; one with no owner, from an earlier opm, is removed
-once the directory itself has not changed for a week.
+run gives its tool, under `$TMPDIR/openpacker-sandbox-<uid>`, is judged the same
+way by the next sandboxed run; one with no owner, from an earlier opm, is
+removed once the directory itself has not changed for a week.
 
 ### Delegated adapter plugins
 

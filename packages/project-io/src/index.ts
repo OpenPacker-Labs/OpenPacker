@@ -413,6 +413,7 @@ export {
   readOwnerFile,
   readOwnerFileAt,
   writeOwnerFile,
+  writeOwnerFileAt,
   type OwnerFileProblem,
   type OwnerFileRead,
 } from './owner-file.js';

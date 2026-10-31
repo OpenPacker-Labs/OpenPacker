@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import {
   chmod,
   chown,
@@ -329,14 +329,67 @@ describe('a home swapped for a link after it was listed', () => {
 });
 
 describe('the jail root', () => {
-  it('is refused when its group or others may write it', async () => {
+  it('is refused when others may write it', async () => {
     await ownTmpdir();
     const root = defaultJailHomeRoot();
     await chmod(root, 0o777);
     await expect(aRun()).rejects.toThrow(
-      /can be written by its group or by others \(mode 777\)/u,
+      /can be written by others \(mode 777\)/u,
     );
     expect(await readdir(root)).toEqual([]);
+  });
+
+  it.each([
+    ['0775', 0o775],
+    ['0755', 0o755],
+  ])(
+    'is made 0700 when this user owns it and it is %s, as an older opm left it',
+    async (_, mode) => {
+      await ownTmpdir();
+      const root = defaultJailHomeRoot();
+      await chmod(root, mode);
+      expect((await aRun()).exitCode).toBe(0);
+      expect((await lstat(root)).mode & 0o777).toBe(0o700);
+    },
+  );
+
+  it('is this user’s own, by its uid, beside any other user’s', () => {
+    expect(defaultJailHomeRoot()).toBe(
+      join(
+        realpathSync.native(tmpdir()),
+        `openpacker-sandbox-${process.geteuid?.()}`,
+      ),
+    );
+  });
+
+  it.runIf(process.geteuid?.() === 0)(
+    'is not stopped by the root of the same name another user made in the shared temporary directory',
+    async () => {
+      const dir = await ownTmpdir();
+      // As an opm before roots per uid left it, made by someone else.
+      const shared = join(dir, 'openpacker-sandbox');
+      await mkdir(shared);
+      await chown(shared, 65534, 65534);
+      const other = join(dir, 'openpacker-sandbox-65534');
+      await mkdir(other, { mode: 0o700 });
+      await chown(other, 65534, 65534);
+      expect((await aRun()).exitCode).toBe(0);
+      expect(await readdir(defaultJailHomeRoot())).toEqual([]);
+    },
+  );
+
+  it('still removes what ended runs left in the shared root an older opm used', async () => {
+    const dir = await ownTmpdir();
+    const shared = join(dir, 'openpacker-sandbox');
+    await mkdir(shared, { mode: 0o700 });
+    const dead = join(shared, 'home-left');
+    await mkdir(join(dead, 'home'), { recursive: true });
+    await writeOwnerFile(dead, {
+      ...(await currentOwner()),
+      pid: await ended(),
+    });
+    expect((await aRun()).exitCode).toBe(0);
+    expect(present([dead])).toEqual([false]);
   });
 
   it.runIf(process.geteuid?.() === 0)(

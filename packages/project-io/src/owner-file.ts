@@ -2,7 +2,7 @@ import { constants } from 'node:fs';
 import { open, rename, rm, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { openChild } from './handle-path.js';
+import { openChild, removeChild, renameChild } from './handle-path.js';
 import {
   currentOwner,
   parseProcessOwner,
@@ -29,12 +29,54 @@ const OWNER_FILE_BYTES = 1024;
  */
 export type OwnerFileProblem = 'missing' | 'unreadable';
 
+/** What an owner file holds for `owner`. */
+const ownerText = (owner: ProcessOwner): string =>
+  `${JSON.stringify({ ownerVersion: 1, owner })}\n`;
+
+/**
+ * `writeOwnerFile` through `dir`, a handle of the directory, never by its
+ * path: the temporary file is made and renamed over as a child of that handle,
+ * so the directory it lands in is the one that was opened.
+ */
+export async function writeOwnerFileAt(
+  dir: FileHandle,
+  owner?: ProcessOwner,
+): Promise<void> {
+  const text = ownerText(owner ?? (await currentOwner()));
+  const temporary = `.${OWNER_FILE}.${randomUUID()}.tmp`;
+  const file = await openChild(
+    dir,
+    temporary,
+    constants.O_WRONLY |
+      constants.O_CREAT |
+      constants.O_EXCL |
+      (constants.O_NOFOLLOW ?? 0),
+    0o644,
+  );
+  try {
+    await file.writeFile(text);
+    await file.chmod(0o644);
+    await file.sync();
+  } catch (error) {
+    await file.close();
+    await removeChild(dir, temporary, { force: true });
+    throw error;
+  }
+  await file.close();
+  try {
+    await renameChild(dir, temporary, OWNER_FILE);
+  } catch (error) {
+    await removeChild(dir, temporary, { force: true });
+    throw error;
+  }
+}
+
 /** Write the owner file of `dir`: this process unless `owner` says another. */
 export async function writeOwnerFile(
   dir: string,
   owner?: ProcessOwner,
 ): Promise<void> {
-  const text = `${JSON.stringify({ ownerVersion: 1, owner: owner ?? (await currentOwner()) })}\n`;
+  const text = ownerText(owner ?? (await currentOwner()));
   const temporary = join(dir, `.${OWNER_FILE}.${randomUUID()}.tmp`);
   const file = await open(
     temporary,

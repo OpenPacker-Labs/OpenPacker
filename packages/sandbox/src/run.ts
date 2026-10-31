@@ -6,12 +6,17 @@ import {
   SandboxBackendError,
 } from './backends/mock.js';
 import { createNativeBackend, probeNativeBackends } from './backends/native.js';
-import { defaultJailHomeRoot, scrubEnvironment } from './env.js';
+import {
+  defaultJailHomeRoot,
+  scrubEnvironment,
+  sharedJailHomeRoot,
+} from './env.js';
 import { boundPaths, pathsToOpen } from './handles.js';
 import {
   makeJailHome,
   openJailRoot,
   removeJailHome,
+  sweepJailHomes,
   sweepJailHomesIn,
   type JailHome,
 } from './jail-home.js';
@@ -178,8 +183,10 @@ export async function runInSandbox(
   const jailRoot = await openJailRoot(defaultJailHomeRoot());
   let jail: JailHome;
   try {
-    // What runs killed outright left here, judged by their owners.
+    // What runs killed outright left here, judged by their owners, and in
+    // the root all users' runs shared before there was one per user.
     await sweepJailHomesIn(jailRoot);
+    await sweepJailHomes(sharedJailHomeRoot());
     jail = await makeJailHome(jailRoot);
   } catch (error) {
     await jailRoot.handle.close().catch(() => undefined);

@@ -9,9 +9,9 @@
  * run ends, whatever is in it is named in the failure, and removed either way.
  *
  * Three things in it are not a suite's: Node's compile cache, the sandbox's
- * jail root (`openpacker-sandbox`), which every sandboxed run shares and keeps,
- * and `openpacker-runs`, where a run whose project it may not write makes its
- * scratch, which those runs share and keep too. What is left in either is a
+ * jail root (`openpacker-sandbox-<uid>`), which every sandboxed run of a user
+ * shares and keeps, and `openpacker-runs`, where a run whose project it may not
+ * write makes its scratch, which those runs share and keep too. What is left in either is a
  * run that did not remove its own, and is named like anything else.
  */
 import { chmodSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
@@ -19,13 +19,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const KEPT = new Set(['node-compile-cache']);
-const SHARED_ROOTS = new Set(['openpacker-sandbox', 'openpacker-runs']);
+/** The directories runs share in it, by name. */
+const shared = (name) =>
+  name === 'openpacker-runs' ||
+  name === 'openpacker-sandbox' ||
+  name.startsWith('openpacker-sandbox-');
 
 /** What a run left in `root`, by name. */
 export function leftovers(root) {
   return readdirSync(root).flatMap((name) => {
     if (KEPT.has(name)) return [];
-    if (!SHARED_ROOTS.has(name)) return [name];
+    if (!shared(name)) return [name];
     return readdirSync(join(root, name)).map((home) => `${name}/${home}`);
   });
 }
