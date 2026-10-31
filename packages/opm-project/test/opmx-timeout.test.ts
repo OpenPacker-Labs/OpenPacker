@@ -145,3 +145,32 @@ describe('[sandbox] opmx_timeout_ms', () => {
     },
   );
 });
+
+describe('[sandbox] timeout_ms', () => {
+  it.each(['-1', '1.5', '"300"', '2147483648', '1e12'])(
+    'refuses %s when opm.toml is read, naming the key',
+    (value) => {
+      let error: unknown;
+      try {
+        policyOf(`timeout_ms = ${value}`);
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeInstanceOf(OpmError);
+      // SAFETY: just checked to be an OpmError.
+      expect((error as OpmError).code).toBe('INVALID_MANIFEST');
+      // SAFETY: as above.
+      expect((error as OpmError).message).toContain('timeout_ms');
+    },
+  );
+
+  it('takes whole milliseconds up to 2147483647, 0 for none', () => {
+    for (const value of [0, 1, 600_000, 2_147_483_647]) {
+      // SAFETY: The extended sandbox knobs live on PolicyInput untyped (toml.ts).
+      const policy = policyOf(`timeout_ms = ${value}`) as {
+        timeoutMs?: number;
+      };
+      expect(policy.timeoutMs).toBe(value);
+    }
+  });
+});

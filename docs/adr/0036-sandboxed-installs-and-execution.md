@@ -428,8 +428,10 @@ Decision:
    default of `timeout_ms`, ten minutes, which is for what runs unattended (an
    install's lifecycle scripts), no longer applies to `opmx`. All take whole
    milliseconds, 0 for none, up to 2^31 - 1, what a timer can wait
-   (`parseRunTimeout`); anything else is refused, a key by `INVALID_MANIFEST`.
-   The library leaves the choice to its caller: `runSandboxedPackageProcess`
+   (`parseRunTimeout`); anything else is refused, a key by `INVALID_MANIFEST`
+   when `opm.toml` is read. That holds for `timeout_ms` too, which also bounds
+   lifecycle scripts: a timer asked for more than 2^31 - 1 ms fires at once. The
+   library leaves the choice to its caller: `runSandboxedPackageProcess`
    requires the limit it applies (`timeoutMs`) and reads none from the project
    on its own. `opmx pkg:...` reads no project, so only `--timeout` applies to
    it. MXC is given no limit of its own (its SDK sets none when it is omitted);

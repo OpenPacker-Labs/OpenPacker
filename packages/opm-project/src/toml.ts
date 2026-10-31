@@ -1069,8 +1069,14 @@ function sandboxFromScratch(
     ext.allowDangerousGrants = scratch.allow_dangerous_grants;
   if (typeof scratch.legacy_fat_root === 'boolean')
     ext.legacyFatRoot = scratch.legacy_fat_root;
+  // By the rule opmx_timeout_ms is read by: a timer longer than 2^31 - 1 ms
+  // fires at once, and would end every lifecycle script it bounds.
   if (typeof scratch.timeout_ms === 'number')
-    ext.timeoutMs = scratch.timeout_ms;
+    ext.timeoutMs = parseRunTimeout(
+      String(scratch.timeout_ms),
+      'sandbox.timeout_ms',
+      'INVALID_MANIFEST',
+    );
   if (typeof scratch.opmx_timeout_ms === 'number')
     ext.opmxTimeoutMs = parseRunTimeout(
       String(scratch.opmx_timeout_ms),
