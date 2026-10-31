@@ -182,17 +182,42 @@ export function parseShebang(line: string): Interpreter {
 /**
  * The POSIX shim. `relative` is validated by `readPackageBins` and the package
  * name by the planner; it is single-quoted so nothing in it is interpreted.
+ *
+ * A script node runs gets a shim that is also a JavaScript program: npm links
+ * `.bin/<name>` to the script, so `node node_modules/.bin/tsc` runs tsc there,
+ * and projects and people do write that. sh reads the second line (`:` is a
+ * no-op, then `exec`) and never reaches the rest; node strips the `#!` line,
+ * reads `':'` as a string and the rest of that line as a comment, then runs
+ * the script as the entry point it would be through npm's link: `require.main`
+ * is that module and `process.argv[1]` its path. Interpreter flags from the
+ * shebang are not applied that way, as they are not through npm's link.
  */
 export function renderPosixShim(
   relative: string,
   interpreter: Interpreter,
 ): string {
   const quote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
+  const exec = `exec ${[interpreter.program, ...interpreter.args].map(quote).join(' ')} "$basedir"${quote(`/${relative}`)} "$@"`;
+  if (interpreter.program !== 'node')
+    return [
+      '#!/bin/sh',
+      '# Written by OpenPacker. The package is addressed relative to this file.',
+      'basedir=$(dirname "$0")',
+      exec,
+      '',
+    ].join('\n');
   return [
     '#!/bin/sh',
-    '# Written by OpenPacker. The package is addressed relative to this file.',
-    'basedir=$(dirname "$0")',
-    `exec ${[interpreter.program, ...interpreter.args].map(quote).join(' ')} "$basedir"${quote(`/${relative}`)} "$@"`,
+    `':' //; basedir=$(dirname "$0"); ${exec}`,
+    '// Written by OpenPacker. The package is addressed relative to this file.',
+    '// sh runs the line above; node, handed this file, runs what follows.',
+    "import('node:path').then(({ default: path }) =>",
+    "  import('node:module').then(({ default: Module }) => {",
+    `    const script = path.join(path.dirname(process.argv[1]), ${JSON.stringify(relative)});`,
+    '    process.argv[1] = script;',
+    '    Module.runMain(script);',
+    '  }),',
+    ');',
     '',
   ].join('\n');
 }
