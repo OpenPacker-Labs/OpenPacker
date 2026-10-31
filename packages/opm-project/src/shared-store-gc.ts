@@ -11,8 +11,14 @@ import {
   readDirChildWithTypes,
   removeStableFile,
   removeStableTree,
+  storeKeyFromDigest,
 } from './paths.js';
 import { assertEntryName } from './shared-store.js';
+import {
+  INTEGRITY_INDEX,
+  isIntegrityKey,
+  lookupArchiveDigest,
+} from './shared-store-index.js';
 import { openCollection, type Collection } from './shared-store-lease.js';
 import type { LeaseSteps } from './store-lease.js';
 import {
@@ -51,6 +57,12 @@ export interface SharedStoreCollection {
   tooNew: number;
   /** Unreferenced entries left alone because a running install claimed them. */
   held: number;
+  /**
+   * Integrity index records removed (or that would be, on a dry run): each
+   * named an entry that is gone, whether this collection removed it or an
+   * older one did, or names none at all.
+   */
+  records: string[];
 }
 
 /**
@@ -102,6 +114,7 @@ export async function collectSharedStoreWith(
     referenced: 0,
     tooNew: 0,
     held: 0,
+    records: [],
   };
   if (requested === undefined) return result;
   result.root = requested.root;
@@ -206,7 +219,88 @@ export async function collectSharedStoreWith(
     result,
     seams.orphan,
   );
+  await collectIndexRecords(root, now - minimumAge, input.dryRun, result);
   return result;
+}
+
+/**
+ * Remove each integrity index record whose entry is gone: the ones that named
+ * an entry this collection just removed, and the ones an older collection left
+ * behind (it removed entries and not their records). A record never outlives
+ * its entry. An install writes a record only after its entry is in place, so
+ * a record with no entry is dead, except one whose entry an install is
+ * publishing right now (`.<key>.materialize-…`), which is left to it. A
+ * malformed record names nothing and goes too. Each is moved aside first, and
+ * put back if an install wrote it again meanwhile or its entry appeared, so
+ * nothing an install just recorded is lost. Leftovers of a collection that
+ * died while moving one are removed once old.
+ */
+async function collectIndexRecords(
+  root: string,
+  before: number,
+  dryRun: boolean | undefined,
+  result: SharedStoreCollection,
+): Promise<void> {
+  const index = join(root, INTEGRITY_INDEX);
+  const names = await readdir(index).catch((error: unknown) => {
+    if (isMissing(error)) return [];
+    throw error;
+  });
+  // On a dry run the entries it would remove are still there: count them gone.
+  const collected = new Set(
+    result.removed.map((path) => path.slice(root.length + 1)),
+  );
+  const present = new Set(
+    (await readdir(root)).filter((name) => !collected.has(name)),
+  );
+  const busy = new Set(
+    [...present].flatMap(
+      (name) => /^\.(sha256-[0-9a-f]{64})\.materialize-/u.exec(name)?.[1] ?? [],
+    ),
+  );
+  const named = async (key: string) => {
+    const digest = await lookupArchiveDigest(root, key);
+    return digest === undefined ? undefined : storeKeyFromDigest(digest);
+  };
+  for (const name of names.sort()) {
+    const path = join(index, name);
+    if (/^\..+\.collect-[0-9a-f-]{36}$/u.test(name)) {
+      const info = await lstat(path).catch(() => undefined);
+      if (dryRun !== true && info !== undefined && info.mtimeMs < before)
+        await removeStableFile(path).catch(() => undefined);
+      continue;
+    }
+    if (!isIntegrityKey(name)) continue;
+    const judged = await lstat(path, { bigint: true }).catch(() => undefined);
+    if (judged?.isFile() !== true) continue;
+    const entry = await named(name);
+    if (entry !== undefined && (present.has(entry) || busy.has(entry)))
+      continue;
+    if (dryRun === true) {
+      result.records.push(path);
+      continue;
+    }
+    const doomed = join(index, `.${name}.collect-${randomUUID()}`);
+    if (
+      !(await rename(path, doomed).then(
+        () => true,
+        () => false,
+      ))
+    )
+      continue;
+    const moved = await lstat(doomed, { bigint: true });
+    const appeared =
+      entry !== undefined &&
+      (await lstat(join(root, entry)).then(
+        () => true,
+        () => false,
+      ));
+    if (appeared || !sameRecord(judged, moved))
+      // Never over a record written since.
+      await link(doomed, path).catch(() => undefined);
+    else result.records.push(path);
+    await removeStableFile(doomed).catch(() => undefined);
+  }
 }
 
 /**

@@ -27,6 +27,11 @@ export const INTEGRITY_INDEX = 'by-integrity';
 
 const KEY = /^(?:sha512|sha384|sha256|sha1)-[0-9a-f]{40,128}$/u;
 
+/** Whether `name` is an integrity key, so a file of that name in the index is a record. */
+export function isIntegrityKey(name: string): boolean {
+  return KEY.test(name);
+}
+
 function indexPath(sharedRoot: string, key: string): string {
   if (!KEY.test(key))
     throw new OpmError('INVALID_DIGEST', `Invalid integrity key ${key}`);

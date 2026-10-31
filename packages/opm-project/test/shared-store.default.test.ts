@@ -583,6 +583,7 @@ describe('opm gc --shared', () => {
       referenced: 0,
       tooNew: 0,
       held: 0,
+      records: [],
     });
     expect(
       await collectSharedStore({ env: { OPM_STORE_HOME: 'off' } }),
