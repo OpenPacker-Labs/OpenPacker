@@ -1,4 +1,5 @@
 import { canonicalDigest } from '@openpacker/canonical';
+import { realBase } from '@openpacker/project-io';
 import type { Digest, SemanticLoss } from '@openpacker/contracts';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
@@ -151,23 +152,32 @@ export function assertPathNotRootOrHome(
 ): void {
   if (allowDangerous) return;
   const p = resolve(raw);
-  if (p === '/' || p === resolve('/')) {
+  if (p === '/' || realBase(p) === '/') {
     throw new JailPathError(
       label,
       `refusing ${label} at filesystem root; set sandbox.allow_dangerous_grants = true`,
     );
   }
-  let home: string | undefined;
-  try {
-    home = resolve(homedir());
-  } catch {
-    home = undefined;
-  }
-  if (home && p === home) {
+  const home = homeForms().find((form) => p === form || realBase(p) === form);
+  if (home !== undefined) {
     throw new JailPathError(
       label,
       `refusing ${label} at the user home (${home}); set sandbox.allow_dangerous_grants = true`,
     );
+  }
+}
+
+/**
+ * The user home as written and as its real path. A grant is taken as the real
+ * path of its base (`assertSafeJailPath`), so where `HOME` is a link the home
+ * checks must know both, or the real form would pass as somewhere else.
+ */
+function homeForms(): string[] {
+  try {
+    const home = resolve(homedir());
+    return [...new Set([home, realBase(home)])];
+  } catch {
+    return [];
   }
 }
 
@@ -177,21 +187,21 @@ export function assertGrantsNotDangerous(
   allowDangerous: boolean,
 ): void {
   if (allowDangerous) return;
-  let home: string | undefined;
-  try {
-    home = resolve(homedir());
-  } catch {
-    home = undefined;
-  }
+  const homes = homeForms();
   for (const raw of writePaths) {
     const p = resolve(raw);
-    if (p === '/' || p === resolve('/')) {
+    if (p === '/' || realBase(p) === '/') {
       throw new JailPathError(
         'write grant',
         'refusing write grant for filesystem root; set sandbox.allow_dangerous_grants = true',
       );
     }
-    if (home && (p === home || p.startsWith(home + '/'))) {
+    const home = homes.find((form) =>
+      [p, realBase(p)].some(
+        (candidate) => candidate === form || candidate.startsWith(form + '/'),
+      ),
+    );
+    if (home !== undefined) {
       throw new JailPathError(
         'write grant',
         `refusing write grant under home (${home}); set sandbox.allow_dangerous_grants = true`,

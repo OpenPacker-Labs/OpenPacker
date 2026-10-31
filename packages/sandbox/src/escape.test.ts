@@ -9,6 +9,7 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -86,6 +87,8 @@ describe('jail path validation', () => {
     const moved = join(root, 'approved');
     mkdirSync(granted);
     writeFileSync(join(granted, 'proof'), 'stable');
+    // A grant is bound at the real path of its base (a linked TMPDIR here).
+    const approved = realpathSync(granted);
     try {
       const outcome = await runInSandbox({
         argv: ['/usr/bin/true'],
@@ -99,7 +102,7 @@ describe('jail path validation', () => {
             renameSync(granted, moved);
             symlinkSync(homedir(), granted, 'dir');
             const authority = input.directoryAuthorities?.find(
-              ({ path }) => path === granted,
+              ({ path }) => path === approved,
             );
             expect(authority).toBeDefined();
             const fdRoot =
@@ -448,7 +451,8 @@ describe.skipIf(!bwrapReady)('native bwrap package-exec suite', () => {
       argv: [
         process.execPath,
         '-e',
-        `require('fs').writeFileSync(${JSON.stringify(victim)},'ok')`,
+        // Inside the jail the project is at its real path.
+        `require('fs').writeFileSync(${JSON.stringify(realpathSync(victim))},'ok')`,
       ],
       cwd: project,
       policy: { mode: 'fail-closed', prefer: 'native', projectWrite: true },
@@ -468,7 +472,8 @@ describe.skipIf(!bwrapReady)('native bwrap package-exec suite', () => {
       argv: [
         process.execPath,
         '-e',
-        `require('fs').writeFileSync(${JSON.stringify(target)},'ok')`,
+        // Inside the jail the package is at its real path.
+        `require('fs').writeFileSync(${JSON.stringify(join(realpathSync(pkg), 'built.bin'))},'ok')`,
       ],
       cwd: pkg,
       policy: { mode: 'fail-closed', prefer: 'native' },

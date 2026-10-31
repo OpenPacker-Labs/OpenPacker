@@ -11,6 +11,7 @@ import { defaultJailHomeRoot, scrubEnvironment } from './env.js';
 import { containmentWithdrawnNote } from './platform.js';
 import {
   assertSafeJailPath,
+  atRealBases,
   normalizeJailPaths,
   openStableJailPath,
 } from './paths.js';
@@ -79,8 +80,9 @@ function outcomeEnforced(
  * Run argv inside the sandbox policy.
  */
 export async function runInSandbox(
-  input: RunInSandboxInput,
+  given: RunInSandboxInput,
 ): Promise<SandboxOutcome> {
+  const input = atRealBases(given);
   // An executable snapshot is run from its descriptor, which only Linux can
   // do. Refuse before a backend is resolved or a handle opened, with the
   // platform and what to do, rather than after a path that never resolved.

@@ -2,7 +2,11 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { realpathSync } from 'node:fs';
 import { type FileHandle } from 'node:fs/promises';
-import { openStablePath, StableHandleError } from '@openpacker/project-io';
+import {
+  openStablePath,
+  StableHandleError,
+  stableTarget,
+} from '@openpacker/project-io';
 
 /**
  * Credential directories masked inside native jails.
@@ -114,8 +118,12 @@ export function assertSafeJailPath(value: string, kind = 'path'): string {
   if (parts.some((part) => part === '..'))
     throw new JailPathError(kind, 'path must not contain ".." segments');
   // Bind helpers follow symlinked ancestors. Refuse any alias rather than
-  // letting an apparently package-local grant resolve to / or $HOME.
-  const absolute = resolve(value);
+  // letting an apparently package-local grant resolve to / or $HOME. The base
+  // a grant lies under ($TMPDIR, $HOME, an XDG or OPM_* home, a project root
+  // opm took) is taken as its real path first, as every stable walk takes it
+  // (project-io trusted-base.ts, ADR 0034), so the grant is that real path;
+  // a link below the base is still an alias and refused.
+  const absolute = stableTarget(value);
   let existing = absolute;
   for (;;) {
     try {
@@ -132,6 +140,35 @@ export function assertSafeJailPath(value: string, kind = 'path'): string {
     }
   }
   return absolute;
+}
+
+/**
+ * `input` with its working directory and directory authorities at the real
+ * path of their base, as {@link assertSafeJailPath} takes a grant: what the
+ * jail binds, changes into and is handed by descriptor then name one place,
+ * spelled without a link. A path with a `..` segment is left as written, for
+ * the checks that refuse it.
+ */
+export function atRealBases<
+  T extends {
+    cwd: string;
+    directoryAuthorities?: readonly { fd: number; path: string }[];
+  },
+>(input: T): T {
+  const real = (path: string) =>
+    path.replaceAll('\\', '/').split('/').includes('..')
+      ? path
+      : stableTarget(path);
+  return {
+    ...input,
+    cwd: real(input.cwd),
+    ...(input.directoryAuthorities !== undefined && {
+      directoryAuthorities: input.directoryAuthorities.map((authority) => ({
+        ...authority,
+        path: real(authority.path),
+      })),
+    }),
+  };
 }
 
 /**
