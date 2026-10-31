@@ -48,6 +48,8 @@ function recording(after?: (operation: string, name: string) => Promise<void>) {
     },
     mkdirChild: inner.mkdirChild,
     renameChild: inner.renameChild,
+    renameBetween: inner.renameBetween,
+    linkBetween: inner.linkBetween,
     removeChild: inner.removeChild,
     lstatChild: async (parent, name) => {
       const info = await inner.lstatChild(parent, name);

@@ -27,6 +27,7 @@ import {
   rename,
   rm,
   rmdir,
+  symlink,
   unlink,
   type FileHandle,
 } from 'node:fs/promises';
@@ -224,12 +225,78 @@ export async function renameChild(
   await rename(posixChild(parent, from), posixChild(parent, to));
 }
 
+/**
+ * Move the child `from` of `fromParent` to `to` in `toParent`: `renameat` with
+ * two directory descriptors. Neither end is reached through a path, so a
+ * swapped ancestor of either redirects nothing.
+ */
+export async function moveChild(
+  fromParent: FileHandle,
+  from: string,
+  toParent: FileHandle,
+  to: string,
+): Promise<void> {
+  assertHandleSegment(from);
+  assertHandleSegment(to);
+  if (process.platform === 'win32') {
+    await windowsRenameChild(fromParent, from, to, true, toParent);
+    return;
+  }
+  const libc = libcBackend();
+  if (libc !== undefined)
+    return libc.renameBetween(fromParent, from, toParent, to);
+  await rename(posixChild(fromParent, from), posixChild(toParent, to));
+}
+
+/**
+ * Make the symbolic link `name` of `parent` saying `target`, as it was: the
+ * putting back of a link a rollback copy kept. The link is made relative to
+ * the handle (`symlinkat`) and its target is text, never followed or checked.
+ * Windows makes links by path only, so this refuses there (StableHandleError).
+ */
+export async function restoreLinkChild(
+  parent: FileHandle,
+  name: string,
+  target: string,
+): Promise<void> {
+  assertHandleSegment(name);
+  if (process.platform === 'win32')
+    throw new StableHandleError(
+      'Symbolic links through directory handles are unavailable on Windows',
+    );
+  const libc = libcBackend();
+  if (libc !== undefined) return libc.symlinkChild(parent, name, target);
+  await symlink(target, posixChild(parent, name));
+}
+
 export async function removeChild(
   parent: FileHandle,
   name: string,
-  options: { recursive?: boolean; force?: boolean } = {},
+  options: {
+    recursive?: boolean;
+    force?: boolean;
+    /** The child is a directory, removed only if it is empty (`rmdir`); ENOTEMPTY otherwise. */
+    emptyDirectory?: boolean;
+  } = {},
 ): Promise<void> {
   assertHandleSegment(name);
+  if (options.emptyDirectory === true) {
+    try {
+      if (process.platform === 'win32')
+        await windowsRemoveChild(parent, name, {});
+      else {
+        const libc = libcBackend();
+        if (libc !== undefined) await libc.rmdirChild(parent, name);
+        else await rmdir(posixChild(parent, name));
+      }
+    } catch (error) {
+      // SAFETY: only the errno code of the failed removal is read.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (options.force === true && code === 'ENOENT') return;
+      throw error;
+    }
+    return;
+  }
   if (process.platform === 'win32') {
     await windowsRemoveChild(parent, name, options);
     return;
@@ -300,8 +367,9 @@ async function removeDirectoryChild(
  * not followed by link(2) on POSIX, which means a name swapped for a symlink
  * after the caller inspected it links the symlink itself; the caller must
  * compare the linked entry's identity with what it inspected (see
- * `materialiseTree`). Windows has no handle-relative link here and throws, so
- * callers copy instead.
+ * `materialiseTree`). macOS links with `linkat` (flag 0, which does not follow
+ * a source that is a link either). Windows has no handle-relative link here
+ * and throws, so callers copy instead.
  */
 export async function linkChild(
   fromParent: FileHandle,
@@ -315,6 +383,9 @@ export async function linkChild(
     throw new StableHandleError(
       'Hard links through directory handles are unavailable on Windows',
     );
+  const libc = libcBackend();
+  if (libc !== undefined)
+    return libc.linkBetween(fromParent, fromName, toParent, toName);
   await link(posixChild(fromParent, fromName), posixChild(toParent, toName));
 }
 
@@ -627,6 +698,8 @@ export async function windowsRenameChild(
   from: string,
   to: string,
   replaceIfExists = true,
+  /** The directory `to` is in, when it is not `parent`: RootDirectory takes any directory handle. */
+  toParent: FileHandle = parent,
 ): Promise<void> {
   const api = nt();
   // FileRenameInformation requires DELETE access on the handle being renamed.
@@ -639,7 +712,7 @@ export async function windowsRenameChild(
   );
   try {
     const osHandle = api.getOsFHandle(source.fd);
-    const parentOsHandle = api.getOsFHandle(parent.fd);
+    const parentOsHandle = api.getOsFHandle(toParent.fd);
     const nameW = Buffer.from(to, 'utf16le');
     // RootDirectory is the parent OS handle, so the relative target name
     // stays handle-relative and never re-walks a path from the object-manager

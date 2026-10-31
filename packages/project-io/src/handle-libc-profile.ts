@@ -66,6 +66,8 @@ const SYMBOLS = [
   'fstatat',
   'symlinkat',
   'readlinkat',
+  'linkat',
+  'fcntl',
   'fdopendir',
   'readdir',
   'closedir',
@@ -87,6 +89,11 @@ export interface LibcAtProfile {
   readonly atRemoveDir: number;
   /** O_CLOEXEC: Node's fs.constants omits it, but libuv sets it on every open. */
   readonly openCloexec: number;
+  /**
+   * F_GETPATH (<sys/fcntl.h>): the path the system gives an open descriptor.
+   * Linux has none; there `/proc/self/fd/N` says it.
+   */
+  readonly fGetPath: number | undefined;
   readonly stat: StatLayout;
   readonly dirent: DirentLayout;
 }
@@ -238,6 +245,8 @@ export function darwinProfile(arch: string = process.arch): LibcAtProfile {
     atSymlinkNoFollow: 0x0020,
     atRemoveDir: 0x0080,
     openCloexec: 0x01000000,
+    // <sys/fcntl.h>: F_GETPATH 50, filling a MAXPATHLEN (1024) buffer.
+    fGetPath: 50,
     stat: DARWIN_STAT,
     dirent: DARWIN_DIRENT,
   };
@@ -258,6 +267,7 @@ export function linuxGlibcProfile(arch: string = process.arch): LibcAtProfile {
     atSymlinkNoFollow: 0x100,
     atRemoveDir: 0x200,
     openCloexec: 0o2000000,
+    fGetPath: undefined,
     stat: arch === 'x64' ? LINUX_X64_STAT : LINUX_ARM64_STAT,
     dirent: LINUX_DIRENT,
   };

@@ -69,6 +69,20 @@ export interface ChildBackend {
   ): Promise<FileHandle>;
   mkdirChild(parent: FileHandle, name: string): Promise<void>;
   renameChild(parent: FileHandle, from: string, to: string): Promise<void>;
+  /** `renameat(fromParent, from, toParent, to)`: a rename between two open directories. */
+  renameBetween(
+    fromParent: FileHandle,
+    from: string,
+    toParent: FileHandle,
+    to: string,
+  ): Promise<void>;
+  /** `linkat(fromParent, from, toParent, to, 0)`: a hard link between two open directories; a source that is a link is linked as itself. */
+  linkBetween(
+    fromParent: FileHandle,
+    from: string,
+    toParent: FileHandle,
+    to: string,
+  ): Promise<void>;
   removeChild(
     parent: FileHandle,
     name: string,
@@ -112,6 +126,14 @@ function loadKoffi(): Koffi {
       `Handle-relative I/O could not load koffi: ${reason}`,
     );
   }
+}
+
+/**
+ * The C library bound for `profile`, for the callers that make their own calls
+ * through it (the resolution of a base, `base-resolve-libc.ts`).
+ */
+export function bindProfile(profile: LibcAtProfile): LibcApi {
+  return bindLibc(profile, loadKoffi());
 }
 
 function isAbsent(error: NodeJS.ErrnoException): boolean {
@@ -268,6 +290,26 @@ export function createLibcAtBackend(profile: LibcAtProfile): ChildBackend {
       check(
         attempt(api, () => api.renameat(parent.fd, from, parent.fd, to)),
         'rename',
+        from,
+        to,
+      );
+    },
+
+    async renameBetween(fromParent, from, toParent, to) {
+      const api = native();
+      check(
+        attempt(api, () => api.renameat(fromParent.fd, from, toParent.fd, to)),
+        'rename',
+        from,
+        to,
+      );
+    },
+
+    async linkBetween(fromParent, from, toParent, to) {
+      const api = native();
+      check(
+        attempt(api, () => api.linkat(fromParent.fd, from, toParent.fd, to)),
+        'link',
         from,
         to,
       );

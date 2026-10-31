@@ -38,6 +38,8 @@ export function counting(inner: ChildBackend): {
       openChild: tick(inner.openChild),
       mkdirChild: tick(inner.mkdirChild),
       renameChild: tick(inner.renameChild),
+      renameBetween: tick(inner.renameBetween),
+      linkBetween: tick(inner.linkBetween),
       removeChild: tick(inner.removeChild),
       lstatChild: tick(inner.lstatChild),
       readDirChild: tick(inner.readDirChild),

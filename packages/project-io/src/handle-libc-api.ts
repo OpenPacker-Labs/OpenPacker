@@ -48,6 +48,10 @@ export interface LibcApi {
   fstatat(dirfd: number, path: string, out: Buffer, flags: number): number;
   symlinkat(target: string, newdirfd: number, linkpath: string): number;
   readlinkat(dirfd: number, path: string, out: Buffer, size: number): number;
+  /** linkat(fromfd, from, tofd, to, 0): a new name for `from`, which is not followed when it is a link. */
+  linkat(fromfd: number, from: string, tofd: number, to: string): number;
+  /** fcntl(fd, cmd, buffer): F_GETPATH, the only command made. */
+  fcntlPath(fd: number, cmd: number, out: Buffer): number;
   fdopendir(fd: number): NativePointer | null;
   readdir(stream: NativePointer): NativePointer | null;
   closedir(stream: NativePointer): number;
@@ -86,6 +90,19 @@ type ReadlinkatCall = (
   path: string,
   out: Buffer,
   size: number,
+) => number;
+type LinkatCall = (
+  fromfd: number,
+  from: string,
+  tofd: number,
+  to: string,
+  flags: number,
+) => number;
+type FcntlCall = (
+  fd: number,
+  cmd: number,
+  outType: 'void *',
+  out: Buffer,
 ) => number;
 type FdopendirCall = (fd: number) => NativePointer | null;
 type ReaddirCall = (stream: NativePointer) => NativePointer | null;
@@ -162,6 +179,15 @@ export function bindLibc(profile: LibcAtProfile, koffi: Koffi): LibcApi {
     'void *',
     'uint64',
   ]);
+  const linkat = bind<LinkatCall>('linkat', 'int', [
+    'int',
+    'str',
+    'int',
+    'str',
+    'int',
+  ]);
+  // fcntl() is variadic, as openat() is: the buffer's type goes before it.
+  const fcntl = bind<FcntlCall>('fcntl', 'int', ['int', 'int', '...']);
   const fdopendir = bind<FdopendirCall>('fdopendir', 'void *', ['int']);
   const readdir = bind<ReaddirCall>('readdir', 'void *', ['void *']);
   const closedir = bind<ClosedirCall>('closedir', 'int', ['void *']);
@@ -179,6 +205,9 @@ export function bindLibc(profile: LibcAtProfile, koffi: Koffi): LibcApi {
     fstatat,
     symlinkat,
     readlinkat,
+    // Flag 0: a source that is a link is linked as itself, never followed.
+    linkat: (fromfd, from, tofd, to) => linkat(fromfd, from, tofd, to, 0),
+    fcntlPath: (fd, cmd, out) => fcntl(fd, cmd, 'void *', out),
     fdopendir,
     readdir,
     closedir,
