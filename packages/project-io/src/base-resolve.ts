@@ -8,12 +8,15 @@
  * of the directory before it, and a link is followed only when two rules allow
  * it (ADR 0034, trusted bases):
  *
- * - **No link inside a fence.** A fence is the identity (device and inode) of
- *   a directory that holds what a project or a validated root holds. A link
- *   whose directory, or any directory above it on the way, is fenced belongs
- *   to that project and is never followed, whatever path named the project:
- *   a bind mount, a case variant on a case-insensitive volume or a firmlink
- *   of the project is the same directory, so the same fence.
+ * - **No link inside a fence or a checkout.** A fence is the identity (device
+ *   and inode) of a directory that holds what a project or a validated root
+ *   holds; a checkout is a directory that holds `.git` (a directory, or the
+ *   gitfile of a worktree or a submodule), looked at relative to its own
+ *   handle. A link whose directory, or any directory above it on the way, is
+ *   fenced or a checkout belongs to that project and is never followed,
+ *   whatever path named the project: a bind mount, a case variant on a
+ *   case-insensitive volume or a firmlink of the project is the same
+ *   directory, so the same fence, and holds the same `.git`.
  * - **`protected_symlinks`' own rule, whatever the system's setting.** A link
  *   in a sticky directory that anyone may write to is followed only when it
  *   belongs to the user resolving it or to the directory's owner.
@@ -73,6 +76,8 @@ export function identityOf(path: string): Identity | undefined {
 export type Refusal =
   /** It lies in a fenced directory: it is the project's. */
   | 'fenced'
+  /** It lies in a directory that holds `.git`, or below one: it is that checkout's. */
+  | 'checkout'
   /** It lies in a sticky directory anyone may write to, and belongs to neither the user nor the directory's owner. */
   | 'sticky'
   /** It changed between being judged and being read. */
@@ -86,9 +91,12 @@ export interface Resolution {
   readonly identity: Identity | undefined;
   /** The fence keys of every directory a followed link lay in or below. */
   readonly linkAncestors: ReadonlySet<string>;
-  /** The link the resolution stopped at, and why. */
+  /**
+   * The link the resolution stopped at, and why; for a link in a fence or a
+   * checkout, `by` is that directory (as its fence was named, or as reached).
+   */
   readonly refused:
-    | { readonly link: string; readonly why: Refusal }
+    | { readonly link: string; readonly why: Refusal; readonly by?: string }
     | undefined;
   /**
    * The deepest directory the resolution reached: how many components of
@@ -279,11 +287,19 @@ interface Step {
   readonly uid: bigint;
   readonly mode: bigint;
   readonly fenced: boolean;
+  /** It holds `.git`: a checkout's root, a worktree's or a submodule's. */
+  readonly checkout: boolean;
 }
 
 export interface ResolveOptions {
-  /** Fence keys: no link in or below one of these directories is followed. */
-  readonly fences: { has(key: string): boolean };
+  /**
+   * Fence keys: no link in or below one of these directories is followed.
+   * `get`, where there is one, names a fence in what is said of a refusal.
+   */
+  readonly fences: {
+    has(key: string): boolean;
+    get?(key: string): string | undefined;
+  };
   /** The user resolving, for the sticky rule; undefined where there is none (Windows). */
   readonly euid: number | undefined;
 }
@@ -291,6 +307,21 @@ export interface ResolveOptions {
 /** The user the sticky rule speaks for. */
 export function currentEuid(): number | undefined {
   return process.platform === 'win32' ? undefined : process.geteuid?.();
+}
+
+/** `protected_symlinks`: a link in a sticky directory anyone may write to, of neither the user nor the directory's owner. */
+function stickyRefuses(
+  directory: Pick<Step, 'mode' | 'uid'>,
+  link: Inspected,
+  euid: number | undefined,
+): boolean {
+  return (
+    (directory.mode & S_ISVTX) !== 0n &&
+    (directory.mode & S_IWOTH) !== 0n &&
+    euid !== undefined &&
+    link.uid !== BigInt(euid) &&
+    link.uid !== directory.uid
+  );
 }
 
 /**
@@ -320,6 +351,13 @@ export function resolveWith(
       throw error;
     }
     const identity = { dev: info.dev, ino: info.ino };
+    let checkout: boolean;
+    try {
+      checkout = ops.inspectAt(fd, '.git') !== undefined;
+    } catch (error) {
+      ops.close(fd);
+      throw error;
+    }
     stack.push({
       fd,
       name,
@@ -327,6 +365,7 @@ export function resolveWith(
       uid: info.uid,
       mode: info.mode,
       fenced: options.fences.has(identityKey(identity)),
+      checkout,
     });
   };
   const closeAll = () => {
@@ -334,6 +373,20 @@ export function resolveWith(
   };
   const display = (name: string) =>
     join(...stack.map((step) => step.name), name);
+  /** The nearest fence or checkout a link at the top of the stack lies in. */
+  const enclosing = (): { why: Refusal; by: string } | undefined => {
+    let at = stack.length - 1;
+    while (at >= 0 && !stack[at]!.fenced && !stack[at]!.checkout) at -= 1;
+    if (at === -1) return undefined;
+    const step = stack[at]!;
+    const reached = join(...stack.slice(0, at + 1).map((each) => each.name));
+    return step.checkout
+      ? { why: 'checkout', by: reached }
+      : {
+          why: 'fenced',
+          by: options.fences.get?.(identityKey(step.identity)) ?? reached,
+        };
+  };
   try {
     push(ops.openRoot(firstRoot), firstRoot);
     while (pending.length > 0) {
@@ -358,17 +411,17 @@ export function resolveWith(
         push(fd, name);
         continue;
       }
-      const why: Refusal | undefined = stack.some((step) => step.fenced)
-        ? 'fenced'
-        : (top.mode & S_ISVTX) !== 0n &&
-            (top.mode & S_IWOTH) !== 0n &&
-            options.euid !== undefined &&
-            found.uid !== BigInt(options.euid) &&
-            found.uid !== top.uid
-          ? 'sticky'
-          : undefined;
+      const inside = enclosing();
+      const why: Refusal | undefined =
+        inside?.why ??
+        (stickyRefuses(top, found, options.euid) ? 'sticky' : undefined);
       if (why !== undefined || links >= MAXIMUM_LINKS) {
-        if (why !== undefined) refused = { link: display(name), why };
+        if (why !== undefined)
+          refused = {
+            link: display(name),
+            why,
+            ...(inside !== undefined && { by: inside.by }),
+          };
         kept = [name, ...pending];
         break;
       }

@@ -16,7 +16,9 @@ import { basename, dirname, parse, relative, resolve, sep } from 'node:path';
 import { resolverOps, sameIdentity, type Identity } from './base-resolve.js';
 import { O_DIRECTORY, mkdirChild, openChild } from './handle-path.js';
 import { ProjectIoError } from './index.js';
+import type { Resolution } from './base-resolve.js';
 import {
+  refusalReason,
   resolveForWalk,
   takeOpened,
   walkPlan,
@@ -42,6 +44,30 @@ function notADirectory(part: string): Error {
   return error;
 }
 
+/**
+ * A walk refused at a link the resolution of its base did not follow: the
+ * same error, its code kept, saying which link, and which checkout or fence
+ * holds it, so the person can name a path without it.
+ */
+function explained(
+  error: unknown,
+  path: string,
+  refused: Resolution['refused'],
+): unknown {
+  const reason = refusalReason(refused);
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  if (reason === undefined || (code !== 'ENOTDIR' && code !== 'ELOOP'))
+    return error;
+  const said: NodeJS.ErrnoException & { refusedBy?: string } = new Error(
+    `${code}: ${path} was not opened: ${reason}`,
+    { cause: error },
+  );
+  said.code = code;
+  said.path = path;
+  if (refused?.by !== undefined) said.refusedBy = refused.by;
+  return said;
+}
+
 function differs(path: string): ProjectIoError {
   return new ProjectIoError(
     'INPUT_CHANGED',
@@ -60,6 +86,7 @@ async function walkFrom(
   baseDepth: number,
   baseIdentity: Identity | undefined,
   options: WalkOptions,
+  refused?: Resolution['refused'],
 ): Promise<FileHandle> {
   const root = parse(target).root;
   let handle = await open(
@@ -110,7 +137,7 @@ async function walkFrom(
     return handle;
   } catch (error) {
     await handle.close().catch(() => undefined);
-    throw error;
+    throw explained(error, path, refused);
   }
 }
 
@@ -129,6 +156,7 @@ export async function walkStable(
     plan.baseDepth,
     plan.baseIdentity,
     options,
+    plan.refused,
   );
 }
 
@@ -163,6 +191,7 @@ export async function openRootDirectory(
     way.reached.depth,
     way.reached.identity,
     { create: options.create, createMode: 0o700 },
+    way.refused,
   );
   if (!options.lastMayBeLink) {
     const name = basename(lexical);

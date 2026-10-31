@@ -146,9 +146,14 @@ export async function openJudgedRoot(
 ): Promise<FileHandle> {
   const { what } = options;
   const opening = await openRootDirectory(root, options).catch(
-    (error: NodeJS.ErrnoException) => {
+    (error: NodeJS.ErrnoException & { refusedBy?: string }) => {
       if (error.code === 'ELOOP' || error.code === 'ENOTDIR')
-        throw linkedRoot(root, what);
+        throw linkedRoot(
+          root,
+          what,
+          // Which checkout or fence held the link, as the walk said it.
+          error.refusedBy === undefined ? undefined : error.message,
+        );
       throw error;
     },
   );
@@ -177,10 +182,10 @@ export async function openJudgedRoot(
   }
 }
 
-function linkedRoot(root: string, what: string): OpmError {
+function linkedRoot(root: string, what: string, why?: string): OpmError {
   return new OpmError(
     'UNSAFE_PATH',
-    `${what} is linked or not a directory: ${root}`,
+    `${what} is linked or not a directory: ${root}${why === undefined ? '' : ` (${why})`}`,
   );
 }
 

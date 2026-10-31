@@ -30,13 +30,14 @@
  *   starts under one and kept.
  *
  * A base is resolved by `base-resolve.ts`, one directory handle at a time:
- * no link in a fenced directory is followed, and none another user put in a
- * sticky directory anyone may write to. A fence is the identity of a
- * directory whose links are its own: the project the command runs in and the
- * checkout that holds it (fenced before any base is resolved,
- * {@link beginCommand}), every root taken, and
- * nothing is ever unfenced while the command runs. A fence added after a base
- * was resolved through a link it holds unmakes that base.
+ * no link in a fenced directory or a checkout (a directory holding `.git`) is
+ * followed, and none another user put in a sticky directory anyone may write
+ * to. A fence is the identity of a directory whose links are its own: the
+ * project the command runs in, every checkout around it and around each base
+ * the environment names, the tree it runs in and every root taken (fenced
+ * before any base is resolved, {@link beginCommand}). Nothing is ever
+ * unfenced while the command runs. A fence added after a base was resolved
+ * through a link it holds unmakes that base.
  *
  * A base leads to one place for the whole command: a walk under one first
  * checks that its path still leads to the directory it was resolved to, and
@@ -46,6 +47,11 @@
 import { lstatSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, parse, resolve, sep } from 'node:path';
+import {
+  checkoutsAround,
+  gitEnvironmentTrees,
+  topmostBelow,
+} from './checkout-fences.js';
 import {
   componentsOf,
   currentEuid,
@@ -318,6 +324,8 @@ export interface WalkPlan {
   readonly baseDepth: number;
   /** The directory the walk must find after `baseDepth` components; undefined when there is nothing to check. */
   readonly baseIdentity: Identity | undefined;
+  /** The link on the way to the base that was not followed, and why: what a refusal at it says. */
+  readonly refused?: Resolution['refused'];
 }
 
 /**
@@ -352,7 +360,28 @@ export function walkPlan(
         ? 0
         : componentsOf(resolution.real).length,
     baseIdentity: resolution.identity,
+    ...(resolution.refused !== undefined && { refused: resolution.refused }),
   };
+}
+
+/** What a base's link that was not followed means to a person, or undefined. */
+export function refusalReason(
+  refused: Resolution['refused'],
+): string | undefined {
+  if (refused === undefined) return undefined;
+  const remedy =
+    'name OPM_STORE_HOME, OPM_TOOL_CACHE, XDG_CACHE_HOME or XDG_CONFIG_HOME ' +
+    'at a path reached without it';
+  switch (refused.why) {
+    case 'checkout':
+      return `the link ${refused.link} lies in the checkout ${refused.by ?? '(unnamed)'}, and opm follows no link a checkout holds (ADR 0034); ${remedy}`;
+    case 'fenced':
+      return `the link ${refused.link} lies in ${refused.by ?? 'a fenced directory'}, which opm fenced for this command (a checkout, the project or tree it runs in, or a root it took), and opm follows no link there (ADR 0034); ${remedy}`;
+    case 'sticky':
+      return `the link ${refused.link} belongs to another user and lies in a directory others may write to, so opm does not follow it`;
+    case 'changed':
+      return `the link ${refused.link} changed while opm was reading it`;
+  }
 }
 
 /**
@@ -415,63 +444,135 @@ function present(path: string): boolean {
   }
 }
 
+/** The paths the environment names a base or a root at, absolute ones only, and the home directory's defaults. */
+function namedBases(
+  env: NodeJS.ProcessEnv,
+  home: string | undefined,
+): string[] {
+  const named = [
+    ...environmentBases(env),
+    ...['OPM_STORE_HOME', 'OPM_TOOL_CACHE', 'OPM_AUTH_CONFIG'].map(
+      (name) => env[name]?.trim() ?? '',
+    ),
+  ];
+  if (home !== undefined)
+    named.push(
+      join(home, '.cache'),
+      join(home, '.config'),
+      join(home, '.local', 'share'),
+      join(home, '.local', 'state'),
+    );
+  return named.filter((path) => path !== '' && isAbsolute(path));
+}
+
 /**
- * Fence the project the command runs in, and the checkout it lies in: the
- * nearest directory, from the working directory's real path up, that holds a
- * project marker (else the working directory itself), and the nearest that
- * holds `.git`, a directory or a gitfile (a worktree's). Their links are the
- * project's and the checkout's (`.cache -> /outside`, committed at the root
- * of a monorepo whose package the command runs in), so no base is resolved
- * through one, whatever the environment names there. The search stops below
- * the home directory, and neither the home directory, a directory above it
- * nor a file system's root is ever fenced: the person's own links
- * (`~/.cache -> /data/cache`) are theirs. Returns the directories fenced,
- * the project's first.
+ * Fence what a command run in `cwd` must not resolve a base through, before
+ * any base is resolved, and return the directories fenced (ADR 0034, trusted
+ * bases):
+ *
+ * - the project it runs in: the nearest directory, from the working
+ *   directory's real path up and below the home directory, that holds
+ *   `opm.toml`, `opm.lock.json`, `package.json` or `.git`, else the working
+ *   directory itself;
+ * - every checkout around the working directory, to the file system's root
+ *   and past the home directory: each directory that holds `.git` (a
+ *   directory or a gitfile), the superproject or main work tree a gitfile's
+ *   `gitdir:` leads to, and the work tree `GIT_WORK_TREE` or `GIT_DIR` names
+ *   (`checkout-fences.ts`). A home directory that is itself a checkout (a
+ *   dotfiles repository) is fenced like any other, so its links are not
+ *   followed, as opm followed none before;
+ * - the tree it runs in, a checkout or not: the topmost directory of the
+ *   working directory below the home or temporary directory that holds it,
+ *   else below the file system's root (`/workspace` for
+ *   `/workspace/repo/packages/a`), and the temporary directory itself where
+ *   it holds a project marker;
+ * - every checkout around each base the environment names, wherever the
+ *   command runs: `TMPDIR`, `HOME` and its defaults (`~/.cache`, `~/.config`,
+ *   `~/.local/share`, `~/.local/state`), the XDG directories,
+ *   `OPM_PLUGIN_HOME`, `OPM_STORE_HOME`, `OPM_TOOL_CACHE` and
+ *   `OPM_AUTH_CONFIG`, walked from where each is written.
+ *
+ * The home directory, the temporary directory and a file system's root are
+ * fenced only as a checkout (or the temporary directory as a marked project):
+ * the person's own links (`~/.cache -> /data/cache`) stay theirs.
  */
-export function fenceWorkingProject(cwd: string): string[] {
+export function fenceWorkingProject(
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
   const start = resolveBase(cwd);
-  if (start.identity === undefined) return [];
   let home: string | undefined;
   try {
-    home = resolveBase(homedir()).real;
+    home = homedir();
   } catch {
     // A process with no home directory has no home to keep out.
   }
-  const outside = (dir: string) =>
-    dir === parse(dir).root || (home !== undefined && under(home, dir));
-  let project: string | undefined;
-  let checkout: string | undefined;
-  for (let dir = start.real; !outside(dir); dir = dirname(dir)) {
-    if (
-      project === undefined &&
-      PROJECT_MARKERS.some((marker) => present(join(dir, marker)))
-    )
-      project = dir;
-    if (present(join(dir, '.git'))) {
-      checkout = dir;
-      break;
-    }
+  let temporary: string | undefined;
+  try {
+    temporary = tmpdir();
+  } catch {
+    // Nor a temporary directory.
   }
-  if (project === undefined && !outside(start.real)) project = start.real;
+  const homeReal = home === undefined ? undefined : resolveBase(home).real;
+  const temporaryReal =
+    temporary === undefined ? undefined : resolveBase(temporary).real;
+  const roots = [home, homeReal, temporary, temporaryReal].filter(
+    (root): root is string => root !== undefined && isAbsolute(root),
+  );
   const fenced: string[] = [];
-  for (const dir of [project, checkout]) {
-    if (dir === undefined || fenced.includes(dir)) continue;
+  const fence = (dir: string | undefined) => {
+    if (dir === undefined || fenced.includes(dir)) return;
     const identity = identityOf(dir);
-    if (identity === undefined) continue;
+    if (identity === undefined) return;
     addFence(identity, dir);
     fenced.push(dir);
+  };
+  if (start.identity !== undefined) {
+    const outside = (dir: string) =>
+      dir === parse(dir).root ||
+      (homeReal !== undefined && under(homeReal, dir));
+    let project: string | undefined;
+    for (let dir = start.real; !outside(dir); dir = dirname(dir))
+      if (PROJECT_MARKERS.some((marker) => present(join(dir, marker)))) {
+        project = dir;
+        break;
+      }
+    if (project === undefined && !outside(start.real)) project = start.real;
+    fence(project);
   }
+  const working = [start.real, resolve(cwd)];
+  for (const dir of checkoutsAround([
+    ...working,
+    ...gitEnvironmentTrees(resolve(cwd), env),
+  ]))
+    fence(dir);
+  for (const tree of gitEnvironmentTrees(resolve(cwd), env)) fence(tree);
+  if (start.identity !== undefined) {
+    const tree = topmostBelow(start.real, roots);
+    fence(tree);
+    if (
+      tree !== undefined &&
+      temporaryReal !== undefined &&
+      dirname(tree) === temporaryReal &&
+      PROJECT_MARKERS.some((marker) => present(join(temporaryReal, marker)))
+    )
+      fence(temporaryReal);
+  }
+  for (const dir of checkoutsAround(namedBases(env, home))) fence(dir);
   return fenced;
 }
 
 /**
  * Begin a command run in `cwd`: forget what the last one took, then fence the
- * project it runs in, and the checkout that holds it, before any base is
- * resolved ({@link fenceWorkingProject}).
- * Every process entry calls it first, and so does a host that runs several
- * commands in one process, at each.
+ * project it runs in, the checkouts and the tree around it and around the
+ * bases its environment names, before any base is resolved
+ * ({@link fenceWorkingProject}). Every process entry calls it first, and so
+ * does a host that runs several commands in one process, at each.
  */
-export function beginCommand(cwd: string): void {
+export function beginCommand(
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
   forgetBases();
-  fenceWorkingProject(cwd);
+  fenceWorkingProject(cwd, env);
 }

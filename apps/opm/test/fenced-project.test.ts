@@ -244,6 +244,10 @@ describe.runIf(POSIX)('commands run one after another in one process', () => {
   it('each take their project where it is when they begin', async () => {
     const world = await mkdtemp(join(await realpath(tmpdir()), 'opm-two-'));
     worlds.push(world);
+    // The person's own link, in their home directory: each command fences
+    // the tree it runs in below the home directory (`a`, then `b`), and the
+    // link to it lies above that.
+    vi.stubEnv('HOME', world);
     await mkdir(join(world, 'a'));
     await mkdir(join(world, 'b'));
     const root = join(world, 'project');

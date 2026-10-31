@@ -165,9 +165,11 @@ describe.runIf(POSIX)('the project a command runs in', () => {
     expect(await readdir(outside)).toEqual([]);
   });
 
-  it('is the nearest directory with a project marker above the working directory, else the working directory, and the checkout that holds it', async () => {
+  it('is the nearest directory with a project marker above the working directory, else the working directory, with the checkout that holds it and the tree it runs in', async () => {
     const base = await world();
-    vi.stubEnv('HOME', join(base, 'home'));
+    // The world is the home directory, so the tree each command runs in is
+    // the world's child that holds it (`repo`, `loose`).
+    vi.stubEnv('HOME', base);
     await mkdir(join(base, 'repo', 'packages', 'a', 'src'), {
       recursive: true,
     });
@@ -176,6 +178,7 @@ describe.runIf(POSIX)('the project a command runs in', () => {
     const src = join(base, 'repo', 'packages', 'a', 'src');
     expect(fenceWorkingProject(src)).toEqual([
       join(base, 'repo', 'packages', 'a'),
+      join(base, 'repo'),
     ]);
     await mkdir(join(base, 'repo', '.git'));
     forgetBases();
@@ -217,10 +220,10 @@ describe.runIf(POSIX)('the project a command runs in', () => {
     },
   );
 
-  it('is never the home directory, a directory above it or the root: the person’s own links stay theirs', async () => {
+  it('is never a home directory that is no checkout, a directory above it or the root: the person’s own links stay theirs', async () => {
     const base = await world();
     const home = join(base, 'home');
-    await mkdir(join(home, '.git'), { recursive: true });
+    await mkdir(home);
     await mkdir(join(base, 'cache-real'));
     await symlink(join(base, 'cache-real'), join(home, '.cache'));
     await mkdir(join(home, 'work'));
