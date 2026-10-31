@@ -21,6 +21,7 @@ import {
   type ProjectFormat,
 } from '@openpacker/adapter-core';
 import { requireAdapterRegistry } from './adapters.js';
+import type { ScriptShims } from './frozen-builds.js';
 import { type FrozenFetchOptions } from './frozen-fetch.js';
 import { assertPatchesFit } from './frozen-patch-fit.js';
 import {
@@ -70,6 +71,11 @@ export interface FrozenInstallInput extends FrozenFetchOptions {
   /** Archives read at the same time. */
   concurrency?: number;
   signal?: AbortSignal;
+  /**
+   * opm's `npm`, `pnpm` and `yarn`, put first on an approved install script's
+   * PATH and mounted read-only in its jail (ADR 0061). The CLI passes its own.
+   */
+  scriptShims?: ScriptShims;
 }
 
 /** What `prepareFrozen` found out, for the install or the plan to go on from. */

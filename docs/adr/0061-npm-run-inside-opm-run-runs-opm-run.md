@@ -4,6 +4,8 @@
 - Date: 2026-10-31
 - Amends [ADR 0047](0047-opm-run-and-exec-run-the-users-own-scripts.md) §11 (the
   environment: the shims lead `PATH`, and two more names are set)
+- Amends [ADR 0060](0060-opm-ci-runs-the-install-scripts-a-project-approved.md)
+  §3 (the `PATH` of an approved install script, and what its jail mounts)
 - Relates: [ADR 0053](0053-opm-run-across-workspace-members.md) (the member
   options the shims pass on)
 
@@ -94,6 +96,25 @@ not reach npm.
    directory first, so the arguments of `npm run x -- a` are escaped for a batch
    file. Checked by text and value here, not run on Windows.
 
+10. **In the install jail too.** The approved install scripts `opm ci` runs
+    (ADR 0060) get the same shims first on their `PATH`, before the package's
+    and the project's `.bin` and the Node that runs opm, and the same
+    `npm_execpath` and `npm_node_execpath`. A package's
+    `"postinstall": "npm run build"` runs its own `build` (with `prebuild` and
+    `postbuild`) through `opm run`, inside the same jail: the package's
+    directory writable, the project read-only, no network. `npm install` there
+    is refused like anywhere else, and the install fails saying so, where npm
+    would have tried the network. The jail mounts, read-only and by their real
+    paths, the opm package (the shims, and the `opm run` they start, which loads
+    nothing else to run a script) and `@openpacker/canonical`, which it loads to
+    word a failure: its own directory and, when Node reaches it through a link
+    (an npm workspace's `node_modules/@openpacker`), the directory of that link.
+    The script cannot write any of them. A layout where that link's directory is
+    itself reached through a link cannot be mounted (the jail binds no path with
+    a link in it), and there a failure inside the nested run is not worded. Only
+    what the CLI hands over is mounted: a caller of `installFrozen` that passes
+    no `scriptShims` gets the jail as before.
+
 ## Consequences
 
 - A chained run is opm's whether or not npm is installed. On this machine (load
@@ -116,5 +137,9 @@ not reach npm.
   `--workspace`, a refused `npm install`, `npm exec` and `--watch`; pnpm's
   `run`, `<script>`, `--filter` and refusals; yarn's words and refusals; and
   with npm on `PATH`), `run-foreign-args.test.ts` (each tool's grammar, the
-  environment on POSIX and Windows, the shims' text and mode) and
-  `run-load.test.ts` (the shims load nothing outside Node and opm's directory).
+  environment on POSIX and Windows, the shims' text and mode),
+  `run-load.test.ts` (the shims load nothing outside Node and opm's directory)
+  and `ci-npm-shim.test.ts` (an approved `postinstall` of
+  `npm run build -- --release` runs `prebuild` and `build` with the argument in
+  the jail; its `npm install` fails the install with the refusal; the `npm` it
+  finds is the shim and writing it fails; the jail mounts real paths only).

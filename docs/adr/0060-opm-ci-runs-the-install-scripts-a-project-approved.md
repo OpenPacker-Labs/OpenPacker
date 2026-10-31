@@ -4,7 +4,9 @@
 - Date: 2026-10-31
 - Amends [ADR 0046](0046-a-lockfile-is-installed-not-re-resolved.md) §9 and
   [ADR 0055](0055-opm-ci-installs-a-pnpm-lock.md) §21 (no install script is run)
-- Amended 2026-10-31: the scripts run in dependency order (§7)
+- Amended 2026-10-31: the scripts run in dependency order (§7), and opm's `npm`,
+  `pnpm` and `yarn` lead their PATH
+  ([ADR 0061](0061-npm-run-inside-opm-run-runs-opm-run.md) §10)
 - Relates:
   [0048](0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md) (no
   symlink in `node_modules` but a member's), the package-exec jail of
@@ -39,10 +41,13 @@ read an allowlist that projects already write:
    the layout is written, so a script finds its dependencies. That is each place
    the package has (HoBo's esbuild 0.25.12 is in four member trees).
 3. **Inside the package-exec jail.** The directory is writable, the project is
-   read-only, there is no network, and `PATH` is that package's and the
-   project's `.bin` then the Node that runs opm. The sandbox now mounts a parent
-   before the paths inside it, so the writable directory stays writable inside
-   the read-only project. A script that fails fails the install.
+   read-only, there is no network, and `PATH` is opm's `npm`, `pnpm` and `yarn`
+   shims (ADR 0061 §10), then that package's and the project's `.bin`, then the
+   Node that runs opm. The shims and the `opm run` they start are mounted
+   read-only: a script that calls `npm run build` runs its own `build` through
+   `opm run` in the same jail, and `npm install` is refused. The sandbox now
+   mounts a parent before the paths inside it, so the writable directory stays
+   writable inside the read-only project. A script that fails fails the install.
 4. **On the package's own files.** They are hard links into the shared store
    until then. Each is replaced by a copy first, so nothing a script writes
    reaches the store or another project.

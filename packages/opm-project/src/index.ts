@@ -302,6 +302,7 @@ export {
   type FrozenInstallResult,
 } from './frozen-install.js';
 export { planFrozen, type FrozenPlan } from './frozen-plan.js';
+export type { ScriptShims } from './frozen-builds.js';
 export type { FrozenWorkspaceRequest } from './frozen-workspace.js';
 export { MAXIMUM_ARCHIVE_BYTES } from './frozen-fetch.js';
 export {

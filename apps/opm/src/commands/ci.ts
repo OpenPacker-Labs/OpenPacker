@@ -17,6 +17,7 @@ import { out, plainLine } from '@openpacker/canonical';
 import { report } from '../error-report.js';
 import { printPeerNotice } from './ci-peers.js';
 import type { CommandArgs, CommandIo } from './yank.js';
+import { jailShims } from './run-shims.js';
 
 /** What `opm ci` accepts beyond the shared argument shape. */
 export interface CiArgs extends CommandArgs {
@@ -276,6 +277,8 @@ export async function runCiCommand(
     ...(args.options.has('online') && { offline: false }),
     ...(options.fetch !== undefined && { fetch: options.fetch }),
     ...(options.step !== undefined && { step: options.step }),
+    // opm's npm, pnpm and yarn for an approved script that calls them (ADR 0061).
+    scriptShims: await jailShims(),
   };
   if (args.options.has('plan')) {
     const plan = await planFrozen(request);

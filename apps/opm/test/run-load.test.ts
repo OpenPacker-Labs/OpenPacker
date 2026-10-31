@@ -50,7 +50,9 @@ async function loadGraph(
 }
 
 describe('what opm run and opm exec load', () => {
-  // The shims answer a script's `npm run` as cheaply as `opm run` does (ADR 0061).
+  // The shims answer a script's `npm run` as cheaply as `opm run` does, and
+  // inside the install jail, where only opm's package and canonical are
+  // mounted (ADR 0061 §10).
   it.each([
     'entry.ts',
     'commands/run.ts',
@@ -65,7 +67,9 @@ describe('what opm run and opm exec load', () => {
     },
   );
 
-  // The shims answer a script's `npm run` as cheaply as `opm run` does (ADR 0061).
+  // The shims answer a script's `npm run` as cheaply as `opm run` does, and
+  // inside the install jail, where only opm's package and canonical are
+  // mounted (ADR 0061 §10).
   it.each([
     'entry.ts',
     'commands/run.ts',

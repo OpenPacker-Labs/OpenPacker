@@ -9,6 +9,9 @@
  *
  * - in the package's own directory under `node_modules`, after the layout, so
  *   the script finds its dependencies the way it does under npm;
+ * - with opm's `npm`, `pnpm` and `yarn` first on PATH when the caller hands
+ *   them over (ADR 0061), so a script's `npm run build` runs its own `build`
+ *   through `opm run`, in the same jail;
  * - inside the package-exec jail, with that directory writable, the project
  *   read-only and no network;
  * - on the package's own copies of its files: they are hard links into the
@@ -50,6 +53,20 @@ export interface BuiltPackage {
   name: string;
   version: string;
   path: string;
+}
+
+/**
+ * The `npm`, `pnpm` and `yarn` an approved script finds first on its PATH
+ * (ADR 0061): opm's, which run a script of the package's own through
+ * `opm run` inside the same jail and refuse every other command.
+ */
+export interface ScriptShims {
+  /** Their directory, first on the script's PATH. */
+  bin: string;
+  /** What they read to run, mounted read-only in the jail: never written by a script. */
+  readonlyPaths: readonly string[];
+  /** Set in the script's environment: `npm_execpath` and `npm_node_execpath`. */
+  env: Readonly<Record<string, string>>;
 }
 
 /** The approved scripts that ran, in the order they ran, and the cycles among them. */
@@ -187,6 +204,8 @@ export async function runApprovedBuilds(input: {
   >;
   /** Whether each package declares an install script, by path. */
   declares: ReadonlyMap<string, boolean>;
+  /** opm's npm, pnpm and yarn; absent, a script finds what the jail's PATH holds. */
+  shims?: ScriptShims | undefined;
 }): Promise<ApprovedBuilds> {
   const approved = input.lock.approvedBuilds;
   if (approved === undefined) return { built: [], cycles: [] };
@@ -203,6 +222,7 @@ export async function runApprovedBuilds(input: {
     ),
     dependencyNames: (dir) => dependencyNamesIn(join(root, ...dir.split('/'))),
   });
+  const shims = input.shims;
   const built: BuiltPackage[] = [];
   for (const pkg of order) {
     const dir = join(root, ...pkg.path.split('/'));
@@ -213,12 +233,14 @@ export async function runApprovedBuilds(input: {
       packageDir: dir,
       packageId: pkg.purl,
       policy: approvalPolicy(pkg.purl),
-      readonlyPaths: [root],
+      readonlyPaths: [root, ...(shims?.readonlyPaths ?? [])],
       pathPrefix: [
+        ...(shims === undefined ? [] : [shims.bin]),
         join(dir, 'node_modules', '.bin'),
         join(root, 'node_modules', '.bin'),
         dirname(process.execPath),
       ],
+      ...(shims !== undefined && { env: shims.env }),
     });
     await linksToFiles(dir, `${pkg.packageName}@${pkg.version} (${pkg.path})`);
     built.push(labelOf(pkg));

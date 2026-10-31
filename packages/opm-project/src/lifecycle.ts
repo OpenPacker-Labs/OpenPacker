@@ -153,6 +153,8 @@ export async function runLifecycleScript(input: {
    * that runs `node` finds it.
    */
   pathPrefix?: readonly string[];
+  /** Set in the script's environment besides the names npm sets (the shims' `npm_execpath`). */
+  env?: Readonly<Record<string, string>>;
 }): Promise<SandboxOutcome> {
   if (!lifecycleScriptsAllowed(input.policy, input.packageId)) {
     throw new OpmError(
@@ -180,6 +182,7 @@ export async function runLifecycleScript(input: {
     argv: [...shell, input.script],
     cwd: input.packageDir,
     env: {
+      ...input.env,
       npm_lifecycle_event: input.event,
       npm_package_name: input.packageId,
       INIT_CWD: input.packageDir,
@@ -230,6 +233,7 @@ export async function runDeclaredLifecycleScripts(input: {
   directoryAuthority?: { fd: number; path: string };
   readonlyPaths?: readonly string[];
   pathPrefix?: readonly string[];
+  env?: Readonly<Record<string, string>>;
 }): Promise<{ executed: boolean; outcomes: SandboxOutcome[] }> {
   if (!hasLifecycleScripts(input.declared)) {
     return { executed: false, outcomes: [] };
@@ -254,6 +258,7 @@ export async function runDeclaredLifecycleScripts(input: {
         readonlyPaths: input.readonlyPaths,
       }),
       ...(input.pathPrefix !== undefined && { pathPrefix: input.pathPrefix }),
+      ...(input.env !== undefined && { env: input.env }),
     });
     outcomes.push(outcome);
     if (outcome.exitCode !== 0) {

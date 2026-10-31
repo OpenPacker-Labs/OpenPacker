@@ -274,6 +274,7 @@ async function installFrozenInStep(
       root,
       lock,
       declares,
+      shims: input.scriptShims,
     });
     const ran = new Set(built.map((item) => item.path));
     const done = now();
