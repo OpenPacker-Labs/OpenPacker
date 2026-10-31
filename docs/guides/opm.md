@@ -215,6 +215,31 @@ through any link is found before it is trusted. Editing a file under
 `node_modules` in place therefore fails: replace the file (write a new one and
 rename it) instead. On Windows files are copied and the default store is off.
 
+**Links on the way to the store, the tool cache and the configuration.** A
+symbolic link you made to place them is followed: `~/.cache -> /mnt/big`,
+`XDG_CACHE_HOME` behind a link, a `TMPDIR` under `/var` on macOS. A link a
+checkout or a project holds is not, wherever the command runs: one in or below a
+directory that holds `.git` (the checkout, a submodule's superproject, a
+worktree's main work tree, `GIT_WORK_TREE`), one in the project or the tree a
+command runs in (its topmost directory below your home or temporary directory,
+else below `/`, such as `/workspace`), and one another user may have made in a
+directory others may write to. The store, the tool cache or the configuration
+named through such a link is refused (an explicit `OPM_STORE_HOME`), or not used
+(the default store), and the error names the link and the checkout that holds
+it. That includes a link CI itself makes inside its workspace, such as
+`.cache -> /cache-volume` with `XDG_CACHE_HOME=$WORKSPACE/.cache`, and every
+link under a home directory that is itself a git checkout (a dotfiles
+repository): set `OPM_STORE_HOME` and `OPM_TOOL_CACHE` (and `XDG_CONFIG_HOME`
+for `opm auth`) to the real path, `/cache-volume/openpacker/store` and
+`/cache-volume/openpacker/x` for example, instead of the path through the link
+([ADR 0034](../adr/0034-opm-projects-into-native-project-formats.md)).
+
+A program that uses `@openpacker/opm-project` or `@openpacker/project-io`
+directly, rather than through `opm`, `opmx` or `openpacker`, calls
+`beginCommand(cwd)` first for each command it runs, and the function it returns
+when that command ends; without it, nothing fences the project it runs in, and a
+link that project holds may be followed to a store or cache.
+
 Measured on 50 packages (79 MB unpacked): the first project costs 84 MiB and a
 second adds 2.6 MiB; with `OPM_STORE_HOME=off` each costs 134 MiB
 ([ADR 0048](../adr/0048-one-copy-per-machine-and-a-node_modules-node-can-resolve.md)).

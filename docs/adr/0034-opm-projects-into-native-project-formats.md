@@ -152,10 +152,18 @@ The bases are:
 
 A path under no base is walked from `/` with every link refused. The taken bases
 are one record per process (both module builds share it, ADR 0017); the 512 most
-recently taken are kept. A command is a process for the CLI; `runOpm` and
-`runOpmx` begin every command they run with `beginCommand`, so a host that runs
-several in one process forgets what the last one took, and a test suite forgets
-between tests (`forgetBases`).
+recently taken are kept. A command is a process for the CLI; `runOpm`, `runOpmx`
+and the `openpacker` CLI's `runCli` begin every command they run with
+`beginCommand(cwd)` and end it with the function it returns, whichever way the
+command ends. A command begun while none is running forgets what the last one
+took; one begun while another runs forgets nothing and only adds its own fences,
+so two commands running at once in one process never drop each other's fences or
+bases, and both sets hold for both until the last ends. A test suite forgets
+between tests (`forgetBases`). Code that uses the library directly
+(`@openpacker/opm-project`, `@openpacker/project-io`) calls `beginCommand` with
+its working directory before anything else, and what it returns when it is done:
+without it, it is fenced only by the roots it takes and by the checkouts its
+bases lie in.
 
 **How a base is resolved.** Not by `realpath(3)`, which follows every link the
 kernel will and knows nothing of a project, and not name by name with `lstat`
@@ -170,9 +178,21 @@ rules allow it:
   fenced is that directory's and is not followed, whatever path named the fenced
   directory: a bind mount of a project, a case variant on a case-insensitive
   volume and a firmlink are the same directory, so the same fence;
+- **no link in a checkout.** A directory that holds `.git` (a directory, or the
+  gitfile of a worktree or a submodule), looked at relative to its own handle,
+  is a checkout, and a link in it or below it is not followed, whether or not
+  anything fenced it: a checkout's links are its own however the checkout is
+  named or reached;
 - **`fs.protected_symlinks`' own rule, whatever the system's setting.** A link
   in a sticky directory that anyone may write to (`/tmp`) is followed only when
-  it belongs to the user resolving it or to that directory's owner.
+  it belongs to the user resolving it or to that directory's owner;
+- **no link another user may have made.** A link in a directory its group or
+  anyone may write to, sticky or not, is followed only when it belongs to the
+  user resolving it or to root. It is judged at every component of a base, the
+  last one included, so the tool cache and the configuration root, which may end
+  in a link, are held to it there too. (The kernel would follow the directory
+  owner's link in a sticky directory; opm does not, unless that owner is root or
+  the user.)
 
 The text of a link is read relative to the same handle and used only if the name
 is still the link that was judged. A link not followed ends the resolution, and
@@ -181,27 +201,60 @@ read from the last handle, as the system names that directory
 (`/proc/self/fd/N`, `fcntl(F_GETPATH)` on macOS).
 
 **What a project holds is the project's, not the person's.** Every taken root is
-fenced, and so, before any base is resolved, are the project a command runs in
-and the checkout that holds it: `beginCommand` fences the nearest directory
-above the working directory's real path that holds `opm.toml`, `opm.lock.json`,
-`package.json` or `.git` (or the working directory itself when none does), and
-the nearest that holds `.git`, a directory or the gitfile of a worktree. So a
-command run in a monorepo's package (`repo/packages/a`, with a `package.json` of
-its own) fences that package and the repository's root, and a link committed at
-the root (`repo/.cache -> /outside`) is the checkout's. The search stops below
-the home directory, and neither the home directory, a directory above it nor a
-file system's root is ever fenced, so the person's own links
-(`~/.cache -> /data/cache`) stay theirs. A fence lasts for the whole command and
-is never forgotten to make room, and a fence added after a base was resolved
-through a link in it unmakes that base, which is resolved again (and refused)
-when it is next used: the order in which a command meets its project and its
-caches does not matter. So an environment base that lies in a project
-(`XDG_CACHE_HOME=$PWD/.cache` in CI, with `.cache` a link the checkout holds) is
-resolved no further than the project, the walk meets the project's link below it
-and refuses it, and the store, the tool cache and the configuration such an
-environment names are refused (an explicit `OPM_STORE_HOME`) or not used (the
-default store), with nothing made where the link points. `opmx pkg:…`, which
-takes no project, is covered by the fence of the project it runs in.
+fenced, and so, before any base is resolved, is everything `beginCommand` finds
+a command may not resolve a base through (`fenceWorkingProject`,
+`checkout-fences.ts`):
+
+- the project it runs in: the nearest directory above the working directory's
+  real path, and below the home directory, that holds `opm.toml`,
+  `opm.lock.json`, `package.json` or `.git` (or the working directory itself
+  when none does);
+- every checkout around it: each directory from the working directory up to the
+  file system's root, past the home directory, that holds `.git`, a directory or
+  a gitfile. A gitfile's `gitdir:` is followed back to the repository that holds
+  it, and from there to the superproject of a submodule
+  (`super/.git/modules/lib`) and, by its `commondir`, to the main work tree of a
+  worktree (`main/.git/worktrees/feature`), each fenced and walked the same way.
+  A submodule or a worktree nested in its main work tree leaves no outer
+  checkout unfenced;
+- the work tree git is told of: `GIT_WORK_TREE`; with `GIT_DIR` alone,
+  `core.worktree` and the working directory (git's top level then); and the
+  directory that holds `GIT_DIR`;
+- the tree it runs in, a checkout or not (an exported archive, a Docker
+  context): the topmost directory of the working directory below the deepest of
+  the home and temporary directories that holds it, else below the file system's
+  root (`/workspace` for `/workspace/repo/packages/a`, `~/code` for
+  `~/code/repo/packages/a`), and the temporary directory itself where it holds a
+  project marker and the command runs in it;
+- every checkout around each base the environment names, wherever the command
+  runs: `TMPDIR`, `HOME` and its defaults (`~/.cache`, `~/.config`,
+  `~/.local/share`, `~/.local/state`), the XDG directories, `OPM_PLUGIN_HOME`,
+  `OPM_STORE_HOME`, `OPM_TOOL_CACHE` and `OPM_AUTH_CONFIG`, walked from where
+  each is written.
+
+So a command run in a monorepo's package (`repo/packages/a`, with a
+`package.json` of its own) fences that package, the repository's root and the
+tree around it, and a link committed at the root (`repo/.cache -> /outside`) is
+the checkout's. The home directory, the temporary directory and a file system's
+root are fenced only as a checkout (or the temporary directory as a marked
+project the command runs in), so the person's own links
+(`~/.cache -> /data/cache`) stay theirs; a home directory that is itself a git
+checkout (a dotfiles repository), or lies in one, is fenced like any other, and
+its links are not followed, as opm followed none before this amendment. A fence
+lasts for the whole command and is never forgotten to make room, and a fence
+added after a base was resolved through a link in it unmakes that base, which is
+resolved again (and refused) when it is next used: the order in which a command
+meets its project and its caches does not matter. So an environment base that
+lies in a project (`XDG_CACHE_HOME=$PWD/.cache` in CI, with `.cache` a link the
+checkout holds) is resolved no further than the project, the walk meets the
+project's link below it and refuses it, and the store, the tool cache and the
+configuration such an environment names are refused (an explicit
+`OPM_STORE_HOME`) or not used (the default store), with nothing made where the
+link points. `opmx pkg:…`, which takes no project, is covered by the fences of
+the command it runs in. A refusal names the link and the checkout or fenced
+directory that holds it, and says to name the store, the tool cache and the
+configuration (`OPM_STORE_HOME`, `OPM_TOOL_CACHE`, `XDG_CACHE_HOME`,
+`XDG_CONFIG_HOME`) at a path reached without it.
 
 **A base leads to one place for the whole command.** Before a walk under a base
 opens anything, the base's path must still lead to the directory it was resolved
@@ -277,9 +330,19 @@ is refused and nothing is written or removed where it points:
   `rollback-files.ts`);
 - the empty `.opm` a step lock removes, relative to the project root's handle
   (`step-lock.ts`), the owner file (`owner-file.ts`), the tool cache
-  (`ephemeral.ts`, `ephemeral-layout.ts`), the auth configuration
-  (`auth-config.ts`), and the store's leases, made and removed below the store
-  root's real path as it was taken (`store-lease.ts`).
+  (`ephemeral.ts`, `ephemeral-layout.ts`) and the scratch directories a run is
+  laid out in and its sweep (`run-scratch.ts`), and the auth configuration, read
+  and written through the directory taken as the configuration root
+  (`auth-config.ts`);
+- the links an approved install script leaves, each made a hard link to the file
+  of the package's own it leads to, followed link by link inside the package,
+  linked under a private name it is proved to be, and renamed over the link
+  (`frozen-builds.ts`);
+- a patched entry's copy, made and published through the store root's handle,
+  and the patch written back into it (`frozen-patch.ts`, and `commitPatchTree`
+  in `adapter-npm`);
+- `opm gc --shared` moving an entry or a record aside and putting a record back
+  (`shared-store-gc.ts`).
 
 A rename between two directories, a symbolic link and a hard link are relative
 to the directories' handles too: through `/proc/self/fd/N` on Linux, `renameat`,
@@ -296,44 +359,67 @@ before, so a lifecycle script that edits its own file can.
 ### What remains
 
 - Windows has no handle-relative hard or symbolic link. A file is copied there
-  instead of linked, and a symbolic link a rollback puts back is the one thing
-  made by path. Windows has no sticky permission either, and its bases are
-  resolved by path, one name at a time, with the same fences.
+  instead of linked, and a symbolic link a rollback puts back and a record
+  `opm gc --shared` puts back are the two things made by path. Windows has no
+  sticky permission either, and its bases are resolved by path, one name at a
+  time, with the same fences.
 - macOS runs the same resolution through libSystem's `*at` calls and
   `F_GETPATH`. The suite runs those calls against glibc on Linux, with
   `/proc/self/fd/N` standing in for `F_GETPATH`; neither has been run on a Mac.
   Where the C library cannot be bound, every handle-relative operation is
   refused already, and a base is resolved by path.
+- The store's leases (`store-lease.ts`, `store-lease-reader.ts`) are made and
+  removed by name below the store root's real path as it was taken, not through
+  a handle: their locks are opened by path with the platform's lock flags
+  (`O_EXLOCK`, a Windows share mode) and probed again by path, which the handle
+  helpers do not carry. They cannot be raced by another user: `.leases` lies in
+  a store root `ensurePrivateRoot` found owned by this user and writable by
+  nobody else, so only this user's processes can put a link at it or below it; a
+  lease creates only new names (`O_CREAT | O_EXCL`, which refuses a link at the
+  name) and removes only the names of its own and of leases it judged abandoned,
+  each `<kind>.<mechanism>.<owner>.<uuid>.<lock|keys|pending>`, so a link put
+  there by this user could make it remove nothing but files of those names.
 - A base is judged as it is found: a link on the way to one, changed while it is
-  being resolved, is the base it then leads to, within the two rules. The check
-  that a base still leads where it did asks the system (`stat`), which follows
-  links as it will; only the identity it answers is used.
-- The project a command runs in is found by its markers, and the checkout that
-  holds it by `.git`. A tree that is not a git checkout (an exported archive, a
-  checkout of another version control system, a `.git` at or above the home
-  directory) fences only the nearest marked directory, so a link committed above
-  it there is followed. Code that uses the library without `beginCommand` is
-  fenced by the projects it takes, when it takes them; what it wrote through a
-  link before then is not undone.
+  being resolved, is the base it then leads to, within the rules above. The
+  check that a base still leads where it did asks the system (`stat`), which
+  follows links as it will; only the identity it answers is used.
+- A checkout is found by its `.git`, and a tree a command runs in by where it
+  lies. A tree with no `.git` and no marker at its root, whose root is the home
+  directory itself (`HOME` at the root of an exported archive, the command run
+  in one of its packages), is fenced from below the home directory only, so a
+  link at that root (`$HOME/.cache`) is followed: the home directory's links are
+  the person's unless it is a checkout. Code that uses the library without
+  `beginCommand` is fenced by the projects it takes, when it takes them, and by
+  the checkouts its bases lie in; what it wrote through another link before then
+  is not undone.
+- A link a person makes inside the tree a command runs in (below the topmost
+  directory under the home or temporary directory, or under `/`), or inside a
+  checkout, is not followed: CI that links `.cache -> /cache-volume` in its
+  workspace names the volume itself in `OPM_STORE_HOME` and `OPM_TOOL_CACHE`
+  (`docs/guides/opm.md`, "Where packages live on disk").
 
 ### What this guarantees
 
 No component below a base is followed by a walk: a link there is refused with
 `ENOTDIR` or `ELOOP` from the open (`UNSAFE_PATH` from the walkers that wrap
 it), and nothing is made where it points. No base is resolved through a link in
-a fenced directory, however that directory is named, nor through a link another
-user put in a sticky directory anyone may write to. A component of a base's real
-path swapped for a link after the base was resolved is refused by the walk, and
-a base that leads somewhere else is refused with `INPUT_CHANGED` before the walk
-makes anything and before a write publishes. A root opm judges is the directory
-it opened, and is taken as that directory. Every rename, link and removal in a
-project or a store is relative to its directories' handles, on Linux and macOS,
-with the exceptions above on Windows.
+a fenced directory or a checkout, however that directory is named, nor through a
+link another user may have put in a directory others may write to. A component
+of a base's real path swapped for a link after the base was resolved is refused
+by the walk, and a base that leads somewhere else is refused with
+`INPUT_CHANGED` before the walk makes anything and before a write publishes. A
+root opm judges is the directory it opened, and is taken as that directory. On
+Linux and macOS, every rename, link and removal opm makes in a project (`.opm`,
+`node_modules`, an approved script's package) or a store (the shared store, a
+project's own store, the tool cache) is relative to its directories' handles,
+except the store's leases, made and removed by name for the reason above; on
+Windows, the two things named above are made by path.
 
 ### Tests
 
 Each failed before this change (on 9aeb116, or for the parts the review of
-3bdddca found, on that commit) and passes after it:
+3bdddca found, on that commit, or for the parts the third review found, on
+76ad596) and passes after it:
 
 - `project-io/src/trusted-base.test.ts`: writes and walks under a `TMPDIR` that
   is a link, under `TMPDIR` laid out as on macOS (a `var` link to `private/var`
@@ -351,12 +437,13 @@ Each failed before this change (on 9aeb116, or for the parts the review of
   through its link before it came; the project a command runs in fenced before
   any base is resolved, found by its markers, with the checkout that holds it
   (its `.git` a directory or a gitfile) when the command runs in a monorepo's
-  package, and never the home directory or a root; a link another user owns in a
-  sticky directory not followed, through `/proc/self/fd` and through glibc's
-  `*at` calls, and one the user or the directory's owner owns followed; the
-  glibc resolution equal to the procfs one; and moves, links and link restores
-  between two open directories, through both backends, acting where the
-  directories were opened, a source that is a link linked as itself;
+  package, and never a home directory that is no checkout or a root; a link
+  another user owns in a sticky directory not followed, through `/proc/self/fd`
+  and through glibc's `*at` calls, the directory owner's included, and one the
+  user owns followed; the glibc resolution equal to the procfs one; and moves,
+  links and link restores between two open directories, through both backends,
+  acting where the directories were opened, a source that is a link linked as
+  itself;
 - `opm-project/test/symlinked-base.test.ts`: `opm init` and `opm add` with a
   `node_modules` layout under a `TMPDIR` link, the macOS shape, a linked parent,
   a root that is a link, and a shared store under a linked `HOME` and
@@ -382,6 +469,38 @@ Each failed before this change (on 9aeb116, or for the parts the review of
   makes anything; a store root taken before the project that holds its link; a
   tool cache others may write to; and a lease of a store whose root was
   retargeted;
+- `project-io/src/trusted-base.checkouts.test.ts` (the third review): the
+  superproject of a submodule and the main work tree of a nested worktree
+  fenced, and those a gitfile leads back to when they are not ancestors; a cache
+  named inside a checkout the command does not run in, with and without a
+  command begun, and through the glibc `*at` calls; a home directory that is the
+  checkout, lies in it, or whose `~/.cache` is the committed link, refused
+  naming the checkout, and the person's links kept in one that is no checkout; a
+  tree with no `.git` fenced from its topmost directory, with a nested checkout
+  in it and when it is the temporary directory; `GIT_WORK_TREE` inside and
+  outside, and `GIT_DIR` alone; a link nobody owns in a 0777 and a 0770
+  directory refused as a base, a taken root and a judged root's last component;
+  two commands running at once keeping each other's fences and bases; and a
+  checkout through a bind mount of it;
+- `opm/test/fenced-checkouts.test.ts`: `opmx pkg:…` and `opm add` in a
+  submodule, a nested worktree and a tree with no `.git`, `opmx pkg:…` with the
+  home directory the checkout or in it (the refusal naming the checkout), under
+  `GIT_WORK_TREE`, and with the cache in a checkout elsewhere: nothing made
+  where the link points; and a second command run while `opmx` waits on the
+  registry, which drops none of its fences;
+- `openpacker-cli/test/fenced-checkout.test.ts`:
+  `openpacker materialize --install-prefix` below a link a project holds where
+  `XDG_CACHE_HOME` points: refused, nothing extracted there;
+- `opm-project/test/auth-config.read.test.ts`: the auth configuration not read
+  through a checkout's link, from a directory others may write, or through a
+  link in place of the file;
+- `opm-project/test/symlinked-base.handles.test.ts` and
+  `adapter-npm/src/pnpm-patch/tree-commit.test.ts`: a directory swapped for a
+  link, or the store root retargeted, at the moment an install script's links
+  are made hard links, a patched entry is published or written back,
+  `opm gc --shared` moves an entry or a record aside, and a run's scratch is
+  made: each acts where its directory was opened, or is refused, and the other
+  tree is left as it was;
 - `opm/test/fenced-project.test.ts`: `opmx pkg:…` and `opm auth set` in a
   checkout that holds a link where `XDG_CACHE_HOME` or `XDG_CONFIG_HOME` points,
   with no store or cache named elsewhere: refused, nothing made outside;
