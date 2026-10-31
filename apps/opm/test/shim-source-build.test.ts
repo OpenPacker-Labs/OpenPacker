@@ -53,9 +53,12 @@ function execute(file: string, args: readonly string[], cwd: string) {
   });
 }
 
+// Three starts of the built opm, init, add and the shim's opmx, each loading
+// all of it: 2 to 8 s here, so not the 5 s default. The figure bins.test.ts
+// uses for the same steps.
 describe(
   'a shim written by opm from a source build',
-  { timeout: 120_000 },
+  { timeout: 60_000 },
   () => {
     it('runs its tool through opmx', async () => {
       const project = await makeExitToolProject();

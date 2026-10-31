@@ -1,6 +1,5 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { describe, expect, it, vi } from 'vitest';
 import { createMockBackend } from './backends/mock.js';
 import { collectMxcChild } from './backends/mxc.js';
@@ -10,6 +9,7 @@ import {
 } from './backends/native.js';
 import { runInSandbox } from './run.js';
 import { stoppedBySignal } from './stop.js';
+import { heard } from './test-output.js';
 import { scratch } from './test-scratch.js';
 import type { SandboxBackend } from './types.js';
 
@@ -35,7 +35,7 @@ function waiting(
   options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ) {
   const root = scratch('op-sandbox-stop-');
-  let seen = '';
+  const { seen, output, until } = heard();
   const run = runInSandbox({
     argv: ['/bin/sh', '-c', 'echo up; exec sleep 600'],
     cwd: root,
@@ -50,21 +50,10 @@ function waiting(
     readwritePaths: [],
     readonlyPaths: [root],
     backend,
-    output: {
-      stdout: (chunk) => {
-        seen += Buffer.from(chunk).toString('utf8');
-      },
-      stderr: () => undefined,
-    },
+    output,
     ...(!(options.signal === undefined) && { signal: options.signal }),
   });
-  const up = async () => {
-    for (const deadline = Date.now() + 20_000; Date.now() < deadline; ) {
-      if (seen === 'up\n') return;
-      await sleep(25);
-    }
-    throw new Error('the process never said it was up');
-  };
+  const up = () => until(() => seen.stdout === 'up\n', run);
   return { run, up };
 }
 
@@ -82,18 +71,17 @@ describe.each(backends)('a run that is ended, by %s', (_, backend) => {
         `\nopenpacker sandbox: process stopped by ${name}\n`,
       ]);
     },
-    30_000,
   );
 
   it('by the policy’s timeout, says so and how long it was', async () => {
-    const { run, up } = waiting(backend(), { timeoutMs: 400 });
-    await up();
+    // Ended by the clock, whether or not it had said it was up by then.
+    const { run } = waiting(backend(), { timeoutMs: 400 });
     const outcome = await run;
     expect([outcome.exitCode, outcome.stderr]).toEqual([
       124,
       '\nopenpacker sandbox: process timed out after 400 ms\n',
     ]);
-  }, 30_000);
+  });
 
   it('by any other abort, says it was aborted, and nothing more', async () => {
     const stop = new AbortController();
@@ -105,7 +93,7 @@ describe.each(backends)('a run that is ended, by %s', (_, backend) => {
       124,
       '\nopenpacker sandbox: process aborted\n',
     ]);
-  }, 30_000);
+  });
 });
 
 describe('an MXC run that is ended', () => {

@@ -16,7 +16,6 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import {
@@ -34,6 +33,7 @@ import {
 import { defaultJailHomeRoot } from './env.js';
 import { sweepJailHomes, UNOWNED_JAIL_HOME_MS } from './jail-home.js';
 import { runInSandbox } from './run.js';
+import { heard } from './test-output.js';
 import type { RunInSandboxInput, SandboxBackend } from './types.js';
 
 /**
@@ -213,9 +213,27 @@ describe('a run removes the jail homes runs that ended left', () => {
 });
 
 const children: ChildProcess[] = [];
+const stops: AbortController[] = [];
 afterEach(() => {
   for (const child of children.splice(0)) child.kill('SIGKILL');
+  for (const stop of stops.splice(0)) stop.abort();
 });
+
+/** A signal that ends a run the test left holding, should it fail. */
+function ending(): AbortSignal {
+  const stop = new AbortController();
+  stops.push(stop);
+  return stop.signal;
+}
+
+/** FIFOs in `dir`, one per name: a tool reading one holds until it is written. */
+function gates(dir: string, names: readonly string[]): string[] {
+  return names.map((name) => {
+    const fifo = join(dir, name);
+    expect(spawnSyncOk('mkfifo', [fifo])).toBe(true);
+    return fifo;
+  });
+}
 
 /** The first line a child writes that `test` accepts. */
 function line(child: ChildProcess, test: (text: string) => boolean) {
@@ -360,55 +378,47 @@ describe('the jail root', () => {
 describe('runs at the same time', () => {
   it('never remove each other’s homes, and still remove an ended one', async () => {
     const dir = await ownTmpdir();
-    const stop = join(dir, 'stop');
     const dead = await leftHome('home-dead', {
       ...(await currentOwner()),
       pid: await ended(),
     });
-    // A run that writes its home, holds until told, and reads it back.
-    let said = '';
-    const holding = aRun(
-      [
-        '/bin/sh',
-        '-c',
-        'echo held > "$HOME/mark"; echo t > "$TMPDIR/mark"; echo up; ' +
-          'while [ ! -e "$STOP" ]; do sleep 0.02; done; cat "$HOME/mark" "$TMPDIR/mark"',
-      ],
-      {
-        env: { STOP: stop },
-        output: {
-          stdout: (chunk) => {
-            said += Buffer.from(chunk).toString('utf8');
-          },
-          stderr: () => undefined,
-        },
-      },
+    // Runs that each sweep first, write their home, and hold until told,
+    // then read it back: one that holds, and six more beside it, together.
+    const go = gates(
+      dir,
+      Array.from({ length: 7 }, (_, index) => `go-${index}`),
     );
-    for (const until = Date.now() + 20_000; Date.now() < until; ) {
-      if (said.includes('up')) break;
-      await sleep(20);
-    }
-    expect(said).toBe('up\n');
-    // Six more, together, each sweeping first, each using its home meanwhile.
-    const others = await Promise.all(
-      Array.from({ length: 6 }, (_, index) =>
-        aRun([
+    const start = (index: number) => {
+      const { seen, output, until } = heard();
+      const run = aRun(
+        [
           '/bin/sh',
           '-c',
-          `echo ${index} > "$HOME/mark"; echo ${index} > "$TMPDIR/mark"; ` +
-            'sleep 0.1; cat "$HOME/mark" "$TMPDIR/mark"',
-        ]),
-      ),
-    );
-    expect(others.map((outcome) => [outcome.exitCode, outcome.stdout])).toEqual(
-      Array.from({ length: 6 }, (_, index) => [0, `${index}\n${index}\n`]),
-    );
+          `echo ${index} > "$HOME/mark"; echo ${index} > "$TMPDIR/mark"; echo up; ` +
+            'read line < "$GO"; cat "$HOME/mark" "$TMPDIR/mark"',
+        ],
+        { env: { GO: go[index]! }, output, signal: ending() },
+      );
+      return { seen, run, up: until(() => seen.stdout === 'up\n', run) };
+    };
+    const holding = start(0);
+    await holding.up;
+    const runs = [holding, ...[1, 2, 3, 4, 5, 6].map(start)];
+    await Promise.all(runs.map(({ up }) => up));
     expect(present([dead])).toEqual([false]);
-    await writeFile(stop, '');
-    expect((await holding).exitCode).toBe(0);
-    expect(said).toBe('up\nheld\nt\n');
+    expect(await readdir(defaultJailHomeRoot())).toHaveLength(7);
+    await Promise.all(go.map((gate) => writeFile(gate, 'go\n')));
+    const outcomes = await Promise.all(runs.map(({ run }) => run));
+    expect(
+      outcomes.map((outcome, index) => [
+        outcome.exitCode,
+        runs[index]!.seen.stdout,
+      ]),
+    ).toEqual(
+      Array.from({ length: 7 }, (_, index) => [0, `up\n${index}\n${index}\n`]),
+    );
     expect(await readdir(defaultJailHomeRoot())).toEqual([]);
-  }, 60_000);
+  });
 
   it('of two sweeps of the same homes, one removes each, and neither fails', async () => {
     await ownTmpdir();
@@ -440,39 +450,32 @@ describe.runIf(bwrapReady)('the owner of a run’s home', () => {
     // temporary directory.
     const work = join(await ownTmpdir(), 'work');
     await mkdir(work);
-    const stop = join(work, 'stop');
-    let said = '';
+    const [go] = gates(work, ['go']);
+    const { seen, output, until } = heard();
     const run = aRun(
       [
         '/bin/sh',
         '-c',
         'ls -A "$HOME"; cat "$HOME/../.owner" 2>/dev/null || echo hidden; ' +
-          'echo up; while [ ! -e "$STOP" ]; do sleep 0.02; done',
+          'echo up; read line < "$GO"',
       ],
       {
         backend: nativeBackend as SandboxBackend,
-        env: { STOP: stop },
+        env: { GO: go! },
         readonlyPaths: [work],
         cwd: work,
-        output: {
-          stdout: (chunk) => {
-            said += Buffer.from(chunk).toString('utf8');
-          },
-          stderr: () => undefined,
-        },
+        output,
+        signal: ending(),
       },
     );
-    for (const until = Date.now() + 20_000; Date.now() < until; ) {
-      if (said.includes('up')) break;
-      await sleep(20);
-    }
+    await until(() => seen.stdout.endsWith('up\n'), run);
     const [name] = await readdir(defaultJailHomeRoot());
     const record = JSON.parse(
       await readFile(join(defaultJailHomeRoot(), name!, OWNER_FILE), 'utf8'),
     ) as { owner: ProcessOwner };
-    await writeFile(stop, '');
+    await writeFile(go!, 'go\n');
     expect((await run).exitCode).toBe(0);
     expect(record.owner).toEqual(await currentOwner());
-    expect(said).toBe('tmp\nhidden\nup\n');
-  }, 60_000);
+    expect(seen.stdout).toBe('tmp\nhidden\nup\n');
+  });
 });

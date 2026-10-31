@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { runOpmx } from '../src/opmx.js';
-import { binPackage, capture, installedProject } from './installed-fixture.js';
+import {
+  INSTALLED_TIMEOUT_MS,
+  binPackage,
+  capture,
+  installedProject,
+} from './installed-fixture.js';
 import { canSandbox } from './signal-fixture.js';
 
 /**
@@ -34,59 +39,63 @@ const forever = binPackage(
   "process.stdout.write('up\\n');\nsetInterval(() => {}, 1000);\n",
 );
 
-describe.runIf(canSandbox)('opmx runs a tool for as long as it runs', () => {
-  it('writing past the byte limits, to its end', async () => {
-    // What used to end it at 1 MiB, exit 125.
-    const root = await installedProject([chatty]);
-    const cap = capture();
-    expect(await runOpmx(['chatty'], cap.io, root), cap.seen.err).toBe(0);
-    expect(cap.seen.out.length).toBe(3 * MiB + 'done\n'.length);
-    expect(cap.seen.out.endsWith('x\ndone\n')).toBe(true);
-    // Nothing but the tool's own output, and no word from the sandbox.
-    expect(cap.seen.err).toBe(`${'x'.repeat(1023)}\n`.repeat(1536));
-  }, 120_000);
+describe.runIf(canSandbox)(
+  'opmx runs a tool for as long as it runs',
+  { timeout: INSTALLED_TIMEOUT_MS },
+  () => {
+    it('writing past the byte limits, to its end', async () => {
+      // What used to end it at 1 MiB, exit 125.
+      const root = await installedProject([chatty]);
+      const cap = capture();
+      expect(await runOpmx(['chatty'], cap.io, root), cap.seen.err).toBe(0);
+      expect(cap.seen.out.length).toBe(3 * MiB + 'done\n'.length);
+      expect(cap.seen.out.endsWith('x\ndone\n')).toBe(true);
+      // Nothing but the tool's own output, and no word from the sandbox.
+      expect(cap.seen.err).toBe(`${'x'.repeat(1023)}\n`.repeat(1536));
+    });
 
-  it('until the project’s opmx_timeout_ms, which ends it', async () => {
-    const root = await installedProject(
-      [forever],
-      '[sandbox]\nopmx_timeout_ms = 500',
-    );
-    const cap = capture();
-    expect(await runOpmx(['forever'], cap.io, root)).toBe(124);
-    // Whether the tool had started by then is the machine's business.
-    expect(cap.seen.err).toBe(
-      '\nopenpacker sandbox: process timed out after 500 ms\n',
-    );
-  }, 120_000);
+    it('until the project’s opmx_timeout_ms, which ends it', async () => {
+      const root = await installedProject(
+        [forever],
+        '[sandbox]\nopmx_timeout_ms = 500',
+      );
+      const cap = capture();
+      expect(await runOpmx(['forever'], cap.io, root)).toBe(124);
+      // Whether the tool had started by then is the machine's business.
+      expect(cap.seen.err).toBe(
+        '\nopenpacker sandbox: process timed out after 500 ms\n',
+      );
+    });
 
-  it('until the project’s timeout_ms, when it sets that and no opmx_timeout_ms', async () => {
-    const root = await installedProject(
-      [forever],
-      '[sandbox]\ntimeout_ms = 400',
-    );
-    const cap = capture();
-    expect(await runOpmx(['forever'], cap.io, root)).toBe(124);
-    // Whether the tool had started by then is the machine's business.
-    expect(cap.seen.err).toBe(
-      '\nopenpacker sandbox: process timed out after 400 ms\n',
-    );
-  }, 120_000);
+    it('until the project’s timeout_ms, when it sets that and no opmx_timeout_ms', async () => {
+      const root = await installedProject(
+        [forever],
+        '[sandbox]\ntimeout_ms = 400',
+      );
+      const cap = capture();
+      expect(await runOpmx(['forever'], cap.io, root)).toBe(124);
+      // Whether the tool had started by then is the machine's business.
+      expect(cap.seen.err).toBe(
+        '\nopenpacker sandbox: process timed out after 400 ms\n',
+      );
+    });
 
-  it('until --timeout, which wins over the project’s', async () => {
-    const root = await installedProject(
-      [forever],
-      '[sandbox]\nopmx_timeout_ms = 600000',
-    );
-    const cap = capture();
-    expect(await runOpmx(['--timeout', '400', 'forever'], cap.io, root)).toBe(
-      124,
-    );
-    // Whether the tool had started by then is the machine's business.
-    expect(cap.seen.err).toBe(
-      '\nopenpacker sandbox: process timed out after 400 ms\n',
-    );
-  }, 120_000);
-});
+    it('until --timeout, which wins over the project’s', async () => {
+      const root = await installedProject(
+        [forever],
+        '[sandbox]\nopmx_timeout_ms = 600000',
+      );
+      const cap = capture();
+      expect(await runOpmx(['--timeout', '400', 'forever'], cap.io, root)).toBe(
+        124,
+      );
+      // Whether the tool had started by then is the machine's business.
+      expect(cap.seen.err).toBe(
+        '\nopenpacker sandbox: process timed out after 400 ms\n',
+      );
+    });
+  },
+);
 
 describe.skipIf(canSandbox)('opmx runs a tool for as long as it runs', () => {
   it.skip('needs bwrap (/usr/bin/bwrap); not checked on this host', () => {});

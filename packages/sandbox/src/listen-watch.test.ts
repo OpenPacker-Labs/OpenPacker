@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import {
   createNativeBackend,
@@ -8,6 +7,7 @@ import {
 } from './backends/native.js';
 import { isolatedListenPort } from './listen-watch.js';
 import { runInSandbox } from './run.js';
+import { heard } from './test-output.js';
 import { scratch } from './test-scratch.js';
 
 /**
@@ -29,19 +29,13 @@ const SERVER =
   "const s = require('node:http').createServer();" +
   "s.listen(0, '127.0.0.1', () => process.stdout.write(s.address().port + '\\n'));";
 
-async function until(test: () => boolean): Promise<void> {
-  for (const deadline = Date.now() + 20_000; Date.now() < deadline; ) {
-    if (test()) return;
-    await sleep(25);
-  }
-  throw new Error('the condition never held');
-}
-
 describe.runIf(bwrapReady)('a process run without network', () => {
   it('is said to listen, on the port it listens on', async () => {
     const root = scratch('op-sandbox-listen-');
-    let printed = '';
+    const { seen, output, until } = heard();
     const told: number[] = [];
+    let tell: () => void = () => undefined;
+    const listened = new Promise<void>((settle) => (tell = settle));
     const stop = new AbortController();
     const run = runInSandbox({
       argv: [process.execPath, '-e', SERVER],
@@ -50,20 +44,24 @@ describe.runIf(bwrapReady)('a process run without network', () => {
       readwritePaths: [],
       readonlyPaths: [root],
       backend: nativeBackend!,
-      output: {
-        stdout: (chunk) => {
-          printed += Buffer.from(chunk).toString('utf8');
-        },
-        stderr: () => undefined,
+      output,
+      onIsolatedListen: (port) => {
+        told.push(port);
+        tell();
       },
-      onIsolatedListen: (port) => told.push(port),
       signal: stop.signal,
     });
-    await until(() => printed.endsWith('\n') && told.length > 0);
+    await until(() => seen.stdout.endsWith('\n'), run);
+    await Promise.race([
+      listened,
+      run.then(() => {
+        throw new Error('the run ended before it was said to listen');
+      }),
+    ]);
     stop.abort();
     await run;
-    expect(told).toEqual([Number(printed.trim())]);
-  }, 30_000);
+    expect(told).toEqual([Number(seen.stdout.trim())]);
+  });
 });
 
 describe.skipIf(bwrapReady)('a process run without network', () => {
@@ -81,8 +79,17 @@ describe.runIf(process.platform === 'linux')(
         child.kill('SIGKILL');
       });
       let printed = '';
-      child.stdout.on('data', (chunk: Buffer) => (printed += chunk));
-      await until(() => printed.endsWith('\n'));
+      await new Promise<void>((settle, fail) => {
+        child.stdout.on('data', (chunk: Buffer) => {
+          printed += chunk.toString('utf8');
+          if (printed.endsWith('\n')) settle();
+        });
+        child.once('exit', (code) =>
+          fail(
+            new Error(`the server ended (${code}) having printed ${printed}`),
+          ),
+        );
+      });
       const port = Number(printed.trim());
       // The control: the port is listened on, in the table the watch reads.
       const hex = port.toString(16).toUpperCase().padStart(4, '0');

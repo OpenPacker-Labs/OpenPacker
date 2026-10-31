@@ -23,6 +23,15 @@ import {
 
 configureDefaultAdapters();
 
+/**
+ * How long a test that installs a project may take, the install included: the
+ * install alone, which does every step `opm install` does, has taken from a
+ * fifth of a second to half a minute on a machine whose disk other builds kept
+ * busy, and a test cannot wait for less. The figure the package's other tests
+ * that install a project use.
+ */
+export const INSTALLED_TIMEOUT_MS = 60_000;
+
 const temps: string[] = [];
 afterEach(async () => {
   await Promise.all(
@@ -86,26 +95,42 @@ export function binPackage(name: string, source: string): FixturePackage {
   };
 }
 
-/** Streams that keep what `opmx` writes, readable while it runs. */
+/**
+ * Streams that keep what `opmx` writes, readable while it runs, and a wait for
+ * it that ends on what it waits for: settled by the write that makes `test`
+ * hold, and failed as soon as `run` ends without it.
+ */
 export function capture() {
   const seen = { out: '', err: '' };
+  const waiting = new Set<{ test: () => boolean; settle: () => void }>();
   const text = (chunk: string | Uint8Array) =>
     typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+  const heard = (into: 'out' | 'err', chunk: string | Uint8Array) => {
+    seen[into] += text(chunk);
+    for (const wait of waiting)
+      if (wait.test()) {
+        waiting.delete(wait);
+        wait.settle();
+      }
+    return true;
+  };
+  const until = (test: () => boolean, run: Promise<number>): Promise<void> =>
+    test()
+      ? Promise.resolve()
+      : Promise.race([
+          new Promise<void>((settle) => waiting.add({ test, settle })),
+          run.then((code) => {
+            throw new Error(
+              `opmx ended first (${code}), having written ${JSON.stringify(seen)}`,
+            );
+          }),
+        ]);
   return {
     seen,
+    until,
     io: {
-      stdout: {
-        write: (chunk: string | Uint8Array) => (
-          (seen.out += text(chunk)),
-          true
-        ),
-      },
-      stderr: {
-        write: (chunk: string | Uint8Array) => (
-          (seen.err += text(chunk)),
-          true
-        ),
-      },
+      stdout: { write: (chunk: string | Uint8Array) => heard('out', chunk) },
+      stderr: { write: (chunk: string | Uint8Array) => heard('err', chunk) },
     },
   };
 }
