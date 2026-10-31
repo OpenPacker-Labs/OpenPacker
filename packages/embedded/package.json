@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/embedded",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Browser-safe embedded PREX resolver and proof checker",
   "license": "MIT",
   "type": "module",
@@ -48,6 +49,11 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/contracts": "0.1.0"
+    "@openpacker/contracts": "0.0.1-alpha.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tyler-R-Kendrick/OpenPacker.git",
+    "directory": "packages/embedded"
   }
 }

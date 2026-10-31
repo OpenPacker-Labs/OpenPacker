@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/events",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "CloudEvents 1.0 runtime contracts for OpenPacker",
   "license": "MIT",
   "type": "module",
@@ -31,8 +32,13 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/conformance": "0.1.0",
-    "@openpacker/contracts": "0.1.0"
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/conformance": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tyler-R-Kendrick/OpenPacker.git",
+    "directory": "packages/events"
   }
 }

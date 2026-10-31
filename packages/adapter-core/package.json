@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/adapter-core",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "type": "module",
   "license": "MIT",
   "main": "./dist/cjs/index.js",
@@ -22,11 +23,16 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/contracts": "0.1.0",
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
     "undici": "8.10.0"
   },
   "devDependencies": {
     "packageurl-js": "2.0.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tyler-R-Kendrick/OpenPacker.git",
+    "directory": "packages/adapter-core"
   }
 }

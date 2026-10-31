@@ -135,6 +135,9 @@ npm run demo               # offline demo of the production path, fixtures only
 
 ## Development
 
+Install the alpha CLI with `npm i -g @openpacker/cli@alpha`. Publishing steps
+are in [RELEASING.md](RELEASING.md).
+
 ```sh
 npm ci
 npm run build

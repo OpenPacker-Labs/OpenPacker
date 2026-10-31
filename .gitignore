@@ -1,6 +1,7 @@
 node_modules/
 target/
 dist/
+apps/openpacker-cli/release/
 coverage/
 .turbo/
 .demo-output/

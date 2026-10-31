@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import { lookup } from 'node:dns/promises';
@@ -1026,5 +1027,8 @@ function help(): string {
   return `Usage: openpacker <command> [subcommand] [options]\n\nCommands:\n  normalize identify enumerate inspect solve resolve explain materialize verify pack publish\n  import-lock\n  receipt inspect|verify\n  catalog import|snapshot\n  lifecycle apply\n  export lock|sbom\n  serve demo\n\nCommon options: --input <file|-> --json --offline --base-url <url> --target <os/arch|json> --policy-file <file> --auth-token-file <file>\nimport-lock: --input <lockfile> [--format auto|package-lock|cargo-lock|nuget-assets|...] [--json] [--output <lock.json>]\nServe options: --operations-module <path> --database <path> --host <host> --port <port>\nDemo options: --workflow-module <path> --output <directory> --evaluation-time <timestamp>\n`;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href)
+if (
+  import.meta.url ===
+  pathToFileURL(process.argv[1] ? realpathSync(process.argv[1]) : '').href
+)
   process.exitCode = await runCli();
