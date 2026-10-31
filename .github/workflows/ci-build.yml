@@ -82,6 +82,8 @@ jobs:
           src/member-link.test.ts src/member-link.prefix.test.ts
           src/member-link.tree.test.ts
       - run: npm run build
+      - name: Test the publishable CLI bundle
+        run: npm test --workspace @openpacker/cli -- test/release-bundle.test.ts
       - name: Smoke the CLI
         run: node apps/openpacker-cli/dist/index.js --help
       - name: Smoke opm project mutation (no-follow handle-relative I/O)
@@ -132,9 +134,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-artifacts
-          npm pack --workspace openpacker --workspace @openpacker/contracts \
-            --workspace @openpacker/sdk --workspace @openpacker/embedded \
-            --workspace @openpacker/cli --pack-destination dist-artifacts
+          npm run bundle --workspace @openpacker/cli
+          npm pack --pack-destination dist-artifacts --prefix apps/openpacker-cli/release
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7.0.1
         with:

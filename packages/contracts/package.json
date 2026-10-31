@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/contracts",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Generated TypeScript contracts and JSON Schemas for PREX 1.0-draft",
   "license": "MIT",
   "type": "module",
@@ -33,10 +34,6 @@
     "test:e2e": "vitest run",
     "test:compat": "vitest run",
     "test:browser": "vitest run"
-  },
-  "publishConfig": {
-    "access": "public",
-    "tag": "alpha"
   },
   "repository": {
     "type": "git",

@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/adapter-nix",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "type": "module",
   "license": "MIT",
   "main": "./dist/cjs/index.js",
@@ -23,14 +24,10 @@
     "test:live": "OPENPACKER_LIVE_NIX=1 vitest run test/provider.live.test.ts"
   },
   "dependencies": {
-    "@openpacker/adapter-core": "0.0.1-alpha.0",
-    "@openpacker/canonical": "0.0.1-alpha.0",
-    "@openpacker/contracts": "0.0.1-alpha.0",
-    "@openpacker/sandbox": "0.0.1-alpha.0"
-  },
-  "publishConfig": {
-    "access": "public",
-    "tag": "alpha"
+    "@openpacker/adapter-core": "0.0.1-alpha.1",
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
+    "@openpacker/sandbox": "0.0.1-alpha.1"
   },
   "repository": {
     "type": "git",

@@ -1,6 +1,6 @@
 {
   "name": "@openpacker/packslip-testkit",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
   "private": true,
   "description": "Offline packslip fixtures: key-signed releases, a scripted GitHub, and a fake fetch",
   "license": "MIT",
@@ -25,8 +25,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@openpacker/contracts": "0.0.1-alpha.0",
-    "@openpacker/project-io": "0.0.1-alpha.0"
+    "@openpacker/contracts": "0.0.1-alpha.1",
+    "@openpacker/project-io": "0.0.1-alpha.1"
   },
   "devDependencies": {
     "@types/node": "24.2.1"

@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/embedded",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Browser-safe embedded PREX resolver and proof checker",
   "license": "MIT",
   "type": "module",
@@ -48,11 +49,7 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/contracts": "0.0.1-alpha.0"
-  },
-  "publishConfig": {
-    "access": "public",
-    "tag": "alpha"
+    "@openpacker/contracts": "0.0.1-alpha.1"
   },
   "repository": {
     "type": "git",

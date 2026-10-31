@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/trust",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Offline PREX trust evidence verification",
   "license": "MIT",
   "type": "module",
@@ -32,13 +33,9 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/canonical": "0.0.1-alpha.0",
-    "@openpacker/contracts": "0.0.1-alpha.0",
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
     "minimatch": "^10.2.6"
-  },
-  "publishConfig": {
-    "access": "public",
-    "tag": "alpha"
   },
   "repository": {
     "type": "git",

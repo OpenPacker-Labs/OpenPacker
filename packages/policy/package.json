@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/policy",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Deterministic PREX policy evaluation",
   "license": "MIT",
   "type": "module",
@@ -32,12 +33,8 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/canonical": "0.0.1-alpha.0",
-    "@openpacker/contracts": "0.0.1-alpha.0"
-  },
-  "publishConfig": {
-    "access": "public",
-    "tag": "alpha"
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1"
   },
   "repository": {
     "type": "git",

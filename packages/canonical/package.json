@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/canonical",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Browser-safe PREX canonical JSON and SHA-256 digests",
   "license": "MIT",
   "type": "module",
@@ -32,11 +33,7 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/contracts": "0.0.1-alpha.0"
-  },
-  "publishConfig": {
-    "access": "public",
-    "tag": "alpha"
+    "@openpacker/contracts": "0.0.1-alpha.1"
   },
   "repository": {
     "type": "git",

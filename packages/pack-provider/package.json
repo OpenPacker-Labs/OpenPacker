@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/pack-provider",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Manifest-backed delegated package builder host",
   "license": "MIT",
   "type": "module",
@@ -24,12 +25,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-core": "0.0.1-alpha.0",
-    "@openpacker/canonical": "0.0.1-alpha.0",
-    "@openpacker/conformance": "0.0.1-alpha.0",
-    "@openpacker/contracts": "0.0.1-alpha.0",
-    "@openpacker/project-io": "0.0.1-alpha.0",
-    "@openpacker/sandbox": "0.0.1-alpha.0"
+    "@openpacker/adapter-core": "0.0.1-alpha.1",
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/conformance": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
+    "@openpacker/project-io": "0.0.1-alpha.1",
+    "@openpacker/sandbox": "0.0.1-alpha.1"
   },
   "devDependencies": {
     "@types/node": "24.2.1"

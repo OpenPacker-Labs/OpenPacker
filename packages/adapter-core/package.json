@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/adapter-core",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "type": "module",
   "license": "MIT",
   "main": "./dist/cjs/index.js",
@@ -22,16 +23,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@openpacker/canonical": "0.0.1-alpha.0",
-    "@openpacker/contracts": "0.0.1-alpha.0",
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
     "undici": "8.10.0"
   },
   "devDependencies": {
     "packageurl-js": "2.0.1"
-  },
-  "publishConfig": {
-    "access": "public",
-    "tag": "alpha"
   },
   "repository": {
     "type": "git",

@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/sandbox",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Policy-driven package install/execution jail (MXC preferred, native fallback)",
   "license": "MIT",
   "type": "module",
@@ -32,19 +33,15 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/canonical": "0.0.1-alpha.0",
-    "@openpacker/contracts": "0.0.1-alpha.0",
-    "@openpacker/project-io": "0.0.1-alpha.0"
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
+    "@openpacker/project-io": "0.0.1-alpha.1"
   },
   "optionalDependencies": {
     "@microsoft/mxc-sdk": "0.7.0"
   },
   "devDependencies": {
     "@types/node": "24.2.1"
-  },
-  "publishConfig": {
-    "access": "public",
-    "tag": "alpha"
   },
   "repository": {
     "type": "git",

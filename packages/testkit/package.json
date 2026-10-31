@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/testkit",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Conformance harness for OpenPacker extension contracts",
   "license": "MIT",
   "type": "module",
@@ -28,11 +29,11 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-core": "0.0.1-alpha.0",
-    "@openpacker/artifact-model": "0.0.1-alpha.0",
-    "@openpacker/canonical": "0.0.1-alpha.0",
-    "@openpacker/contracts": "0.0.1-alpha.0",
-    "@openpacker/events": "0.0.1-alpha.0",
-    "@openpacker/trust": "0.0.1-alpha.0"
+    "@openpacker/adapter-core": "0.0.1-alpha.1",
+    "@openpacker/artifact-model": "0.0.1-alpha.1",
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
+    "@openpacker/events": "0.0.1-alpha.1",
+    "@openpacker/trust": "0.0.1-alpha.1"
   }
 }

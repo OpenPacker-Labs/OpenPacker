@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/adapter-chocolatey",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Chocolatey host packages via the choco CLI",
   "license": "MIT",
   "type": "module",
@@ -24,16 +25,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-core": "0.0.1-alpha.0",
-    "@openpacker/contracts": "0.0.1-alpha.0",
-    "@openpacker/sandbox": "0.0.1-alpha.0"
+    "@openpacker/adapter-core": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
+    "@openpacker/sandbox": "0.0.1-alpha.1"
   },
   "devDependencies": {
     "@types/node": "24.2.1"
-  },
-  "publishConfig": {
-    "access": "public",
-    "tag": "alpha"
   },
   "repository": {
     "type": "git",

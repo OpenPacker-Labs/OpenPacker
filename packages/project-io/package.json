@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/project-io",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Safe edits to hand-maintained project files for PREX project formats",
   "license": "MIT",
   "type": "module",
@@ -24,17 +25,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-core": "0.0.1-alpha.0",
+    "@openpacker/adapter-core": "0.0.1-alpha.1",
     "fflate": "^0.8.3",
     "koffi": "^2.15.0",
     "smol-toml": "^1.7.1"
   },
   "devDependencies": {
     "@types/node": "24.2.1"
-  },
-  "publishConfig": {
-    "access": "public",
-    "tag": "alpha"
   },
   "repository": {
     "type": "git",

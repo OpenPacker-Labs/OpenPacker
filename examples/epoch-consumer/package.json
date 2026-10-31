@@ -1,6 +1,6 @@
 {
   "name": "@openpacker/example-epoch-consumer",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
   "private": true,
   "description": "Neutral downstream consumer contract for Epoch",
   "license": "MIT",
@@ -20,17 +20,17 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/canonical": "0.0.1-alpha.0",
-    "@openpacker/conformance": "0.0.1-alpha.0",
-    "@openpacker/contracts": "0.0.1-alpha.0",
-    "@openpacker/embedded": "0.0.1-alpha.0",
-    "@openpacker/events": "0.0.1-alpha.0",
-    "@openpacker/receipts": "0.0.1-alpha.0",
-    "@openpacker/sdk": "0.0.1-alpha.0",
-    "@openpacker/trust": "0.0.1-alpha.0"
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/conformance": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
+    "@openpacker/embedded": "0.0.1-alpha.1",
+    "@openpacker/events": "0.0.1-alpha.1",
+    "@openpacker/receipts": "0.0.1-alpha.1",
+    "@openpacker/sdk": "0.0.1-alpha.1",
+    "@openpacker/trust": "0.0.1-alpha.1"
   },
   "devDependencies": {
-    "@openpacker/openpackerd": "0.0.1-alpha.0",
+    "@openpacker/openpackerd": "0.0.1-alpha.1",
     "@pact-foundation/pact": "17.0.1",
     "@types/node": "24.2.1",
     "playwright": "1.62.1"
