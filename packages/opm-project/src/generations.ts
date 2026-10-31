@@ -26,6 +26,7 @@ import {
   removeStableFile,
   removeStableTree,
   resolveContained,
+  respelled,
   storePathForDigest,
   writeStableFile,
 } from './paths.js';
@@ -817,7 +818,7 @@ export async function activateGeneration(input: {
         );
       aliases.add(alias);
       const expected = storePathForDigest(input.root, member.digest);
-      if (member.storePath !== expected)
+      if (!respelled(member.storePath, expected, input.root))
         throw new OpmError(
           'UNSAFE_PATH',
           `Generation store path is not derived from its digest: ${member.storePath}`,
@@ -903,7 +904,8 @@ export async function activateGeneration(input: {
           binNames.add(name);
         }
         prepared.push({
-          member,
+          // Spelled as the project is opened now (`respelled`).
+          member: { ...member, storePath: expected },
           alias,
           bins,
           handle,

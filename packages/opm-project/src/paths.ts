@@ -20,6 +20,7 @@ import {
   lstatChild,
   mkdirChild,
   openChild,
+  realBase,
   removeChild,
   renameChild,
   stableHandlePath as projectIoStableHandlePath,
@@ -243,6 +244,29 @@ export function resolveContained(root: string, ...parts: string[]): string {
 
 export function storePathForDigest(root: string, digest: string): string {
   return resolveContained(projectPaths(root).store, storeKeyFromDigest(digest));
+}
+
+/**
+ * Whether `recorded`, a path a record of the project at `root` names, is
+ * `derived` (a path below that root) as the record spelled it: the same path
+ * below the root, under a root whose real path is this one's. A project is
+ * opened through whatever links lead to it (ADR 0034, trusted bases), and `cd`
+ * through one leaves the real path as the working directory, so what an
+ * install recorded may name the project another way than it is opened now.
+ * Nothing below the root may differ; the caller goes on with `derived`.
+ */
+export function respelled(
+  recorded: string,
+  derived: string,
+  root: string,
+): boolean {
+  if (recorded === derived) return true;
+  const base = resolve(root);
+  if (!derived.startsWith(base + sep)) return false;
+  const below = derived.slice(base.length);
+  if (!recorded.endsWith(below)) return false;
+  const other = recorded.slice(0, recorded.length - below.length);
+  return isAbsolute(other) && realBase(other) === realBase(base);
 }
 
 /**

@@ -60,6 +60,7 @@ import {
   removeStableTree,
   resolveContained,
   storeKeyFromDigest,
+  respelled,
   storePathForDigest,
   writeStableFile,
   writeStableFileAt,
@@ -228,7 +229,10 @@ async function validateProjectState(
       throw invalidState(`${alias}.purl must be a package URL`);
     const digest = stringValue(record.digest, `${alias}.digest`);
     const expectedStore = storePathForDigest(root, digest);
-    if (record.storePath !== expectedStore)
+    if (
+      typeof record.storePath !== 'string' ||
+      !respelled(record.storePath, expectedStore, root)
+    )
       throw invalidState(`${alias}.storePath is not derived from its digest`);
     const realPackage = await assertRealDirectory(
       expectedStore,
@@ -252,10 +256,13 @@ async function validateProjectState(
       if (segments.length === 0 || segments.includes('..'))
         throw invalidState(`${alias}.bins[${index}].path escapes its store`);
       const target = resolveContained(expectedStore, ...segments);
-      if (bin.target !== target)
+      if (
+        typeof bin.target !== 'string' ||
+        !respelled(bin.target, target, root)
+      )
         throw invalidState(`${alias}.bins[${index}].target is not derived`);
       const shim = resolveContained(paths.bin, name);
-      if (bin.shim !== shim)
+      if (typeof bin.shim !== 'string' || !respelled(bin.shim, shim, root))
         throw invalidState(`${alias}.bins[${index}].shim is not derived`);
       const targetInfo = await lstat(target).catch(() => undefined);
       if (!targetInfo?.isFile() || targetInfo.isSymbolicLink())

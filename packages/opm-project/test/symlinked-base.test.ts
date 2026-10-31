@@ -29,12 +29,16 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { forgetBases } from '@openpacker/project-io';
 import {
+  activateGeneration,
   addPackage,
   enableDefaultSharedStore,
   initProject,
   packProject,
   projectPaths,
+  readEnvironmentState,
+  readGeneration,
   readManifestFile,
+  readProjectState,
   storePathForDigest,
   usableSharedRoot,
   writeManifestFile,
@@ -165,6 +169,44 @@ describe.runIf(POSIX)('a project whose base is reached through a link', () => {
     await addTool(project.link);
     await expectInstalled(project.real);
   });
+
+  // `cd` into a project through a link leaves the real path as the working
+  // directory, so a project installed by one name is opened by the other.
+  it.each([
+    ['through the link, and opened at its real path', 'link', 'real'],
+    ['at its real path, and opened through the link', 'real', 'link'],
+  ] as const)(
+    'activates what it installed when it was named %s',
+    async (_how, installedAs, openedAs) => {
+      const base = await world();
+      const code = await linked(base, 'code-real', 'code');
+      await mkdir(join(code.real, 'project'));
+      const named = {
+        link: join(code.link, 'project'),
+        real: join(code.real, 'project'),
+      };
+      await addTool(named[installedAs]);
+
+      const root = named[openedAs];
+      const environment = await readEnvironmentState(root);
+      const generation = await readGeneration(
+        root,
+        environment!.currentGenerationDigest,
+      );
+      const state = await activateGeneration({ root, generation });
+      const store = join(root, '.opm', 'store');
+      expect(
+        Object.values(state.packages).map((pkg) => [
+          pkg.purl,
+          pkg.storePath.startsWith(`${store}/`),
+        ]),
+      ).toEqual([['pkg:npm/tool@1.0.0', true]]);
+      const read = await readProjectState(projectPaths(root).projectState);
+      expect(Object.keys(read?.packages ?? {})).toEqual(
+        Object.keys(state.packages),
+      );
+    },
+  );
 
   it.each(['out', '..dist'])(
     'packs a project under a TMPDIR that is a link, and leaves its own output (%s) out',
