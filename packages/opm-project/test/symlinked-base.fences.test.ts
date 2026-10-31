@@ -219,6 +219,25 @@ describe.runIf(POSIX && ROOT)(
   },
 );
 
+describe.runIf(POSIX)('a directory refused at a link a checkout holds', () => {
+  it('is refused naming the link and the checkout, and nothing is made where it points', async () => {
+    const base = await world();
+    const { root, outside } = await projectHoldingLink(base);
+    await mkdir(join(root, '.git'));
+    vi.stubEnv('XDG_CACHE_HOME', join(root, '.cache'));
+
+    await expect(
+      ensureStableDirectory(join(root, '.cache', 'openpacker', 'x')),
+    ).rejects.toMatchObject({
+      code: 'UNSAFE_PATH',
+      message: expect.stringContaining(
+        `the link ${join(root, '.cache')} lies in the checkout ${root}`,
+      ),
+    });
+    expect(await readdir(outside)).toEqual([]);
+  });
+});
+
 describe.runIf(POSIX)('a store root taken before the project', () => {
   it('is no base once the project is taken, when it was reached through a link the project holds', async () => {
     const base = await world();

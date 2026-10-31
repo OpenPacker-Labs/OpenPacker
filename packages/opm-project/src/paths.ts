@@ -279,15 +279,13 @@ export async function openStableDirectory(
       kindError: () => new OpmError('UNSAFE_PATH', `Not a directory: ${path}`),
     });
   } catch (error) {
-    if (
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      (error as NodeJS.ErrnoException).code === 'ELOOP' ||
-      // SAFETY: The surrounding boundary establishes the asserted domain contract.
-      (error as NodeJS.ErrnoException).code === 'ENOTDIR'
-    )
+    // SAFETY: only the errno code, and the checkout or fence the walk named, are read.
+    const refused = error as NodeJS.ErrnoException & { refusedBy?: string };
+    if (refused.code === 'ELOOP' || refused.code === 'ENOTDIR')
       throw new OpmError(
         'UNSAFE_PATH',
-        `Directory path is linked or unstable: ${path}`,
+        // A link a checkout or a fence holds: say which, as the walk did.
+        `Directory path is linked or unstable: ${path}${refused.refusedBy === undefined ? '' : ` (${refused.message})`}`,
       );
     throw error;
   }
