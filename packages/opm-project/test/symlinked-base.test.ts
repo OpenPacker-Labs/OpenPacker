@@ -20,6 +20,7 @@ import {
   realpath,
   rm,
   symlink,
+  writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -28,6 +29,7 @@ import {
   addPackage,
   enableDefaultSharedStore,
   initProject,
+  packProject,
   projectPaths,
   readManifestFile,
   writeManifestFile,
@@ -155,6 +157,35 @@ describe.runIf(POSIX)('a project whose base is reached through a link', () => {
 
     await addTool(project.link);
     await expectInstalled(project.real);
+  });
+
+  it('packs a project under a TMPDIR that is a link, and leaves its own output out', async () => {
+    const base = await world();
+    const tmp = await linked(base, 'real-tmp', 'tmp-link');
+    vi.stubEnv('TMPDIR', tmp.link);
+    const root = await mkdtemp(join(tmpdir(), 'opm-pack-'));
+    await writeFile(
+      join(root, 'package.json'),
+      '{"name":"demo","version":"1.0.0"}\n',
+    );
+    await writeFile(join(root, 'index.js'), 'export const value = 1;\n');
+    const pack = async () => {
+      const outcome = await packProject({
+        root,
+        ecosystem: 'npm',
+        strategy: 'standard',
+        name: 'demo',
+        version: '1.0.0',
+        outputDirectory: join(root, 'out'),
+      });
+      const tarball = outcome.artifacts.find(
+        (artifact) => artifact.nativeRole === 'distribution',
+      )!;
+      return await readFile(tarball.path);
+    };
+
+    // The second pack would hold the first tarball if out/ were not left out.
+    expect(await pack()).toEqual(await pack());
   });
 
   it('keeps its shared store under a HOME that is a link', async () => {

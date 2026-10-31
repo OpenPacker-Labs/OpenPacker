@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import {
   dirname,
+  isAbsolute,
   join,
   relative as pathRelative,
   resolve,
@@ -165,10 +166,19 @@ async function captureProject(
 }> {
   const files: NormalizedPackFile[] = [];
   const sensitiveExcluded: string[] = [];
-  const excluded = excludePaths.map((path) => resolve(path));
   const included =
     includePaths === undefined ? undefined : new Set(includePaths);
   const stableRoot = await realpath(root);
+  // The walk names entries under the root's real path; an excluded path is
+  // written under the root as it was given, which differs when the root is
+  // reached through a link (a linked $TMPDIR, /var on macOS). Exclude both.
+  const excluded = excludePaths.flatMap((path) => {
+    const written = resolve(path);
+    const inside = pathRelative(resolve(root), written);
+    return inside.startsWith('..') || isAbsolute(inside)
+      ? [written]
+      : [written, join(stableRoot, inside)];
+  });
   const directories = new Map<string, DirectorySnapshot>();
   let total = 0;
   const walk = async (directory: string, prefix: string): Promise<void> => {
