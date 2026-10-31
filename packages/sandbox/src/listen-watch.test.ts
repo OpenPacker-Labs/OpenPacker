@@ -67,14 +67,16 @@ describe.runIf(bwrapReady)('a process run without network', () => {
 describe.runIf(bwrapReady)('a process listed as the root’s child', () => {
   it('is read only while it is the root’s child, not as another process its pid names', async () => {
     // A server in a network namespace of its own, started by bwrap: its
-    // parent is bwrap, not this process.
+    // parent is bwrap, not this process. Both are a process group of their
+    // own, ended together: killing bwrap alone leaves the server running,
+    // its parent gone, past the test and the run.
     const child = spawn(
       '/usr/bin/bwrap',
       ['--dev-bind', '/', '/', '--unshare-net', process.execPath, '-e', SERVER],
-      { stdio: ['ignore', 'pipe', 'ignore'] },
+      { stdio: ['ignore', 'pipe', 'ignore'], detached: true },
     );
     onTestFinished(() => {
-      child.kill('SIGKILL');
+      process.kill(-child.pid!, 'SIGKILL');
     });
     let printed = '';
     await new Promise<void>((settle, fail) => {
