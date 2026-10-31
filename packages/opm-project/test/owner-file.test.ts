@@ -104,6 +104,14 @@ describe('the owner file of a directory', () => {
         JSON.stringify({ ownerVersion: 1, owner: { pid: 0, host: 'vm' } }),
       ],
       ['too large', ' '.repeat(5000)],
+      [
+        'valid, but over 1 KiB',
+        JSON.stringify({
+          ownerVersion: 1,
+          owner: other,
+          padding: 'x'.repeat(1100),
+        }),
+      ],
     ])('%s is unreadable, and judged by nobody', async (_case, text) => {
       await writeFile(join(dir, OWNER_FILE), text);
       expect(await readOwnerFile(dir)).toBeUndefined();
@@ -128,7 +136,7 @@ describe('the owner file of a directory', () => {
     });
   });
 
-  it('reads an owner file with raw ids as their digests', async () => {
+  it('reads an owner file as written: raw ids stay raw', async () => {
     await writeFile(
       join(dir, OWNER_FILE),
       JSON.stringify({
@@ -140,6 +148,10 @@ describe('the owner file of a directory', () => {
         },
       }),
     );
-    expect(await readOwnerFile(dir)).toEqual(other);
+    expect(await readOwnerFile(dir)).toEqual({
+      ...other,
+      machineId: '4c398f739c8447eb99d3fe100ad1b0fa',
+      bootId: '9f7295d1-5100-478f-84e5-84ce9db4b369',
+    });
   });
 });

@@ -145,6 +145,8 @@ export async function runRecoverCommand(
         ? `Removed ${lock.file}, which does not say who held it\n`
         : `Removed ${lock.file}, held by ${describeProcessOwner(lock.owner)}\n`,
     );
+  // A lock that did not say who held it had no owner, and so no copy of its own.
+  if (result.owner === undefined) return 0;
   out(
     io,
     result.recovered.length === 0

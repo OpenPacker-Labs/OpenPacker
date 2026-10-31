@@ -2,11 +2,13 @@
  * Forged leases for the suites that judge a lease by who made it: this
  * process as a lease names its owner, read from what this machine says of it
  * (`/proc/self/stat`, `/etc/machine-id`, the kernel's boot id,
- * `/proc/self/ns/pid`) rather than taken from the module under test.
+ * `/proc/self/ns/pid`) rather than taken from the module under test. The
+ * machine is named as this opm names it, by a keyed digest of the machine id
+ * (`me`), or as an earlier opm did, by the id itself (`meByEarlierOpm`).
  */
 
 import { spawnSync } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readlink, writeFile } from 'node:fs/promises';
 import { hostname } from 'node:os';
@@ -25,11 +27,34 @@ export interface Owner {
   boot: string;
 }
 
+/** This machine's id, as the system gives it. */
+export async function machineId(): Promise<string> {
+  return (await readFile('/etc/machine-id', 'utf8')).trim();
+}
+
+/**
+ * The machine as a lease names it: HMAC-SHA-256 of the id keyed by
+ * `opm.owner.machine.v1`, 32 hex digits (the digest an owner record holds
+ * behind `d1-`).
+ */
+export function machineDigest(id: string): string {
+  return createHmac('sha256', 'opm.owner.machine.v1')
+    .update(id)
+    .digest('hex')
+    .slice(0, 32);
+}
+
 /** This process, as a lease names its owner. */
 export async function me(): Promise<Owner> {
+  const owner = await meByEarlierOpm();
+  return { ...owner, machine: machineDigest(owner.machine) };
+}
+
+/** This process, as an opm that wrote the machine id itself named it. */
+export async function meByEarlierOpm(): Promise<Owner> {
   const stat = await readFile('/proc/self/stat', 'utf8');
   const start = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]!;
-  const machine = (await readFile('/etc/machine-id', 'utf8')).trim();
+  const machine = await machineId();
   const boot = (await readFile('/proc/sys/kernel/random/boot_id', 'utf8'))
     .trim()
     .replaceAll('-', '');

@@ -1,6 +1,7 @@
 import {
   canonicalBytes,
   canonicalDigest,
+  documentParseLimits,
   formatDigest,
   parseCanonicalJson,
 } from '@openpacker/canonical';
@@ -228,12 +229,20 @@ export async function verifyCloudEvent(
     throw new TypeError('Event bytes are not the canonical event bytes');
 }
 
+/**
+ * Decode an event a caller received. Its parse may cost as much as an honest
+ * document of its size (`documentParseLimits`, sixteen times its bytes), so
+ * bytes that would cost more to hold (`{"1023":0}` costs thousands of times its
+ * length) are refused before they are built (ADR 0044, "Documents other than
+ * packuments").
+ */
 export async function decodeCloudEvent(
   bytes: Uint8Array,
 ): Promise<OpenPackerCloudEvent> {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const event = parseCanonicalJson(
     new TextDecoder('utf-8', { fatal: true }).decode(bytes),
+    documentParseLimits(bytes.byteLength),
   ) as OpenPackerCloudEvent;
   await verifyCloudEvent(event, bytes);
   return event;

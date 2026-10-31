@@ -1,0 +1,130 @@
+id	result	tests	mutant
+W8	killed	1 failed | 309 passed | 6 skipped (316)	walk budget unbounded from gunzipArchive
+N6	killed	1 failed | 309 passed | 6 skipped (316)	pre-aborted inflate leaves its engine
+T1	killed	8 failed | 302 passed | 6 skipped (316)	nodeTarReadsOn always false
+T2	killed	32 failed | 278 passed | 6 skipped (316)	nodeTarReadsOn always true
+T3	killed	3 failed | 307 passed | 6 skipped (316)	no null-block rule (a spaces-checksum block is a header)
+T4	killed	7 failed | 303 passed | 6 skipped (316)	a null block ends at once (no second null needed)
+T5	killed	2 failed | 308 passed | 6 skipped (316)	node-tar checksum read over 8 bytes
+T6	killed	1 failed | 309 passed | 6 skipped (316)	base-256 checksum field skipped instead of treated as a header
+T7	killed	1 failed | 309 passed | 6 skipped (316)	data ending in a partial non-zero block ends the archive
+T8	killed	2 failed | 308 passed | 6 skipped (316)	checksum agreement not asserted
+T9	killed	4 failed | 306 passed | 6 skipped (316)	prefix always allowed
+T10	killed	2 failed | 308 passed | 6 skipped (316)	magic compared on "ustar" only
+T11	killed	29 failed | 281 passed | 6 skipped (316)	general rule: a lone zero block followed by zero-then-more still skipped (second-block test removed)
+T12	killed	1 failed | 309 passed | 6 skipped (316)	general rule: lone zero block with a partial block after it reads on
+T13	killed	111 failed | 199 passed | 6 skipped (316)	headerSum counts the checksum field as zeros
+T14	SURVIVED	310 passed | 6 skipped (316)	node-tar checksum not trimmed
+I1	killed	45 failed | 265 passed | 6 skipped (316)	npm readers always on
+I2	killed	77 failed | 233 passed | 6 skipped (316)	npm readers always off
+I3	killed	1 failed | 309 passed | 6 skipped (316)	the option is not validated as boolean
+A1	killed	1 failed | 11 passed (12)	adapter-npm package-lock reader drops the option
+A2	killed	3 failed | 19 passed (22)	adapter-npm pnpm-lock reader drops the option
+P1	killed	1 failed | 9 passed (10)	installArchiveLimits(npm) drops the option
+P2	killed	2 failed | 28 passed (30)	frozenArchiveLimits does not pass the option on
+P3	killed	3 failed | 135 passed (138)	npm bin discovery reads with the general rule
+P4	killed	1 failed | 141 passed (142)	opm add/install (shared store) uses the general rule
+P5	killed	2 failed | 140 passed (142)	opm add/install (direct) uses the general rule
+X1	killed	3 failed | 307 passed | 6 skipped (316)	R1: a sized directory is not refused
+X2	killed	3 failed | 307 passed | 6 skipped (316)	R1: a file named like a directory is not refused
+X3	killed	1 failed | 309 passed | 6 skipped (316)	R5: typeflag 7 is not refused
+X4	killed	6 failed | 304 passed | 6 skipped (316)	R12: a link name on a non-link is not refused
+X5	killed	3 failed | 307 passed | 6 skipped (316)	R4: x then g is not refused
+X5b	killed	1 failed | 309 passed | 6 skipped (316)	R4: x with a size then g is not an over-refusal (path only)
+X6	killed	1 failed | 309 passed | 6 skipped (316)	R11: a backslash is not refused
+X7	killed	1 failed | 309 passed | 6 skipped (316)	R11: a path with no slash is not refused
+X8	killed	9 failed | 301 passed | 6 skipped (316)	R2: the numeric fields are not checked
+X9	killed	2 failed | 308 passed | 6 skipped (316)	R2: devmajor and devminor read without ustar magic
+X10	killed	1 failed | 309 passed | 6 skipped (316)	R2: atime and ctime read whatever byte 475 is
+X11	killed	4 failed | 306 passed | 6 skipped (316)	R2: a negative base-256 number is invalid
+X12	killed	4 failed | 306 passed | 6 skipped (316)	R2: any finite base-256 number is valid
+X13	killed	10 failed | 300 passed | 6 skipped (316)	parseTar does not call assertEntryAgrees
+X14	killed	3 failed | 307 passed | 6 skipped (316)	parseTar does not call assertGlobalAgrees
+X15	killed	42 failed | 268 passed | 6 skipped (316)	parseTar does not call assertHeaderAgrees
+P6	killed	1 failed (1)	publishSharedEntry takes limits as optional
+C1	killed	1 failed | 2 passed (3)	CLI --install-prefix drops the limits
+C2	killed	1 failed | 2 passed (3)	CLI recognises every npm artifact type, packuments included
+Y1	killed	10 failed | 300 passed | 6 skipped (316)	R13: a newline inside a pax record is not refused
+Y2	killed	3 failed | 307 passed | 6 skipped (316)	R13: only the first record of a pax header is checked
+Y3	killed	14 failed | 296 passed | 6 skipped (316)	R13: parseTar does not call assertPaxRecordsAgree
+Y4	killed	10 failed | 300 passed | 6 skipped (316)	R13: the wrong byte (CR) is looked for
+Y5	killed	2 failed | 308 passed | 6 skipped (316)	R14: a directory with a link name is accepted again
+Y6	killed	1 failed | 309 passed | 6 skipped (316)	R14: a link name on an x header is accepted
+Y7	killed	3 failed | 307 passed | 6 skipped (316)	N5: tarText leaks the decoder TypeError again
+Y8	killed	2 failed | 308 passed | 6 skipped (316)	N6: negative base-256 digits are not two's complemented
+Y9	killed	2 failed | 308 passed | 6 skipped (316)	N6: negative base-256 place value is wrong
+Z1	killed	2 failed | 308 passed | 6 skipped (316)	R13: the last byte of a record value is not looked at (a value ending in a newline passes)
+Z2	killed	1 failed | 309 passed | 6 skipped (316)	R14: a link name on a global header is accepted
+Z3	killed	2 failed | 308 passed | 6 skipped (316)	pax parser: a length prefix with a leading zero is accepted
+Z4	killed	2 failed | 308 passed | 6 skipped (316)	pax parser: a record need not end in a newline
+Z5	killed	2 failed | 308 passed | 6 skipped (316)	path rule: an empty path segment (a//b) is accepted
+Z6	killed	1 failed | 309 passed | 6 skipped (316)	pax: an x size that differs from the entry size is accepted
+Z7	killed	1 failed | 309 passed | 6 skipped (316)	pax: a global header may carry a size
+TX1	killed	7 failed | 303 passed | 6 skipped (316)	R15: the text rule is never called
+TX2	killed	3 failed | 307 passed | 6 skipped (316)	R15: the link name is not checked for a byte after its NUL
+TX3	killed	3 failed | 307 passed | 6 skipped (316)	R15: the prefix is not checked
+TX4	killed	4 failed | 306 passed | 6 skipped (316)	R15: the prefix is always 155 bytes
+TX5	killed	6 failed | 304 passed | 6 skipped (316)	R15: only a line feed after the NUL is refused
+TX6	killed	1 failed | 309 passed | 6 skipped (316)	R15: the prefix is read without ustar magic
+TX7	killed	5 failed | 305 passed | 6 skipped (316)	R15: the name is not checked
+BOM1	killed	2 failed | 308 passed | 6 skipped (316)	R16: pax decoder strips a BOM
+BOM2	killed	2 failed | 308 passed | 6 skipped (316)	R16: tar field decoder strips a BOM
+BOM3	SURVIVED	310 passed | 6 skipped (316)	R16: checksum decoder strips a BOM
+OC1	killed	4 failed | 306 passed | 6 skipped (316)	R17: the size field is not compared
+OC2	killed	21 failed | 289 passed | 6 skipped (316)	R17: pnpm is not compared on the size
+OC3	SURVIVED	310 passed | 6 skipped (316)	R17: node-tar is not compared on the size
+OC4	killed	7 failed | 303 passed | 6 skipped (316)	R17: pnpm parseOctal does not skip leading NULs
+OC5	killed	4 failed | 306 passed | 6 skipped (316)	R17: node-tar null reads as a number other than 0
+OC6	killed	1 failed | 309 passed | 6 skipped (316)	R17: pnpm is not compared on the checksum
+OC7	SURVIVED	310 passed | 6 skipped (316)	R17: pnpm checksum read over 12 bytes
+PX1	killed	3 failed | 307 passed | 6 skipped (316)	R18: the guard starts at two blocks
+PX2	SURVIVED	310 passed | 6 skipped (316)	R18: a one-block body with a high byte is refused
+PX3	killed	1 failed | 313 passed | 6 skipped (320), after the tests added for it	R18: 0x80 itself is not a high byte
+PX4	killed	4 failed | 306 passed | 6 skipped (316)	R18: the long-body guard is dropped
+PX5	killed	14 failed | 296 passed | 6 skipped (316)	R18: parseTar does not call assertPaxAgrees
+QD1	killed	1 failed | 3 passed (4)	Q1: a directory with no file counts as a wrapper
+QD2	killed	1 failed | 3 passed (4)	Q1: treeToInstall keeps every directory
+QD3	killed	1 failed | 3 passed (4)	Q1: a nested directory with no file is not looked into
+ZN1	killed	5 failed | 305 passed | 6 skipped (316)	Q3: a zip name decodes leniently
+ZN2	killed	6 failed | 304 passed | 6 skipped (316)	Q3: zip names are decoded without zipName
+M1	SURVIVED	310 passed | 6 skipped (316)	mine: the byte right after the first NUL is not looked at
+M2	killed	1 failed | 309 passed | 6 skipped (316)	mine: the prefix is 129 bytes when byte 475 is zero
+M3	killed	4 failed | 306 passed | 6 skipped (316)	mine: pnpmOctal also skips a leading tab
+M4	killed	1 failed | 309 passed | 6 skipped (316)	mine: the chunk guard starts above 513 bytes
+M5	killed	1 failed | 309 passed | 6 skipped (316)	mine: ustar version bytes not compared
+M6	killed	4 failed | 306 passed | 6 skipped (316)	mine: a field that starts with NUL is not checked for a tail
+M7	killed	1 failed | 309 passed | 6 skipped (316)	the size comparison reads 11 of the 12 bytes of the size field
+M8	killed	5 failed | 305 passed | 6 skipped (316)	mine: the zip name error has the wrong code
+M9	killed	1 failed | 309 passed | 6 skipped (316)	mine: pax global header after x with a path no longer refused if x has size only (and path)
+M10	killed	1 failed | 309 passed | 6 skipped (316)	mine: link-name rule reads byte 156 as the first link name byte
+M11	killed	1 failed | 3 passed (4)	mine: treeToInstall: a regular file at the top does not count
+M11b	killed	1 failed | 1329 passed (1330)	mine: treeToInstall: a regular file at the top does not count
+M12	killed	1 failed | 3 passed (4)	mine: holdsFile counts only direct children
+M13	killed	5 failed | 305 passed | 6 skipped (316)	mine: pax record check skips a record whose value starts with a newline (space+1 -> +2)
+M14	killed	1 failed | 311 passed | 6 skipped (318), after the tests added for it	mine: INVALID_TAR_NUMBER regex accepts 8 and 9
+M15	SURVIVED	310 passed | 6 skipped (316)	mine: nodeTarOctal does not cut at NUL
+R19a	killed	3 failed | 307 passed | 6 skipped (316)	R19: the mode field is not compared
+R19b	killed	1 failed | 311 passed | 6 skipped (318), after the tests added for it	R19: the mode field is read one byte short
+R19c	killed	11 failed | 299 passed | 6 skipped (316)	R19: the mode field is read one byte late
+R20a	killed	3 failed | 307 passed | 6 skipped (316)	R20: a linkpath record is not refused
+R20b	killed	1 failed | 309 passed | 6 skipped (316)	R20: only the key, not the equals sign, is matched
+O1a	killed	2 failed | 308 passed | 6 skipped (316)	O1: the guard looks from offset 512, not 511
+O1b	killed	2 failed | 308 passed | 6 skipped (316)	O1: the guard looks from offset 510
+O1c	killed	4 failed | 306 passed | 6 skipped (316)	O1: the guard looks at the whole body again
+E1	killed	2 failed | 308 passed | 6 skipped (316)	empty archive: an archive with no header is extracted
+N1a	killed	1 failed | 309 passed | 6 skipped (316)	N1: a zip name drops a leading BOM again
+D1a	killed	6 failed | 304 passed | 6 skipped (316)	D1: the spelling layer is not called
+D1b	killed	9 failed | 301 passed | 6 skipped (316)	D1: the number class accepts any byte after the NULs
+D1c	killed	2 failed | 308 passed | 6 skipped (316)	D1: the number class accepts a leading NUL
+D1d	killed	1 failed | 309 passed | 6 skipped (316)	D1: the number class accepts digits 8 and 9
+D1e	killed	2 failed | 308 passed | 6 skipped (316)	D1: the number class accepts any whitespace before the digits
+D1f	killed	3 failed | 307 passed | 6 skipped (316)	D1: the magic is not checked
+D1g	killed	2 failed | 308 passed | 6 skipped (316)	D1: the last 12 bytes are not checked
+D1h	killed	2 failed | 308 passed | 6 skipped (316)	D1: the checksum class is not checked
+D1i	killed	1 failed | 309 passed | 6 skipped (316)	D1: base-256 is a spelling of the mode
+D1j	killed	3 failed | 307 passed | 6 skipped (316)	D1: the uid is not checked
+D1k	killed	2 failed | 308 passed | 6 skipped (316)	D1: the mtime is not checked
+D1l	killed	2 failed | 308 passed | 6 skipped (316)	D1: devmajor and devminor are checked without ustar magic
+D1m	killed	1 failed | 309 passed | 6 skipped (316)	D1: atime and ctime are checked whatever byte 475 is
+D1n	killed	2 failed | 308 passed | 6 skipped (316)	D1: base-256 needs a lead of 0x80 only
+D1o	killed	107 failed | 203 passed | 6 skipped (316)	D1: an all-NUL field is not a number

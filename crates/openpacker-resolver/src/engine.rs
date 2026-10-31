@@ -326,16 +326,15 @@ pub(crate) fn validate_solve_request(input: &SolveInput) -> Result<(), ResolverE
             ));
         }
     }
-    if let Some(platforms) = &input.request.platforms {
-        if platforms
+    if let Some(platforms) = &input.request.platforms
+        && platforms
             .host
             .as_ref()
             .is_some_and(|host| *host != input.request.target)
-        {
-            return Err(ResolverError::InvalidInput(
-                "platforms.host must equal the request target".into(),
-            ));
-        }
+    {
+        return Err(ResolverError::InvalidInput(
+            "platforms.host must equal the request target".into(),
+        ));
     }
     // The kind policy is consulted whether or not platforms are supplied, so
     // a misspelled kind must be rejected either way rather than silently

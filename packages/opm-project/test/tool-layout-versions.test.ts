@@ -202,3 +202,56 @@ describe('a tool whose tree is not wrapped in a directory', () => {
     }
   });
 });
+
+describe('a tool whose tarball holds a directory with no file beside its package', () => {
+  // npm strips the first path component of every entry, so such a directory
+  // installs nothing: the tool's files are node_modules/<name>/, as for any
+  // tarball, and a path inside the store tree drops package/ as the layout did.
+  it('runs its bin from node_modules/<name>/, with the package.json beside it', async () => {
+    const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-tool-empty-dir-'));
+    roots.push(cacheRoot);
+    const storePath = join(
+      cacheRoot,
+      '.opm',
+      'store',
+      `sha256-${'2'.repeat(64)}`,
+    );
+    await mkdir(join(storePath, 'package'), { recursive: true });
+    await mkdir(join(storePath, 'other', 'deeper'), { recursive: true });
+    await writeFile(
+      join(storePath, 'package', 'package.json'),
+      JSON.stringify({ name: 'spare', version: '1.0.0' }),
+    );
+    await writeFile(
+      join(storePath, 'package', 'cli.js'),
+      "console.log(require('./package.json').name);\n",
+    );
+    const layout = await layOutTool({
+      cacheRoot,
+      tool: 'pkg:npm/spare@1.0.0',
+      closure: [
+        {
+          exactPurl: 'pkg:npm/spare@1.0.0',
+          digest: `sha256:${'2'.repeat(64)}`,
+          size: 1,
+          source: 'https://registry.npmjs.org/spare/-/spare-1.0.0.tgz',
+          storePath,
+        },
+      ],
+    });
+    try {
+      expect(layout.relative('package/cli.js')).toBe(
+        'node_modules/spare/cli.js',
+      );
+      expect(
+        await readdir(join(layout.root, 'node_modules', 'spare')),
+      ).not.toContain('package');
+      const { stdout } = await promisify(execFile)(process.execPath, [
+        layout.entry('package/cli.js'),
+      ]);
+      expect(stdout).toBe('spare\n');
+    } finally {
+      await layout.dispose();
+    }
+  });
+});

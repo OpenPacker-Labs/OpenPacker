@@ -149,8 +149,8 @@ describe('whether an owner of this place may still be running', () => {
       false,
     ],
     [
-      'it is a zombie that nobody reaped',
-      { stat: { ...running, state: 'Z' } },
+      'it is a zombie that nobody reaped (no other thread)',
+      { stat: { ...running, state: 'Z' }, tasks: 1 },
       false,
     ],
     ['it is dead (X)', { stat: { ...running, state: 'X' } }, false],
@@ -192,7 +192,7 @@ describe('whether an owner of this place may still be running', () => {
       await isOwnerAlive(
         without(owner, 'startTime'),
         reader,
-        probe({ stat: { ...running, state: 'Z' } }),
+        probe({ stat: { ...running, state: 'Z' }, tasks: 1 }),
       ),
     ).toBe(false);
   });
@@ -226,8 +226,17 @@ describe('whether an owner of this place may still be running', () => {
         await isOwnerAlive(owner, reader, probe({ ...leader, tasks: 0 })),
       ).toBe(false);
     });
-    it('is gone where the threads cannot be listed', async () => {
-      expect(await isOwnerAlive(owner, reader, probe(leader))).toBe(false);
+    it('is alive where the threads cannot be listed: false only when it is certain (N5)', async () => {
+      expect(await isOwnerAlive(owner, reader, probe(leader))).toBe(true);
+    });
+    it('is gone when its start time differs, whatever the threads say', async () => {
+      expect(
+        await isOwnerAlive(
+          owner,
+          reader,
+          probe({ stat: { state: 'Z', startTime: '1' }, tasks: 5 }),
+        ),
+      ).toBe(false);
     });
     it('is not asked about threads of a process that is not a zombie', async () => {
       const asked: string[] = [];

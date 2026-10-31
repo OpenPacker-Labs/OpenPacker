@@ -422,6 +422,9 @@ describe('@openpacker/sandbox', () => {
       readonlyPaths: [],
       backend: createMockBackend(),
     });
+    // The parent never exits on its own, so a run that did not end it on the
+    // 100 ms timeout would wait for ever, or for the 600 s default; 8 s leaves
+    // a loaded machine room to start and stop the two processes.
     expect(Date.now() - started).toBeLessThan(8_000);
     expect(outcome.exitCode).not.toBe(0);
     await new Promise((resolve) => setTimeout(resolve, 500));

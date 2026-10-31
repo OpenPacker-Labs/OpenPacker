@@ -8,11 +8,9 @@ import { npmRangeEngine } from '../src/index.js';
  * answered for every range and version in
  * test/fixtures/workspace-oracle/ranges.mjs.
  *
- * The engine is not semver on partial versions. This test does not hide that:
- * it pins which ranges differ, in which class, and how many, so a fix to the
- * parser fails it and sends the ADR's figures to be corrected, and a new
- * difference fails it too. Everything else, including every full x.y.z range,
- * `||`, hyphen ranges between full versions and prereleases, must agree.
+ * The engine reads an npm range as node-semver does (npm-semver-range.ts), so
+ * it answers every pair as npm does. It used to read partial versions its own
+ * way and differed on 86 of these ranges; a difference now is a regression.
  */
 const oracle: {
   versions: string[];
@@ -46,49 +44,6 @@ function differences(): Map<string, string[]> {
   return found;
 }
 
-const PARTIAL = String.raw`(?:\*|[xX]|\d+(?:\.(?:\d+|[xX*])(?:\.(?:\d+|[xX*]))?)?)`;
-const VPARTIAL = String.raw`v\d+(?:\.\d+)?`;
-const classes: readonly [name: string, test: RegExp, count: number][] = [
-  [
-    'a partial version with a leading v, after any operator',
-    new RegExp(`^(?:[=^~<>]|[<>]=)?${VPARTIAL}$`, 'u'),
-    16,
-  ],
-  [
-    '"=" before a partial or wildcard version',
-    new RegExp(`^=(?!v)${PARTIAL}$`, 'u'),
-    16,
-  ],
-  [
-    '"^" before a partial version whose major is 0',
-    /^\^0(?:\.(?:0|x)(?:\.x)?)?$/u,
-    5,
-  ],
-  [
-    '"~" before a version whose minor is a wildcard',
-    /^~(?:0|1)\.[xX*](?:\.[xX*])?$/u,
-    6,
-  ],
-  [
-    '">" before a partial or wildcard version',
-    new RegExp(`^>(?!v)${PARTIAL}$`, 'u'),
-    19,
-  ],
-  ['"<" before a wildcard', /^<(?:\*|x|X)$/u, 3],
-  [
-    '"<=" before a partial or wildcard version',
-    new RegExp(`^<=(?!v)${PARTIAL}$`, 'u'),
-    16,
-  ],
-  [
-    'a range that contains one of the above',
-    /^(?:>1 <=2|>=1 <=2 \|\| 0\.x)$/u,
-    2,
-  ],
-  ['a hyphen range whose ends are wildcards', /^1\.x - 2\.x$/u, 1],
-  ['an operator with no version', /^(?:\^|>=)$/u, 2],
-];
-
 describe('the range engine against semver', () => {
   const found = differences();
 
@@ -100,27 +55,12 @@ describe('the range engine against semver', () => {
     );
   });
 
-  it('differs on 86 of 289 ranges, 783 of 6647 pairs, and on no others', () => {
+  it('agrees with npm on all 289 ranges and 6647 pairs', () => {
     expect(Object.keys(oracle.answers)).toHaveLength(289);
-    expect(found.size).toBe(86);
-    let pairs = 0;
-    for (const list of found.values()) pairs += list.length;
-    expect(pairs).toBe(783);
-  });
-
-  it('puts every difference in one of the classes the ADR names', () => {
-    for (const range of found.keys()) {
-      const named = classes.filter(([, test]) => test.test(range));
-      expect(
-        named.map(([name]) => name),
-        range,
-      ).toHaveLength(1);
-    }
-    for (const [name, test, count] of classes)
-      expect(
-        [...found.keys()].filter((range) => test.test(range)),
-        name,
-      ).toHaveLength(count);
+    expect(oracle.versions.length * Object.keys(oracle.answers).length).toBe(
+      6647,
+    );
+    expect(Object.fromEntries(found)).toEqual({});
   });
 
   it('agrees on every full version, wildcard-free and prerelease range', () => {
