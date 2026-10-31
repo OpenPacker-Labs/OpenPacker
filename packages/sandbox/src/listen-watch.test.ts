@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import {
@@ -28,6 +28,48 @@ const bwrapReady =
 const SERVER =
   "const s = require('node:http').createServer();" +
   "s.listen(0, '127.0.0.1', () => process.stdout.write(s.address().port + '\\n'));";
+
+/**
+ * The same server, which also ends when its standard input closes: a server
+ * this test starts itself ends with the test's process, however that ends,
+ * and is never left listening with init as its parent.
+ */
+const OWN_SERVER = `${SERVER}process.stdin.on('end', () => process.exit(0));process.stdin.resume();`;
+
+/** Whether `pid` names a process that has not ended; one ended and not yet reaped by its parent has. */
+function running(pid: number): boolean {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    const state = stat.slice(
+      stat.lastIndexOf(')') + 2,
+      stat.lastIndexOf(')') + 3,
+    );
+    return state !== 'Z' && state !== 'X';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * End `child`, and `server` (a process it started) when there is one, and
+ * wait until both are gone: run when the test finishes, passed, failed or
+ * timed out.
+ */
+async function reap(child: ChildProcess, server?: () => number | undefined) {
+  if (child.exitCode === null && child.signalCode === null) {
+    const exited = new Promise<void>((settle) =>
+      child.once('exit', () => settle()),
+    );
+    child.kill('SIGKILL');
+    await exited;
+  }
+  const pid = server?.();
+  if (pid === undefined) return;
+  // bwrap's own child dies with bwrap (`--die-with-parent`); one that has
+  // not yet is ended here, and waited for.
+  if (running(pid)) process.kill(pid, 'SIGKILL');
+  while (running(pid)) await new Promise((settle) => setTimeout(settle, 10));
+}
 
 describe.runIf(bwrapReady)('a process run without network', () => {
   it('is said to listen, on the port it listens on', async () => {
@@ -68,14 +110,24 @@ describe.runIf(bwrapReady)('a process listed as the root’s child', () => {
   it('is read only while it is the root’s child, not as another process its pid names', async () => {
     // A server in a network namespace of its own, started by bwrap: its
     // parent is bwrap, not this process.
+    // `--die-with-parent`: the server dies with bwrap, and bwrap with this
+    // process, so neither outlives the test however it ends.
     const child = spawn(
       '/usr/bin/bwrap',
-      ['--dev-bind', '/', '/', '--unshare-net', process.execPath, '-e', SERVER],
-      { stdio: ['ignore', 'pipe', 'ignore'] },
+      [
+        '--dev-bind',
+        '/',
+        '/',
+        '--unshare-net',
+        '--die-with-parent',
+        process.execPath,
+        '-e',
+        OWN_SERVER,
+      ],
+      { stdio: ['pipe', 'pipe', 'ignore'] },
     );
-    onTestFinished(() => {
-      child.kill('SIGKILL');
-    });
+    let serverPid: number | undefined;
+    onTestFinished(() => reap(child, () => serverPid));
     let printed = '';
     await new Promise<void>((settle, fail) => {
       child.stdout.on('data', (chunk: Buffer) => {
@@ -94,6 +146,7 @@ describe.runIf(bwrapReady)('a process listed as the root’s child', () => {
       .trim()
       .split(/\s+/u)
       .map(Number);
+    serverPid = server;
     // The control: read as bwrap's child, it is said to listen.
     expect(isolatedListenPort(child.pid!)).toBe(port);
     // Listed as this process's child, as a pid given to another process
@@ -110,12 +163,10 @@ describe.runIf(process.platform === 'linux')(
   'a process that listens in the caller’s own network namespace',
   () => {
     it('is not said to, as a run that shares the host’s network is not', async () => {
-      const child = spawn(process.execPath, ['-e', SERVER], {
-        stdio: ['ignore', 'pipe', 'ignore'],
+      const child = spawn(process.execPath, ['-e', OWN_SERVER], {
+        stdio: ['pipe', 'pipe', 'ignore'],
       });
-      onTestFinished(() => {
-        child.kill('SIGKILL');
-      });
+      onTestFinished(() => reap(child));
       let printed = '';
       await new Promise<void>((settle, fail) => {
         child.stdout.on('data', (chunk: Buffer) => {
