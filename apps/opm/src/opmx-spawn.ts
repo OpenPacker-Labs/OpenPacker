@@ -6,6 +6,7 @@ import {
   OpmError,
   ephemeralNodeRun,
   runSandboxedPackageProcess,
+  stoppedBySignal,
   type BinDeclaration,
   type EphemeralTool,
   type NodeRun,
@@ -23,6 +24,9 @@ export const EXIT_CODES = {
   unavailable: 8,
   internal: 9,
 } as const;
+
+/** How opmx ends when the reader of its output went away: as SIGPIPE ends a writer, 128 + 13. */
+export const BROKEN_PIPE_EXIT = 141;
 
 export interface CliIo {
   stdout: Pick<NodeJS.WriteStream, 'write'>;
@@ -215,8 +219,16 @@ export async function spawnTool(
  * text: a character a chunk splits is written whole with the next chunk, and
  * `end` writes what a last chunk left. `out` and `err` write text there too:
  * what the sandbox itself says, after the tool.
+ *
+ * When the reader of either stream goes away (it fails, EPIPE once `head -1`
+ * has its line, or is destroyed), nothing more is written to either, and
+ * `gone` is called once: the caller ends the tool as a shell pipeline would.
+ * `release` removes what is listened for on the streams.
  */
-export function passedOn(io: CliIo): {
+export function passedOn(
+  io: CliIo,
+  gone: () => void = () => undefined,
+): {
   sink: {
     stdout(chunk: Uint8Array): Promise<void> | undefined;
     stderr(chunk: Uint8Array): Promise<void> | undefined;
@@ -224,13 +236,33 @@ export function passedOn(io: CliIo): {
   end(): void;
   out(text: string): void;
   err(text: string): void;
+  /** Whether a reader went away. */
+  lost(): boolean;
+  release(): void;
 } {
   const out = new StringDecoder('utf8');
   const err = new StringDecoder('utf8');
+  let lost = false;
+  const lose = () => {
+    if (lost) return;
+    lost = true;
+    gone();
+  };
+  const watching = [watchReader(io.stdout, lose), watchReader(io.stderr, lose)];
+  /** Whether nothing more is to be written: a reader went away, or `stream` is destroyed. */
+  const closed = (stream: unknown) => {
+    // SAFETY: only `destroyed` is read, a boolean on every Node stream.
+    if ((stream as { destroyed?: unknown }).destroyed === true) lose();
+    return lost;
+  };
   const toOut = (written: string) =>
-    written === '' ? undefined : whenTaken(io.stdout, outRaw(io, written));
+    written === '' || closed(io.stdout)
+      ? undefined
+      : whenTaken(io.stdout, outRaw(io, written));
   const toErr = (written: string) =>
-    written === '' ? undefined : whenTaken(io.stderr, io.stderr.write(written));
+    written === '' || closed(io.stderr)
+      ? undefined
+      : whenTaken(io.stderr, io.stderr.write(written));
   return {
     sink: {
       stdout: (chunk) => toOut(out.write(chunk)),
@@ -242,6 +274,28 @@ export function passedOn(io: CliIo): {
     },
     out: (text) => void toOut(text),
     err: (text) => void toErr(text),
+    lost: () => lost,
+    release: () => {
+      for (const stop of watching) stop();
+    },
+  };
+}
+
+/**
+ * Calls `lose` once `stream` fails or closes, which is how a pipe says its
+ * reader went away; returns what stops listening. A stream that is not an
+ * event emitter (a test's) is not listened to.
+ */
+function watchReader(stream: unknown, lose: () => void): () => void {
+  // SAFETY: only `on` and `off` are used, and only where the stream has both.
+  const { on, off } = stream as { on?: unknown; off?: unknown };
+  if (typeof on !== 'function' || typeof off !== 'function')
+    return () => undefined;
+  on.call(stream, 'error', lose);
+  on.call(stream, 'close', lose);
+  return () => {
+    off.call(stream, 'error', lose);
+    off.call(stream, 'close', lose);
   };
 }
 
@@ -278,7 +332,14 @@ async function spawnProcess(
   sandbox?: SandboxContext,
   missingHint?: string,
 ): Promise<number> {
-  const passing = passedOn(io);
+  // The reader of opmx's output going away ends the tool as a shell pipeline
+  // ends a writer: by SIGPIPE, and then as any run is ended.
+  const broken = new AbortController();
+  const passing = passedOn(io, () => broken.abort(stoppedBySignal('SIGPIPE')));
+  const signal =
+    sandbox?.signal === undefined
+      ? broken.signal
+      : AbortSignal.any([sandbox.signal, broken.signal]);
   try {
     const outcome = await runSandboxedPackageProcess({
       argv: [command, ...argv],
@@ -293,7 +354,7 @@ async function spawnProcess(
         packageId: sandbox.packageId,
       }),
       ...(!(sandbox?.policy === undefined) && { policy: sandbox.policy }),
-      ...(!(sandbox?.signal === undefined) && { signal: sandbox.signal }),
+      signal,
       ...(!(sandbox?.pathPrefix === undefined) && {
         pathPrefix: sandbox.pathPrefix,
       }),
@@ -312,6 +373,8 @@ async function spawnProcess(
       // server prints that it listens and then serves until it is stopped.
       output: passing.sink,
     }).finally(passing.end);
+    // Silent, as a pipeline is: whoever reads opmx has gone.
+    if (passing.lost()) return BROKEN_PIPE_EXIT;
     // What the sandbox itself says: a limit reached, a run stopped.
     passing.out(outcome.stdout);
     passing.err(outcome.stderr);
@@ -342,5 +405,7 @@ async function spawnProcess(
     return missing && missingHint
       ? EXIT_CODES.unavailable
       : EXIT_CODES.internal;
+  } finally {
+    passing.release();
   }
 }

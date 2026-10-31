@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { readSync } from 'node:fs';
 import { MAX_INHERITED_HANDLES } from '../handles.js';
 import { executableAuthorityRefusal } from '../platform.js';
-import { stopMessage, stoppedByTimeout } from '../stop.js';
+import { stopMessage, stopSignal, stoppedByTimeout } from '../stop.js';
 import type { OutputSink, SandboxBackend } from '../types.js';
 
 /**
@@ -343,6 +343,7 @@ export async function spawnCapture(input: {
         return (termination ??= terminateProcessTree(
           child,
           input.treeContainment!,
+          stoppedBy,
         ));
       };
       handOn(child.stdout, 'stdout', output, () => void terminateTree('limit'));
@@ -378,11 +379,44 @@ export async function spawnCapture(input: {
   }
 }
 
+/** How long a tree a broken pipe stopped has to end by SIGPIPE before it is killed. */
+const SIGPIPE_GRACE_MS = 200;
+
+/**
+ * End `child`'s process group. A run stopped because the reader of its output
+ * went away (`stoppedBySignal('SIGPIPE')`) is first sent SIGPIPE, as a shell
+ * pipeline ends a writer; whatever is left of it a moment later, and any other
+ * run at once, is killed.
+ */
 async function terminateProcessTree(
   child: ChildProcess,
   containment: 'pid-namespace' | 'test-only',
+  stop?: unknown,
 ): Promise<void> {
   if (!child.pid) return;
+  if (
+    stopSignal(stop) === 'SIGPIPE' &&
+    process.platform !== 'win32' &&
+    child.exitCode === null &&
+    child.signalCode === null
+  ) {
+    const ended = new Promise<void>((resolve) =>
+      child.once('exit', () => resolve()),
+    );
+    try {
+      process.kill(-child.pid, 'SIGPIPE');
+    } catch {
+      // Gone already.
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      ended,
+      new Promise<void>(
+        (resolve) => (timer = setTimeout(resolve, SIGPIPE_GRACE_MS)),
+      ),
+    ]);
+    clearTimeout(timer);
+  }
   try {
     if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
     else if (containment === 'test-only') child.kill('SIGKILL');

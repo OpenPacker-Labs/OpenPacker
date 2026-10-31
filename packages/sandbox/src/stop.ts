@@ -32,6 +32,13 @@ function isRunStop(reason: unknown): reason is RunStop {
   );
 }
 
+/** The signal `reason` says reached the caller, if it says one did. */
+export function stopSignal(reason: unknown): NodeJS.Signals | undefined {
+  return isRunStop(reason) && reason.stop === 'signal'
+    ? reason.signal
+    : undefined;
+}
+
 /** What the sandbox says, on a line of its own, about a run `reason` ended. */
 export function stopMessage(reason: unknown): string {
   const what = !isRunStop(reason)

@@ -600,6 +600,18 @@ which on a line of their own: `process stopped by SIGINT`,
 The exit status is 124 for all three, as before; `opmx` then ends by the signal
 itself, so a shell sees 130 for SIGINT.
 
+When the reader of opmx's stdout or stderr goes away (`opmx tool | head -1`,
+once `head` has its line), the next write fails with EPIPE, or the stream is
+destroyed. opmx then writes nothing more and aborts the run with
+`stoppedBySignal('SIGPIPE')`. The backend sends the tool's process group
+SIGPIPE, as a shell pipeline ends a writer, and kills what is left of it 200 ms
+later, as it ends any run. opmx says nothing and exits 141, as a writer SIGPIPE
+ends does. A wait on a stream that is behind settles on the first of drain,
+close, error or finish, and removes the listeners for the other three.
+`opmx-pipe.test.ts` (apps/opm) runs `opmx yes | head -1` in bash: one line, exit
+141, and no process of the tool left; `opmx-drain.test.ts` waits fifty times on
+a stream and finds no listener left on it.
+
 `stop.test.ts` (sandbox) ends a run by each of the three signals, by the
 timeout, and by a bare abort, through the mock backend and bwrap, and an MXC run
 by a signal; `opmx-run-signals.test.ts` (apps/opm) finds the signal named when

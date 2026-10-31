@@ -74,13 +74,34 @@ describe('the sink opmx hands a tool’s output to', () => {
     const counted = () =>
       events.map((event) => out.stream.listenerCount(event));
     const before = counted();
-    const { sink } = passedOn({ stdout: out.stream, stderr: err.stream });
+    const passing = passedOn({ stdout: out.stream, stderr: err.stream });
+    const { sink } = passing;
     for (let index = 0; index < 50; index += 1) {
       const waiting = sink.stdout(Buffer.from('w'.repeat(16)));
       expect(waiting).toBeInstanceOf(Promise);
       out.release();
       await waiting;
     }
+    passing.release();
     expect(counted()).toEqual(before);
+  });
+
+  it('writes no more, and says so once, when a reader goes away', async () => {
+    const out = slowStream();
+    const err = slowStream();
+    let told = 0;
+    const passing = passedOn(
+      { stdout: out.stream, stderr: err.stream },
+      () => (told += 1),
+    );
+    const waiting = passing.sink.stdout(Buffer.from('a'.repeat(16)));
+    out.stream.destroy(
+      Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }),
+    );
+    await waiting;
+    expect(passing.sink.stdout(Buffer.from('b'))).toBeUndefined();
+    expect(passing.sink.stderr(Buffer.from('c'))).toBeUndefined();
+    expect([told, passing.lost()]).toEqual([1, true]);
+    passing.release();
   });
 });
