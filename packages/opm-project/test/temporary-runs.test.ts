@@ -8,9 +8,10 @@ import {
   mkdtemp,
   readdir,
   rm,
+  stat,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { currentOwner } from '../src/process-owner.js';
@@ -127,6 +128,30 @@ describe('the temporary runs directory', () => {
   );
 });
 
+/** Whether a user other than the owner may pass through every directory down to `path`. */
+async function traversable(path: string): Promise<boolean> {
+  let dir = realpathSync.native(path);
+  for (;;) {
+    if (((await stat(dir)).mode & 0o001) === 0) return false;
+    const parent = dirname(dir);
+    if (parent === dir) return true;
+    dir = parent;
+  }
+}
+
+/**
+ * Where the second user's shared temporary directory is made: under the
+ * temporary directory when others may pass through every directory above it,
+ * else under /tmp. A TMPDIR inside a private directory (an agent's scratch
+ * under a 0700 one) keeps the second user out of a directory made in it
+ * however open that directory is, which says nothing of the rule.
+ */
+async function sharedBase(): Promise<string | undefined> {
+  for (const base of [tmpdir(), '/tmp'])
+    if (await traversable(base)) return realpathSync.native(base);
+  return undefined;
+}
+
 /** Makes and removes a scratch directory, as the run of a second user would. */
 const RUN = `
 const [src] = process.argv.slice(1);
@@ -146,9 +171,12 @@ describe.runIf(uid === 0)(
   () => {
     it('runs, beside the first user’s directory', async (context) => {
       // Shared as /tmp is: anyone may make a name in it, and remove only theirs.
-      const shared = await mkdtemp(
-        join(realpathSync.native(tmpdir()), 'opm-shared-'),
-      );
+      const base = await sharedBase();
+      if (base === undefined)
+        return context.skip(
+          `neither the temporary directory nor /tmp can be reached by uid ${NOBODY}`,
+        );
+      const shared = await mkdtemp(join(base, 'opm-shared-'));
       temps.push(shared);
       await chmod(shared, 0o1777);
       // Without the CA bundle and options only root may read.
