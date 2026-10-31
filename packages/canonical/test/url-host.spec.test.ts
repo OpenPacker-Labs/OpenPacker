@@ -3,6 +3,14 @@ import { writtenHostLength } from '../src/url-host.js';
 import { hostCall, hostLengthIncludingBlob } from './whatwg-host.js';
 
 /**
+ * Hands the event loop a turn. A test that computes for a minute without one
+ * starves its vitest worker's answer to the runner (the worker gives up after
+ * 60 s: "Timeout calling onTaskUpdate"), which a loaded machine reaches.
+ */
+const breathe = (): Promise<void> =>
+  new Promise((resolve) => setImmediate(resolve));
+
+/**
  * `src/url-host.ts` reads the host of an address with index arithmetic;
  * `whatwg-host.ts` runs the URL Standard's parser states over code points. They
  * were written apart, from different texts, so that one reading's mistake is a
@@ -43,7 +51,7 @@ const SCHEMES = [
 ];
 
 describe('the oracle reads a host as Node does', () => {
-  it('on 400,000 addresses that Node accepts, it has the hostname Node reports', () => {
+  it('on 400,000 addresses that Node accepts, it has the hostname Node reports', async () => {
     const next = seeded(7);
     const pick = <T>(items: readonly T[]) => items[next() % items.length]!;
     const tokens = [
@@ -78,6 +86,7 @@ describe('the oracle reads a host as Node does', () => {
     let compared = 0;
     const found: string[] = [];
     for (let count = 0; count < 400_000; count += 1) {
+      if (count % 2000 === 0) await breathe();
       let address = `${pick(['', '', ' ', '\u0001 '])}${pick([...SCHEMES, 'ht\ttp', 'f\nile'])}:`;
       for (let step = next() % 9; step > 0; step -= 1) address += pick(tokens);
       if (next() % 7 === 0) address += pick(['', ' ', '\t']);
@@ -132,9 +141,11 @@ describe('the oracle reads a host as Node does', () => {
 });
 
 describe('the helper reads a host as the oracle does', () => {
-  function disagreements(addresses: Iterable<string>): string[] {
+  async function disagreements(addresses: Iterable<string>): Promise<string[]> {
     const found: string[] = [];
+    let seen = 0;
     for (const address of addresses) {
+      if (++seen % 2000 === 0) await breathe();
       const expected = hostLengthIncludingBlob(address);
       const actual = writtenHostLength(address);
       if (actual !== expected && found.length < 8)
@@ -145,7 +156,7 @@ describe('the helper reads a host as the oracle does', () => {
     return found;
   }
 
-  it('on every string of nine delimiters up to five long, after every scheme', () => {
+  it('on every string of nine delimiters up to five long, after every scheme', async () => {
     const delimiters = ['/', '\\', '@', ':', '[', ']', 'a', '?', '#'];
     const everything = function* () {
       for (const scheme of SCHEMES)
@@ -165,10 +176,10 @@ describe('the helper reads a host as the oracle does', () => {
           yield* walk('', 5);
         }
     };
-    expect(disagreements(everything())).toEqual([]);
+    expect(await disagreements(everything())).toEqual([]);
   }, 300_000);
 
-  it('on 600,000 strings of longer runs, tabs, spaces, controls and blobs', () => {
+  it('on 600,000 strings of longer runs, tabs, spaces, controls and blobs', async () => {
     const next = seeded(99);
     const pick = <T>(items: readonly T[]) => items[next() % items.length]!;
     const tokens = [
@@ -209,10 +220,10 @@ describe('the helper reads a host as the oracle does', () => {
         yield address + pick(['', '', ' ', '\t ']);
       }
     };
-    expect(disagreements(everything())).toEqual([]);
+    expect(await disagreements(everything())).toEqual([]);
   }, 300_000);
 
-  it('on the families that were counted short, at several sizes', () => {
+  it('on the families that were counted short, at several sizes', async () => {
     const everything = function* () {
       for (const units of [1, 2, 63, 64, 100, 4096]) {
         const payload = 'ß.é.'.repeat(units);
@@ -247,6 +258,6 @@ describe('the helper reads a host as the oracle does', () => {
           }
       }
     };
-    expect(disagreements(everything())).toEqual([]);
+    expect(await disagreements(everything())).toEqual([]);
   }, 300_000);
 });

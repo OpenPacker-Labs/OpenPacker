@@ -13,6 +13,16 @@ import {
 } from './source.js';
 import { catalogOfSpecifier, patchedPackageName } from './specifier.js';
 
+/**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
 const ref = (name: string, raw: string) =>
   parseRef(name, raw, DEFAULT_PNPM_LOCK_LIMITS, 'here');
 
@@ -232,11 +242,11 @@ describe('classifyVersion and semver', () => {
   });
 
   it('does not backtrack on a long near-miss', () => {
-    const started = Date.now();
+    const started = cpuMs();
     expect(
       isSemver('1.0.0-' + '1'.repeat(5000) + '.' + '-'.repeat(5000) + '!'),
     ).toBe(false);
-    expect(Date.now() - started).toBeLessThan(500);
+    expect(cpuMs() - started).toBeLessThan(500);
   });
 });
 

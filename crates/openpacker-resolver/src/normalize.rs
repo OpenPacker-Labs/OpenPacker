@@ -181,21 +181,19 @@ fn normalize_release(value: &str, nuget: bool) -> Result<String, ResolverError> 
             prerelease.to_owned()
         });
     }
-    if !nuget {
-        if let Some(build) = build {
-            if build.is_empty()
-                || build.split('.').any(|part| {
-                    part.is_empty()
-                        || !part
-                            .bytes()
-                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-                })
-            {
-                return Err(invalid(format!("invalid native version: {value}")));
-            }
-            output.push('+');
-            output.push_str(build);
+    if !nuget && let Some(build) = build {
+        if build.is_empty()
+            || build.split('.').any(|part| {
+                part.is_empty()
+                    || !part
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            })
+        {
+            return Err(invalid(format!("invalid native version: {value}")));
         }
+        output.push('+');
+        output.push_str(build);
     }
     Ok(output)
 }

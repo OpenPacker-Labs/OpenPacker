@@ -5,7 +5,6 @@ import {
   createFirstPartyTransport,
   echoed,
   firstPartyOriginPolicy,
-  MAXIMUM_METADATA_BYTES,
   normalizePinnedOrigin,
   parseHttpsOriginList,
   parsePurl,
@@ -14,8 +13,6 @@ import {
   redactUrl,
   type CatalogProvider,
   type HostLookup,
-  type HttpRequest,
-  type HttpResponse,
   type HttpTransport,
   type ProviderAttestation,
   type ProviderExecutable,
@@ -28,6 +25,13 @@ import type { OpmLockfile, OpmManifest, PluginBinding } from './types.js';
 import { MANIFEST_NAME } from './paths.js';
 import { requireAdapterRegistry } from './adapters.js';
 import { stripPurlVersion } from './spec.js';
+import { MemoizingTransport } from './memoizing-transport.js';
+import { retainedMetadataBytes } from './retention-config.js';
+
+export {
+  MemoizingTransport,
+  type MemoizingOptions,
+} from './memoizing-transport.js';
 
 /**
  * Resolving a PURL against the ecosystem's real registry.
@@ -219,6 +223,13 @@ export interface RegistryOptions {
   /** Configured endpoint selected from opm.toml. */
   endpoint?: string;
   transport?: HttpTransport;
+  /**
+   * What a resolve may keep of the registry documents it has read, in bytes
+   * (default 256 MiB, or `OPM_RETAINED_METADATA_MIB`). Over it the least
+   * recently used are let go and fetched again through the same transport; a
+   * transport that is not `refetchable` is kept whole.
+   */
+  maximumRetainedBytes?: number;
   /**
    * A provider already built for this ecosystem and source, to be used as is.
    * A provider remembers the registry documents it has read, so handing the same
@@ -470,110 +481,6 @@ const POOLED_RESOURCES = [
  * brings that to one fetch per package, and the artifact step reuses the same
  * documents instead of asking again.
  */
-function etagOf(response: HttpResponse): string | undefined {
-  for (const [name, value] of Object.entries(response.headers))
-    if (name.toLowerCase() === 'etag') return value;
-  return undefined;
-}
-
-/**
- * Answers a repeated read of the same registry document from memory, and
- * bounds how many requests are in flight.
- *
- * A provider revalidates a document it already holds on every use, which for a
- * resolve is a round trip per queue item per step for documents that cannot
- * usefully change within it, and a resolve that read one package's metadata in
- * two places could see two different versions of it. This makes one resolve
- * read each document once: a request that carries the `etag` it was already
- * given is answered `304`, one that carries none gets the stored `200`, and a
- * request for a document already being fetched waits for that fetch rather
- * than starting another.
- *
- * Only repeatable metadata reads are kept: a GET, bounded to no more than the
- * largest metadata document an adapter reads, that is not an artifact download.
- * Artifact bytes pass through and are not held. Every request, kept or not,
- * takes one of a fixed number of slots, so a walk that reads ahead cannot open
- * a connection per package.
- *
- * `ENTRY_LIMIT` is the adapters' own ceiling and not a number of this class's:
- * a request is kept only if it asks for no more than that, so an adapter that
- * is allowed a bigger document than this keeps would be fetched again at every
- * use (npm's `next` packument is 25.6 MB). What is kept is what the provider
- * holds for the resolve anyway, so the total bounds how many large documents a
- * resolve keeps being able to answer from memory, not how much it holds.
- */
-export class MemoizingTransport implements HttpTransport {
-  static readonly ENTRY_LIMIT = MAXIMUM_METADATA_BYTES;
-  static readonly TOTAL_LIMIT = 4 * MAXIMUM_METADATA_BYTES;
-  static readonly CONCURRENCY = 12;
-  readonly #kept = new Map<string, Promise<HttpResponse>>();
-  readonly #waiting: (() => void)[] = [];
-  #bytes = 0;
-  #active = 0;
-
-  constructor(private readonly inner: HttpTransport) {}
-
-  async request(request: HttpRequest): Promise<HttpResponse> {
-    if (!MemoizingTransport.repeatable(request)) return this.slot(request);
-    const key = `${request.url}\n${request.headers?.accept ?? ''}`;
-    const existing = this.#kept.get(key);
-    if (existing === undefined) {
-      const fetched = this.slot(request).then(
-        (response) => {
-          if (
-            response.status === 200 &&
-            response.body.byteLength <= MemoizingTransport.ENTRY_LIMIT &&
-            this.#bytes + response.body.byteLength <=
-              MemoizingTransport.TOTAL_LIMIT
-          )
-            this.#bytes += response.body.byteLength;
-          else this.#kept.delete(key);
-          return response;
-        },
-        (error: unknown) => {
-          this.#kept.delete(key);
-          throw error;
-        },
-      );
-      this.#kept.set(key, fetched);
-      return fetched;
-    }
-    const kept = await existing;
-    const validator = request.headers?.['if-none-match'];
-    return validator !== undefined && validator === etagOf(kept)
-      ? {
-          status: 304,
-          headers: { etag: validator },
-          body: new Uint8Array(),
-          url: kept.url,
-        }
-      : kept;
-  }
-
-  /** Run `request` in one of the fixed number of slots. */
-  private async slot(request: HttpRequest): Promise<HttpResponse> {
-    if (this.#active < MemoizingTransport.CONCURRENCY) this.#active += 1;
-    else await new Promise<void>((resolve) => this.#waiting.push(resolve));
-    try {
-      return await this.inner.request(request);
-    } finally {
-      // Hand the slot straight to the next in line; free it if none is.
-      const next = this.#waiting.shift();
-      if (next === undefined) this.#active -= 1;
-      else next();
-    }
-  }
-
-  private static repeatable(request: HttpRequest): boolean {
-    return (
-      (request.method === undefined || request.method === 'GET') &&
-      request.headers?.accept !== 'application/octet-stream' &&
-      (request.maximumBytes === undefined ||
-        request.maximumBytes <= MemoizingTransport.ENTRY_LIMIT)
-    );
-  }
-}
-
 export class ProviderPool {
   readonly #providers = new Map<string, Promise<CatalogProvider>>();
 
@@ -598,7 +505,13 @@ export class ProviderPool {
         ecosystem,
         transport === undefined
           ? options
-          : { ...options, transport: new MemoizingTransport(transport) },
+          : {
+              ...options,
+              transport: new MemoizingTransport(transport, {
+                maximumRetainedBytes:
+                  options.maximumRetainedBytes ?? retainedMetadataBytes(),
+              }),
+            },
         POOLED_RESOURCES,
       );
       this.#providers.set(ecosystem, provider);

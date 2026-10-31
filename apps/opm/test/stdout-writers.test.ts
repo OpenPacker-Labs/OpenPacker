@@ -121,13 +121,13 @@ const EXEMPT: ReadonlyArray<{
     reason: "the host installer's own stdout, passed through as it wrote it",
   },
   {
-    file: 'opmx.ts',
+    file: 'opmx-spawn.ts',
     starts: 'if (outcome.stdout) outRaw(io, outcome.stdout)',
     reason:
       "reads the tool's captured stdout, a string, to hand it on (the call is named below)",
   },
   {
-    file: 'opmx.ts',
+    file: 'opmx-spawn.ts',
     starts: 'outRaw',
     reason: "the tool's own stdout, passed through as it wrote it",
   },
@@ -151,7 +151,7 @@ describe('what the command lines write to stdout', () => {
         'commands/run-child.ts',
         'commands/run-output.ts',
         'opm.ts',
-        'opmx.ts',
+        'opmx-spawn.ts',
       ]),
     );
   });
@@ -175,7 +175,7 @@ describe('what the command lines write to stdout', () => {
     expect(calls.map((place) => place.file).sort()).toEqual([
       'commands/run-output.ts',
       'opm.ts',
-      'opmx.ts',
+      'opmx-spawn.ts',
     ]);
   });
 });

@@ -417,10 +417,167 @@ What it checks first, and refuses before anything is fetched or written:
 
 Like `npm ci`, it clears the `node_modules` of every workspace, the ones it does
 not install included. `--path` must be the workspace root: unlike npm it does
-not look upward from a member, so there is no implicit `-w`. `workspace:`
-specifiers and pnpm or yarn locks are not read by this command. A member's
+not look upward from a member, so there is no implicit `-w`. A yarn lock is not
+read by this command (a pnpm lock is: see the next section). A member's
 executable whose script is built after the install is shimmed to run under
 `node` until the script exists.
+
+#### Installing a pnpm lock
+
+A project whose lock is `pnpm-lock.yaml` (`lockfileVersion: '9.0'`, what pnpm 9
+and 10 write) is installed with the same command
+([ADR 0055](../adr/0055-opm-ci-installs-a-pnpm-lock.md)). The result is an
+npm-style nested `node_modules`, the tree Node resolves, and not pnpm's virtual
+store: no `node_modules/.pnpm`, no symlink except a workspace member's own link.
+
+```sh
+opm ci                                    # every importer, everything they need
+opm ci --filter @acme/web                 # that member, what it needs, the members it links
+opm ci --filter "@acme/web..."            # pnpm's grammar (-F, ./dir, globs, !name; also -w, --workspaces)
+opm ci --production                       # leave out devDependencies
+opm ci --os linux --cpu x64 --cpu arm64   # the platforms to install optional packages for (current = this one)
+opm ci --supported-architectures project  # the project's own pnpm.supportedArchitectures
+opm ci --plan                             # read, check and plan; fetch and write nothing
+```
+
+What it does differently from an npm lock, because a pnpm lock records edges and
+not places:
+
+- **It chooses the places.** The project's direct dependencies are in its
+  `node_modules`. Everything else, a member's direct dependencies included, goes
+  where it is shared: in the project's `node_modules` when it is the version of
+  its name most packages and importers want, beside its dependent (or in the
+  member) when another version already answers. So one instance has one real
+  path, and one module, as with pnpm and npm, unless versions conflict. A
+  package with a peer its dependent requires too goes only as high as that peer
+  is still the dependent's own copy, so a UI kit and its hooks load the React
+  their member loads. Where packages that peer each other cannot all be shared
+  (a host and its plugins wanted at several versions by several members), the
+  members that reach them keep what they need in their own `node_modules`, and a
+  lock for which no such layout is found is laid out as before, never refused
+  for a peer. Where no layout keeps a package and its dependent to one copy of a
+  peer they share (a package that depends on an older version of itself and
+  hosts a plugin that peers it, while the project holds another version of a
+  package that needs them both, say), the install goes ahead and says so with
+  one line on stderr, for `opm ci` and `opm ci --plan`: how many dependencies
+  load their own copy of a peer, and which first. pnpm's symlinks keep them to
+  one copy; a tree of directories cannot always. Every edge of every importer
+  and snapshot is resolved on the plan with Node's lookup before anything is
+  fetched, and a plan in which one does not find its target is refused.
+- **Each importer runs its own executables.** The executables of a member's
+  direct dependencies are shimmed in the member's own `node_modules/.bin`,
+  wherever the package was written, and the project's in the project's, as pnpm
+  links them; `opm run` and `opm exec` find the member's first. A member's own
+  executables go to the `.bin` of each importer that links the member, and to no
+  other.
+- **A package resolved against several sets of peers**
+  (`react-dom@18.2.0(react@18.2.0)` and `react-dom@18.2.0(react@18.3.0)`) is one
+  archive, fetched and extracted once, and as many places as dependents need.
+- **A workspace member is linked, not fetched**, at `node_modules/<name>` in the
+  project, under the name the importer gives it (its own, or an alias such as
+  `"e": "workspace:b@*"`, as pnpm links it), and a member's executables are
+  shimmed in the `.bin` of each importer that links it.
+- **The members are the ones the project has.** An importer the lock still lists
+  after its member went is left alone, as pnpm leaves it, and a new member with
+  no dependencies is installed without being in the lock.
+
+What it checks first, and refuses before anything is fetched or written, each
+naming the importer and the dependency:
+
+- an importer's dependency whose specifier in the lock differs from its
+  `package.json` (the lock is stale), a dependency added or dropped, an
+  `overrides` or `catalogs` section that differs from the project's (the
+  overrides applied to each importer as pnpm 10 applies them, `package.json`'s
+  replacing `pnpm-workspace.yaml`'s), a `publishConfig.directory` or
+  `ignoredOptionalDependencies` the lock does not record: these are the checks
+  `pnpm install --frozen-lockfile` makes, and the error says so;
+- by opm's own rules: a lock written with `ignoredOptionalDependencies`, a
+  package from a git repository, a directory, a `file:` archive or a runtime, a
+  package with no sha512, sha384 or sha256 integrity, an injected workspace
+  package, a member with dependencies the lock does not list, a link to an
+  importer the project no longer has, and a non-optional package that does not
+  run on the target. Every range, an override's included, is read as node-semver
+  reads it.
+
+**Patches** (`patchedDependencies`,
+[ADR 0057](../adr/0057-opm-ci-applies-pnpm-patches.md)) are applied as pnpm
+10.28 applies them, after each archive is proved to be the package the lock
+names and before anything is linked. The project's patches are read from
+`package.json`'s `pnpm.patchedDependencies` (or, when it has none,
+`pnpm-workspace.yaml`'s) and must be what the lock records: the same keys and
+paths, and each file's hash, pnpm 10's sha256 or pnpm 9's md5 in base32,
+whichever the lock has (a CRLF checkout hashes as LF). A hunk may sit up to 20
+lines from its header, trailing whitespace and `\r` do not stop it, and a patch
+the package already has counts as applied, as with pnpm; a patch is applied
+whole or not at all. The patched files are a store entry of their own
+(`sha256-<archive>-patch-<sha256 of the patch file's bytes>`, so an LF and a
+CRLF checkout of one patch, which pnpm hashes alike and applies differently, are
+two), a project that installs the same version unpatched shares none of them,
+and `opm gc --shared` keeps each while a project links it. `--plan` reports
+`patched: N packages by M patches` and refuses, before anything is fetched: a
+patch file that is missing (exit 4), edited since the lock was written (stale,
+exit 3), outside the project or reached through a link (exit 7), one that names
+a path outside its package or past an archive's bounds (127 segments and 4,088
+bytes below the package, an archive's 128 and 4,096 less `package/`; a name an
+archive refuses such as `CON`, `aux.js`, `a:b` or `name.`; a name over 255
+bytes; a path that, with the directory the store makes the package in, comes to
+4,096 bytes or more, the store's path counted as written or through its
+symlinks, whichever is longer; and the paths with the directories above them
+past 100,000 files; exit 7), one with a `diff --git ` or `index ` line over
+8,300 characters, the two pnpm reads with a regex that backtracks (exit 7; other
+long header lines and a long commit-message line before the diff are taken), or
+that pnpm cannot read (exit 3), and a patch file over 16 MiB or patch files over
+64 MiB together (exit 7). A patch that does not apply stops the install with
+nothing written (`PATCH_FAILED`, exit 3), where pnpm warns for a bare-name key
+and installs the package unpatched; so does one too costly to apply, past 256
+MiB of characters read, compared and written, and of the paths looked up (a file
+patched again in section after section, a path a hundred directories deep made
+again and again), which pnpm would run for as long as it takes. At install,
+which needs the package's files, a patch that would leave two files an archive
+refuses as a case collision (`lib/X.js` beside `lib/x.js`, or, on a file system
+that folds case, a file created over a twin it finds by another name) stops it
+with exit 7, and so does one that takes the package past 100,000 files, or a
+package that already holds a path too long for the directory its patched copy is
+made in (about 120 bytes deeper than its store entry). A patched entry whose
+installing process was killed before it wrote its record is made again by the
+next install, which records it only if the files in place are the tree the patch
+gives.
+
+`pnpm-workspace.yaml` is read as strictly as the lock: at most 1 MiB, not
+through a link, and without anchors or tags. Every value from these files
+reaches a message quoted, with control characters escaped. After extraction,
+each archive's own `package.json` must be the package the lock names (its name,
+in any case, and the version the lock records for it, which the entry of an
+`https:` tarball may leave out), or the install stops before `node_modules` is
+touched.
+
+An optional package for another `os`, `cpu` or `libc` is left out, with whatever
+only it needs, and counted by reason in the summary. The target is this machine
+alone unless `--os`, `--cpu` or `--libc` say otherwise;
+`--supported-architectures project` reads the project's own setting, which may
+add platforms (HoBo's adds arm64: 1,162 MB). No install script is run, and the
+packages that declare one are listed (a pnpm lock does not say, so they are
+found in the archives); the four HoBo's `allowBuilds` names work without theirs.
+If a project has both `pnpm-lock.yaml` and `package-lock.json`, the
+`packageManager` field of `package.json` chooses; without one the command
+refuses and names both files. `--omit peer` is refused: a pnpm lock writes
+resolved peers as ordinary dependencies.
+
+`--plan` reads, checks and plans, and prints what the install would do
+(packages, places, archives, what is left out and why, members and links)
+without fetching or writing; HoBo's 792 importers take 1.6 s. The same plan
+prints the same text, so two plans can be diffed. Which optional packages are
+left out is opm's own rule: it matches pnpm exactly with `--no-optional`, and
+ADR 0055 §19 lists where it differs otherwise.
+
+Measured against a lock it is installed from (ADR 0055): HoBo's plan holds the
+same 1,847 `name@version` that pnpm itself installed on the machine with
+`--supported-architectures project`, and Node's own lookup finds the package the
+lock names for all 7,397 dependency edges of the plan; a second place of a
+package that is in two (peer variants) adds only directories (384 KB for the 9
+extra places in ai-bdd). Not pnpm's layout: a tool that looks for
+`node_modules/.pnpm` finds nothing. A project script that itself runs `pnpm`
+(HoBo's `pretest`) needs pnpm; `opm exec vitest run` runs the same tests.
 
 ### `opm.toml`
 
@@ -438,6 +595,12 @@ source = "file:./vendor/demo-tool.tgz"
 offline = false
 layout = "opm"
 ```
+
+`version` is text, never PURL syntax. Where the line itself is what is locked (a
+package from an explicit `source`, or one a plugin without a codec serves), the
+lock's `purl` carries it as the PURL's version, percent-encoded where a PURL
+needs it: `1.2.3+build.5` is locked as `@1.2.3%2Bbuild.5`, the same version once
+read, and a lock that spells it bare still matches.
 
 ### Specs for `opm add`
 
@@ -776,16 +939,21 @@ opm gc --shared
 A project's store entry and its `node_modules` are hard links to an entry's
 files, so an entry in which every file has a link count of one is linked by no
 project and is removed. Entries any project still uses are left alone, and so
-are entries an install in progress is using: `opm ci`, `install`, `add` and
-`update` claim each entry before they look it up and keep the claim until their
-links hold it, so a collection that runs at the same time never takes an entry
-from under them. A claim stops counting when the process that made it ends,
-where that can be told: a claim from another machine sharing the store, or from
-another container, counts until it is removed from `<store>/.leases/` (ADR 0048,
-amendment 2026-10-17). An install waits for a collection that is deciding on an
-entry it wants, for 45 seconds at most; it then warns, naming the collection's
-lease, and goes on. Entries younger than ten minutes are left alone too, for an
-older opm that does not claim.
+are the archive entry a kept patched copy was made from (`opm ci` checks the
+archive before it adopts the copy, offline too) and entries an install in
+progress is using: `opm ci`, `install`, `add` and `update` claim each entry
+before they look it up and keep the claim until their links hold it, so a
+collection that runs at the same time never takes an entry from under them. A
+claim stops counting when the process that made it ends, where that can be told:
+a claim from another machine sharing the store, or from another container,
+counts until it is removed from `<store>/.leases/` (ADR 0048, amendment
+2026-10-17). An install waits for a collection that is deciding on an entry it
+wants, for 45 seconds at most; it then warns, naming the collection's lease, and
+goes on. Entries younger than ten minutes are left alone too, for an older opm
+that does not claim; an entry's age is that of the newer of its `.tree` record
+and the entry directory itself. A `.tree` record whose entry is gone, which an
+install or a collection that stopped half way leaves, is removed once it is ten
+minutes old.
 
 An install that has to make its claim in a store with no room left fails with
 the disk error (`ENOSPC`, `EDQUOT`); a store it may only read is adopted from
@@ -1130,8 +1298,8 @@ directory and everything under it); `.npmrc` is not read, so you say which.
 
 `opm` can read a `pnpm-lock.yaml` (`lockfileVersion: '9.0'`, what pnpm 9 and 10
 write; pnpm 11's additions are refused by name) into a typed, validated and
-bounded model ([ADR 0052](../adr/0052-pnpm-lockfile-model.md)). No command uses
-it yet: `opm ci` still reads only `package-lock.json`. It is a library in
+bounded model ([ADR 0052](../adr/0052-pnpm-lockfile-model.md)). `opm ci`
+installs it ([above](#installing-a-pnpm-lock)). The reader is a library in
 `@openpacker/adapter-npm`, beside the reader of `package-lock.json`, and it
 fetches nothing, installs nothing and decides no policy.
 
@@ -1189,6 +1357,18 @@ project. Registry metadata is re-resolved on every run — an unpinned run is a
 different thing tomorrow — but artifact bytes are content-addressed: a repeat
 run whose resolved digest already names a tool-cache entry skips the download
 and rebuilds from the digest-verified store archive, reported as `(cached)`.
+
+An npm tool runs from a `node_modules` of its closure's release, written for the
+run under `<tool cache>/.opm/runs/` and bound read-only with its `.bin` first on
+PATH, so `opmx pkg:npm/cowsay hi` finds `yargs` and a tool can run a dependency
+by name. Store entries are bound one by one while the sandbox's 16 handles
+allow, and past that through one view of their store (ADR 0036). Both are
+removed when the run ends, Ctrl-C and SIGTERM included (a second signal ends
+`opmx` at once). After a SIGKILL or a crash, the next run in the same place, or
+`opm gc` for a project's views, removes them once the process that made them has
+ended, judged by the same owner rule as a step's lock (`.owner`, ADR 0056); what
+another host, container or earlier boot left there and cannot be placed stays,
+and a left-behind view makes `opm gc --shared` keep its entries.
 
 ### Delegated adapter plugins
 
@@ -1383,7 +1563,8 @@ Missing artifacts fail closed with a clear error (no silent network when
 - Package execution (approved lifecycle scripts, `opmx`, host installers) goes
   through `@openpacker/sandbox` — native Bubblewrap jail on Linux,
   **fail-closed** when a jail cannot be enforced
-  ([ADR 0036](../adr/0036-sandboxed-installs-and-execution.md)).
+  ([ADR 0036](../adr/0036-sandboxed-installs-and-execution.md)). The jail leaves
+  root no capabilities: as root it cannot read another user's 0600 file.
 
 ### Sandbox configuration
 

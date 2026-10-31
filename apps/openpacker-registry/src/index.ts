@@ -15,8 +15,10 @@
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import type { HttpTransport } from '@openpacker/adapter-core';
 import {
+  CanonicalJsonLimitError,
   canonicalBytes,
   canonicalDigest,
+  documentParseLimits,
   formatDigest,
   parseCanonicalJson,
 } from '@openpacker/canonical';
@@ -180,14 +182,16 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
           }),
         })
       : undefined;
-  const app = Fastify({
-    logger: options.logger ?? false,
-    bodyLimit: options.bodyLimit ?? 4 * 1024 * 1024,
-  });
+  const bodyLimit = options.bodyLimit ?? 4 * 1024 * 1024;
+  const app = Fastify({ logger: options.logger ?? false, bodyLimit });
 
   // Canonical JSON only, matching openpackerd: a document whose digest is the
   // thing under signature cannot be read by a parser that accepts duplicate
-  // keys and silently keeps one.
+  // keys and silently keeps one. Its tree may cost what an honest document of
+  // `bodyLimit` bytes may (64 MiB for 4 MiB; ADR 0044, "Documents other than
+  // packuments"); a body that would cost more is too large (413), as a longer
+  // one is.
+  const bodyParseLimits = documentParseLimits(bodyLimit);
   app.removeContentTypeParser('application/json');
   app.addContentTypeParser(
     /^application\/(?:[a-z0-9.+-]+\+)?json$/u,
@@ -195,8 +199,10 @@ export function createRegistry(options: RegistryOptions): FastifyInstance {
     (_request, body, done) => {
       try {
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        done(null, parseCanonicalJson(body as string));
+        done(null, parseCanonicalJson(body as string, bodyParseLimits));
       } catch (error) {
+        if (error instanceof CanonicalJsonLimitError && error.limit === 'cost')
+          Object.assign(error, { statusCode: 413 });
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
         done(error as Error, undefined);
       }

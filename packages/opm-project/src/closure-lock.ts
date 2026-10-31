@@ -3,6 +3,7 @@ import { plainLine } from '@openpacker/canonical';
 import type { PackageInstance } from '@openpacker/contracts';
 import { binDeclarationsFromExecutables } from './bins.js';
 import { requireAdapterRegistry } from './adapters.js';
+import { hasCodec } from './codecs.js';
 import { rootRangeFor } from './closure-roots.js';
 import {
   bindVerifiedArtifactBytes,
@@ -18,6 +19,7 @@ import {
   type RegistryArtifact,
   type RegistryOptions,
 } from './registry.js';
+import { isChangedUnderTheResolve } from './registry-changed.js';
 import { resolveGraph, type ResolvedGraph } from './resolve.js';
 import { solveGraph } from './solve.js';
 import { purlPackageName, stripPurlVersion } from './spec.js';
@@ -65,11 +67,13 @@ export async function resolveTransitive(input: {
   // Only what came from a registry is walked through that registry. A package
   // pinned to a file, a catalog entry or a URL is not the registry's package of
   // that name, so asking the registry what it depends on would answer for a
-  // different package, and could pull its dependencies in by name.
+  // different package, and could pull its dependencies in by name. Nor is one
+  // whose adapter exports no codec: reading its releases takes the codec.
   const resolvable = input.direct.filter(
     (pkg) =>
       pkg.sourceKind === 'registry' &&
-      requireAdapterRegistry().has(pkg.ecosystem),
+      requireAdapterRegistry().has(pkg.ecosystem) &&
+      hasCodec(pkg.ecosystem),
   );
   if (resolvable.length === 0)
     return { packages: {}, dependencies: {}, aliases: {} };
@@ -325,6 +329,7 @@ export async function resolveTransitive(input: {
     // missing. The policy, digest and size refusals already propagated as they
     // were; the rest now say what stopped the closure.
     if (error instanceof OpmError && isClosureRefusal(error)) throw error;
+    if (isChangedUnderTheResolve(error)) throw error;
     const reason = error instanceof Error ? error.message : String(error);
     throw new OpmError(
       error instanceof OpmError ? error.code : 'UNRESOLVABLE',

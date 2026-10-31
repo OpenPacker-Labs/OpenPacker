@@ -1,4 +1,3 @@
-import { parseCanonicalJson } from '@openpacker/canonical';
 import type { Candidate } from './candidates.js';
 import { PackslipError } from './errors.js';
 import type { Fetcher } from './fetch.js';
@@ -11,6 +10,7 @@ import {
   listGithubReleases,
   type GithubEndpoints,
 } from './github.js';
+import { parseSignedPayload } from './payload.js';
 import { listUrl, type Project } from './project.js';
 import { assertListFresh, assertListSequence } from './release-list.js';
 import { versionFromTag } from './tags.js';
@@ -198,7 +198,10 @@ export async function discover(input: DiscoverInput): Promise<Discovery> {
   };
 }
 
-/** Decode a verified list payload; the verifier callback uses this. */
+/**
+ * Decode a verified list payload; the verifier callback uses this. It is held
+ * to what a signed document may cost (`parseSignedPayload`).
+ */
 export function parseListPayload(payload: string) {
-  return parseCanonicalJson(payload);
+  return parseSignedPayload(payload);
 }
