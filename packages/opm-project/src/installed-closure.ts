@@ -106,7 +106,8 @@ function fromLock(
 /**
  * How a bin of the installed package `alias` runs: an npm script from a layout
  * of the package's closure, made in the project beside its store
- * (`.opm/runs`) and removed when the run ends; anything else as before.
+ * (`.opm/runs`), or under the temporary directory in a project this user may
+ * not write, and removed when the run ends; anything else as before.
  */
 export async function installedNodeRun(input: {
   root: string;
