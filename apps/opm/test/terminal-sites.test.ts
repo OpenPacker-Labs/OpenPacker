@@ -46,7 +46,7 @@ const RAW: readonly { file: string; argument: string; why: string }[] = [
     why: "a host installer's own output, passed through as a child's is",
   },
   {
-    file: 'opmx.ts',
+    file: 'opmx-spawn.ts',
     argument: 'outcome.stderr',
     why: "a tool's own output, passed through",
   },
