@@ -12,6 +12,7 @@ import {
   type ArtifactSource,
 } from '@openpacker/artifact-model';
 import { materialize, type ArchiveFormat } from '@openpacker/materializer';
+import { beginCommand } from '@openpacker/project-io';
 import { extractionLimits } from './extraction.js';
 import {
   canonicalBytes,
@@ -95,7 +96,26 @@ export async function runCli(
   argv = process.argv.slice(2),
   io: CliIo = process,
 ): Promise<number> {
+  // A command of its own, as `opm` and `opmx` begin theirs: the project and
+  // the tree it runs in, and the checkouts around them and around every base
+  // the environment names, are fenced before anything resolves a base, so
+  // `materialize --install-prefix` writes through no link they hold
+  // (`.cache -> /outside`, committed; ADR 0034, trusted bases).
+  const command = { end: () => undefined as void };
   try {
+    return await runCliCommand(argv, io, command);
+  } finally {
+    command.end();
+  }
+}
+
+async function runCliCommand(
+  argv: string[],
+  io: CliIo,
+  command: { end: () => void },
+): Promise<number> {
+  try {
+    command.end = beginCommand(process.cwd());
     const args = parseArguments(argv);
     if (args.options.has('help')) {
       out(io, help());

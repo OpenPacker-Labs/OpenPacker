@@ -574,7 +574,7 @@ export function fenceWorkingProject(
  * bases its environment names are fenced, before any base is resolved
  * ({@link fenceWorkingProject}).
  *
- * Every process entry calls it first (`opm`, `opmx`), and so
+ * Every process entry calls it first (`opm`, `opmx`, `openpacker`), and so
  * does a host that runs commands in one process, at each, calling what it
  * returns when the command ends. A command begun while another runs forgets
  * nothing, so no command drops a fence or a base another is still using; the
