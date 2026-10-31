@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import {
   chmod,
   lstat,
@@ -257,9 +257,11 @@ function activateReadOnly(root: string) {
           '--dev-bind',
           '/',
           '/',
+          // bwrap makes a mount point through no link: the project is bound
+          // at its real path, where the child's spelling of it leads.
           '--ro-bind',
-          root,
-          root,
+          realpathSync(root),
+          realpathSync(root),
           process.execPath,
           '--experimental-transform-types',
           '--import',

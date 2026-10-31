@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { packTarGzip } from '@openpacker/project-io';
 import { EXIT_CODES, runOpm } from '../src/opm.js';
@@ -138,10 +139,20 @@ ${entry('a')}${entry('left')}${entry('plat-arm64', '    cpu: [arm64]\n')}${entry
   return { dir, urls, fetcher };
 }
 
-/** Where Node finds `name`'s package.json from a member's directory. */
+/**
+ * Where Node finds `name`'s package.json from a member's directory, below
+ * `dir` as written: Node answers with the real path, which differs under a
+ * TMPDIR reached through a link.
+ */
 const resolveFrom = (dir: string, member: string, name: string): string =>
-  createRequire(join(dir, member, 'package.json')).resolve(
-    `${name}/package.json`,
+  join(
+    dir,
+    relative(
+      realpathSync(dir),
+      createRequire(join(dir, member, 'package.json')).resolve(
+        `${name}/package.json`,
+      ),
+    ),
   );
 
 const list = async (dir: string, path: string) =>

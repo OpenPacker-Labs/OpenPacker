@@ -6,7 +6,7 @@
  * that appends its directory to order.log, so a run is read back as an order.
  */
 import { readFileSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll } from 'vitest';
@@ -41,7 +41,11 @@ export async function buildRealWorkspace(
       'utf8',
     ),
   ) as Fixture;
-  const root = await mkdtemp(join(tmpdir(), `opm-real-${name}-`));
+  // At its real path, as `cd` into it leaves the working directory that opm
+  // takes for INIT_CWD, and a member's shell its PWD.
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), `opm-real-${name}-`)),
+  );
   made.push(root);
   const write = async (path: string, text: string) => {
     await mkdir(dirname(join(root, path)), { recursive: true });

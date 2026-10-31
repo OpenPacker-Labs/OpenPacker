@@ -7,7 +7,7 @@
  * naming the numbers, with nothing published and the temporary removed.
  */
 
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, realpath, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanStores, publish, store } from './frozen-patch-fixture.js';
@@ -28,6 +28,14 @@ const BASE = `sha256-${'a'.repeat(64)}`;
 
 /** The directory a patched package is made in, for a store of `storeBytes` bytes. */
 const madeIn = (storeBytes: number) => storeBytes + 201;
+
+/**
+ * The bytes of `root` as the host counts them: the longer of the path as
+ * written and its canonical form, which differ when the temporary directory
+ * is reached through a link (macOS's /var, a linked TMPDIR).
+ */
+const counted = async (root: string) =>
+  Math.max(Buffer.byteLength(root), Buffer.byteLength(await realpath(root)));
 
 /** A file at `rel` below the package of the unpatched entry in `root`. */
 async function baseFile(root: string, rel: string): Promise<void> {
@@ -62,14 +70,14 @@ const leftovers = async (root: string) =>
 describe.runIf(onPosix)('a package that already holds a long path', () => {
   it('is patched when its longest path comes to 4,095 bytes in the patched copy', async () => {
     const root = await store();
-    await baseFile(root, pathOfBytes(4_094 - madeIn(Buffer.byteLength(root))));
+    await baseFile(root, pathOfBytes(4_094 - madeIn(await counted(root))));
     const made = await publish(root, touchesManifest);
     expect(made.patched).toEqual({ packages: 1, patches: 1 });
   }, 60_000);
 
   it('is refused as UNSAFE_PATH one byte past it, with the numbers, and leaves nothing in the store', async () => {
     const root = await store();
-    const directory = madeIn(Buffer.byteLength(root));
+    const directory = madeIn(await counted(root));
     const past = 4_095 - directory;
     await baseFile(root, pathOfBytes(past));
     const outcome = await outcomeOf(publish(root, touchesManifest));

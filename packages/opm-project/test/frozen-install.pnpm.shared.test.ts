@@ -192,7 +192,8 @@ describe('a peer shared below a member', () => {
         realPaths(w, 'react', [
           'packages/site',
           kit,
-          hooks.slice(w.dir.length + 1, -'/package.json'.length),
+          // `hooks` is a real path: cut the real path of the world from it.
+          hooks.slice(realpathSync(w.dir).length + 1, -'/package.json'.length),
         ]),
       ).size,
     ).toBe(1);
