@@ -2,13 +2,14 @@
 
 Initiative: put back on `main` what #191 dropped of the stacked PRs merged
 before it (#174, #179, #180, #182, #184, #185, #186, #187, #188), land the
-follow-ups written since, and land them as one line of PRs.
+follow-ups written since, and land them as one line of PRs, with the fixes found
+by running `opm ci` on real projects (real-repos) at its top.
 
 ## Phase
 
-closeout — the stack is one line and every PR has had an independent review of
-its current code. The full offline `npm run verify` at the stack's top
-(opmx-serve, #205) is the last gate; it runs once the machine is quiet.
+closeout — the stack is one line, with real-repos at its top. The full offline
+`npm run verify` has run at the top and every failing step is triaged (Gates).
+Each PR is ready for its bottom-up squash-merge.
 
 ## Stack layers
 
@@ -31,6 +32,7 @@ named in the merge's message).
 | 11    | #202 | `opmx-installed-deps`                     | an installed npm bin runs from a node_modules of its closure |
 | 12    | #203 | `opmx-stream`                             | a tool's output reaches the terminal as it writes it         |
 | 13    | #205 | `opmx-serve`                              | a tool runs until it ends or is stopped                      |
+| 14    | new  | `real-repos`                              | fixes from `opm ci` on real projects (ADR 0059, ADR 0060)    |
 
 ## Decisions
 
@@ -50,21 +52,42 @@ named in the merge's message).
   into a store file can no longer corrupt the caller's shared store.
 - **Browser stages need a short TMPDIR** (under about 58 characters): Chromium's
   singleton socket path holds 107 bytes.
+- **#206 lands right after #193**, alone (base `main`); it is merged into #205
+  (a572f8d), so every head above #205 holds it.
+- **real-repos is the line's top.** It was made on #198 (gzip-padding at
+  eff44a0) and merged opmx-serve to join the line (460f490); no ADR number
+  collides (0059 and 0060 follow 0058).
+- **symlinked-base is not in the line.** Its security re-review at 3bdddca
+  failed (an environment base inside a project with no project taken). It comes
+  back as its own PR on the landed main, with its own verify. Its branch was
+  merged with real-repos once (1640248) before that decision; no line branch
+  holds any of it.
+- **A fix the verify finds goes on the PR that introduced the defect** and is
+  merged up the line, never only at the top: c2d73f7 (#196), cca6544 and ec43b31
+  (#195), 840627b (#197), 3846cd9 (#194), 5434ef0 (#200), 10a8ffd (#205), and
+  earlier a5fb4f2 (#197), a6277e3 (#194), 1043800 (#203), 9be67bb (#205).
 
 ## Gates
 
 - Per change: the test that fails without it, run alone (single files, under
   `nice -n 19 ionice -c 3`, isolated `OPM_*`, `XDG_*` and `TMPDIR`).
-- Stack top: one full offline `npm run verify` (pending).
+- Stack top: one full offline `npm run verify` at the top (real-repos), every
+  step one at a time with a real TMPDIR, at 9b6a0a1, with the failed steps
+  re-run at bd64308 and b316542 after their fixes. Green: every step but `test`.
+  `test` fails only on 5 s test timeouts under load (4 CPUs, load 9 to 60, a
+  different test each run, each passing alone); `npm test -- --continue` reports
+  one such timeout and every other package passing. The Chromium stages ran with
+  a short TMPDIR. The table is in each PR's body.
+- A linked TMPDIR is refused as on main without symlinked-base (fail-closed);
+  the counts at the top are in each PR's body, not counted against the line.
 - Hosted CI: billing-refused on every branch since 2026-10-19, `main` included
   ("recent account payments have failed"). Billing-only red; it does not block
   the merge.
 
 ## Open items
 
-- A branch from `main`, `claude/ecstatic-mayer-wbm2c3-untrusted-urls-bound`,
-  replaces the 50 ms wall-clock bound in opm-project's `untrusted-urls.test.ts`.
-  Until it lands, that test may fail under load.
+- symlinked-base (TMPDIR, HOME, XDG and project bases reached through a link,
+  the macOS `/var` shape) is outside this line; see Decisions.
 - #201's first review's S4 was not kept and is not recoverable; its re-derived
   checks are in #201's body.
 
