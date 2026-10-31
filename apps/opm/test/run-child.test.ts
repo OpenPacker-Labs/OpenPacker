@@ -30,15 +30,18 @@ describe('exitStatus', () => {
 });
 
 describe('runChild', () => {
-  it('reports the exit code exactly', async () => {
-    for (const code of [0, 1, 2, 7, 42, 255]) {
+  // One child per test: six node starts in a row took past the 5 s budget at
+  // a load of 30 to 40, and the time each takes says nothing about the code.
+  it.each([0, 1, 2, 7, 42, 255])(
+    'reports the exit code exactly: %i',
+    async (code) => {
       const outcome = await runChild(
         node(['-e', `process.exit(${code})`]),
         capture().io,
       );
       expect(outcome).toEqual({ code, signal: undefined });
-    }
-  });
+    },
+  );
 
   it('writes the child output to the streams it was given', async () => {
     const cap = capture();

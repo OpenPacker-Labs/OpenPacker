@@ -99,7 +99,7 @@ const OPM_VERSION = '0.1.0';
 
 /** Seams a caller of {@link runOpm} may replace; the process entry passes none. */
 export interface RunOpmOptions {
-  /** Network used by `plugin add`; production resolves and pins real addresses. */
+  /** Network used by `plugin add` and `add`; production resolves and pins real addresses. */
   fetch?: typeof fetch;
   /** Adapters registered beside the bundled ones, as a bound plugin is. */
   adapters?: readonly AdapterModule[];
@@ -282,6 +282,9 @@ export async function runOpm(
             ...(source !== undefined && { source }),
             ...(alias !== undefined && { alias }),
             ...(!(offline === undefined) && { offline }),
+            ...(!(options.fetch === undefined) && {
+              registryOptions: { fetch: options.fetch },
+            }),
           }),
         );
         if (result.hostInstall) {
