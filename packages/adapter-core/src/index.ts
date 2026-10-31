@@ -53,23 +53,14 @@ export {
   type NativeTarget,
 } from './host-target.js';
 export * from './workspace/index.js';
+export { quote, terminalSafe } from './terminal-text.js';
 import { createNpmRangeEngine, type RangeEngine } from './workspace/ranges.js';
+import { npmAst } from './npm-semver-range.js';
+export { npmVersion, npmVersionsEqual } from './npm-semver-range.js';
 import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
 import type { NativeLayoutWorkspace } from './layout-workspace.js';
 import type { WorkspaceTool } from './workspace/members.js';
-export type {
-  FrozenExtraction,
-  FrozenLock,
-  FrozenLockOptions,
-  FrozenLockPackage,
-  FrozenLockRefusal,
-  FrozenLockSkip,
-  FrozenLockWorkspace,
-  FrozenOmit,
-  FrozenSourceKind,
-  FrozenWorkspaceInput,
-  FrozenWorkspaceScope,
-} from './frozen-lock.js';
+export type * from './frozen-lock.js';
 export type {
   NativeLayoutLink,
   NativeLayoutMember,
@@ -510,11 +501,11 @@ export interface ProjectFormat {
 
   /**
    * Whose workspace rules read this ecosystem's members (`package.json`
-   * `workspaces` is npm's). A host that sees one discovers the workspace on
-   * disk and hands it to `readFrozenLock`; a format without one is installed
-   * as a single project.
+   * `workspaces` is npm's); a host discovers them and hands them to
+   * `readFrozenLock`. `workspaceToolFor` decides per project, when its lock does.
    */
   readonly workspaceTool?: WorkspaceTool;
+  workspaceToolFor?(project: DetectedProject): Promise<WorkspaceTool>;
 
   /**
    * Read the native lock as a frozen install would use it: exactly the
@@ -1965,6 +1956,7 @@ export function evaluateSemverRange(
   return acceptsPrerelease(ast);
 }
 
+/** How a range is read; an `npm` one is node-semver's, whatever the rest says. */
 export interface SemverRangeOptions {
   scheme: 'npm' | 'cargo' | 'golang';
   bare: 'exact' | 'caret';
@@ -2099,16 +2091,8 @@ function astVers(ast: RangeAst): string | undefined {
   return parts.some((part) => part === undefined) ? undefined : parts.join('|');
 }
 
-export function parseSemverRange(
-  value: string,
-  options: SemverRangeOptions,
-): ParsedRange {
-  if (value.length > 4096)
-    throw new ProviderError(
-      'INVALID_NATIVE_RANGE',
-      'Native range exceeds 4096 characters',
-    );
-  const original = value;
+/** A cargo or Go range, by the reader those schemes share. */
+function sharedAst(value: string, options: SemverRangeOptions): RangeAst {
   let normalizedInput = value.trim();
   if (normalizedInput === '' || normalizedInput === '*') normalizedInput = '*';
   if (options.hyphenRanges) {
@@ -2141,10 +2125,23 @@ export function parseSemverRange(
       tokens.flatMap((token) => parseRangeToken(token, options)),
     );
   });
-  const ast: RangeAst =
-    alternatives.length === 1
-      ? alternatives[0]!
-      : { type: 'or', items: alternatives };
+  return alternatives.length === 1
+    ? alternatives[0]!
+    : { type: 'or', items: alternatives };
+}
+
+export function parseSemverRange(
+  value: string,
+  options: SemverRangeOptions,
+): ParsedRange {
+  if (value.length > 4096)
+    throw new ProviderError(
+      'INVALID_NATIVE_RANGE',
+      'Native range exceeds 4096 characters',
+    );
+  const original = value;
+  const ast =
+    options.scheme === 'npm' ? npmAst(value) : sharedAst(value, options);
   const versBody = exactlyRepresentableSemverRange(ast)
     ? astVers(ast)
     : undefined;

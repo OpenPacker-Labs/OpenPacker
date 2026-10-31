@@ -64,6 +64,7 @@ import { RunError } from './commands/run-error.js';
 import { helpText } from './commands/help-text.js';
 import { EXIT_CODES, opmErrorExit, providerErrorExit } from './exit-codes.js';
 import { formatFailure, parseFailure, report } from './error-report.js';
+import { isBooleanFlag, shortToLong } from './cli-flags.js';
 import { importHeading, importLine, listLine } from './stdout-lines.js';
 
 export { EXIT_CODES } from './exit-codes.js';
@@ -89,7 +90,7 @@ const OPM_VERSION = '0.1.0';
 
 /** Seams a caller of {@link runOpm} may replace; the process entry passes none. */
 export interface RunOpmOptions {
-  /** Network used by `plugin add`; production resolves and pins real addresses. */
+  /** Network used by `plugin add` and `add`; production resolves and pins real addresses. */
   fetch?: typeof fetch;
   /** Adapters registered beside the bundled ones, as a bound plugin is. */
   adapters?: readonly AdapterModule[];
@@ -272,6 +273,9 @@ export async function runOpm(
             ...(source !== undefined && { source }),
             ...(alias !== undefined && { alias }),
             ...(!(offline === undefined) && { offline }),
+            ...(!(options.fetch === undefined) && {
+              registryOptions: { fetch: options.fetch },
+            }),
           }),
         );
         if (result.hostInstall) {
@@ -824,44 +828,6 @@ function parseArgs(argv: string[]): Parsed {
     head: commandIndex === -1 ? [...argv] : argv.slice(0, commandIndex),
     rest: commandIndex === -1 ? [] : argv.slice(commandIndex + 1),
   };
-}
-
-function shortToLong(short: string): string {
-  switch (short) {
-    case 'e':
-      return 'ecosystem';
-    case 'h':
-      return 'help';
-    case 'w':
-      return 'workspace';
-    default:
-      return short;
-  }
-}
-
-function isBooleanFlag(key: string): boolean {
-  return (
-    key === 'help' ||
-    key === 'force' ||
-    key === 'offline' ||
-    key === 'online' ||
-    key === 'json' ||
-    key === 'dry-run' ||
-    key === 'delegate' ||
-    key === 'allow-build' ||
-    key === 'allow-network' ||
-    key === 'allow-elevation' ||
-    key === 'latest' ||
-    key === 'if-present' ||
-    key === 'native' ||
-    key === 'shared' ||
-    key === 'production' ||
-    key === 'frozen' ||
-    key === 'workspaces' ||
-    key === 'no-workspaces' ||
-    key === 'include-workspace-root' ||
-    key === 'write'
-  );
 }
 
 /**

@@ -913,7 +913,7 @@ describe('ephemeral tool cache (first-party)', () => {
       const first = await fetchTool({
         purl: 'pkg:npm/demo-tool@1.1.0',
         cacheRoot,
-        fetch: registryFetch,
+        registryOptions: { fetch: registryFetch },
       });
       expect(first.cached).toBe(false);
       expect(first.bins.map((bin) => bin.name)).toEqual(['demo-tool']);
@@ -923,7 +923,7 @@ describe('ephemeral tool cache (first-party)', () => {
       const second = await fetchTool({
         purl: 'pkg:npm/demo-tool@1.1.0',
         cacheRoot,
-        fetch: registryFetch,
+        registryOptions: { fetch: registryFetch },
       });
       expect(second.cached).toBe(true);
       expect(second.storePath).toBe(first.storePath);

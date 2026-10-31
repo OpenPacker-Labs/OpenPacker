@@ -31,7 +31,7 @@
       "kind": "solution"
     },
     {
-      "digest": "sha256:5b6b1007fdba56d16cece0b9ecd35c5ebe510c4a2afc2cc5b0028e0fdda96600",
+      "digest": "sha256:b7cc85cf80b9950a2826b8e55793ed09baa189546840339a83e7fca2101541e1",
       "file": "fixtures/golden/proof.json",
       "kind": "proof"
     },
@@ -41,17 +41,17 @@
       "kind": "explanation"
     },
     {
-      "digest": "sha256:32ee902c103b26d4a0eaec24c5ff16d4dbf489b9f6c7767f43caababe14ac955",
+      "digest": "sha256:8ad73359a916a81ba7915e678352c48d7e8718394657363519e27ac108e0da6b",
       "file": "fixtures/golden/unsatisfiable.json",
       "kind": "unsatisfiable"
     },
     {
-      "digest": "sha256:cad5d8d961e2e7afe1453e457c0e8514e029fa95a499dfb3953f9800b74e9d74",
+      "digest": "sha256:bb204ca67f96240d6a765276463afe5949ac6a8629cb74579cea9a0259c1d99c",
       "file": "fixtures/golden/receipt.json",
       "kind": "receipt"
     },
     {
-      "digest": "sha256:6576c284f6547513ead864aa2c1755c81e023adbf685cdf7b9f0c66c15fe4546",
+      "digest": "sha256:4d2c2d50dd6b53d46fdd23f3ebe39b7b642a7cb31204ac550cd5a16277e244b1",
       "file": "fixtures/golden/lockfile.json",
       "kind": "lockfile"
     },
@@ -61,17 +61,17 @@
       "kind": "lifecycle"
     },
     {
-      "digest": "sha256:450ce2711557ff995c041691ca8e1d0b84bddd3b9a6dfc3ffaa11ec891b6af70",
+      "digest": "sha256:2a5b72451cdcf550e3a44707cbd0e6bc157a04f54ce87cffe427f8adc5b4e24b",
       "file": "fixtures/golden/event.json",
       "kind": "event"
     },
     {
-      "digest": "sha256:78cdf9e40b97aea9ab06e755ed01b5ee839ab03144b94856124017d7e829802c",
+      "digest": "sha256:115eef78961aac450a5820bbc903dd9e74cba3da949ff0e7c93658e82507b154",
       "file": "fixtures/golden/oci.json",
       "kind": "oci"
     },
     {
-      "digest": "sha256:98d5d0a5e43e08640b76d2ceadc22b7f1b57c7ae8e817a25d772df996be1470a",
+      "digest": "sha256:b5b421f6e0036491f8d7737b4f380393767993adb270fa58e973778a9eab7fdf",
       "file": "fixtures/golden/ocm.json",
       "kind": "ocm"
     },

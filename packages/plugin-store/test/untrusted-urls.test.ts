@@ -3,6 +3,16 @@ import { RegistryClient } from '@openpacker/registry-client';
 import { PluginRegistryProvider, pluginRegistryModule } from '../src/index.js';
 
 /**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
+/**
  * The endpoint of a plugin registry is read through the guard: a host no DNS
  * name could be is refused in a few milliseconds and not the most of a second
  * the URL parser takes on 65,550 characters of it (`@openpacker/canonical`'s
@@ -14,13 +24,13 @@ function refusal(run: () => void): { error: Error | undefined; ms: number } {
   let error: Error | undefined;
   let ms = Infinity;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const started = performance.now();
+    const started = cpuMs();
     try {
       run();
     } catch (caught) {
       error ??= caught instanceof Error ? caught : new Error(String(caught));
     }
-    ms = Math.min(ms, performance.now() - started);
+    ms = Math.min(ms, cpuMs() - started);
   }
   return { error, ms };
 }

@@ -8,6 +8,16 @@ import {
 } from '../src/index.js';
 import { FORBIDDEN, holdsForbidden } from './forbidden.js';
 
+/**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
 const ESC = '\u001b';
 const BEL = '\u0007';
 
@@ -286,9 +296,9 @@ describe('plainLine on a large text', () => {
     for (const size of SIZES) {
       const count = Math.ceil(size / unit.length);
       const text = unit.repeat(count);
-      const start = performance.now();
+      const start = cpuMs();
       const shown = plainLine(text);
-      const milliseconds = performance.now() - start;
+      const milliseconds = cpuMs() - start;
       expect(milliseconds).toBeLessThan(BOUND_MS);
       // Every unit but the last is followed by its separator, and layout at the
       // end is dropped; a unit that ends in a shown space keeps it.
