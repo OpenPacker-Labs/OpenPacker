@@ -48,7 +48,7 @@ describe('the jail home under a symlinked temp directory', () => {
   it('is rooted at the real path, which is a grant the check accepts', async () => {
     const { real } = await linkedTmpdir();
     const root = defaultJailHomeRoot();
-    expect(root).toBe(join(real, 'openpacker-sandbox'));
+    expect(root).toBe(join(real, `openpacker-sandbox-${process.geteuid?.()}`));
     await mkdir(root, { recursive: true });
     expect(assertSafeJailPath(root, 'readwrite path')).toBe(root);
   });

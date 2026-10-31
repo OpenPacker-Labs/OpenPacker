@@ -1,10 +1,5 @@
 import { createHash } from 'node:crypto';
-import {
-  canonicalDigest,
-  formatDigest,
-  parseCanonicalJson,
-  sha256,
-} from '@openpacker/canonical';
+import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
 import type {
   JsonValue,
   PackageIdentity,
@@ -32,6 +27,7 @@ import {
   fetchArtifact,
   githubAssetUrl,
   parseProjectInput,
+  parseSignedPayload,
   rankCandidates,
   resolveRelease,
   type DetectedHost,
@@ -377,7 +373,8 @@ export class PackslipProvider implements CatalogProvider {
       const canonical = this.#codec.canonicalizePurl(exactPurl);
       const { resolved, artifactUrl } = await this.#resolution(canonical);
       const retrievedAt = this.options.clock.now();
-      const payload = parseCanonicalJson(resolved.verified.payload);
+      // The statement resolve already decoded, under the same limit.
+      const payload = parseSignedPayload(resolved.verified.payload);
       const metadataDigest = await canonicalDigest(payload);
       const metadata: PackslipMetadata = { resolved, artifactUrl };
       const translated = await this.#codec.translateMetadata(metadata, {

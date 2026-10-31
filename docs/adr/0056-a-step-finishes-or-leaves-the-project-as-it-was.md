@@ -47,7 +47,10 @@ TOML assignment at line 1").
      `package-lock.json`, `.opm/project.json`, `.opm/native.json` and
      `.opm/environment.json`.
    - `node_modules` is kept as a tree of hard links to the same inodes. opm's
-     `.opm/bin`, `.opm/links` and `.opm/generations` are copied.
+     `.opm/bin`, `.opm/links` and `.opm/generations` are copied. Each directory
+     of a kept tree is made private, filled, and then given the mode of the one
+     it keeps (`chmod`, not `mkdir`'s mode, which the umask narrows and which
+     drops setgid), so a tree is put back with its directories' modes.
    - A failure while linking or laying out node_modules puts all of it back.
      Success discards the copy.
 
@@ -73,10 +76,13 @@ TOML assignment at line 1").
      as **digests**, never the ids: machine-id(5) calls the machine id
      confidential, and the record sits in a project that is committed, cached
      and shared. A digest is `d1-` and 32 hex digits of an HMAC-SHA-256 keyed by
-     what it names (`opm.owner.machine.v1`, `opm.owner.boot.v1`); a record an
-     earlier opm wrote with the raw ids is read back as their digests. The
+     what it names (`opm.owner.machine.v1`, `opm.owner.boot.v1`). Reading a
+     record never rewrites a field into a digest: another holder that writes its
+     own values (a raw id, a digest of its own) compares them as written. The
      hostname is kept as `[A-Za-z0-9._-]`, anything else as `_`, so that a lock
-     cannot write to a terminal.
+     cannot write to a terminal. The same holds for every name in `.opm` and
+     every path a record names that a message shows: control characters, the
+     escape among them, are printed as `?` (one function, `printable`).
    - The record names no path to put back into; every path is rebuilt from the
      tables. It does name the project it was made in: the root directory's
      device and inode (a rename within a file system keeps them, a copy does
@@ -125,13 +131,20 @@ TOML assignment at line 1").
      be removed or renamed over, and the copy of it, made across file systems,
      is a copy of the bytes rather than of links (each `add`, `sync` and
      `update` pays for the whole tree). The directory is emptied and the kept
-     tree copied in; the kept tree stays whole until all of it is in place. A
+     tree copied in. The kept tree is never touched by that: it goes with the
+     rest of the copy, which is renamed to `….discard` first, so a kill at any
+     point finds it whole and the next recovery does the whole copy again, never
+     from a half-removed one. A tree that has a mount point inside it
+     (`node_modules/.cache` as a volume) is refused before anything is removed,
+     since emptying it would take the siblings and then stop at the mount. A
      file bind-mounted into the project (a name a rename cannot replace) is
      written in place, after the copy is marked (`files/<i>.putting`) so that a
      write cut short is finished by the next putting back and not taken for a
      conflict. Anything else the file system refuses (a read-only volume, a full
-     disk) is `UNAVAILABLE` naming the path, why, that the copy is kept, and to
-     run `opm recover` or remove the copy: never an errno or a call.
+     disk) is `UNAVAILABLE` naming the path, why, that the copy is kept and the
+     project may be part way back, and what to do: fix it and run `opm recover`,
+     or remove the copy, which leaves the project part way through the step that
+     left it (`opm sync` finishes that step). Never an errno or a call.
 
 5. **One step at a time, and a killed step is finished by the next one**
    (`project-step.ts`, `step-lock.ts`, `rollback-recovery.ts`,
@@ -176,9 +189,10 @@ TOML assignment at line 1").
        field is not immortal. Where the place agrees the pid decides: free
        (ESRCH) is gone; a zombie or dead process (`/proc` state Z or X) is gone,
        unless it leads threads that still run (more than one entry in
-       `/proc/<pid>/task`), which is the process; a start time that differs from
-       the recorded one is gone (EPERM does not settle it either way); an
-       unreadable start time is running;
+       `/proc/<pid>/task`), which is the process, or the threads cannot be
+       listed, which is not certain; a start time that differs from the recorded
+       one is gone (EPERM does not settle it either way); an unreadable start
+       time is running;
      - a `ready` copy that was not being discarded means the project may be half
        way, and it is put back, unless opm.toml or the lock holds neither what
        the copy kept nor what the step was about to write, or package.json or
@@ -217,11 +231,17 @@ TOML assignment at line 1").
      - a lock that does not say who holds it (empty, cut short, from a newer
        opm): the same, with its own cost (other steps may run on the project,
        and if that step is running it writes without a lock); with `--force`
-       only that lock file is removed and the command says so. It is named by
-       the id its file name carries;
+       only that lock file is removed, no copy is put back, and the command says
+       so. It is named by the id its file name carries. A lock that could not be
+       read for the system's own reason (no descriptors, an I/O error, gone or
+       changed as it was read) is not a lock that says nothing: that is
+       `UNAVAILABLE`, nothing changed, run again;
      - a copy made in another project: removed, nothing else touched, no
        confirmation, even if its owner runs here, unless that project shares
-       this `.opm`.
+       this `.opm`. The refusal that leads here says what it is for a project
+       that was moved or restored from a backup as well (new inodes, another
+       path): the step that made the copy was never finished here, removing the
+       copy keeps the project as it is, and `opm sync` finishes the step.
 
      Once confirmed, opm removes the locks of that owner and recovers its copies
      as above, and prints what it did; it does not touch another owner's lock or

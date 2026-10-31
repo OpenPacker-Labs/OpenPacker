@@ -223,12 +223,19 @@ describe('how long a step waits', () => {
   it('is as long as asked: none at all gives up at once', async () => {
     const root = await project([]);
     await leftBy(root, await foreign());
-    const started = Date.now();
+    // A step is told when it starts to wait (`onWait`), and waitMs 0 never
+    // starts. One that did not take it would wait the 10 s default: it is
+    // stopped there, with an error that is not PROJECT_BUSY. No clock is read.
+    const waited = new Error('the step waited for the step that holds it');
     await expect(
-      recoverInterruptedSteps(root, { waitMs: 0 }),
+      recoverInterruptedSteps(root, {
+        waitMs: 0,
+        onWait: () => {
+          throw waited;
+        },
+      }),
     ).rejects.toMatchObject({
       code: 'PROJECT_BUSY',
     });
-    expect(Date.now() - started).toBeLessThan(2_000);
   });
 });

@@ -22,6 +22,16 @@ export const pidNamespace = first([
   ['unshare', '--user', '--map-root-user', '--pid', '--fork', '--mount-proc'],
 ]);
 
+/**
+ * `unshare …` options that start the next command as pid 1 of a new PID
+ * namespace that still sees this one's `/proc` (no `--mount-proc`): its
+ * `/proc/<pid>` are other processes, and `/proc/self` names it by another pid.
+ */
+export const stalePidNamespace = first([
+  ['unshare', '--pid', '--fork'],
+  ['unshare', '--user', '--map-root-user', '--pid', '--fork'],
+]);
+
 /** `unshare …` options that start the next command in a mount namespace of its own. */
 export const mountNamespace = first([
   ['unshare', '--mount'],

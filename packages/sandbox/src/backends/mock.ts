@@ -1,7 +1,9 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readSync } from 'node:fs';
+import { MAX_INHERITED_HANDLES } from '../handles.js';
 import { executableAuthorityRefusal } from '../platform.js';
-import type { SandboxBackend } from '../types.js';
+import { stopMessage, stopSignal, stoppedByTimeout } from '../stop.js';
+import type { OutputSink, SandboxBackend } from '../types.js';
 
 /**
  * Test backend: runs the process with scrubbed env but no OS isolation.
@@ -44,6 +46,7 @@ export function createMockBackend(options?: {
         maximumOutputBytes: input.maximumOutputBytes,
         treeContainment: 'test-only',
         ...(!(input.stdin === undefined) && { stdin: input.stdin }),
+        ...(!(input.output === undefined) && { output: input.output }),
         inheritedFds: [
           ...directoryFds,
           ...(input.executableAuthority === undefined
@@ -116,6 +119,13 @@ export function assertSnapshot(fd?: number): void {
 
 export type OutputLimitKind = 'stdout' | 'stderr' | 'combined';
 
+/**
+ * A process's output: kept within the policy's byte limits, or handed to
+ * `sink` as it arrives. Kept output past a limit is not kept, and `push` says
+ * the process tree is to be ended. Output handed on is not kept, so it has no
+ * limit: a tool someone watches (a server's log) writes for as long as it
+ * runs.
+ */
 export class BoundedOutput {
   readonly #stdout: Buffer[] = [];
   readonly #stderr: Buffer[] = [];
@@ -130,11 +140,20 @@ export class BoundedOutput {
       maximumStderrBytes: number;
       maximumOutputBytes: number;
     },
+    readonly sink?: OutputSink,
   ) {}
 
-  push(kind: 'stdout' | 'stderr', chunk: unknown): boolean {
+  /**
+   * Keep or hand on `chunk`: false past a limit (end the tree), true when it
+   * was taken, or the promise of a sink that cannot take more until it settles.
+   */
+  push(kind: 'stdout' | 'stderr', chunk: unknown): boolean | Promise<void> {
     if (this.exceeded) return false;
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    if (this.sink !== undefined) {
+      const full = this.sink[kind](bytes);
+      return full instanceof Promise ? full : true;
+    }
     const channelBytes =
       kind === 'stdout' ? this.#stdoutBytes : this.#stderrBytes;
     const channelLimit =
@@ -186,6 +205,30 @@ export class BoundedOutput {
   }
 }
 
+/**
+ * Hand what `stream` reads to `output` as `kind`: past a limit `exceeded` is
+ * called, and while the sink cannot take more the stream is paused, so the
+ * process is not read (and blocks on its own writes) until the sink settles.
+ */
+export function handOn(
+  stream: NodeJS.ReadableStream | null | undefined,
+  kind: 'stdout' | 'stderr',
+  output: BoundedOutput,
+  exceeded: () => void,
+): void {
+  stream?.on('data', (chunk: unknown) => {
+    const taken = output.push(kind, chunk);
+    if (taken === false) exceeded();
+    else if (taken !== true) {
+      stream.pause();
+      void taken.then(
+        () => stream.resume(),
+        () => stream.resume(),
+      );
+    }
+  });
+}
+
 export async function spawnCapture(input: {
   argv: readonly string[];
   cwd: string;
@@ -197,8 +240,15 @@ export async function spawnCapture(input: {
   maximumOutputBytes?: number;
   /** Bounded bytes for the child's stdin; absent means /dev/null. */
   stdin?: Uint8Array;
+  /** Hand output on as it is written instead of keeping it. */
+  output?: OutputSink;
   treeContainment?: 'pid-namespace' | 'test-only';
   inheritedFds?: readonly number[];
+  /**
+   * Called with the child's pid once it is started; what it returns is called
+   * when the child has ended.
+   */
+  onSpawn?: (pid: number) => () => void;
 }): Promise<{
   exitCode: number;
   stdout: string;
@@ -223,12 +273,12 @@ export async function spawnCapture(input: {
       'PID namespace containment is unavailable on this platform',
     );
   if (
-    (input.inheritedFds?.length ?? 0) > 16 ||
+    (input.inheritedFds?.length ?? 0) > MAX_INHERITED_HANDLES ||
     input.inheritedFds?.some((fd) => !Number.isSafeInteger(fd) || fd < 0)
   )
     throw new SandboxBackendError(
       'INVALID_FD_AUTHORITY',
-      'At most 16 valid handles may be inherited',
+      `At most ${MAX_INHERITED_HANDLES} valid handles may be inherited`,
     );
 
   const timeoutMs = input.timeoutMs ?? 0;
@@ -236,7 +286,7 @@ export async function spawnCapture(input: {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const ac = new AbortController();
   if (timeoutMs > 0) {
-    timer = setTimeout(() => ac.abort(), timeoutMs);
+    timer = setTimeout(() => ac.abort(stoppedByTimeout(timeoutMs)), timeoutMs);
     timeoutSignal = ac.signal;
   }
 
@@ -263,42 +313,55 @@ export async function spawnCapture(input: {
         ],
         detached: process.platform !== 'win32',
       });
+      const unwatch =
+        child.pid === undefined ? undefined : input.onSpawn?.(child.pid);
       if (input.stdin !== undefined && child.stdin) {
         // A child that exits before reading closes the pipe early; the close
         // event remains authoritative for the outcome.
         child.stdin.on('error', () => undefined);
         child.stdin.end(Buffer.from(input.stdin));
       }
-      const output = new BoundedOutput({
-        maximumStdoutBytes: input.maximumStdoutBytes ?? 1024 * 1024,
-        maximumStderrBytes: input.maximumStderrBytes ?? 1024 * 1024,
-        maximumOutputBytes: input.maximumOutputBytes ?? 2 * 1024 * 1024,
-      });
+      const output = new BoundedOutput(
+        {
+          maximumStdoutBytes: input.maximumStdoutBytes ?? 1024 * 1024,
+          maximumStderrBytes: input.maximumStderrBytes ?? 1024 * 1024,
+          maximumOutputBytes: input.maximumOutputBytes ?? 2 * 1024 * 1024,
+        },
+        input.output,
+      );
       let termination: Promise<void> | undefined;
       let aborted = false;
+      // What ended the run, as the abort's reason says: a signal the caller
+      // received, the timeout, or an abort.
+      let stoppedBy: unknown;
       let settled = false;
       const terminateTree = (reason: 'limit' | 'abort') => {
-        aborted ||= reason === 'abort';
+        if (reason === 'abort' && !aborted) {
+          aborted = true;
+          stoppedBy = signal?.reason;
+          // A stream held for a sink that never takes what it was handed (a
+          // reader that does not drain) would hold the run's end with it.
+          letGoOfHeld(child.stdout, child.stderr);
+        }
         return (termination ??= terminateProcessTree(
           child,
           input.treeContainment!,
+          stoppedBy,
         ));
       };
-      child.stdout?.on('data', (chunk: unknown) => {
-        if (!output.push('stdout', chunk)) void terminateTree('limit');
-      });
-      child.stderr?.on('data', (chunk: unknown) => {
-        if (!output.push('stderr', chunk)) void terminateTree('limit');
-      });
+      handOn(child.stdout, 'stdout', output, () => void terminateTree('limit'));
+      handOn(child.stderr, 'stderr', output, () => void terminateTree('limit'));
       const onAbort = () => void terminateTree('abort');
       signal?.addEventListener('abort', onAbort, { once: true });
       if (signal?.aborted) onAbort();
       child.on('error', (err) => {
         signal?.removeEventListener('abort', onAbort);
+        unwatch?.();
         settled = true;
         reject(err);
       });
       child.on('close', async (code) => {
+        unwatch?.();
         await termination;
         if (settled) return;
         settled = true;
@@ -308,7 +371,7 @@ export async function spawnCapture(input: {
           aborted
             ? {
                 ...result,
-                stderr: `${result.stderr}\nopenpacker sandbox: process aborted or timed out\n`,
+                stderr: `${result.stderr}\n${stopMessage(stoppedBy)}`,
               }
             : result,
         );
@@ -319,11 +382,60 @@ export async function spawnCapture(input: {
   }
 }
 
+/**
+ * Let go of a run's output streams that are held for a sink (paused until it
+ * takes what it was handed): what they hold is dropped, as a stopped run's is,
+ * and they close, so the run ends whether or not the sink ever drains.
+ */
+export function letGoOfHeld(
+  ...streams: (NodeJS.ReadableStream | null | undefined)[]
+): void {
+  for (const stream of streams) {
+    if (stream?.isPaused() !== true) continue;
+    // SAFETY: only `destroy` is called, and only where the stream has it.
+    const { destroy } = stream as { destroy?: unknown };
+    if (typeof destroy === 'function') destroy.call(stream);
+  }
+}
+
+/** How long a tree a broken pipe stopped has to end by SIGPIPE before it is killed. */
+const SIGPIPE_GRACE_MS = 200;
+
+/**
+ * End `child`'s process group. A run stopped because the reader of its output
+ * went away (`stoppedBySignal('SIGPIPE')`) is first sent SIGPIPE, as a shell
+ * pipeline ends a writer; whatever is left of it a moment later, and any other
+ * run at once, is killed.
+ */
 async function terminateProcessTree(
   child: ChildProcess,
   containment: 'pid-namespace' | 'test-only',
+  stop?: unknown,
 ): Promise<void> {
   if (!child.pid) return;
+  if (
+    stopSignal(stop) === 'SIGPIPE' &&
+    process.platform !== 'win32' &&
+    child.exitCode === null &&
+    child.signalCode === null
+  ) {
+    const ended = new Promise<void>((resolve) =>
+      child.once('exit', () => resolve()),
+    );
+    try {
+      process.kill(-child.pid, 'SIGPIPE');
+    } catch {
+      // Gone already.
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      ended,
+      new Promise<void>(
+        (resolve) => (timer = setTimeout(resolve, SIGPIPE_GRACE_MS)),
+      ),
+    ]);
+    clearTimeout(timer);
+  }
   try {
     if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
     else if (containment === 'test-only') child.kill('SIGKILL');

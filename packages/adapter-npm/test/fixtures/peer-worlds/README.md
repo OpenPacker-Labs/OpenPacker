@@ -67,3 +67,15 @@ copy of that `p2` beside `p1@3` finds the older `p1`, and one above finds the
 member's `p2`. The search over every layout of at most 20 places finds 94,505
 that resolve every edge, and every one has a split (the test repeats it to 16
 places: 2,969 layouts).
+
+`tie-break` is `kept-split` beside a host and its plugins that peer one another,
+wanted by a member at another version than the project's (a reduction made the
+same way, of a world on which a mutant of the planner that kept the second way
+of pinning on a tie changed the plan). Both ways of pinning keep the one split;
+the first also writes a package a second time in the member, so the planner
+keeps the layout with fewer places.
+
+`full-tie` is the same beside packages that peer one another in a member: the
+two ways of pinning keep the one split in as many places, in different layouts,
+and the planner keeps the first's (a mutant that kept the second changed no test
+before it).

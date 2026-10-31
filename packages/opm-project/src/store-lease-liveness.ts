@@ -7,9 +7,10 @@
  * install bounds how long it waits on one (`shared-store-lease.ts`), and a
  * collection leaves what it holds. Otherwise the lease is judged by its
  * mechanism, `how`: `proc` by whether the owner's pid has the lock file open
- * (and, when that cannot be looked at, as `pid` is), `pid` by whether that pid
- * runs and started when the owner did, `flock` and `share` by trying to take
- * the lock.
+ * (and, when that cannot be looked at, as `pid` is), `pid` by the one owner
+ * rule's pid check (`isOwnerAlive` of `lease-owner.ts`: the pid runs, is not a
+ * zombie, and started when the owner did), `flock` and `share` by trying to
+ * take the lock.
  *
  * Every verdict errs towards "held": a reader that cannot tell treats the
  * lease as live.
@@ -22,8 +23,10 @@ import {
   currentOwner,
   isOwnerAlive,
   ownerPlace,
+  UNKNOWN,
   type LeaseOwner,
 } from './lease-owner.js';
+import type { OwnerProbe } from './process-owner.js';
 import type { LeaseName, LeaseSteps } from './store-lease.js';
 
 /** `O_EXLOCK` on macOS and the BSDs, which Node passes to `open(2)` as is. */
@@ -43,6 +46,11 @@ export interface JudgeOptions {
    * `/proc/<pid>/fd` by default. A test seam.
    */
   descriptors?: (pid: number) => Promise<string[]>;
+  /**
+   * What the pid check asks of the system (signal 0, `/proc/<pid>/stat`,
+   * `/proc/<pid>/task`); the system by default. A test seam.
+   */
+  probe?: OwnerProbe;
 }
 
 /**
@@ -55,7 +63,11 @@ export async function leaseHeld(
   options: JudgeOptions = {},
 ): Promise<boolean> {
   const reader = options.reader ?? (await currentOwner());
-  const descriptors = options.descriptors ?? listDescriptors;
+  const judge: Judge = {
+    reader,
+    descriptors: options.descriptors ?? listDescriptors,
+    ...(options.probe !== undefined && { probe: options.probe }),
+  };
   // A lock is `pending` until it is held and renamed to `lock`, so `pending`
   // is looked at first: one that is there is judged by its inode, which the
   // holder keeps open across the rename, and one that is gone has been
@@ -63,18 +75,23 @@ export async function leaseHeld(
   // misses a lock renamed between the two looks and calls it abandoned.
   for (const file of ['pending', 'lock'] as const) {
     const path = join(directory, `${name.id}.${file}`);
-    const verdict = await heldAt(path, name, reader, descriptors);
+    const verdict = await heldAt(path, name, judge);
     await options.step?.('lease-judged', name.id);
     if (verdict !== 'gone') return verdict === 'held';
   }
   return false;
 }
 
+interface Judge {
+  reader: LeaseOwner;
+  descriptors: (pid: number) => Promise<string[]>;
+  probe?: OwnerProbe;
+}
+
 async function heldAt(
   path: string,
   name: LeaseName,
-  reader: LeaseOwner,
-  descriptors: (pid: number) => Promise<string[]>,
+  { reader, descriptors, probe }: Judge,
 ): Promise<'held' | 'free' | 'gone'> {
   const place = ownerPlace(name.owner, reader);
   if (place === 'here' && (name.how === 'flock' || name.how === 'share')) {
@@ -90,15 +107,18 @@ async function heldAt(
   }
   if (place === 'ended') return 'free';
   if (place === 'elsewhere') return 'held';
+  // A reader that cannot read its own start time may see another pid
+  // namespace's /proc (`unshare --pid` without `--mount-proc`), where
+  // /proc/<pid> is another process: its descriptors say nothing of the owner.
   const holds =
-    name.how === 'proc'
+    name.how === 'proc' && reader.start !== UNKNOWN
       ? await procHolds(name.owner.pid, target, descriptors)
       : 'unknown';
   if (holds !== 'unknown') return holds ? 'held' : 'free';
-  // Not told by an open file: the pid runs and started when the owner did.
-  // For `proc` that is all that tells a pid reused by a process whose
-  // descriptors this reader may not look at; /proc/<pid>/stat is open to all.
-  return (await isOwnerAlive(name.owner, reader)) ? 'held' : 'free';
+  // Not told by an open file: the pid check of the one owner rule. For `proc`
+  // that is all that tells a pid reused by a process whose descriptors this
+  // reader may not look at; /proc/<pid>/stat is open to all.
+  return (await isOwnerAlive(name.owner, reader, probe)) ? 'held' : 'free';
 }
 
 /**

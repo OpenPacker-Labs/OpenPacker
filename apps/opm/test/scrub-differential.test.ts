@@ -19,6 +19,14 @@ import {
 import { EXISTING_VECTORS } from './scrub-vectors.js';
 
 /**
+ * Hands the event loop a turn. A test that computes for a minute without one
+ * starves its vitest worker's answer to the runner (the worker gives up after
+ * 60 s: "Timeout calling onTaskUpdate"), which a loaded machine reaches.
+ */
+const breathe = (): Promise<void> =>
+  new Promise((resolve) => setImmediate(resolve));
+
+/**
  * `scrub` was made linear without changing what it withholds. The first version
  * is frozen in `scrub-legacy.ts`, and `scrub` gives the same text, byte for
  * byte, on every input but three classes (`scrub-oracle.ts` says them
@@ -48,9 +56,11 @@ function documented(input: string): boolean {
  * the oracle's text, and the oracle must give the first version's text unless the
  * input is of one of the three classes.
  */
-function disagreements(inputs: Iterable<string>): string[] {
+async function disagreements(inputs: Iterable<string>): Promise<string[]> {
   const found: string[] = [];
+  let seen = 0;
   for (const input of inputs) {
+    if (++seen % 2000 === 0) await breathe();
     const expected = expectedScrub(input);
     const legacy = legacyScrub(input);
     const actual = scrub(input);
@@ -67,9 +77,9 @@ function disagreements(inputs: Iterable<string>): string[] {
 }
 
 describe('scrub gives the first version\u2019s text', () => {
-  it('on every text the existing tests send through it', () => {
+  it('on every text the existing tests send through it', async () => {
     expect(EXISTING_VECTORS.length).toBeGreaterThan(30);
-    expect(disagreements(EXISTING_VECTORS)).toEqual([]);
+    expect(await disagreements(EXISTING_VECTORS)).toEqual([]);
   });
 
   it.each([
@@ -109,11 +119,11 @@ describe('scrub gives the first version\u2019s text', () => {
     ['lone surrogates', '\ud800a://h/p \udc00token=v \ud800\ud800://x'],
     ['an astral character in a URL', 'http://h/\u{1f600}/p?q=\u{1f600}'],
     ['nothing', ''],
-  ])('on %s', (_, input) => {
-    expect(disagreements([input])).toEqual([]);
+  ])('on %s', async (_, input) => {
+    expect(await disagreements([input])).toEqual([]);
   });
 
-  it('with one character put in each place an expression reads one', () => {
+  it('with one character put in each place an expression reads one', async () => {
     // Every character of the basic plane, lone surrogates included, in the
     // places an expression reads one: before, inside and after a scheme, in and
     // around a name, in a separator, in a bearer token.
@@ -142,14 +152,15 @@ describe('scrub gives the first version\u2019s text', () => {
         for (const place of places) yield place(c);
       }
     };
-    expect(disagreements(everything())).toEqual([]);
+    expect(await disagreements(everything())).toEqual([]);
   }, 120_000);
 
-  it('on the texts of the linear-time test, at a size the first version can do', () => {
+  it('on the texts of the linear-time test, at a size the first version can do', async () => {
     // The timing test gives `expected` for a mebibyte; this checks it on 16 KiB
     // of each text. The texts that are one long host are the class: the oracle
     // gives `[url]` for them and the first version prints the URL.
     for (const text of HOSTILE) {
+      await breathe();
       const { input, expected } = build(text, 16 * 1024);
       expect(scrub(input), text.name).toBe(expected);
       expect(expectedScrub(input), text.name).toBe(expected);
@@ -158,19 +169,20 @@ describe('scrub gives the first version\u2019s text', () => {
     }
   }, 120_000);
 
-  it('on 3,000 strings that begin with a long run', () => {
+  it('on 3,000 strings that begin with a long run', async () => {
     const random = seeded(0x77aa1);
     const inputs = function* () {
       for (let count = 0; count < 3000; count += 1) yield longRun(random);
     };
-    expect(disagreements(inputs())).toEqual([]);
+    expect(await disagreements(inputs())).toEqual([]);
   }, 120_000);
 
-  it('on 300,000 strings made of what it reads', () => {
+  it('on 300,000 strings made of what it reads', async () => {
     const random = seeded(0x5c2ab);
     let changed = 0;
     const found: string[] = [];
     for (let count = 0; count < 300_000; count += 1) {
+      if (count % 2000 === 0) await breathe();
       const input = structured(random);
       const legacy = legacyScrub(input);
       const expected = expectedScrub(input);
@@ -190,7 +202,7 @@ describe('scrub gives the first version\u2019s text', () => {
     expect(changed).toBeGreaterThan(100_000);
   }, 300_000);
 
-  it('on 100,000 strings of characters picked one at a time', () => {
+  it('on 100,000 strings of characters picked one at a time', async () => {
     const random = seeded(0x1d4f7);
     let changed = 0;
     const inputs = function* () {
@@ -200,7 +212,7 @@ describe('scrub gives the first version\u2019s text', () => {
         yield input;
       }
     };
-    expect(disagreements(inputs())).toEqual([]);
+    expect(await disagreements(inputs())).toEqual([]);
     expect(changed).toBeGreaterThan(200);
   }, 300_000);
 });
@@ -323,13 +335,14 @@ describe('scrub withholds a URL whose host no DNS name could be', () => {
     expect(scrub(text)).toBe('GET [url] failed');
   });
 
-  it('on 40,000 strings that hold a URL with a host near the longest there is', () => {
+  it('on 40,000 strings that hold a URL with a host near the longest there is', async () => {
     const random = seeded(0x2f7c1);
     const found: string[] = [];
     let withheld = 0;
     let kept = 0;
     let overlong = 0;
     for (let count = 0; count < 40_000; count += 1) {
+      if (count % 100 === 0) await breathe();
       const input = withLongHosts(random);
       const expected = expectedScrub(input);
       const legacy = legacyScrub(input);

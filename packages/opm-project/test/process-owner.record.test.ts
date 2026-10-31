@@ -3,6 +3,7 @@ import {
   makeCurrentOwner,
   ownerKey,
   ownerPlace,
+  parseMachineId,
   parseProcessOwner,
   placeDigest,
   type OwnerReads,
@@ -55,17 +56,39 @@ describe('a record read back from disk', () => {
       );
     });
 
-    it('a record an earlier opm wrote, with the raw ids, is read as their digests', () => {
+    it('a field is read as it was written: nothing is rewritten into a digest (S2)', () => {
+      // The raw ids, as another holder keeps them, are compared as given.
       expect(parseProcessOwner(JSON.parse(JSON.stringify(owner)))).toEqual(
-        digested,
+        owner,
       );
     });
 
-    it('an owner read from an old record is the same owner as one read from a new', () => {
-      const old = parseProcessOwner(JSON.parse(JSON.stringify(owner)));
-      const now = parseProcessOwner(JSON.parse(JSON.stringify(digested)));
-      expect(ownerKey(old!)).toBe(ownerKey(now!));
-      expect(ownerPlace(old!, now!)).toBe('here');
+    it('a host-name digest in machineId and a boot without dashes survive a round trip, and judge as written (the lease of #187)', () => {
+      const hostDigest = 'ab'.repeat(16);
+      const boot = 'cd'.repeat(16);
+      const reader: ProcessOwner = {
+        pid: 100,
+        host: 'h',
+        startTime: '1',
+        pidNamespace: '4026531836',
+        machineId: hostDigest,
+        bootId: boot,
+      };
+      const wire = { ...reader, pid: 99999999 };
+      const parsed = parseProcessOwner(JSON.parse(JSON.stringify(wire)));
+      expect(parsed).toEqual(wire);
+      expect(parsed?.machineId).toBe(hostDigest);
+      expect(parsed?.bootId).toBe(boot);
+      expect(ownerPlace(parsed!, reader)).toBe('here');
+      expect(ownerKey(parsed!)).toBe(ownerKey(wire));
+    });
+
+    it('a dashed boot id is kept as it is', () => {
+      expect(parseProcessOwner({ pid: 5, host: 'h', bootId: BOOT })).toEqual({
+        pid: 5,
+        host: 'h',
+        bootId: BOOT,
+      });
     });
 
     it('an id of no known form is kept as it is', () => {
@@ -231,5 +254,26 @@ describe('this process as a record names it', () => {
       await Promise.all([owner(), owner(), owner()]);
       expect(tries).toBe(1);
     });
+  });
+});
+
+describe('the machine id the system gives', () => {
+  it.each([
+    ['32 lower-case hex digits', `${MACHINE}\n`, MACHINE],
+    ['with spaces around', `  ${MACHINE}  `, MACHINE],
+  ])('is taken: %s', (_what, text, id) => {
+    expect(parseMachineId(text)).toBe(id);
+  });
+
+  it.each([
+    ['upper case', MACHINE.toUpperCase()],
+    ['31 digits', MACHINE.slice(1)],
+    ['33 digits', `${MACHINE}0`],
+    ['not hex', 'z'.repeat(32)],
+    ['a UUID', '9f7295d1-5100-478f-84e5-84ce9db4b369'],
+    ['empty', ''],
+    ['uninitialized', 'uninitialized\n'],
+  ])('is not taken: %s', (_what, text) => {
+    expect(parseMachineId(text)).toBeUndefined();
   });
 });

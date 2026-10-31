@@ -62,9 +62,9 @@ import { COMMANDS } from './commands/command-names.js';
 import { routeRun, unknownCommandHint } from './commands/run-route.js';
 import { RunError } from './commands/run-error.js';
 import { helpText } from './commands/help-text.js';
+import { EXIT_CODES, opmErrorExit, providerErrorExit } from './exit-codes.js';
 import { formatFailure, parseFailure, report } from './error-report.js';
 import { isBooleanFlag, shortToLong } from './cli-flags.js';
-import { EXIT_CODES, opmErrorExitCode } from './exit-codes.js';
 import { importHeading, importLine, listLine } from './stdout-lines.js';
 
 export { EXIT_CODES } from './exit-codes.js';
@@ -90,7 +90,7 @@ const OPM_VERSION = '0.1.0';
 
 /** Seams a caller of {@link runOpm} may replace; the process entry passes none. */
 export interface RunOpmOptions {
-  /** Network used by `plugin add`; production resolves and pins real addresses. */
+  /** Network used by `plugin add` and `add`; production resolves and pins real addresses. */
   fetch?: typeof fetch;
   /** Adapters registered beside the bundled ones, as a bound plugin is. */
   adapters?: readonly AdapterModule[];
@@ -273,6 +273,9 @@ export async function runOpm(
             ...(source !== undefined && { source }),
             ...(alias !== undefined && { alias }),
             ...(!(offline === undefined) && { offline }),
+            ...(!(options.fetch === undefined) && {
+              registryOptions: { fetch: options.fetch },
+            }),
           }),
         );
         if (result.hostInstall) {
@@ -733,7 +736,7 @@ export function handleError(error: unknown, io: CliIo): number {
   }
   if (error instanceof OpmError) {
     io.stderr.write(report('opm: ', error.message));
-    return opmErrorExitCode(error.code);
+    return opmErrorExit(error.code);
   }
   // Delegated plugin operations surface ProviderError, which is not an
   // OpmError but carries the same string codes; map them instead of reporting
@@ -743,44 +746,7 @@ export function handleError(error: unknown, io: CliIo): number {
     const code = (error as { code: unknown }).code;
     if (typeof code === 'string') {
       io.stderr.write(report('opm: ', error.message));
-      switch (code) {
-        case 'OFFLINE':
-        case 'UPSTREAM_UNAVAILABLE':
-        case 'UPSTREAM_RESPONSE_TOO_LARGE':
-        case 'INVALID_PROVIDER_RESPONSE':
-        case 'PLUGIN_ERROR':
-        case 'PLUGIN_FAILED':
-          return EXIT_CODES.unavailable;
-        case 'PACKAGE_NOT_FOUND':
-        case 'ARTIFACT_NOT_FOUND':
-        case 'VERSION_NOT_FOUND':
-        case 'PLUGIN_NOT_INSTALLED':
-          return EXIT_CODES.notFound;
-        case 'DIGEST_MISMATCH':
-        case 'SIZE_MISMATCH':
-        // A signed release whose signature, signer, or signed document does
-        // not hold is a verification failure, the same as bytes that do not
-        // hash. (`INVALID_PROVIDER_METADATA` stays what it was: another
-        // registry's malformed response is not evidence of tampering.)
-        case 'SIGNATURE_VERIFICATION_FAILED':
-        case 'INVALID_PACKSLIP_METADATA':
-          return EXIT_CODES.verificationFailed;
-        case 'INVALID_PURL':
-        case 'UNSUPPORTED_OPERATION':
-        case 'INVALID_PACKSLIP_INPUT':
-          return EXIT_CODES.invalidInput;
-        case 'UNRESOLVABLE':
-        // Nothing wrong with the release, but nothing in it fits this machine.
-        case 'HOST_INCOMPATIBLE':
-          return EXIT_CODES.unsatisfiable;
-        // A signer that changed is a decision for a person, not a failure; an
-        // archive over the limit is a limit opm sets.
-        case 'TRUST_CHANGE_REQUIRES_APPROVAL':
-        case 'ARTIFACT_TOO_LARGE':
-          return EXIT_CODES.policyDenied;
-        default:
-          return EXIT_CODES.internal;
-      }
+      return providerErrorExit(code);
     }
   }
   io.stderr.write(

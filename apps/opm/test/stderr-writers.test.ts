@@ -82,11 +82,6 @@ const EXEMPT: ReadonlyArray<{
     reason: 'a constant sentence around an exit status',
   },
   {
-    file: 'opmx.ts',
-    starts: 'outcome.stderr',
-    reason: "the tool's own stderr, passed through as it wrote it",
-  },
-  {
     file: 'commands/run-child.ts',
     starts: 'chunk',
     reason: "the script's own stderr, passed through as it wrote it",
@@ -162,14 +157,26 @@ const EXEMPT: ReadonlyArray<{
       "the host installer's own captured stderr (the write is named above)",
   },
   {
-    file: 'opmx.ts',
-    starts: 'if (outcome.stderr) io.stderr.write(outcome.stderr)',
-    reason: "the tool's own captured stderr (the write is named above)",
+    file: 'opmx-spawn.ts',
+    starts: 'written',
+    reason: "the tool's own stderr, handed on as it writes it (`passedOn`)",
   },
   {
-    file: 'opmx.ts',
-    starts: 'io.stderr.write(outcome.stderr)',
-    reason: "the tool's own captured stderr (the write is named above)",
+    file: 'opmx-spawn.ts',
+    starts: 'const watching = [watchReader(io.stdout, lose)',
+    reason:
+      'listens for the reader of stdout and stderr going away (EPIPE, a close), and writes nothing',
+  },
+  {
+    file: 'opmx-spawn.ts',
+    starts: 'const toErr = (written: string) =>',
+    reason:
+      'whether stderr asks the tool to wait until it drains (`whenTaken`), beside the write named above',
+  },
+  {
+    file: 'opmx-spawn.ts',
+    starts: 'passing.err(outcome.stderr)',
+    reason: 'what the sandbox says after the tool, through the same writer',
   },
 ];
 
@@ -194,6 +201,7 @@ describe('what opm writes to stderr', () => {
       new Set([
         'opm.ts',
         'opmx.ts',
+        'opmx-spawn.ts',
         'commands/auth.ts',
         'commands/ci-peers.ts',
         'commands/ci.ts',

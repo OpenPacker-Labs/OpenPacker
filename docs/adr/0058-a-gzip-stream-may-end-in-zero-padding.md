@@ -336,16 +336,19 @@ ignore the rest as padding. Measured on Node 22.22.0, for a member `M`:
    (pinned by `PINNED` in `tar-end.test.ts`).** An entry whose name starts with
    `./`: all three read the same names, opm drops the `.` segment as npm's
    extractor does for any other (`acceptRedundantEntries`), and the layout
-   (`treeToInstall`: one top-level directory is unwrapped, otherwise the store
-   root is installed) then decides where files go, where npm strips the first
-   component, `.`, and keeps `package/`. A second top-level directory that holds
-   a file (`other/o.js` beside `package/a.js`): npm and pnpm merge them; opm
-   extracts both and the layout installs the root. In both, the file is in the
-   installed tree at a path other than npm's; none is hidden from a reader of
-   that tree. A top-level directory entry with no file in it (`other/`) installs
-   nothing under npm's strip, and the layout (`treeToInstall`) no longer counts
-   it as a second top-level directory: the package is installed from `package/`,
-   as npm and pnpm install it (`layout-write.wrapper.test.ts`; before,
+   (project-io's `tarballWrapper`, which the npm layout and opmx's tool layout
+   both read: one top-level directory is unwrapped, otherwise the store root is
+   installed) then decides where files go, where npm strips the first component,
+   `.`, and keeps `package/`. A second top-level directory that holds a file
+   (`other/o.js` beside `package/a.js`): npm and pnpm merge them; opm extracts
+   both and the layout installs the root. In both, the file is in the installed
+   tree at a path other than npm's; none is hidden from a reader of that tree. A
+   top-level directory entry with no file in it (`other/`) installs nothing
+   under npm's strip, and `tarballWrapper` no longer counts it as a second
+   top-level directory: the package is installed from `package/`, as npm and
+   pnpm install it, and an opmx tool runs its bin from there
+   (`layout-write.wrapper.test.ts`, project-io's `tarball-wrapper.test.ts` and
+   opm-project's `tool-layout-versions.test.ts`; before,
    `node_modules/dep/package/index.js`).
 
    **Archives npm extracts and pnpm cannot read.** Real packages exist that npm

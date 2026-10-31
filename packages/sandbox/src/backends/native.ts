@@ -8,6 +8,7 @@ import {
 import { open, type FileHandle } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { dirname, resolve } from 'node:path';
+import { watchIsolatedListen } from '../listen-watch.js';
 import { SandboxBackendError, assertSnapshot, spawnCapture } from './mock.js';
 import {
   networkToolMaskFiles,
@@ -179,6 +180,9 @@ export function createBwrapBackend(): SandboxBackend {
                 path: input.executableAuthority.path,
                 childFd: 3 + directoryAuthorities.length,
               };
+        const onIsolatedListen = input.network
+          ? undefined
+          : input.onIsolatedListen;
         const argv = buildBwrapArgv({
           bwrap: helper.path,
           command: input.argv,
@@ -191,6 +195,7 @@ export function createBwrapBackend(): SandboxBackend {
           environment: input.env,
           directoryAuthorities,
           ...(!(executableAuthority === undefined) && { executableAuthority }),
+          asRoot: process.geteuid?.() === 0,
         });
         return await spawnCapture({
           argv,
@@ -201,6 +206,13 @@ export function createBwrapBackend(): SandboxBackend {
           maximumOutputBytes: input.maximumOutputBytes,
           treeContainment: 'pid-namespace',
           ...(!(input.stdin === undefined) && { stdin: input.stdin }),
+          ...(!(input.output === undefined) && { output: input.output }),
+          // Unshared, the network is the run's own: a server listening there
+          // is reached by nothing outside, which the caller can say.
+          ...(!(onIsolatedListen === undefined) && {
+            onSpawn: (pid: number) =>
+              watchIsolatedListen(pid, onIsolatedListen),
+          }),
           inheritedFds: [
             ...(input.directoryAuthorities?.map(({ fd }) => fd) ?? []),
             ...(executableHandle === undefined ? [] : [executableHandle.fd]),
@@ -234,6 +246,12 @@ export function buildBwrapArgv(input: {
   environment?: Readonly<Record<string, string>>;
   directoryAuthorities?: readonly { path: string; childFd: number }[];
   executableAuthority?: { path: string; childFd: number };
+  /**
+   * bwrap is run by root. It then gives the sandboxed process every capability
+   * root has, unless told not to, and CAP_SYS_ADMIN can remount a read-only
+   * bind read-write. Run by any other user it gives none.
+   */
+  asRoot?: boolean;
 }): string[] {
   const args: string[] = [
     input.bwrap,
@@ -242,6 +260,7 @@ export function buildBwrapArgv(input: {
     '--unshare-pid',
     '--unshare-ipc',
   ];
+  if (input.asRoot === true) args.push('--cap-drop', 'ALL');
   if (!input.network) args.push('--unshare-net');
   args.push('--clearenv');
   for (const [name, value] of Object.entries(input.environment ?? {}).sort(
@@ -372,68 +391,6 @@ export function buildBwrapArgv(input: {
       : [stableExecutablePath, ...input.command.slice(1)]),
   );
   return args;
-}
-
-export function createSeatbeltBackend(): SandboxBackend {
-  throw new SandboxBackendError(
-    'UNAVAILABLE',
-    'sandbox-exec does not own a killable process tree; use MXC on macOS',
-  );
-}
-
-export function buildSeatbeltProfile(input: {
-  readwritePaths: readonly string[];
-  readonlyPaths: readonly string[];
-  network: boolean;
-  profile: SandboxProfile;
-  legacyFatRoot?: boolean;
-}): string {
-  const writes = input.readwritePaths
-    .map((p) => `(allow file-write* (subpath ${JSON.stringify(resolve(p))}))`)
-    .join('\n  ');
-  const fat =
-    input.profile === 'host-install' ||
-    input.profile === 'ambient' ||
-    input.legacyFatRoot === true;
-
-  let reads: string;
-  if (fat) {
-    reads = '(allow file-read*)';
-  } else if (input.readonlyPaths.length > 0) {
-    reads = [
-      ...packageExecRoRoots().map(
-        (p) => `(allow file-read* (subpath ${JSON.stringify(p)}))`,
-      ),
-      ...input.readonlyPaths.map(
-        (p) => `(allow file-read* (subpath ${JSON.stringify(resolve(p))}))`,
-      ),
-    ].join('\n  ');
-  } else {
-    reads = packageExecRoRoots()
-      .map((p) => `(allow file-read* (subpath ${JSON.stringify(p)}))`)
-      .join('\n  ');
-  }
-
-  const deniedHomes = sensitiveMaskDirectories()
-    .map(
-      (p) =>
-        `(deny file-read* file-write* (subpath ${JSON.stringify(resolve(p))}))`,
-    )
-    .join('\n  ');
-  const net = input.network ? '(allow network*)' : '(deny network*)';
-  return `
-(version 1)
-(deny default)
-(allow process-exec)
-(allow process-fork)
-(allow signal)
-(allow sysctl-read)
-(allow mach-lookup)
-${reads}
-${deniedHomes}
-${writes}
-${net}
-`.trim();
 }
 
 export function createNativeBackend(): SandboxBackend | undefined {

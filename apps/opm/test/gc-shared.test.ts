@@ -5,13 +5,12 @@ import {
   readFile,
   readdir,
   rm,
-  utimes,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   materializeThroughSharedStore,
   storeKeyFromDigest,
@@ -37,6 +36,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   if (previous === undefined) delete process.env.OPM_STORE_HOME;
   else process.env.OPM_STORE_HOME = previous;
   await Promise.all(
@@ -91,8 +91,10 @@ describe('opm gc --shared', () => {
     temps.push(shared);
     process.env.OPM_STORE_HOME = shared;
     const key = await sharedEntry(shared);
-    const old = new Date(Date.now() - 3_600_000);
-    await utimes(join(shared, `${key}.tree`), old, old);
+    // An hour on, for the entry directory as well as its record: gc dates an
+    // entry by both, and a directory's ctime cannot be set back.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 3_600_000);
 
     const dry = capture();
     expect(await runOpm(['gc', '--shared', '--dry-run'], dry.io, shared)).toBe(
@@ -114,11 +116,13 @@ describe('opm gc --shared', () => {
     temps.push(shared);
     process.env.OPM_STORE_HOME = shared;
     const key = await sharedEntry(shared);
-    const old = new Date(Date.now() - 3_600_000);
-    await utimes(join(shared, `${key}.tree`), old, old);
     const record = join(shared, 'by-integrity', `sha512-${'ab'.repeat(64)}`);
     await mkdir(dirname(record));
     await writeFile(record, `${key.replace('sha256-', 'sha256:')}\n`);
+    // An hour on, for the entry directory as well as its record: gc dates an
+    // entry by both, and a directory's ctime cannot be set back.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 3_600_000);
 
     const real = capture();
     expect(await runOpm(['gc', '--shared'], real.io, shared)).toBe(0);

@@ -63,6 +63,14 @@ opm --help
 opmx --help
 ```
 
+A project's `.opm/bin/<tool>` shims re-enter through the `opmx` beside the `opm`
+that wrote them, as `opmx -- <tool>`, so a name is never read as an option; a
+bin whose name starts with `-` gets no shim, and opm says so in one line naming
+the package and the bin; the rest of the package installs. Written by
+`node apps/opm/dist/main.js`, that is `dist/opmx-main.js`, a module with no
+execute bit, and the shim starts it with Node, as it starts any JavaScript
+`opmx` (`OPM_OPMX` included).
+
 ---
 
 ## Working on OpenPacker itself
@@ -457,7 +465,8 @@ not places:
   lock for which no such layout is found is laid out as before, never refused
   for a peer. Where no layout keeps a package and its dependent to one copy of a
   peer they share (a package that depends on an older version of itself and
-  hosts a plugin that peers it, say), the install goes ahead and says so with
+  hosts a plugin that peers it, while the project holds another version of a
+  package that needs them both, say), the install goes ahead and says so with
   one line on stderr, for `opm ci` and `opm ci --plan`: how many dependencies
   load their own copy of a peer, and which first. pnpm's symlinks keep them to
   one copy; a tree of directories cannot always. Every edge of every importer
@@ -594,6 +603,12 @@ source = "file:./vendor/demo-tool.tgz"
 offline = false
 layout = "opm"
 ```
+
+`version` is text, never PURL syntax. Where the line itself is what is locked (a
+package from an explicit `source`, or one a plugin without a codec serves), the
+lock's `purl` carries it as the PURL's version, percent-encoded where a PURL
+needs it: `1.2.3+build.5` is locked as `@1.2.3%2Bbuild.5`, the same version once
+read, and a lock that spells it bare still matches.
 
 ### Specs for `opm add`
 
@@ -943,8 +958,10 @@ counts until it is removed from `<store>/.leases/` (ADR 0048, amendment
 2026-10-17). An install waits for a collection that is deciding on an entry it
 wants, for 45 seconds at most; it then warns, naming the collection's lease, and
 goes on. Entries younger than ten minutes are left alone too, for an older opm
-that does not claim. A `.tree` record whose entry is gone, which an install or a
-collection that stopped half way leaves, is removed once it is ten minutes old.
+that does not claim; an entry's age is that of the newer of its `.tree` record
+and the entry directory itself. A `.tree` record whose entry is gone, which an
+install or a collection that stopped half way leaves, is removed once it is ten
+minutes old.
 
 An install that has to make its claim in a store with no room left fails with
 the disk error (`ENOSPC`, `EDQUOT`); a store it may only read is adopted from
@@ -1343,11 +1360,75 @@ opmx --package demo-tool --bin demo-tool -- --help
 Resolution order: explicit `--bin` → package primary bin → bin name in
 `.opm/bin`.
 
+A tool's stdout and stderr reach `opmx`'s as the tool writes them, so a server
+shows that it listens while it serves. A tool runs until it ends or is stopped,
+as with `npx`, however long it runs and however much it writes. `--timeout <ms>`
+ends it after that many milliseconds (0 for never). Without it, a tool the
+project installed gets the project's `[sandbox] opmx_timeout_ms`, else a
+`[sandbox] timeout_ms` the project sets (a bound it keeps for every sandboxed
+run, in CI say), else nothing: the default `timeout_ms`, ten minutes, is for an
+install's lifecycle scripts only, and so are the sandbox's byte limits, which
+bound the output it keeps (ADR 0036). `opmx pkg:...` reads no project, so
+neither key applies to it, only `--timeout`. `opmx`'s own options (`--timeout`,
+`--allow-network`, `--plugin`, `--allow-env`, `--offline`, `--package`, `--bin`)
+go before the tool's name; everything after the name is the tool's. When a tool
+is ended, the sandbox says what ended it: `process stopped by SIGINT` (Ctrl-C;
+`opmx` then ends by the same signal), `process timed out after 600000 ms`, or
+`process aborted`.
+
+A tool has no network unless it is granted one: it reaches nothing outside its
+sandbox, and nothing outside reaches it, a server included. `--allow-network`
+shares this host's network with the run (`opmx --allow-network http-server`),
+and a project grants a package it installed network for every run, and for its
+lifecycle scripts, with `[sandbox.packages."<purl>"] network = true`; that does
+not reach `opmx pkg:...`, which reads no project. Either also gives the tool
+outbound network and this host's loopback services, so grant it to reach a
+server, not by habit. When a tool listens without either, `opmx` says so on
+stderr, once, with the port:
+
+```text
+opmx: the tool listens on port 8080; nothing outside its sandbox can reach it. If you meant to reach it from this host, --allow-network shares this host's network, which also gives the tool outbound network and this host's loopback services.
+```
+
+An installed npm bin runs from a `node_modules` of its package's closure,
+written for the run under `.opm/runs/` beside the project's store (or, where
+that cannot be written, under `$TMPDIR/openpacker-runs-<uid>/`) and removed when
+it ends, as a tool straight from a registry runs from its own (below): the store
+holds each package as its own tree, so `opmx http-server` found no `chalk`
+without one. The closure and the version each package requires are the lock's;
+where the lock does not describe the active generation (an offline lock records
+no edges, and `opm rollback` leaves the newer lock), every npm package installed
+is laid out by name alone.
+
+opmx runs in a project you may only read (a read-only mount, a CI cache, another
+user's checkout) as long as the project is up to date: activating the current
+generation then writes nothing. When a shim or the project state is out of date,
+opmx says which one and stops, exit 8; run `opm install` there as the project's
+owner. Shims written by an opm installed at another path still do in a project
+you may only read, as long as the opmx they name is there and can be started (a
+global npm install's `opmx` link counts); where you may write, opmx rewrites
+them to start itself.
+
 `opmx pkg:<type>/<name>` runs a tool straight from a registry, without a
 project. Registry metadata is re-resolved on every run — an unpinned run is a
 different thing tomorrow — but artifact bytes are content-addressed: a repeat
 run whose resolved digest already names a tool-cache entry skips the download
 and rebuilds from the digest-verified store archive, reported as `(cached)`.
+
+An npm tool runs from a `node_modules` of its closure's release, written for the
+run under `<tool cache>/.opm/runs/` and bound read-only with its `.bin` first on
+PATH, so `opmx pkg:npm/cowsay hi` finds `yargs` and a tool can run a dependency
+by name. Store entries are bound one by one while the sandbox's 16 handles
+allow, and past that through one view of their store (ADR 0036). Both are
+removed when the run ends, Ctrl-C and SIGTERM included (a second signal ends
+`opmx` at once). After a SIGKILL or a crash, the next run in the same place, or
+`opm gc` for a project's views, removes them once the process that made them has
+ended, judged by the same owner rule as a step's lock (`.owner`, ADR 0056); what
+another host, container or earlier boot left there and cannot be placed stays,
+and a left-behind view makes `opm gc --shared` keep its entries. The home each
+run gives its tool, under `$TMPDIR/openpacker-sandbox-<uid>`, is judged the same
+way by the next sandboxed run; one with no owner, from an earlier opm, is
+removed once the directory itself has not changed for a week.
 
 ### Delegated adapter plugins
 
@@ -1542,7 +1623,8 @@ Missing artifacts fail closed with a clear error (no silent network when
 - Package execution (approved lifecycle scripts, `opmx`, host installers) goes
   through `@openpacker/sandbox` — native Bubblewrap jail on Linux,
   **fail-closed** when a jail cannot be enforced
-  ([ADR 0036](../adr/0036-sandboxed-installs-and-execution.md)).
+  ([ADR 0036](../adr/0036-sandboxed-installs-and-execution.md)). The jail leaves
+  root no capabilities: as root it cannot read another user's 0600 file.
 
 ### Sandbox configuration
 
@@ -1556,6 +1638,13 @@ mode = "fail-closed"   # fail-closed | degrade-warn | off
 prefer = "auto"        # auto | mxc | native
 project_write = false  # opmx cannot rewrite project source unless true
 minimal_path = true
+timeout_ms = 600000    # wall-clock limit (0: none); set, it bounds opmx too
+opmx_timeout_ms = 0    # opmx's own limit, over timeout_ms (0: none)
+
+# The host's network for one package, in opmx and its lifecycle scripts
+# (none by default; opmx --allow-network grants it to one run):
+# [sandbox.packages."pkg:npm/http-server"]
+# network = true
 
 # Prefer allowlists (strict mode rejects allow_lifecycle_scripts alone):
 # [policy]
@@ -1581,8 +1670,8 @@ plugin) needs Linux and is refused by name before its file is opened, because a
 descriptor has no path the kernel will execute anywhere else and a named copy
 could be swapped between the check and the run.
 
-**Run tools with `opmx`.** Shims re-enter via `opmx`; ambient direct spawn needs
-`OPENPACKER_ALLOW_AMBIENT_SHIMS=1` (insecure).
+**Run tools with `opmx`.** Shims re-enter via `opmx` (a JavaScript one through
+Node); ambient direct spawn needs `OPENPACKER_ALLOW_AMBIENT_SHIMS=1` (insecure).
 
 Lifecycle scripts are deny-by-default; an allowlist entry is required under
 strict mode. Host installers only get **limited user-capability** containment.

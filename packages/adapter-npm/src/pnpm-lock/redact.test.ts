@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { redactAddresses } from './redact.js';
 
+/**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
 const COMMIT = 'b'.repeat(40);
 
 const CHANGED: readonly (readonly [
@@ -121,11 +131,11 @@ describe('redactAddresses', () => {
     // A scheme-like run that no `://` follows is the case that is quadratic
     // without the look-behind: every letter of it starts a scan to the end.
     const noScheme = `${run} ://${run}`;
-    const started = performance.now();
+    const started = cpuMs();
     expect(redactAddresses(noScheme)).toBe(noScheme);
     expect(redactAddresses(`x://${run}@${run}`)).toBe(`x://[redacted]@${run}`);
     expect(redactAddresses('://'.repeat(100_000))).toBe('://'.repeat(100_000));
     // Quadratic scanning of these takes minutes; a generous bound is all this needs to tell.
-    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(cpuMs() - started).toBeLessThan(2_000);
   });
 });

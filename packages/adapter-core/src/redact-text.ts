@@ -58,6 +58,15 @@ function redactEmbedded(text: string): string {
 }
 
 /**
+ * A user name and a password before a host with no scheme in front of them
+ * (`user:secret@host`, as in a lock's key `node_modules/https:/user:x@host`):
+ * from the start of the text, a space or a `/`, a name with no `:` or `@`, a
+ * `:`, a password with no `@`, an `@`, and the host, up to the next space or
+ * `/`. Linear: each try begins at such a boundary and stops at the next one.
+ */
+const USERINFO = /(^|[\s/])[^\s/:@]+:[^\s/@]+@[^\s/]*/gu;
+
+/**
  * A value from a document (a lock's version, name, link target or path) that a
  * message repeats, shown without the credentials an address in it may hold.
  *
@@ -68,11 +77,12 @@ function redactEmbedded(text: string): string {
  * `scheme://...` somewhere has that address, up to the next space, shown by it;
  * any other value is returned as it is, hidden characters included, for the
  * caller to show or remove. A credential that holds a space ends the address
- * there, and one that is not next to a `scheme://` or at the start of the
- * value (`pkg:token@host`) is not found.
+ * there. A `user:secret@host` with no scheme is withheld too (`USERINFO`).
  */
 export function redactText(text: string): string {
   const view = plainLine(text);
-  const shown = isAddress(view) ? redactAddress(view) : redactEmbedded(view);
+  const shown = isAddress(view)
+    ? redactAddress(view)
+    : redactEmbedded(view).replace(USERINFO, '$1[address withheld]');
   return shown === view ? text : shown;
 }

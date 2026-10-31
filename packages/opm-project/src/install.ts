@@ -1073,6 +1073,7 @@ export async function installFromLock(input: {
       storeRoot: storePath,
       bins,
       ...(pkg.ecosystem === 'pypi' && { pythonPath: pythonStoreRoots }),
+      owner: pkg.purl,
     });
 
     await writeStableFile(

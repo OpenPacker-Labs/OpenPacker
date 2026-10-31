@@ -1,5 +1,4 @@
-import { mkdir, mkdtemp, rm, type FileHandle } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { type FileHandle } from 'node:fs/promises';
 import { createMxcBackend, probeMxc } from './backends/mxc.js';
 import {
   createMockBackend,
@@ -7,7 +6,21 @@ import {
   SandboxBackendError,
 } from './backends/mock.js';
 import { createNativeBackend, probeNativeBackends } from './backends/native.js';
-import { defaultJailHomeRoot, scrubEnvironment } from './env.js';
+import {
+  defaultJailHomeRoot,
+  scrubEnvironment,
+  sharedJailHomeRoot,
+} from './env.js';
+import { boundPaths, pathsToOpen } from './handles.js';
+import {
+  makeJailHome,
+  openJailRoot,
+  removeJailHome,
+  sweepJailHomes,
+  sweepJailHomesIn,
+  type JailHome,
+} from './jail-home.js';
+import { stoppedByTimeout } from './stop.js';
 import { containmentWithdrawnNote } from './platform.js';
 import {
   assertSafeJailPath,
@@ -166,12 +179,22 @@ export async function runInSandbox(
     );
   }
 
-  const jailRoot = defaultJailHomeRoot();
-  await mkdir(jailRoot, { recursive: true });
-  const jailHome = await mkdtemp(join(jailRoot, 'home-'));
+  // A root of this user's that no one else may write, or none (jail-home.ts).
+  const jailRoot = await openJailRoot(defaultJailHomeRoot());
+  let jail: JailHome;
+  try {
+    // What runs killed outright left here, judged by their owners, and in
+    // the root all users' runs shared before there was one per user.
+    await sweepJailHomesIn(jailRoot);
+    await sweepJailHomes(sharedJailHomeRoot());
+    jail = await makeJailHome(jailRoot);
+  } catch (error) {
+    await jailRoot.handle.close().catch(() => undefined);
+    throw error;
+  }
+  const jailHome = jail.home;
   const ownedAuthorities: FileHandle[] = [];
   try {
-    await mkdir(join(jailHome, 'tmp'), { recursive: true });
     const interpreter = input.argv[0];
     const env = scrubEnvironment({
       ...(!(input.env === undefined) && { extra: input.env }),
@@ -181,27 +204,19 @@ export async function runInSandbox(
       jailHome,
       minimalPath: profile === 'package-exec' && resolved.minimalPath,
       ...(!(interpreter === undefined) && { interpreter }),
+      pathPrefix: normalizeJailPaths(input.pathPrefix, 'PATH directory'),
     });
     const hostEnv = scrubEnvironment({
       jailHome,
       minimalPath: true,
     });
-    const readwrite = normalizeJailPaths(
-      [...input.readwritePaths, jailHome, ...grantedWrite],
-      'readwrite path',
-    );
-    const readonly = normalizeJailPaths(
-      [...input.readonlyPaths, ...grantedRead],
-      'readonly path',
-    );
+    // What `inheritedHandleCount` counts, so a caller can tell in advance.
+    const { readwrite, readonly } = boundPaths(input, jailHome);
     const authorities = [...(input.directoryAuthorities ?? [])];
-    const authorized = new Set(authorities.map(({ path }) => resolve(path)));
-    for (const path of [...readwrite, ...readonly, resolve(input.cwd)]) {
-      if (authorized.has(path)) continue;
+    for (const path of pathsToOpen(input, { readwrite, readonly })) {
       const handle = await openStableJailPath(path, 'sandbox bind');
       ownedAuthorities.push(handle);
       authorities.push({ fd: handle.fd, path });
-      authorized.add(path);
     }
 
     const timeoutMs =
@@ -212,7 +227,10 @@ export async function runInSandbox(
       let timer: ReturnType<typeof setTimeout> | undefined;
       const ac = new AbortController();
       if (timeoutMs > 0) {
-        timer = setTimeout(() => ac.abort(), timeoutMs);
+        timer = setTimeout(
+          () => ac.abort(stoppedByTimeout(timeoutMs)),
+          timeoutMs,
+        );
         signal =
           input.signal === undefined
             ? ac.signal
@@ -227,6 +245,10 @@ export async function runInSandbox(
           readwritePaths: readwrite,
           readonlyPaths: readonly,
           network,
+          ...(!network &&
+            !(input.onIsolatedListen === undefined) && {
+              onIsolatedListen: input.onIsolatedListen,
+            }),
           profile,
           legacyFatRoot: resolved.legacyFatRoot,
           maximumStdoutBytes: resolved.maximumStdoutBytes,
@@ -234,6 +256,7 @@ export async function runInSandbox(
           maximumOutputBytes: resolved.maximumOutputBytes,
           directoryAuthorities: authorities,
           ...(!(input.stdin === undefined) && { stdin: input.stdin }),
+          ...(!(input.output === undefined) && { output: input.output }),
           ...(!(input.executableAuthority === undefined) && {
             executableAuthority: input.executableAuthority,
           }),
@@ -249,8 +272,11 @@ export async function runInSandbox(
       let active = backend;
       let result = await runOnce(active);
 
+      // Output already handed on cannot be taken back, so a run that has
+      // shown it is not run again.
       if (
         result.exitCode !== 0 &&
+        input.output === undefined &&
         active.id === 'mxc' &&
         resolved.prefer === 'auto' &&
         !input.backend
@@ -327,7 +353,8 @@ export async function runInSandbox(
     await Promise.all(
       ownedAuthorities.map(async (handle) => await handle.close()),
     );
-    await rm(jailHome, { recursive: true, force: true }).catch(() => undefined);
+    await removeJailHome(jailRoot, jail);
+    await jailRoot.handle.close().catch(() => undefined);
   }
 }
 

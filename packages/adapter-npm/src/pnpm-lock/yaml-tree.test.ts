@@ -10,6 +10,16 @@ import {
   type YamlValue,
 } from './yaml-tree.js';
 
+/**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
 const read = (text: string, limits = DEFAULT_PNPM_LOCK_LIMITS) =>
   readYamlTree(text, limits);
 
@@ -272,10 +282,10 @@ describe('readYamlTree: bounds', () => {
   });
 
   it('refuses a megabyte of open brackets at maxDepth, without building them', () => {
-    const started = Date.now();
+    const started = cpuMs();
     expect(reasonOf('a: ' + '['.repeat(1_000_000))).toBe('limit');
     expect(reasonOf('a: ' + '{a: '.repeat(100_000))).toBe('limit');
-    expect(Date.now() - started).toBeLessThan(5000);
+    expect(cpuMs() - started).toBeLessThan(5000);
   });
 
   /** Text whose deepest scalar has `depth` collections above it, the top mapping being the first. */
