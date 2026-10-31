@@ -33,6 +33,22 @@ afterEach(async () => {
   );
 });
 
+/** What a patch says of `path` for the tree to read it: a change. */
+const patched = (path: string): PatchEffect => ({
+  type: 'patch',
+  path,
+  hunks: [],
+  beforeHash: null,
+  afterHash: null,
+});
+
+/** What a patch says of `path` for the tree to read it: a removal, or a new file. */
+const deleted = (
+  path: string,
+  type: 'file deletion' | 'file creation' = 'file deletion',
+): PatchEffect => ({ type, path, mode: 0o644, hash: null, hunk: null });
+const created = (path: string): PatchEffect => deleted(path, 'file creation');
+
 describe.runIf(POSIX)('a patched copy written back', () => {
   it('removes and writes nothing through a directory swapped for a link after it was read', async () => {
     const base = await mkdtemp(join(await realpath(tmpdir()), 'patch-commit-'));
@@ -45,10 +61,7 @@ describe.runIf(POSIX)('a patched copy written back', () => {
     await mkdir(victim);
     await writeFile(join(victim, 'a.js'), 'theirs');
     await writeFile(join(victim, 'b.js'), 'theirs');
-    const effects: PatchEffect[] = [
-      { type: 'patch', path: 'lib/a.js', hunks: [] },
-      { type: 'file deletion', path: 'lib/b.js', hunks: [] },
-    ] as unknown as PatchEffect[];
+    const effects: PatchEffect[] = [patched('lib/a.js'), deleted('lib/b.js')];
 
     const tree = await loadPatchTree(root, effects);
     const before = new Map(tree.nodes);
@@ -73,10 +86,10 @@ describe.runIf(POSIX)('a patched copy written back', () => {
     await writeFile(join(root, 'lib', 'a.js'), 'a');
     await writeFile(join(root, 'lib', 'b.js'), 'b');
     const effects: PatchEffect[] = [
-      { type: 'patch', path: 'lib/a.js', hunks: [] },
-      { type: 'file deletion', path: 'lib/b.js', hunks: [] },
-      { type: 'file creation', path: 'lib/new/c.js', hunks: [] },
-    ] as unknown as PatchEffect[];
+      patched('lib/a.js'),
+      deleted('lib/b.js'),
+      created('lib/new/c.js'),
+    ];
 
     const tree = await loadPatchTree(root, effects);
     const before = new Map(tree.nodes);

@@ -45,19 +45,20 @@ function notADirectory(part: string): Error {
 }
 
 /**
- * A walk refused at a link the resolution of its base did not follow: the
- * same error, its code kept, saying which link, and which checkout or fence
- * holds it, so the person can name a path without it.
+ * Throw `error`, from a walk refused at a link the resolution of its base did
+ * not follow, as the same error with its code kept, saying which link, and
+ * which checkout or fence holds it, so the person can name a path without it;
+ * any other error as it is.
  */
-function explained(
+function throwExplained(
   error: unknown,
   path: string,
   refused: Resolution['refused'],
-): unknown {
+): never {
   const reason = refusalReason(refused);
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
   if (reason === undefined || (code !== 'ENOTDIR' && code !== 'ELOOP'))
-    return error;
+    throw error;
   const said: NodeJS.ErrnoException & { refusedBy?: string } = new Error(
     `${code}: ${path} was not opened: ${reason}`,
     { cause: error },
@@ -65,7 +66,7 @@ function explained(
   said.code = code;
   said.path = path;
   if (refused?.by !== undefined) said.refusedBy = refused.by;
-  return said;
+  throw said;
 }
 
 function differs(path: string): ProjectIoError {
@@ -137,7 +138,7 @@ async function walkFrom(
     return handle;
   } catch (error) {
     await handle.close().catch(() => undefined);
-    throw explained(error, path, refused);
+    throwExplained(error, path, refused);
   }
 }
 

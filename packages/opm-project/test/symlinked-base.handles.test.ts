@@ -62,7 +62,8 @@ async function world(): Promise<string> {
   return dir;
 }
 
-type Promises = Record<string, (...args: unknown[]) => Promise<unknown>>;
+/** `link` and `rename` of `node:fs/promises`, as this test replaces them. */
+type Promises = Record<'link' | 'rename', (...args: string[]) => Promise<void>>;
 
 /**
  * Run `swap` once, just before the first call of `name` in `node:fs/promises`
@@ -77,9 +78,9 @@ function swapBefore(
   const promises = createRequire(import.meta.url)(
     'node:fs/promises',
   ) as Promises;
-  const real = promises[name]!;
+  const real = promises[name];
   let swapped = false;
-  promises[name] = (...args: unknown[]) => {
+  promises[name] = (...args: string[]) => {
     if (!swapped && matches(String(args[1]))) {
       swapped = true;
       swap(args.map(String));
