@@ -8,8 +8,6 @@ import { chromiumLaunchOptions } from '../../../scripts/chromium.mjs';
 
 const root = resolve(import.meta.dirname, '../../..');
 const files = new Map([
-  ['/sdk/browser.js', join(root, 'packages/sdk/dist/esm/browser.js')],
-  ['/sdk/index.js', join(root, 'packages/sdk/dist/esm/index.js')],
   [
     '/embedded/openpacker_wasm.js',
     join(root, 'packages/embedded/dist/esm/openpacker_wasm.js'),
@@ -29,15 +27,20 @@ const files = new Map([
   ],
 ]);
 
-// @openpacker/canonical's ESM build is several modules (index.js imports
-// ./echo.js, ./budget.js and the rest), so its whole directory is served
-// under /canonical/, by file name only.
-const canonicalDirectory = join(root, 'packages/canonical/dist/esm');
+// The SDK's and @openpacker/canonical's ESM builds are several modules each
+// (the SDK's index.js imports ./event-lines.js; canonical's, ./echo.js,
+// ./budget.js and the rest), so each whole directory is served, under /sdk/
+// and /canonical/, by file name only.
+const builds = {
+  sdk: join(root, 'packages/sdk/dist/esm'),
+  canonical: join(root, 'packages/canonical/dist/esm'),
+};
 function served(url) {
   const file = files.get(url);
   if (file) return file;
-  const name = /^\/canonical\/([a-z0-9-]+\.js)$/u.exec(url)?.[1];
-  return name === undefined ? undefined : join(canonicalDirectory, name);
+  const [, build, name] =
+    /^\/(sdk|canonical)\/([a-z0-9-]+\.js)$/u.exec(url) ?? [];
+  return build === undefined ? undefined : join(builds[build], name);
 }
 
 test(
