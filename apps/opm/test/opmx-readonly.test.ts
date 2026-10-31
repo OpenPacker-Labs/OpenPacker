@@ -21,6 +21,7 @@ import {
   readdir,
   readFile,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -155,12 +156,38 @@ async function activated(context: { skip(when: boolean, why: string): void }) {
  * an opm installed there would have written it; that opmx is an executable
  * file.
  */
-async function startingAnother(shim: string): Promise<string> {
+async function startingAnother(
+  shim: string,
+  layout: 'file' | 'npm global link' = 'file',
+): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'opmx-readonly-other-'));
   temps.push(dir);
-  const other = join(dir, 'opmx');
-  await writeFile(other, '#!/bin/sh\nexit 0\n');
-  await chmod(other, 0o755);
+  const other =
+    layout === 'file' ? join(dir, 'opmx') : join(dir, 'bin', 'opmx');
+  // As a global npm install lays opm out: `bin/opmx`, a link to the
+  // package's executable `dist/opmx-main.js`.
+  const file =
+    layout === 'file'
+      ? other
+      : join(
+          dir,
+          'lib',
+          'node_modules',
+          '@openpacker',
+          'opm',
+          'dist',
+          'opmx-main.js',
+        );
+  if (layout !== 'file') {
+    await mkdir(join(file, '..'), { recursive: true });
+    await mkdir(join(dir, 'bin'));
+    await symlink(
+      '../lib/node_modules/@openpacker/opm/dist/opmx-main.js',
+      other,
+    );
+  }
+  await writeFile(file, '#!/bin/sh\nexit 0\n');
+  await chmod(file, 0o755);
   const script = await readFile(shim, 'utf8');
   expect(script).toContain(JSON.stringify(opmx));
   await writeFile(
@@ -198,6 +225,15 @@ describe.runIf(canSandbox && bwrap !== undefined)(
     it('runs the tool, and writes nothing, when its shims start another opmx that is there', async (context) => {
       const { root, env, shim } = await activated(context);
       await startingAnother(shim);
+      const before = await snapshot(root);
+      const ran = await run(root, ['hello'], env, true);
+      expect([ran.status, ran.out, ran.err]).toEqual([0, 'hello\n', '']);
+      expect(await snapshot(root)).toEqual(before);
+    });
+
+    it('runs the tool, and writes nothing, when its shims name a global npm link to an opmx', async (context) => {
+      const { root, env, shim } = await activated(context);
+      await startingAnother(shim, 'npm global link');
       const before = await snapshot(root);
       const ran = await run(root, ['hello'], env, true);
       expect([ran.status, ran.out, ran.err]).toEqual([0, 'hello\n', '']);

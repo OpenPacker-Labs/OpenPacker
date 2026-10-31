@@ -3,10 +3,12 @@ import { existsSync } from 'node:fs';
 import {
   chmod,
   lstat,
+  mkdir,
   mkdtemp,
   readdir,
   readFile,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -133,6 +135,32 @@ async function otherOpmx(mode = 0o755): Promise<string> {
   await writeFile(opmx, '#!/bin/sh\nexit 0\n');
   await chmod(opmx, mode);
   return opmx;
+}
+
+/**
+ * opm as a global npm install lays it out: `<prefix>/bin/opmx`, a link to the
+ * package's `dist/opmx-main.js`, which npm makes executable. The link is what
+ * a shim written by that opm names.
+ */
+async function npmGlobalOpmx(): Promise<{ link: string; target: string }> {
+  const prefix = await mkdtemp(join(tmpdir(), 'opm-activation-prefix-'));
+  temps.push(prefix);
+  const dist = join(
+    prefix,
+    'lib',
+    'node_modules',
+    '@openpacker',
+    'opm',
+    'dist',
+  );
+  await mkdir(dist, { recursive: true });
+  await mkdir(join(prefix, 'bin'));
+  const target = join(dist, 'opmx-main.js');
+  await writeFile(target, '#!/usr/bin/env node\n');
+  await chmod(target, 0o755);
+  const link = join(prefix, 'bin', 'opmx');
+  await symlink('../lib/node_modules/@openpacker/opm/dist/opmx-main.js', link);
+  return { link, target };
 }
 
 describe('activating the active generation', () => {
@@ -275,6 +303,50 @@ describe.runIf(process.platform === 'linux' && bwrap !== undefined)(
           code: 'PROJECT_READ_ONLY',
           message:
             `.opm/bin/runner starts ${opmx}, which is missing or not a ` +
+            `program, and this user may not write ${root}: run ` +
+            '`opm install` there as its owner',
+        });
+      },
+    );
+
+    it('needs no write when its shims name a global npm link to an opmx', async () => {
+      const root = await installed();
+      const { link } = await npmGlobalOpmx();
+      const shim = await startingOpmx(root, link);
+      const held = await readFile(shim, 'utf8');
+      const ran = await activateReadOnly(root);
+      expect([ran.status, JSON.parse(ran.out)], ran.err).toEqual([
+        0,
+        { packages: ['runner'] },
+      ]);
+      expect(await readFile(shim, 'utf8')).toBe(held);
+    });
+
+    it.each([
+      ['dangling', async (target: string) => rm(target)],
+      [
+        'to a directory',
+        async (target: string) => {
+          await rm(target);
+          await mkdir(target);
+        },
+      ],
+      [
+        'to a file it may not run',
+        async (target: string) => chmod(target, 0o644),
+      ],
+    ])(
+      'is refused, naming the shim, when the link its shims name is %s',
+      async (_, spoil) => {
+        const root = await installed();
+        const { link, target } = await npmGlobalOpmx();
+        await startingOpmx(root, link);
+        await spoil(target);
+        const ran = await activateReadOnly(root);
+        expect(JSON.parse(ran.out), ran.err).toEqual({
+          code: 'PROJECT_READ_ONLY',
+          message:
+            `.opm/bin/runner starts ${link}, which is missing or not a ` +
             `program, and this user may not write ${root}: run ` +
             '`opm install` there as its owner',
         });

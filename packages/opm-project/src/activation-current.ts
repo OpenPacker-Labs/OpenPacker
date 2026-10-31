@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { access, lstat } from 'node:fs/promises';
+import { access, lstat, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, sep } from 'node:path';
 import { shimOpmx, type PlannedBinShim } from './bins.js';
 import { readStableFile, resolveContained } from './paths.js';
@@ -61,16 +61,21 @@ async function fileText(
 }
 
 /**
- * Whether `path` can be started as a shim starts its `opmx`: an absolute path,
- * a file and not a link, executable by this user; a JavaScript one, which a
- * shim starts with Node, readable by them.
+ * Whether `path` can be started as a shim starts its `opmx`: an absolute path
+ * whose final target, links followed, is a regular file this user may execute,
+ * or read where the shim starts it with Node (a name ending `.js`, `.mjs` or
+ * `.cjs`). A global npm install's `opmx` is a link to its `opmx-main.js`. The
+ * link is followed only to answer this: the shim runs whatever is at that path
+ * already, and nothing is written through it.
  */
 async function startable(path: string): Promise<boolean> {
   if (!isAbsolute(path)) return false;
-  const info = await lstat(path).catch(() => undefined);
+  const target = await realpath(path).catch(() => undefined);
+  if (target === undefined) return false;
+  const info = await stat(target).catch(() => undefined);
   if (info?.isFile() !== true) return false;
   const mode = /\.[cm]?js$/iu.test(path) ? constants.R_OK : constants.X_OK;
-  return await access(path, mode).then(
+  return await access(target, mode).then(
     () => true,
     () => false,
   );

@@ -627,12 +627,16 @@ Decision:
   project, a shim that starts another opmx is rewritten to start this one, as
   before. Where they may not (asked with `access(W_OK)` on `.opm`, `.opm/bin`
   and `.opm/links`, before anything is written), such a shim is up to date when
-  it is the planned script but for the opmx it names, and that opmx is an
-  absolute path to a file, not a link, that this user may execute (or read, for
-  a JavaScript one, which a shim starts with Node). A project built where opm
-  was installed elsewhere then runs read-only, in CI or a later image stage, as
-  it is. If that opmx is missing or cannot be started, the run is refused,
-  naming the shim and the opmx.
+  it is the planned script but for the opmx it names, and that opmx can be
+  started: an absolute path whose final target, links followed (`realpath`), is
+  a regular file this user may execute, or read where the shim starts it with
+  Node (a name ending `.js`, `.mjs` or `.cjs`). A global npm install's
+  `bin/opmx` is a link to the package's `opmx-main.js`, so the link is followed
+  for this one question. It grants nothing: the shim already runs whatever is at
+  that path, and no write follows a link. A project built where opm was
+  installed elsewhere then runs read-only, in CI or a later image stage, as it
+  is. If that opmx is missing, a dangling link, or not a file this user may
+  start, the run is refused, naming the shim and the opmx.
 - Where something else is out of date, activation writes as before. If this user
   may not write there (EACCES, EPERM, EROFS), the run is refused in one line
   that names the first thing out of date and what to do (code
@@ -651,11 +655,12 @@ finds every file under `.opm` with the inode, size, mode and modification time
 it had; rewrites a shim out of date, or one that starts another opmx, in a
 project it may write; and, in a child that bwrap gives the project read-only,
 activates with no write, with the shims this opm writes and with shims that
-start another opmx that is there, and is refused naming a shim or the project
-state out of date, or a shim whose opmx is missing or not executable.
-`opmx-readonly.test.ts` (apps/opm) runs the built opmx where it may write, which
-activates the project, then again with the project read-only: the tool runs and
-every entry of the project is as it was, also when its shim starts another opmx;
-with a shim changed, or the other opmx removed, opmx exits 8 with the one line;
-where it may write, a shim that starts another opmx is rewritten to start this
-one.
+start another opmx that is there, a file or a global npm link to one, and is
+refused naming a shim or the project state out of date, or a shim whose opmx is
+missing or not executable, or a link that dangles, leads to a directory or to a
+file this user may not run. `opmx-readonly.test.ts` (apps/opm) runs the built
+opmx where it may write, which activates the project, then again with the
+project read-only: the tool runs and every entry of the project is as it was,
+also when its shim starts another opmx, or a global npm link to one; with a shim
+changed, or the other opmx removed, opmx exits 8 with the one line; where it may
+write, a shim that starts another opmx is rewritten to start this one.
