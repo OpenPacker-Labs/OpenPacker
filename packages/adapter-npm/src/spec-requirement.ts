@@ -1,4 +1,5 @@
 import type { Requirement } from '@openpacker/contracts';
+import { safeEcho } from '@openpacker/canonical';
 import {
   ProviderError,
   semanticLoss,
@@ -63,7 +64,13 @@ export function nonRangeRequirement(input: {
     semanticLoss: losses,
   });
   const dependencyField = input.dependencyField;
-  if (specKind === 'tag' && input.followed && isNpmTagName(tag))
+  const echo = (text: string, limit = 400) => safeEcho(text, limit);
+  if (
+    specKind === 'tag' &&
+    input.followed &&
+    isNpmTagName(tag) &&
+    !input.enforced
+  )
     return requirement(
       input.optional,
       { dependencyField, range: tag, specKind },
@@ -72,7 +79,7 @@ export function nonRangeRequirement(input: {
   if (input.enforced)
     throw new ProviderError(
       'UNSUPPORTED_DEPENDENCY_SPEC',
-      `${input.owner} depends on ${name} as "${spec}", a ${specKind} specifier ` +
+      `${echo(input.owner, 128)} depends on ${echo(name, 128)} as ${JSON.stringify(echo(spec, 240))}, a ${specKind} specifier ` +
         `that is not a registry version range` +
         (input.aliasProblem === undefined ? '' : ` (${input.aliasProblem})`),
     );
@@ -81,7 +88,7 @@ export function nonRangeRequirement(input: {
       'npm',
       'NPM_DEPENDENCY_SPEC_NOT_A_RANGE',
       path,
-      `The ${specKind} specifier "${spec}" is not a registry version range`,
+      `The ${specKind} specifier ${JSON.stringify(echo(spec))} is not a registry version range`,
       'The package is named without a version constraint and the specifier is retained verbatim',
       'info',
     ),

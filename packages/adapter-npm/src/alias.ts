@@ -10,6 +10,7 @@
  */
 
 import { classifyDependencySpec, isNpmTagName } from './dependency-spec.js';
+import { safeEcho } from '@openpacker/canonical';
 
 /** What an `npm:` specifier asks the registry for. */
 export interface NpmAlias {
@@ -67,7 +68,7 @@ export function parseNpmAlias(value: string): NpmAlias | NpmAliasProblem {
     problem:
       kind === 'alias'
         ? 'an alias of an alias is not supported'
-        : `aliases only work for registry packages, and "${spec}" is a ${kind} specifier`,
+        : `aliases only work for registry packages, and ${JSON.stringify(safeEcho(spec))} is a ${kind} specifier`,
   };
 }
 
