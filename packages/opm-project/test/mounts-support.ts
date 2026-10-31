@@ -41,6 +41,8 @@ export interface Report {
 /** Run `body` in a mount namespace with `mount`, `snapshotProject` and `recover` in scope. */
 export async function inMounts(body: string): Promise<Report> {
   const root = await project(['base']);
+  // The script a killed recovery runs (`killedRecovery`), written beside it.
+  temporary(`${root}-recover.ts`);
   const report = temporary(`${root}.report.json`);
   const run = await child(
     root,
