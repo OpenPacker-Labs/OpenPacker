@@ -4,8 +4,9 @@
  *
  * main: squash merge queue, required check
  * "Trunk gate / Required merge queue gate", no force push.
- * integration and prod: only repository admins bypass update, deletion,
- * and force-push rules, so writers cannot push or merge a pull request
+ * integration and prod: only repository admins and the release GitHub App
+ * (when OPENPACKER_RELEASE_APP_ID is set) bypass update, deletion, and
+ * force-push rules, so writers cannot push or merge a pull request
  * (including a pull request from main).
  *
  * RepositoryRole actor_id 5 is the repository admin role.
@@ -16,9 +17,18 @@ const CHECK = 'Trunk gate / Required merge queue gate';
 const ADMIN_BYPASS = [
   { actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'always' },
 ];
-const ACTIONS_BYPASS = [
-  { actor_id: 15368, actor_type: 'Integration', bypass_mode: 'always' },
-];
+
+function releaseAppBypassActors() {
+  const raw = process.env.OPENPACKER_RELEASE_APP_ID?.trim();
+  if (!raw) return [];
+  const actor_id = Number.parseInt(raw, 10);
+  if (!Number.isFinite(actor_id)) {
+    fail(
+      `OPENPACKER_RELEASE_APP_ID must be a numeric GitHub App id, got: ${raw}`,
+    );
+  }
+  return [{ actor_id, actor_type: 'Integration', bypass_mode: 'always' }];
+}
 
 function fail(message) {
   console.error(message);
@@ -30,7 +40,7 @@ function printForbidden() {
 Rulesets require a repository admin and a token with Administration: Read and write.
 
 1. Open https://github.com/settings/personal-access-tokens/new
-   Repository: Tyler-R-Kendrick/OpenPacker
+   Repository: OpenPacker-Labs/OpenPacker
    Permissions: Administration (read and write), Metadata (read)
    Or sign in as an admin with: gh auth login
 2. Re-run: npm run ruleset:apply
@@ -40,10 +50,10 @@ main (trunk-main): squash merge queue, block force pushes, require
 integration (trunk-integration) and prod (trunk-prod): block updates,
 deletions, and force pushes. Only repository admins (RepositoryRole id 5)
 bypass. That blocks direct pushes and pull request merges from main.
-Promotion workflows fast-forward those branches with the GitHub Actions
-token, which is not an admin. If that push is rejected, add bypass actor
-actor_id 15368, actor_type Integration, bypass_mode always (GitHub Actions
-on github.com), or fast-forward the branch as an admin.`);
+Promotion workflows fast-forward those branches with a dedicated GitHub App
+token (see docs/RELEASING.md). Set OPENPACKER_RELEASE_APP_ID when running
+npm run ruleset:apply so that App is a ruleset bypass actor. GitHub refused
+the built-in GitHub Actions integration bypass on this repository.`);
 }
 
 function gh(args, input) {
@@ -178,7 +188,7 @@ function protectedBranch(name, branch) {
     target: 'branch',
     enforcement: 'active',
     conditions: refCondition(branch),
-    bypass_actors: [...ADMIN_BYPASS, ...ACTIONS_BYPASS],
+    bypass_actors: [...ADMIN_BYPASS, ...releaseAppBypassActors()],
     rules: [
       { type: 'deletion' },
       { type: 'non_fast_forward' },
@@ -225,8 +235,14 @@ for (const ruleset of desired) {
 
 console.log(`Required main check: ${CHECK}`);
 console.log(
-  'integration and prod accept pushes and pull request merges only from repository admins. Direct merges from main are rejected for everyone else.',
+  'integration and prod accept pushes only from repository admins and, when configured, the release GitHub App bypass (OPENPACKER_RELEASE_APP_ID).',
 );
-console.log(
-  'GitHub Actions bypass is included for integration and prod (actor_id 15368, actor_type Integration, bypass_mode always), so promote-integration.yml and promote-prod.yml can fast-forward those branches.',
-);
+if (process.env.OPENPACKER_RELEASE_APP_ID?.trim()) {
+  console.log(
+    `Release GitHub App bypass actor_id ${process.env.OPENPACKER_RELEASE_APP_ID.trim()} (Integration, always) is included on integration and prod.`,
+  );
+} else {
+  console.log(
+    'Set OPENPACKER_RELEASE_APP_ID when running ruleset:apply after creating the release GitHub App (see docs/RELEASING.md).',
+  );
+}

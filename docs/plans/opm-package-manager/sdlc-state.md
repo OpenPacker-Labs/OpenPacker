@@ -5,7 +5,7 @@
 - **Closed:** 2026-08-03
 - **Branch:** `feat/opm-package-manager` (deleted after squash-merge)
 - **Trunk:** `origin/main` @ `b04f93d`
-- **PR:** https://github.com/Tyler-R-Kendrick/OpenPacker/pull/3 — **MERGED**
+- **PR:** https://github.com/OpenPacker-Labs/OpenPacker/pull/3 — **MERGED**
 
 ## Session deliverables (in merge)
 
@@ -25,7 +25,7 @@
 
 | Field     | Value                                                       |
 | --------- | ----------------------------------------------------------- |
-| PR        | [#3](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/3) |
+| PR        | [#3](https://github.com/OpenPacker-Labs/OpenPacker/pull/3) |
 | Merge SHA | `b04f93debd8d051ec88388ddcac18098004c1d18`                  |
 | Method    | squash-merge                                                |
 | CI        | not used as finish gate (local agent:check + hooks)         |

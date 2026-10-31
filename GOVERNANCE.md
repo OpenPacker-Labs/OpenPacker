@@ -33,8 +33,8 @@ discussion does not settle it, the BDFL decides and records the outcome on that
 thread or in an ADR.
 
 Conduct reports follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Send them
-through GitHub private reporting for `Tyler-R-Kendrick/OpenPacker`
-(<https://github.com/Tyler-R-Kendrick/OpenPacker/security/advisories/new>)
+through GitHub private reporting for `OpenPacker-Labs/OpenPacker`
+(<https://github.com/OpenPacker-Labs/OpenPacker/security/advisories/new>)
 and/or contact [@Tyler-R-Kendrick](https://github.com/Tyler-R-Kendrick) on
 GitHub.
 
@@ -48,7 +48,7 @@ Publishing credentials stay outside the repository.
 ## Continuity
 
 If the BDFL is unavailable, no one else is authorized to publish a release of
-`Tyler-R-Kendrick/OpenPacker` or to change this file, unless a successor is
+`OpenPacker-Labs/OpenPacker` or to change this file, unless a successor is
 named in this section on the default branch. A successor is named only by a
 commit from the BDFL that updates this section. Until then, issues and pull
 requests wait, and the last published tree stands.

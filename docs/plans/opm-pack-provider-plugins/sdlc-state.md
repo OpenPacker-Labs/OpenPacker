@@ -13,10 +13,10 @@
 - Dispatch backend: parent sequential. The user authorized stacked delivery but
   did not authorize implementation offload; independent review was required and
   passed.
-- PRs: [#79](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/79),
-  [#80](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/80),
-  [#81](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/81), and
-  [#82](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/82) comprise the
+- PRs: [#79](https://github.com/OpenPacker-Labs/OpenPacker/pull/79),
+  [#80](https://github.com/OpenPacker-Labs/OpenPacker/pull/80),
+  [#81](https://github.com/OpenPacker-Labs/OpenPacker/pull/81), and
+  [#82](https://github.com/OpenPacker-Labs/OpenPacker/pull/82) comprise the
   delivery stack. All four were independently approved and squash-merged
   bottom-up into `main`, completing at `d1bea94`. The final composed stack
   passed the full offline aggregate before merge.

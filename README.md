@@ -1,7 +1,7 @@
 # OpenPacker
 
-[![Build](https://github.com/Tyler-R-Kendrick/OpenPacker/actions/workflows/ci-build.yml/badge.svg)](https://github.com/Tyler-R-Kendrick/OpenPacker/actions/workflows/ci-build.yml)
-[![Pages](https://github.com/Tyler-R-Kendrick/OpenPacker/actions/workflows/pages.yml/badge.svg)](https://github.com/Tyler-R-Kendrick/OpenPacker/actions/workflows/pages.yml)
+[![Build](https://github.com/OpenPacker-Labs/OpenPacker/actions/workflows/ci-build.yml/badge.svg)](https://github.com/OpenPacker-Labs/OpenPacker/actions/workflows/ci-build.yml)
+[![Pages](https://github.com/OpenPacker-Labs/OpenPacker/actions/workflows/pages.yml/badge.svg)](https://github.com/OpenPacker-Labs/OpenPacker/actions/workflows/pages.yml)
 
 **Open Package Manager (`opm` / `opmx`)** plus a **PREX control plane** for
 multi-ecosystem package identity, locks, proofs, and digests.

@@ -301,9 +301,16 @@ jobs:
           fi
           npm dist-tag add "@openpacker/cli@${VERSION}" next
           npm dist-tag add "@openpacker/cli@${VERSION}" alpha
+      - name: Create release GitHub App token
+        id: release-app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.OPENPACKER_RELEASE_APP_ID }}
+          private-key: ${{ secrets.OPENPACKER_RELEASE_APP_KEY }}
       - name: Fast-forward integration
         env:
           SHA: ${{ needs.resolve.outputs.sha }}
+          GH_TOKEN: ${{ steps.release-app.outputs.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -317,4 +324,5 @@ jobs:
               exit 1
             fi
           fi
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
           git push origin "${SHA}:refs/heads/integration"

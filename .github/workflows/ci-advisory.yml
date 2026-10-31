@@ -1,7 +1,8 @@
 name: CI advisory
 
 # Fast pull-request feedback. This workflow is not a required check.
-# The merge queue runs Trunk gate (.github/workflows/trunk-gate.yml).
+# Trunk gate (.github/workflows/trunk-gate.yml) is required on pull requests
+# and in the merge queue.
 on:
   pull_request:
     branches: [main]
@@ -32,5 +33,5 @@ jobs:
           {
             echo "### Advisory only"
             echo ""
-            echo "This pull request workflow is not a required check. The merge queue runs Trunk gate (\`Trunk gate / Required merge queue gate\`) from \`.github/workflows/trunk-gate.yml\`. That job is the only required CI for merging."
+            echo "This pull request workflow is not a required check. Trunk gate (\`Trunk gate / Required merge queue gate\`) from \`.github/workflows/trunk-gate.yml\` runs on this pull request and again in the merge queue. That job is the only required CI for merging."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -155,9 +155,16 @@ jobs:
         uses: actions/attest-build-provenance@v4.1.0
         with:
           subject-path: apps/openpacker-cli/release/*.tgz
+      - name: Create release GitHub App token
+        id: release-app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.OPENPACKER_RELEASE_APP_ID }}
+          private-key: ${{ secrets.OPENPACKER_RELEASE_APP_KEY }}
       - name: Fast-forward prod
         env:
           SHA: ${{ steps.tip.outputs.sha }}
+          GH_TOKEN: ${{ steps.release-app.outputs.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -168,6 +175,7 @@ jobs:
           if git rev-parse --verify --quiet origin/prod >/dev/null; then
             git merge-base --is-ancestor origin/prod "$SHA"
           fi
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
           git push origin "${SHA}:refs/heads/prod"
       - uses: actions/setup-node@v6.4.0
         with:
