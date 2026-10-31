@@ -61,6 +61,34 @@ A one-time cost belongs outside a test's budget too: a file whose first test
 would compile the PREX schemas (Ajv) compiles them while the file is collected,
 and a test that times its work measures the CPU it spent, not the wall clock.
 
+## What a test run may touch
+
+The suites that can resolve a store (opm-project, opm, plugin-store and
+plugin-host) and the root gate and coverage configs load
+[`tests/support/stores.setup.ts`](../../tests/support/stores.setup.ts), which
+unsets `OPM_STORE_HOME`, `OPM_TOOL_CACHE` and `OPM_PLUGIN_HOME` and points
+`XDG_CACHE_HOME` and `XDG_DATA_HOME` at a fresh directory per test file, so no
+test reads or writes the caller's shared store, tool cache or plugin store. A
+caller that exported `OPM_STORE_HOME` used to have every install of the suite
+use that store, and a test that writes into a store file (two of them check that
+a tampered tree is rebuilt) wrote through a hard link into it: as root, the
+entry's read-only mode does not stop that, and every later install of the
+package failed with "does not match its recorded digest". The opm-project and
+opm suites and the root runs also fail a test whose environment would resolve
+one of those outside the temporary directory
+([`tests/support/store-guard.ts`](../../tests/support/store-guard.ts)), and
+`packages/opm-project/test/store-isolation.test.ts` runs both tampering tests
+with `OPM_STORE_HOME` set and requires that store to stay empty. The setup
+changes no test's time bound.
+
+`HOME` and `XDG_CONFIG_HOME` are left as the caller has them, and a few reads
+through them are not isolated, only read: opm-project looks for an installed
+.NET under `$HOME/.dotnet/shared/Microsoft.NETCore.App` (`src/bins.ts`), the
+registry auth configuration is read from `$XDG_CONFIG_HOME` or `$HOME/.config`
+(`src/auth-config.ts`; a test that writes one names its own file with
+`OPM_AUTH_CONFIG` or a path), and the sandbox names the home directory in its
+deny rules. Their answers depend on the machine; nothing is written there.
+
 ## Coverage policy
 
 [`scripts/coverage-policy.mjs`](../../scripts/coverage-policy.mjs) requires 100%

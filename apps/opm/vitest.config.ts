@@ -1,5 +1,9 @@
 import { defineConfig } from 'vitest/config';
 
+// opm's process entries turn the user-level store on, and its plugin commands
+// use the user-level plugin store: every test file gets fresh ones, and a test
+// that would reach the caller's fails (tests/support/stores.setup.ts,
+// tests/support/store-guard.setup.ts).
 export default defineConfig({
   test: {
     // Scrub and workspace-real suites hold the worker for tens of seconds. With
@@ -7,5 +11,9 @@ export default defineConfig({
     // RPC window (~60s) can expire before the runner answers onTaskUpdate.
     fileParallelism: false,
     hookTimeout: 120_000,
+    setupFiles: [
+      '../../tests/support/stores.setup.ts',
+      '../../tests/support/store-guard.setup.ts',
+    ],
   },
 });
