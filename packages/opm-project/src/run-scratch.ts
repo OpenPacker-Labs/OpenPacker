@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readdir, type FileHandle } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { abandonedByOwner, type AbandonJudge } from '@openpacker/project-io';
 import { writeOwnerFile } from './owner-file.js';
-import { removeStableTree } from './paths.js';
+import { openStableDirectory, removeStableTree } from './paths.js';
 import type { ProcessOwner } from './process-owner.js';
-import { ensurePrivateRoot } from './shared-store-root.js';
+import { OpmError } from './types.js';
 
 /**
  * Directories a run makes for itself and removes when it ends: the store views
@@ -88,6 +89,19 @@ export async function sweepAbandoned(
 /** The directory of this user's under the temporary directory for what a project cannot hold. */
 export const TEMPORARY_RUNS = 'openpacker-runs';
 
+/**
+ * This user's directory under the temporary directory for what a project it
+ * may not write cannot hold: `openpacker-runs-<uid>`, one per user, so users
+ * who share /tmp each have theirs; where there are no uids, the one name.
+ */
+export function temporaryRunsRoot(): string {
+  const uid = process.geteuid?.();
+  return join(
+    tmpdir(),
+    uid === undefined ? TEMPORARY_RUNS : `${TEMPORARY_RUNS}-${uid}`,
+  );
+}
+
 /** Why a scratch directory cannot be made where it belongs: this user may not write there. */
 const UNWRITABLE = new Set(['EACCES', 'EPERM', 'EROFS']);
 
@@ -101,18 +115,68 @@ export function cannotMake(error: Error): boolean {
 }
 
 /**
- * A scratch directory in `openpacker-runs` under the temporary directory, for
- * a run whose project this user may read and not write (a read-only mount, a
- * CI cache, another user's checkout): that directory must be theirs and
- * private (mode 700) or nothing is made, and the runs that ended left there
- * are removed first, as where it belongs.
+ * Open `path`, a directory under the temporary directory, and refuse it unless
+ * it is this user's and others may not write it; one of this user's that its
+ * group may read or write (made under umask 002 or 022) is made 0700. The
+ * checks and that change are made on the handle opened without following a
+ * link. Made 0700 where `create` and it is not there.
+ */
+async function openTemporaryRoot(
+  path: string,
+  create: boolean,
+): Promise<FileHandle> {
+  if (create) await mkdir(path, { recursive: true, mode: 0o700 });
+  const handle = await openStableDirectory(path);
+  try {
+    if (process.platform === 'win32') return handle;
+    const info = await handle.stat();
+    const uid = process.geteuid?.();
+    if (uid !== undefined && info.uid !== uid)
+      throw new OpmError(
+        'UNSAFE_PATH',
+        `The temporary runs directory ${path} is owned by uid ${info.uid}, ` +
+          `not by this user (uid ${uid}); remove it, or set TMPDIR to a ` +
+          'directory of your own',
+      );
+    if ((info.mode & 0o002) !== 0)
+      throw new OpmError(
+        'UNSAFE_PATH',
+        `The temporary runs directory ${path} can be written by others ` +
+          `(mode ${(info.mode & 0o777).toString(8)}); it must be writable by ` +
+          'its owner alone',
+      );
+    if ((info.mode & 0o077) !== 0) await handle.chmod(0o700);
+    return handle;
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
+}
+
+/**
+ * A scratch directory in this user's `openpacker-runs-<uid>` under the
+ * temporary directory, for a run whose project this user may read and not
+ * write (a read-only mount, a CI cache, another user's checkout): that
+ * directory must be theirs and others may not write it, or nothing is made.
+ * What runs that ended left there is removed first, as where it belongs, and
+ * so is what this user's ended runs left in the `openpacker-runs` all users
+ * shared before, where that is this user's own; one another user made there is
+ * left alone, and stops nothing.
  */
 export async function makeTemporaryScratch(
   prefix: string,
   owner?: ProcessOwner,
 ): Promise<Scratch> {
-  const own = join(tmpdir(), TEMPORARY_RUNS);
-  await ensurePrivateRoot(own, false, true, 'The temporary runs directory');
+  const own = temporaryRunsRoot();
+  await (await openTemporaryRoot(own, true)).close();
   await sweepAbandoned(own, prefix);
+  const shared = join(tmpdir(), TEMPORARY_RUNS);
+  if (shared !== own && existsSync(shared)) {
+    const held = await openTemporaryRoot(shared, false).catch(() => undefined);
+    if (held !== undefined) {
+      await held.close();
+      await sweepAbandoned(shared, prefix);
+    }
+  }
   return await makeScratch(own, prefix, owner);
 }

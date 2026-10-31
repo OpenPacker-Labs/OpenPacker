@@ -171,7 +171,9 @@ describe.runIf(canSandbox)('a run over entries of one store', () => {
       entries.map((_, i) => i).join(','),
     ]);
     // The view was the run's own, and went when it ended.
-    expect(await readdir(join(tmpdir(), 'openpacker-runs'))).toEqual([]);
+    expect(
+      await readdir(join(tmpdir(), `openpacker-runs-${process.geteuid?.()}`)),
+    ).toEqual([]);
   });
 });
 

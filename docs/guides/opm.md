@@ -1224,8 +1224,8 @@ opmx: the tool listens on port 8080; nothing outside its sandbox can reach it. I
 
 An installed npm bin runs from a `node_modules` of its package's closure,
 written for the run under `.opm/runs/` beside the project's store (or, where
-that cannot be written, under `$TMPDIR/openpacker-runs/`) and removed when it
-ends, as a tool straight from a registry runs from its own (below): the store
+that cannot be written, under `$TMPDIR/openpacker-runs-<uid>/`) and removed when
+it ends, as a tool straight from a registry runs from its own (below): the store
 holds each package as its own tree, so `opmx http-server` found no `chalk`
 without one. The closure and the version each package requires are the lock's;
 where the lock does not describe the active generation (an offline lock records

@@ -234,7 +234,11 @@ describe.runIf(canSandbox && bwrap !== undefined)(
       expect([ran.status, ran.out, ran.err]).toEqual([0, 'plain\n', '']);
       expect(await snapshot(root)).toEqual(before);
       // What the run made under its temporary directory went when it ended.
-      expect(await readdir(join(env.TMPDIR!, 'openpacker-runs'))).toEqual([]);
+      expect(
+        await readdir(
+          join(env.TMPDIR!, `openpacker-runs-${process.geteuid?.()}`),
+        ),
+      ).toEqual([]);
     });
 
     it('is refused in one line, saying what is out of date and what to do', async (context) => {

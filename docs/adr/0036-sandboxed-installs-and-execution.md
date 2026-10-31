@@ -352,20 +352,28 @@ sandbox binds besides the project, and its `node_modules/.bin` is first on PATH
 - Python, .NET and native bins, and a file in `.opm/bin` no package owns, run as
   before, the project's store entries bound alone or through a view.
 - Where this user may not write `.opm/runs` (a read-only mount, a tree another
-  user owns), the layout is made in `openpacker-runs` under the temporary
-  directory instead, with the same owner record and sweep; that directory must
-  be this user's and private (mode 700), or the run is refused. Its files are
-  copies where it is on another filesystem than the store. A tool from the tool
-  cache is laid out the same way. The layout is then no reason a project must be
-  writable, and nor is activation (the amendment of 2026-10-31).
+  user owns), the layout is made in `openpacker-runs-<uid>` under the temporary
+  directory instead, one per user as the jail root is, with the same owner
+  record and sweep. That directory must be this user's and others may not write
+  it, or the run is refused; one of this user's its group may read or write is
+  made 0700 through its handle. What this user's ended runs left in the
+  `openpacker-runs` all users shared before is still removed, where that is this
+  user's; one another user made there stops nothing. Its files are copies where
+  it is on another filesystem than the store. A tool from the tool cache is laid
+  out the same way. The layout is then no reason a project must be writable, and
+  nor is activation (the amendment of 2026-10-31).
 
 `opmx-installed-deps.test.ts` (apps/opm) runs an installed bin that requires
 `helper@^1` in a project that also holds `helper@2.0.0` and gets version 1;
 `installed-closure.test.ts` (opm-project) pins the closure and the by-name
 cases; `opmx-run-signals.test.ts` stops an installed declared bin by SIGHUP and
 finds its layout removed; `tool-layout-readonly.test.ts` lays a tool out from a
-store bwrap binds read-only, and is refused a temporary directory that is not
-private.
+store bwrap binds read-only, and is refused a temporary directory others may
+write; `temporary-runs.test.ts` names that directory by the uid, makes one of
+this user's at 0755 or 0775 0700, refuses 0777, removes a dead entry from the
+old shared name, is not stopped by another user's there, and has a second user's
+run, as uid 65534 on a shared temporary directory where root's runs made theirs,
+make its own.
 
 ## Amendment (2026-10-24) — a tool's output reaches the terminal as it is written
 
@@ -682,11 +690,11 @@ Decision:
 - A store view (more store entries than a sandbox's handles bind one by one, for
   a Python, .NET or native bin or a program in `.opm/bin` no package owns) is
   made in the store, as before, where this user may write it. Where they may
-  not, it is made in the same private `openpacker-runs` under the temporary
-  directory as a layout is (`makeTemporaryScratch`), with the owner record and
-  sweep, and its files are copies where that is another file system. A run over
-  an unwritable store with one entry more than the handles was refused before;
-  it now runs.
+  not, it is made in the same private `openpacker-runs-<uid>` under the
+  temporary directory as a layout is (`makeTemporaryScratch`), with the owner
+  record and sweep, and its files are copies where that is another file system.
+  A run over an unwritable store with one entry more than the handles was
+  refused before; it now runs.
 - `PROJECT_READ_ONLY` is said only when `access(W_OK)` said this user may not
   write the project. Where it said they may and a write still fails (a file made
   immutable, a full disk, a mount made read-only meanwhile), the failure is
