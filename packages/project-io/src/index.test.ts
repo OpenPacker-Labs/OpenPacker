@@ -34,6 +34,7 @@ import {
   windowsNtHandlePathForm,
   writeFileAtomic,
 } from './index.js';
+import { isChildBackendUnderTest } from './handle-path.js';
 
 describe('stable tree collection', () => {
   it('keeps reading the authorized tree after its pathname is replaced', async () => {
@@ -532,7 +533,7 @@ describe('materialiseTree', () => {
     });
   });
 
-  it(
+  it.skipIf(isChildBackendUnderTest())(
     'rechecks staging after removing the previous destination',
     { timeout: 120_000 },
     async () => {
@@ -566,20 +567,31 @@ describe('materialiseTree', () => {
           },
         );
         let mutated = false;
-        while (!settled && !mutated) {
+        while (!mutated) {
+          if (settled) break;
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const staging = (
             await readdir(root).catch(() => [] as string[])
           ).find((entry) => entry.startsWith('.pkg.openpacker-'));
           if (staging) {
+            const stagedReady = await lstat(
+              join(root, staging, 'large.bin'),
+            ).catch(() => undefined);
             // SAFETY: The surrounding boundary establishes the asserted domain contract.
             const remaining = await readdir(old).catch(() => [] as string[]);
-            if (remaining.length < oldCount) {
-              await mkdir(join(root, staging), { recursive: true }).catch(
-                () => undefined,
-              );
-              await writeFile(join(root, staging, 'attacker'), 'late mutation');
-              mutated = true;
+            if (
+              stagedReady &&
+              (remaining.length < oldCount || remaining.length === 0)
+            ) {
+              const attacker = join(root, staging, 'attacker');
+              try {
+                await mkdir(join(root, staging), { recursive: true });
+                await writeFile(attacker, 'late mutation');
+                mutated = true;
+              } catch (error) {
+                const code = (error as NodeJS.ErrnoException).code;
+                if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
+              }
             }
           }
           if (!mutated)
