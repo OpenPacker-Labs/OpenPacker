@@ -109,6 +109,33 @@ describe.runIf(POSIX)('a command run in a checkout that holds a link', () => {
   });
 });
 
+describe.runIf(POSIX)(
+  'the registry auth configuration in a checkout that holds a link',
+  () => {
+    it('opm auth list reads none where an XDG_CONFIG_HOME through the link points', async () => {
+      const { root, outside } = await checkout('.config');
+      vi.stubEnv('OPM_AUTH_CONFIG', '');
+      vi.stubEnv('XDG_CONFIG_HOME', join(root, '.config'));
+      // What the checkout's author put there: their origin, given this token.
+      await mkdir(join(outside, 'openpacker'), { mode: 0o700 });
+      await writeFile(
+        join(outside, 'openpacker', 'auth.json'),
+        `${JSON.stringify({
+          version: 1,
+          origins: { 'https://attacker.example': { tokenEnv: 'GITHUB_TOKEN' } },
+        })}\n`,
+        { mode: 0o600 },
+      );
+      const { seen, io } = captured();
+
+      const exit = await runOpm(['auth', 'list'], io, root);
+      expect(seen.out).not.toContain('attacker.example');
+      expect(exit, seen.err).not.toBe(0);
+      expect(seen.err).toMatch(/linked|ENOTDIR|ELOOP/iu);
+    });
+  },
+);
+
 const fixtureTgz = join(
   dirname(fileURLToPath(import.meta.url)),
   '../../../fixtures/opm/demo-tool-1.1.0.tgz',

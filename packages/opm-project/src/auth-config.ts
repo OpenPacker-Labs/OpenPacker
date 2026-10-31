@@ -6,7 +6,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { normalizePinnedOrigin, ProviderError } from '@openpacker/adapter-core';
@@ -146,6 +146,17 @@ export function parseAuthConfig(raw: string): AuthConfig {
   return { version: 1, origins };
 }
 
+/**
+ * Read the configuration the way it is written (ADR 0034, trusted bases): its
+ * directory opened, judged this user's alone and taken as opm's configuration
+ * root ('config root'), the links on the way to it judged as a base's are
+ * (none in a checkout or a project the command runs in, none another user may
+ * have made where others may write), and the file opened through that
+ * directory's handle without following a link. A directory or a file that is
+ * not there is an empty configuration; one that is refused is an error, as a
+ * write to it is: a configuration says which token goes to which origin, and
+ * one read from where another may have put it is never used.
+ */
 export async function readAuthConfig(
   input: {
     path?: string;
@@ -153,20 +164,50 @@ export async function readAuthConfig(
   } = {},
 ): Promise<AuthConfig> {
   const path = input.path ?? defaultAuthConfigPath(input.env ?? process.env);
-  let info;
+  const empty: AuthConfig = { version: 1, origins: {} };
+  let parent: FileHandle;
   try {
-    info = await stat(path);
+    parent = await openJudgedRoot(dirname(path), {
+      create: false,
+      lastMayBeLink: true,
+      forbidden: 0o022,
+      chooser: 'config root',
+      what: 'Registry auth configuration directory',
+    });
   } catch (error) {
-    // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-      return { version: 1, origins: {} };
+    // SAFETY: only the errno code of the failed open is read.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return empty;
     throw error;
   }
-  if (!info.isFile())
-    throw new OpmError('UNSAFE_PATH', `Auth config is not a file: ${path}`);
-  if (info.size > MAX_AUTH_CONFIG_BYTES)
-    throw new OpmError('UNSAFE_PATH', 'Auth config exceeds 64KiB');
-  return parseAuthConfig(await readFile(path, 'utf8'));
+  try {
+    let file: FileHandle;
+    try {
+      file = await openChild(
+        parent,
+        basename(path),
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      );
+    } catch (error) {
+      // SAFETY: only the errno code of the failed open is read.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') return empty;
+      if (code === 'ELOOP')
+        throw new OpmError('UNSAFE_PATH', `Auth config is not a file: ${path}`);
+      throw error;
+    }
+    try {
+      const info = await file.stat();
+      if (!info.isFile())
+        throw new OpmError('UNSAFE_PATH', `Auth config is not a file: ${path}`);
+      if (info.size > MAX_AUTH_CONFIG_BYTES)
+        throw new OpmError('UNSAFE_PATH', 'Auth config exceeds 64KiB');
+      return parseAuthConfig(await file.readFile('utf8'));
+    } finally {
+      await file.close();
+    }
+  } finally {
+    await parent.close();
+  }
 }
 
 export async function upsertAuthOrigin(input: {
