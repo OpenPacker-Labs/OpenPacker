@@ -28,6 +28,9 @@ export interface ArchiveManifest {
   readonly version?: unknown;
   readonly scripts?: Record<string, unknown> | null;
   readonly gypfile?: unknown;
+  readonly os?: unknown;
+  readonly cpu?: unknown;
+  readonly libc?: unknown;
 }
 
 /**

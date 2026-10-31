@@ -222,3 +222,16 @@ export async function standard(
 }
 
 export type World = Awaited<ReturnType<typeof setup>>;
+
+/** The names of the packages a store holds the files of. */
+export async function storedNames(store: string): Promise<string[]> {
+  const names: string[] = [];
+  for (const entry of await readdir(store)) {
+    if (!/^sha256-[0-9a-f]{64}$/u.test(entry)) continue;
+    const manifest = JSON.parse(
+      await readFile(join(store, entry, 'package', 'package.json'), 'utf8'),
+    ) as { name: string };
+    names.push(manifest.name);
+  }
+  return names.sort();
+}

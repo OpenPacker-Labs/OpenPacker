@@ -13,13 +13,20 @@
  */
 
 import type {
+  ArchivePlatform,
   FrozenLockPackage,
   FrozenLockRefusal,
   FrozenLockSkip,
   FrozenOmit,
   NativeTarget,
 } from '@openpacker/adapter-core';
-import { npmPackageRuns } from '../platform.js';
+import type { PnpmPackage } from '../pnpm-lock/types.js';
+import {
+  describePlatform,
+  npmPackageRuns,
+  withArchivePlatform,
+  type DeclaredPlatform,
+} from '../platform.js';
 import type { PnpmInstance, PnpmModel, PnpmTopEdge } from './model.js';
 import { quote } from './quote.js';
 
@@ -30,6 +37,8 @@ export interface SelectInput {
   readonly omit: ReadonlySet<FrozenOmit>;
   /** The machines to install for: a package that runs on any of them is installed. */
   readonly targets: readonly NativeTarget[];
+  /** What archives declare, by integrity: a list the lock lacks is taken from here. */
+  readonly archivePlatforms?: ReadonlyMap<string, ArchivePlatform>;
 }
 
 /** Counts the steps a selection takes, for the tests that hold it to linear time. */
@@ -52,17 +61,24 @@ function describeTarget(target: NativeTarget): string {
   );
 }
 
-/** What the lock says the package runs on, every value quoted: it is the lock's text. */
-function describeDeclared(instance: PnpmInstance): string {
-  const { os, cpu, libc } = instance.pkg;
-  const list = (values: readonly string[]) => values.map(quote).join(',');
-  return [
-    os && `os ${list(os)}`,
-    cpu && `cpu ${list(cpu)}`,
-    libc && `libc ${list(libc)}`,
-  ]
-    .filter(Boolean)
-    .join(' ');
+/** The integrity that pins a package's archive, when its resolution has one. */
+export function integrityOfPackage(pkg: PnpmPackage): string | undefined {
+  const resolution = pkg.resolution;
+  return resolution.kind === 'integrity' || resolution.kind === 'tarball'
+    ? resolution.integrity
+    : undefined;
+}
+
+/** What a package is held to: its lock entry's lists, and its archive's where the lock has none. */
+export function declaredOf(
+  instance: PnpmInstance,
+  archivePlatforms: ReadonlyMap<string, ArchivePlatform> | undefined,
+): DeclaredPlatform {
+  const integrity = integrityOfPackage(instance.pkg);
+  return withArchivePlatform(
+    instance.pkg,
+    integrity === undefined ? undefined : archivePlatforms?.get(integrity),
+  );
 }
 
 const labelOf = (instance: PnpmInstance): string =>
@@ -198,16 +214,23 @@ export function selectInstances(
 
   // The platform, on what the omission left.
   const failed = new Set<string>();
+  // An archive's own lists hold an optional package only: one the lock needs
+  // outright is installed as the lock says.
+  const declared = (instance: PnpmInstance): DeclaredPlatform =>
+    declaredOf(
+      instance,
+      instance.optional ? input.archivePlatforms : undefined,
+    );
   for (const key of afterOmit) {
     meter.visits += 1;
     const instance = model.instances.get(key)!;
-    if (targets.some((target) => npmPackageRuns(instance.pkg, target)))
+    if (targets.some((target) => npmPackageRuns(declared(instance), target)))
       continue;
     if (instance.optional) failed.add(key);
     else
       refused.push({
         path: key,
-        reason: `${labelOf(instance)} is for ${describeDeclared(instance)}, not ${targets.map(describeTarget).join(' or ')}, and is not optional`,
+        reason: `${labelOf(instance)} is for ${describePlatform(declared(instance), quote)}, not ${targets.map(describeTarget).join(' or ')}, and is not optional`,
       });
   }
   // What needs a dropped instance outright cannot work either (arborist's
@@ -242,7 +265,7 @@ export function selectInstances(
       skip(
         key,
         'platform',
-        `optional, and for ${describeDeclared(instance)}, not ${targets.map(describeTarget).join(' or ')}`,
+        `optional, and for ${describePlatform(declared(instance), quote)}, not ${targets.map(describeTarget).join(' or ')}`,
       );
     } else
       skip(

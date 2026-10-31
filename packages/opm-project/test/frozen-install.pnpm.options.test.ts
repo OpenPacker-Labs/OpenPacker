@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { planFrozen } from '../src/index.js';
 import { cleanup, pnpmWorld, type PnpmWorld } from './frozen-pnpm-fixture.js';
+import { storedNames } from './frozen-workspace-fixture.js';
 
 afterEach(cleanup);
 
@@ -99,6 +100,54 @@ describe('the platforms of a pnpm install', () => {
     });
     await w2.install();
     expect(await w2.list('node_modules')).not.toContain('plat-arm64');
+  });
+
+  // pnpm writes `libc` only when the registry's metadata had it, so a lock can
+  // list a musl build as for linux/x64 alone; the archive's own package.json
+  // says musl (OpenSesame: @anthropic-ai/claude-agent-sdk-linux-x64-musl, 258 MiB).
+  it("leaves out an optional package whose package.json names another libc than the lock's, and never extracts it", async () => {
+    const w = await pnpmWorld();
+    const native = (name: string, libc: string) =>
+      w.pkg({
+        name,
+        version: '1.0.0',
+        os: ['linux'],
+        cpu: ['x64'],
+        optional: true,
+        manifest: { os: ['linux'], cpu: ['x64'], libc: [libc] },
+      });
+    native('sdk-linux-x64', 'glibc');
+    native('sdk-linux-x64-musl', 'musl');
+    w.pkg({
+      name: 'sdk',
+      version: '1.0.0',
+      optionalDeps: {
+        'sdk-linux-x64': '1.0.0',
+        'sdk-linux-x64-musl': '1.0.0',
+      },
+    });
+    w.importer('.', { dependencies: { sdk: ['^1.0.0', '1.0.0'] } });
+    await w.write();
+
+    const result = await w.install();
+
+    expect(await w.list('node_modules')).toEqual([
+      '.opm-layout.json',
+      'sdk',
+      'sdk-linux-x64',
+    ]);
+    expect(result.skipped).toEqual([
+      expect.objectContaining({
+        name: 'sdk-linux-x64-musl',
+        kind: 'platform',
+        reason: expect.stringMatching(/libc "musl".*its package\.json/u),
+      }),
+    ]);
+    expect(result.installed).toBe(2);
+    expect(await storedNames(`${w.dir}-store`)).toEqual([
+      'sdk',
+      'sdk-linux-x64',
+    ]);
   });
 
   it('refuses a package that does not run here and is not optional, before it fetches', async () => {

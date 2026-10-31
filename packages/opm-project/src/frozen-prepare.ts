@@ -13,6 +13,7 @@ import {
   detectNativeTarget,
   echoed,
   echoedValue,
+  type ArchivePlatform,
   type DetectedProject,
   type FrozenLock,
   type FrozenOmit,
@@ -181,6 +182,8 @@ export function adapterFailure(error: unknown): Error {
 
 export async function prepareFrozen(
   input: FrozenInstallInput,
+  /** What archives declared, for a second read (`frozen-archive-platform.ts`). */
+  archivePlatforms?: ReadonlyMap<string, ArchivePlatform>,
 ): Promise<PreparedFrozen> {
   const started = now();
   const root = resolve(input.root);
@@ -216,6 +219,7 @@ export async function prepareFrozen(
       ...(registry !== undefined && { registry }),
       omit: new Set(input.omit ?? []),
       ...(workspace !== undefined && { workspace }),
+      ...(archivePlatforms !== undefined && { archivePlatforms }),
     });
   } catch (error) {
     throw adapterFailure(error);

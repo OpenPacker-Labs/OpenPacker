@@ -14,6 +14,7 @@ import {
   echoedValue,
   PACKAGE_TREE_LIMITS,
   redactAddress,
+  type ArchivePlatform,
   type FrozenLock,
   type FrozenLockPackage,
 } from '@openpacker/adapter-core';
@@ -29,6 +30,11 @@ import {
   transportForSources,
   type FrozenFetchOptions,
 } from './frozen-fetch.js';
+import {
+  declaresPlatform,
+  platformOfBytes,
+  platformOfTree,
+} from './frozen-archive-platform.js';
 import { listLines } from './frozen-policy.js';
 import { inferFormat } from './install.js';
 import {
@@ -86,6 +92,10 @@ interface Stored {
   /** Bytes fetched for it this time; 0 when the store already had it. */
   fetchedBytes: number;
   fetched: boolean;
+  /** For a package marked `platformFromArchive`: what its archive declares. */
+  platform?: ArchivePlatform;
+  /** Fetched and found not to run here: not extracted, so `path` is empty. */
+  leftOut?: true;
 }
 
 const DEFAULT_CONCURRENCY = 8;
@@ -179,9 +189,18 @@ export async function storeArchives(input: {
   options: FrozenFetchOptions & { concurrency?: number; signal?: AbortSignal };
   /** The install's hold on the shared store: each entry is claimed before use. */
   hold?: StoreHold;
+  /**
+   * Whether a package marked `platformFromArchive` runs here, given what its
+   * archive declares (the lock's `archiveRuns`). Given, such an archive's
+   * lists are read and returned, and one fetched that does not run here is
+   * left unextracted.
+   */
+  runs?: NonNullable<FrozenLock['archiveRuns']>;
 }) {
   const { lock, claims, storeRoot } = input;
   const memory = new MemoryBudget(EXTRACTION_MEMORY);
+  const readsPlatform = (pkg: FrozenLockPackage): boolean =>
+    input.runs !== undefined && pkg.platformFromArchive === true;
   const keyOf = (pkg: FrozenLockPackage) => integrityKey(claims.get(pkg.path)!);
   const firsts = new Map<string, FrozenLockPackage>();
   for (const pkg of lock.packages)
@@ -213,6 +232,9 @@ export async function storeArchives(input: {
             digest: known,
             fetchedBytes: 0,
             fetched: false,
+            ...(readsPlatform(pkg) && {
+              platform: await platformOfTree(entry.path),
+            }),
           };
       }
       if (transport === undefined) {
@@ -232,6 +254,22 @@ export async function storeArchives(input: {
           `${labelOf(pkg)} does not match the integrity the lock pins: the lock says ${echoed(pkg.integrity ?? '')}, ${echoed(redactSource(pkg.source))} served ${checked.actual}. Nothing was installed from it`,
         );
       const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+      // Read before anything is written: what does not run here is never
+      // extracted, so it takes no room in the store.
+      const platform = readsPlatform(pkg)
+        ? await memory.hold(bytes.byteLength * EXTRACTION_FOOTPRINT, () =>
+            platformOfBytes(bytes, inferFormat(pkg.source), input.limits),
+          )
+        : undefined;
+      if (platform !== undefined && !input.runs!(pkg, platform))
+        return {
+          path: '',
+          digest,
+          fetchedBytes: bytes.byteLength,
+          fetched: true,
+          platform,
+          leftOut: true,
+        };
       await input.hold?.claim(storeKeyFromDigest(digest));
       const entry = await memory
         .hold(bytes.byteLength * EXTRACTION_FOOTPRINT, async () =>
@@ -262,6 +300,7 @@ export async function storeArchives(input: {
         digest,
         fetchedBytes: bytes.byteLength,
         fetched: true,
+        ...(platform !== undefined && { platform }),
       };
     },
   );
@@ -278,8 +317,17 @@ export async function storeArchives(input: {
     lock.packages.map((pkg) => [pkg.path, byKey.get(keyOf(pkg))!]),
   );
   const archives = [...byKey.values()];
+  // What the archives declared, keyed as the lock spells their integrity.
+  const platforms = new Map<string, ArchivePlatform>();
+  for (const pkg of lock.packages) {
+    const platform = byPath.get(pkg.path)!.platform;
+    if (platform !== undefined && declaresPlatform(platform))
+      platforms.set(pkg.integrity, platform);
+  }
   return {
     byPath,
+    platforms,
+    leftOut: archives.filter((item) => item.leftOut).length,
     fromStore: archives.filter((item) => !item.fetched).length,
     fetched: archives.filter((item) => item.fetched).length,
     fetchedBytes: archives.reduce((sum, item) => sum + item.fetchedBytes, 0),
