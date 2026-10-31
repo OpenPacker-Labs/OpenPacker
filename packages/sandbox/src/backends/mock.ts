@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readSync } from 'node:fs';
+import { MAX_INHERITED_HANDLES } from '../handles.js';
 import { executableAuthorityRefusal } from '../platform.js';
 import type { SandboxBackend } from '../types.js';
 
@@ -223,12 +224,12 @@ export async function spawnCapture(input: {
       'PID namespace containment is unavailable on this platform',
     );
   if (
-    (input.inheritedFds?.length ?? 0) > 16 ||
+    (input.inheritedFds?.length ?? 0) > MAX_INHERITED_HANDLES ||
     input.inheritedFds?.some((fd) => !Number.isSafeInteger(fd) || fd < 0)
   )
     throw new SandboxBackendError(
       'INVALID_FD_AUTHORITY',
-      'At most 16 valid handles may be inherited',
+      `At most ${MAX_INHERITED_HANDLES} valid handles may be inherited`,
     );
 
   const timeoutMs = input.timeoutMs ?? 0;

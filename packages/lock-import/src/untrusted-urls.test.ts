@@ -3,6 +3,16 @@ import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import { planLockCapture } from './index.js';
 
 /**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
+/**
  * A lock file is text someone else wrote, and `resolved` is a URL in it. The
  * importer reads it through the guard, so a host no DNS name could be costs a
  * few milliseconds and not most of a second (the URL parser takes the square of
@@ -32,9 +42,9 @@ async function plan(resolved: string) {
   let best = Infinity;
   let result: Awaited<ReturnType<typeof planLockCapture>> | undefined;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const started = performance.now();
+    const started = cpuMs();
     result = await planLockCapture(lock(resolved));
-    best = Math.min(best, performance.now() - started);
+    best = Math.min(best, cpuMs() - started);
   }
   if (result === undefined) throw new Error('no plan');
   return { result, ms: best };

@@ -1,4 +1,9 @@
-import { echoed } from '@openpacker/adapter-core';
+import {
+  echoed,
+  formatPurl,
+  parsePurl,
+  type ParsedPurl,
+} from '@openpacker/adapter-core';
 import type { ParsedPackageSpec } from './types.js';
 import { OpmError } from './types.js';
 
@@ -277,6 +282,44 @@ export function exactPurl(purl: string, version: string): string {
   const base = match[1] ?? purl;
   const query = match[3] ? `?${match[3]}` : '';
   return `${base}@${version}${query}`;
+}
+
+/**
+ * `purl`'s package at `version`, the version encoded as one PURL component.
+ *
+ * What a manifest writes for a version is text, not PURL syntax: joined after
+ * `@`, a `/`, `@`, `?` or `#` in it reads back as another namespace and name, a
+ * qualifier or a subpath. So the PURL is built from `purl`'s own type,
+ * namespace, name and qualifiers with `version` as its version (no subpath: a
+ * request names a package, not a path inside one, as `exactPurl` never kept
+ * one either), and read back. The version is the only text the manifest line
+ * supplies, so it is the one thing compared: a character of it that escaped
+ * the version component would take it out of the version read back, which
+ * then differs. A line no PURL can carry (empty, too long, a lone surrogate)
+ * is refused too, so no version line can name another package.
+ */
+export function purlAtVersion(purl: string, version: string): string {
+  const own = parsePurl(purl);
+  let target: string | undefined;
+  let read: ParsedPurl | undefined;
+  try {
+    target = formatPurl({
+      type: own.type,
+      ...(own.namespace !== undefined && { namespace: own.namespace }),
+      name: own.name,
+      version,
+      qualifiers: own.qualifiers,
+    });
+    read = parsePurl(target);
+  } catch {
+    read = undefined;
+  }
+  if (target === undefined || read === undefined || read.version !== version)
+    throw new OpmError(
+      'INVALID_MANIFEST',
+      `${JSON.stringify(version)} cannot be written as a version of ${stripPurlVersion(purl)}`,
+    );
+  return target;
 }
 
 export function stripPurlVersion(purl: string): string {

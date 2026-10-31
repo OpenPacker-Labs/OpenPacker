@@ -29,6 +29,22 @@ const descriptor: ExtensionDescriptor = {
   diagnostics: [],
 };
 
+// Created while the file is collected: the first event verified compiles the
+// PREX event contract (Ajv, about half a second of CPU alone, many times that
+// on a loaded machine), and no test's time budget should hold a one-time
+// compile.
+const receiptCreated = await createCloudEvent({
+  type: 'org.openpacker.receipt.created',
+  source: 'urn:openpacker:testkit',
+  subject: 'sha256:receipt',
+  correlationId: 'testkit',
+  clock: { now: () => '2026-08-02T00:00:00.000Z' },
+  data: {
+    schemaVersion: '1',
+    receiptDigest: { algorithm: 'sha256', value: 'a'.repeat(64) },
+  },
+});
+
 describe('extension conformance', () => {
   it('rejects incomplete descriptors', () => {
     expect(() =>
@@ -39,20 +55,9 @@ describe('extension conformance', () => {
   });
 
   it('checks an event sink with canonical bytes', async () => {
-    const event = await createCloudEvent({
-      type: 'org.openpacker.receipt.created',
-      source: 'urn:openpacker:testkit',
-      subject: 'sha256:receipt',
-      correlationId: 'testkit',
-      clock: { now: () => '2026-08-02T00:00:00.000Z' },
-      data: {
-        schemaVersion: '1',
-        receiptDigest: { algorithm: 'sha256', value: 'a'.repeat(64) },
-      },
-    });
     const report = await checkEventSink(
       { descriptor, implementation: new MemoryEventSink() },
-      event,
+      receiptCreated,
     );
     assertConforms(report);
     expect(report.checks.every((check) => check.passed)).toBe(true);

@@ -14,22 +14,29 @@ const digest = (character: string) => ({
   value: character.repeat(64),
 });
 const clock = { now: () => '2026-08-02T00:00:00.000Z' };
+const resolutionCompleted = {
+  type: 'org.openpacker.resolution.completed' as const,
+  source: 'urn:openpacker:test',
+  subject: 'pkg:npm/%40openpacker/demo-tool@1.0.0',
+  correlationId: 'demo',
+  clock,
+  data: {
+    schemaVersion: '1' as const,
+    solutionDigest: digest('a'),
+    requestDigest: digest('b'),
+    universeDigest: digest('c'),
+  },
+};
+
+// The first event verified compiles the PREX event contract (Ajv, about half
+// a second of CPU alone, many times that on a loaded machine); every later one
+// reuses it. It is paid here, while the file is collected, so no test's time
+// budget holds a one-time compile.
+await createCloudEvent(resolutionCompleted);
 
 describe('OpenPacker CloudEvents', () => {
   it('derives stable IDs and digests and preserves exact canonical bytes', async () => {
-    const input = {
-      type: 'org.openpacker.resolution.completed' as const,
-      source: 'urn:openpacker:test',
-      subject: 'pkg:npm/%40openpacker/demo-tool@1.0.0',
-      correlationId: 'demo',
-      clock,
-      data: {
-        schemaVersion: '1' as const,
-        solutionDigest: digest('a'),
-        requestDigest: digest('b'),
-        universeDigest: digest('c'),
-      },
-    };
+    const input = resolutionCompleted;
     const first = await createCloudEvent(input);
     const second = await createCloudEvent(input);
     expect(second).toEqual(first);
