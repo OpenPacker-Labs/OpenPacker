@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as frozenLock from './frozen-lock.js';
+import * as frozenPatch from './frozen-patch.js';
 import * as layoutWorkspace from './layout-workspace.js';
 
 /**
@@ -14,6 +15,7 @@ import * as layoutWorkspace from './layout-workspace.js';
 describe('the frozen-install type modules', () => {
   it.each([
     ['frozen-lock', frozenLock],
+    ['frozen-patch', frozenPatch],
     ['layout-workspace', layoutWorkspace],
   ])('%s declares types and exports no value', (_, module) => {
     expect(Object.keys(module)).toEqual([]);
