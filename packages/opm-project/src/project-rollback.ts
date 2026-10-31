@@ -1,14 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import {
-  copyFile,
-  link,
-  lstat,
-  mkdir,
-  readdir,
-  readlink,
-  symlink,
-  writeFile,
-} from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ensureStableDirectory, projectPaths } from './paths.js';
 import { currentOwner } from './process-owner.js';
@@ -28,6 +19,12 @@ import {
   type RollbackRecord,
 } from './rollback-record.js';
 import { restoreFrom } from './rollback-restore.js';
+import {
+  copyTree,
+  createFile,
+  makeDirectory,
+  readlinkAt,
+} from './stable-ops.js';
 
 /**
  * What an install changes once it starts linking, kept so a failure part way
@@ -93,10 +90,13 @@ export async function snapshotProject(
     trees: [],
   };
   try {
-    await mkdir(holder);
+    // Every directory and file of the copy is made through its directory's
+    // handle (`stable-ops.ts`): a `.opm` swapped for a link since the step
+    // took its lock is refused, not written through.
+    await makeDirectory(holder);
     await writeRecord(holder, record);
-    await mkdir(join(holder, 'files'));
-    await mkdir(join(holder, 'trees'));
+    await makeDirectory(join(holder, 'files'));
+    await makeDirectory(join(holder, 'trees'));
     const after = new Map<number, string | Uint8Array | 'unchanged'>();
     if (intended.manifest !== undefined)
       after.set(MANIFEST_INDEX, intended.manifest);
@@ -148,8 +148,7 @@ async function keepFile(
       : current.kind === 'link'
         ? { before: linkDigest(current.target), link: current.target }
         : { before: sha256(current.bytes), mode: current.mode };
-  if (current?.kind === 'file')
-    await writeFile(kept, current.bytes, { mode: 0o600 });
+  if (current?.kind === 'file') await createFile(kept, current.bytes, 0o600);
   const after =
     intended === 'unchanged'
       ? row.before
@@ -172,36 +171,7 @@ async function keepRoot(
 ): Promise<KeptTree> {
   const info = await lstat(source).catch(absent);
   if (info === undefined) return false;
-  if (info.isSymbolicLink()) return readlink(source);
-  return keepTree(source, target, copy);
-}
-
-/**
- * `target` as a tree of hard links to `source`'s files (copies with `copy`),
- * its symbolic links recreated and never followed. False when there is no
- * `source`.
- */
-async function keepTree(
-  source: string,
-  target: string,
-  copy: boolean,
-): Promise<boolean> {
-  const info = await lstat(source).catch(absent);
-  if (info === undefined) return false;
-  if (info.isSymbolicLink()) await symlink(await readlink(source), target);
-  else if (info.isDirectory()) {
-    await mkdir(target, { mode: info.mode & 0o7777 });
-    for (const name of await readdir(source))
-      await keepTree(join(source, name), join(target, name), copy);
-  } else if (copy) await copyFile(source, target);
-  else
-    await link(source, target).catch(async (error: unknown) => {
-      // SAFETY: only the errno code of a file-system error is read.
-      const code = (error as NodeJS.ErrnoException).code;
-      // A file system that cannot link here still gets a faithful copy.
-      if (code !== 'EXDEV' && code !== 'EPERM' && code !== 'EMLINK')
-        throw error;
-      await copyFile(source, target);
-    });
+  if (info.isSymbolicLink()) return readlinkAt(source);
+  await copyTree(source, target, copy);
   return true;
 }

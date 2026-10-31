@@ -5,19 +5,15 @@
  * mint tokens outside opm and point this map at the env var that holds them.
  */
 import { randomUUID } from 'node:crypto';
-import {
-  chmod,
-  mkdir,
-  readFile,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { normalizePinnedOrigin, ProviderError } from '@openpacker/adapter-core';
 import { parseCanonicalJson } from '@openpacker/canonical';
+import { realBase } from '@openpacker/project-io';
+import { openChild, removeChild, renameChild } from './paths.js';
+import { openPrivateDirectory } from './stable-ops.js';
 import { OpmError } from './types.js';
 
 export interface AuthConfig {
@@ -344,19 +340,39 @@ async function writeAuthConfig(
   path: string,
   config: AuthConfig,
 ): Promise<void> {
-  const directory = dirname(path);
-  await mkdir(directory, { recursive: true, mode: 0o700 });
-  const temporary = join(directory, `.${basename(path)}.${randomUUID()}.tmp`);
+  // The directory is opened, and made mode 0700 where missing, one no-follow
+  // component at a time from its base's real path, and the file is written
+  // and renamed through its handle: a link below the base (a config directory
+  // named inside a project that holds a link there) is refused, not followed.
+  const name = basename(path);
+  const parent = await openPrivateDirectory(realBase(dirname(path)), true);
   try {
-    await writeFile(temporary, serializeAuthConfig(config), {
-      flag: 'wx',
-      mode: 0o600,
-    });
-    if (process.platform !== 'win32') await chmod(temporary, 0o600);
-    await rename(temporary, path);
-    if (process.platform !== 'win32') await chmod(path, 0o600);
-  } catch (error) {
-    await rm(temporary, { force: true }).catch(() => undefined);
-    throw error;
+    const temporary = `.${name}.${randomUUID()}.tmp`;
+    const file = await openChild(
+      parent,
+      temporary,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      await file.writeFile(serializeAuthConfig(config));
+      if (process.platform !== 'win32') await file.chmod(0o600);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    try {
+      await renameChild(parent, temporary, name);
+    } catch (error) {
+      await removeChild(parent, temporary, { force: true }).catch(
+        () => undefined,
+      );
+      throw error;
+    }
+  } finally {
+    await parent.close();
   }
 }

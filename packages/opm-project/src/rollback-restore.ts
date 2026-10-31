@@ -1,16 +1,7 @@
-import {
-  chmod,
-  cp,
-  lstat,
-  mkdir,
-  open,
-  readdir,
-  rename,
-  rm,
-  symlink,
-} from 'node:fs/promises';
+import { lstat, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
+import { openChild, openStableDirectory, removeStableFile } from './paths.js';
 import {
   absent,
   cannotPutBack,
@@ -27,6 +18,13 @@ import {
   type RollbackRecord,
 } from './rollback-record.js';
 import { OpmError } from './types.js';
+import {
+  copyEntry,
+  inParent,
+  removeTree,
+  renameAcross,
+  symlinkAt,
+} from './stable-ops.js';
 
 /**
  * Put the project back from a `ready` copy, then remove the copy.
@@ -57,7 +55,7 @@ export async function restoreFrom(
     if (row === undefined || row === false)
       steps.push({
         name: tree.path,
-        run: () => rm(live, { recursive: true, force: true }),
+        run: () => removeTree(live),
       });
     else if (row === true) {
       const info = await lstat(kept).catch(absent);
@@ -87,8 +85,8 @@ export async function restoreFrom(
       steps.push({
         name: tree.path,
         run: async () => {
-          await rm(live, { recursive: true, force: true });
-          await symlink(row, live);
+          await removeTree(live);
+          await symlinkAt(row, live);
         },
       });
   }
@@ -98,7 +96,7 @@ export async function restoreFrom(
     if ((await lstat(path).catch(absent))?.isDirectory() === true)
       throw refuse('ROLLBACK_CONFLICT', holder, `${name} is a directory now`);
     if (row === undefined || row.before === null)
-      steps.push({ name, run: () => rm(path, { force: true }) });
+      steps.push({ name, run: () => removeStableFile(path) });
     else if (row.link !== undefined) {
       const target = row.link;
       steps.push({ name, run: () => putLinkBack(path, target) });
@@ -141,25 +139,26 @@ export async function restoreFrom(
  */
 async function putTreeBack(live: string, kept: string): Promise<void> {
   try {
-    await rm(live, { recursive: true, force: true });
-    await rename(kept, live);
+    await removeTree(live);
+    await renameAcross(kept, live);
     return;
   } catch (error) {
     if (!(error instanceof Error && isMountError(error))) throw error;
   }
   const { mode } = await lstat(kept);
-  await mkdir(live, { recursive: true, mode: mode & 0o7777 });
-  for (const entry of await readdir(live))
-    await rm(join(live, entry), { recursive: true, force: true });
-  for (const entry of await readdir(kept))
-    await cp(join(kept, entry), join(live, entry), {
-      recursive: true,
-      verbatimSymlinks: true,
-      preserveTimestamps: true,
-    });
-  // The mount may not let this process change the mode; the contents are the point.
-  await chmod(live, mode & 0o7777).catch(() => undefined);
-  await rm(kept, { recursive: true, force: true });
+  const directory = await openStableDirectory(live, true);
+  try {
+    for (const entry of await readdir(live))
+      await removeTree(join(live, entry));
+    for (const entry of await readdir(kept))
+      await copyEntry(join(kept, entry), join(live, entry), true);
+    // Last, so a directory that is not writable could still be filled. The
+    // mount may not let this process change the mode; the contents are the point.
+    await directory.chmod(mode & 0o7777).catch(() => undefined);
+  } finally {
+    await directory.close();
+  }
+  await removeTree(kept);
 }
 
 /** Where the mark of what was begun on tree or file `index` is kept, in the copy. */
@@ -172,16 +171,19 @@ export const markerOf = (
 
 /** Say, durably, that this has been begun: a later run does not take half of it for the whole. */
 async function mark(path: string): Promise<void> {
-  const file = await open(
-    path,
-    constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0),
-    0o600,
-  );
-  try {
-    await file.sync();
-  } finally {
-    await file.close();
-  }
+  await inParent(path, async (parent, name) => {
+    const file = await openChild(
+      parent,
+      name,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+  });
 }
 
 export async function marked(path: string): Promise<boolean> {

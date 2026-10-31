@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, rmdir, stat, type FileHandle } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { lstatChild } from '@openpacker/project-io';
+import { lstatChild, stableTarget } from '@openpacker/project-io';
 import { isRefusal, plainReason } from './fs-reason.js';
 import {
   openChild,
@@ -211,7 +211,12 @@ function held(
         await dir.close();
       }
       // `opm ci` in a project opm never touched leaves no `.opm` behind.
-      if (createdOpmDir) await rmdir(paths.opmDir).catch(() => undefined);
+      // By name, at the root's real path as the command took it: rmdir(2)
+      // removes only an empty directory and never follows its last
+      // component, so this can remove nothing but an empty `.opm` directly
+      // in the project's root.
+      if (createdOpmDir)
+        await rmdir(stableTarget(paths.opmDir)).catch(() => undefined);
     },
   };
 }

@@ -1,13 +1,5 @@
 import { constants } from 'node:fs';
-import {
-  lstat,
-  open,
-  readlink,
-  rename,
-  rm,
-  symlink,
-  type FileHandle,
-} from 'node:fs/promises';
+import { lstat, open, readlink, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { plainReason } from './fs-reason.js';
 import {
@@ -23,6 +15,7 @@ import {
   linkDigest,
   sha256,
 } from './rollback-record.js';
+import { removeTree, renameWithin, symlinkAt } from './stable-ops.js';
 import { OpmError } from './types.js';
 
 /**
@@ -207,8 +200,7 @@ const beside = (path: string) =>
  * runs this first, so a name found is always a leftover (ADR 0056 §4).
  */
 export async function sweepRestoreNames(root: string): Promise<void> {
-  for (const name of ROLLBACK_FILES)
-    await rm(beside(join(root, name)), { recursive: true, force: true });
+  for (const name of ROLLBACK_FILES) await removeTree(beside(join(root, name)));
 }
 
 /**
@@ -289,9 +281,9 @@ async function writeInPlace(
 /** Put a link back at `path`, the same way. */
 export async function putLinkBack(path: string, target: string): Promise<void> {
   const temporary = beside(path);
-  await rm(temporary, { recursive: true, force: true });
-  await symlink(target, temporary);
-  await rename(temporary, path);
+  await removeTree(temporary);
+  await symlinkAt(target, temporary);
+  await renameWithin(temporary, path);
 }
 
 /**
@@ -302,6 +294,6 @@ export async function discardCopy(holder: string): Promise<void> {
   const gone = holder.endsWith(DISCARD_SUFFIX)
     ? holder
     : `${holder}${DISCARD_SUFFIX}`;
-  if (gone !== holder) await rename(holder, gone).catch(absent);
-  await rm(gone, { recursive: true, force: true });
+  if (gone !== holder) await renameWithin(holder, gone).catch(absent);
+  await removeTree(gone);
 }

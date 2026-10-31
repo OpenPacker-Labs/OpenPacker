@@ -24,8 +24,8 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, rename, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { lstat } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import {
   descriptorForBytes,
   streamFromBytes,
@@ -49,10 +49,10 @@ import {
 } from './paths.js';
 import {
   assertNoFollowTree,
-  hardlinkFile,
   linkTree,
   sealTreeReadOnly,
 } from './shared-store-tree.js';
+import { renameStable } from './paths.js';
 
 import {
   enableDefaultSharedStore,
@@ -82,7 +82,8 @@ export async function materializeThroughSharedStore(input: {
   const digest = assertDigest(input.digest);
   const projectStorePath = input.projectStorePath;
   const format = input.format;
-  const linkFile = input.linkFile ?? hardlinkFile;
+  // A test may link by name; production links through the trees' handles.
+  const linkFile = input.linkFile;
   const sharedRoot =
     input.sharedRoot ?? (await usableSharedRoot(projectStorePath, input.env));
   if (sharedRoot === undefined) {
@@ -126,9 +127,9 @@ export async function materializeThroughSharedStore(input: {
           treeDigest: published.treeDigest,
         };
       } catch (error) {
-        await rm(projectStorePath, { recursive: true, force: true }).catch(
-          () => undefined,
-        );
+        // Through the store directory's handle: a `.opm/store` swapped for a
+        // link since the tree was linked is refused, not removed through.
+        await removeStableTree(projectStorePath).catch(() => undefined);
         if (!isMissing(error)) throw error;
         if (attempt === 0) continue;
         throw new OpmError(
@@ -191,7 +192,9 @@ export async function publishSharedEntry(input: {
       if (input.seal !== false) await sealTreeReadOnly(tmp);
       await recordTreeDigest(sharedPath, treeDigest);
       try {
-        await rename(tmp, sharedPath);
+        // One rename in the store root's own handle: a root swapped for a
+        // link since the entry was made is refused, not published into.
+        await renameStable(input.sharedRoot, basename(tmp), storeKey);
       } catch (error) {
         // SAFETY: The surrounding boundary establishes the asserted domain contract.
         const code = (error as NodeJS.ErrnoException).code;
@@ -203,7 +206,7 @@ export async function publishSharedEntry(input: {
       }
       return { path: sharedPath, treeDigest };
     } catch (error) {
-      await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+      await removeStableTree(tmp).catch(() => undefined);
       throw error;
     }
   }

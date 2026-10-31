@@ -213,7 +213,12 @@ export async function openLease(
   for (let attempt = 0; ; attempt += 1) {
     // Not recursive: the store is there, and a recursive mkdir reports a
     // read-only filesystem as ENOENT, which reads as a directory removed
-    // meanwhile.
+    // meanwhile. By name, deliberately: `directory` is `.leases` in a store
+    // root `ensurePrivateRoot` found owned by this user and writable by nobody
+    // else, so only this user can put a link at it, and the lease only ever
+    // makes new names with O_EXCL and removes those names again: what a link
+    // there could make it touch is files it made itself (ADR 0034, trusted
+    // bases).
     await mkdir(directory, { mode: 0o700 }).catch((error: unknown) => {
       if (codeOf(error) !== 'EEXIST') throw error;
     });

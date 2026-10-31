@@ -1,11 +1,10 @@
-import { mkdir } from 'node:fs/promises';
 import { policyDocumentFromPolicyInput } from '@openpacker/policy';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { OpmError, type BinDeclaration, type LockPackage } from './types.js';
 import { binDeclarationsFromExecutables } from './bins.js';
 import { ecosystemFromPurl, stripPurlVersion } from './spec.js';
-import { storeKeyFromDigest } from './paths.js';
+import { ensureStableDirectory, storeKeyFromDigest } from './paths.js';
 import {
   bindVerifiedArtifactBytes,
   bindVerifiedArtifactCacheEntry,
@@ -133,7 +132,9 @@ export async function fetchTool(input: {
       })();
 
   const cacheRoot = input.cacheRoot ?? toolCacheRoot();
-  await mkdir(cacheRoot, { recursive: true });
+  // Made one no-follow component at a time from its base: a tool cache named
+  // inside a project is not made where a link the project holds points.
+  await ensureStableDirectory(cacheRoot);
 
   const primary = await materialiseExact(ecosystem, exact, cacheRoot, options);
 

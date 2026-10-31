@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { open, rename, rm } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
@@ -7,6 +7,8 @@ import {
   parseProcessOwner,
   type ProcessOwner,
 } from './process-owner.js';
+import { openChild, removeChild, renameChild } from './paths.js';
+import { inParent } from './stable-ops.js';
 
 /**
  * The owner of a directory, in a file of its own (header of
@@ -34,31 +36,37 @@ export async function writeOwnerFile(
   owner?: ProcessOwner,
 ): Promise<void> {
   const text = `${JSON.stringify({ ownerVersion: 1, owner: owner ?? (await currentOwner()) })}\n`;
-  const temporary = join(dir, `.${OWNER_FILE}.${randomUUID()}.tmp`);
-  const file = await open(
-    temporary,
-    constants.O_WRONLY |
-      constants.O_CREAT |
-      constants.O_EXCL |
-      (constants.O_NOFOLLOW ?? 0),
-    0o644,
-  );
-  try {
-    await file.writeFile(text);
-    await file.chmod(0o644);
-    await file.sync();
-  } catch (error) {
+  // Written and renamed through `dir`'s handle, opened one no-follow component
+  // at a time from its base: a component swapped for a link since `dir` was
+  // made is refused, and no owner file lands where it points.
+  await inParent(join(dir, OWNER_FILE), async (parent, name) => {
+    const temporary = `.${name}.${randomUUID()}.tmp`;
+    const file = await openChild(
+      parent,
+      temporary,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o644,
+    );
+    try {
+      await file.writeFile(text);
+      await file.chmod(0o644);
+      await file.sync();
+    } catch (error) {
+      await file.close();
+      await removeChild(parent, temporary, { force: true });
+      throw error;
+    }
     await file.close();
-    await rm(temporary, { force: true });
-    throw error;
-  }
-  await file.close();
-  try {
-    await rename(temporary, join(dir, OWNER_FILE));
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
-  }
+    try {
+      await renameChild(parent, temporary, name);
+    } catch (error) {
+      await removeChild(parent, temporary, { force: true });
+      throw error;
+    }
+  });
 }
 
 /** What is in the owner file of `dir`: an owner, or why not ({@link OwnerFileProblem}). */

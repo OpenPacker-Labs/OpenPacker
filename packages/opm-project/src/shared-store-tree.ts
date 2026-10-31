@@ -9,24 +9,23 @@
 
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
+import { link, lstat, type FileHandle } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import {
-  chmod,
-  copyFile,
-  link,
-  lstat,
-  mkdir,
-  rename,
-  rm,
-  unlink,
-} from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { assertHandleSegment, StableHandleError } from '@openpacker/project-io';
+  assertHandleSegment,
+  linkChild,
+  lstatChild,
+  StableHandleError,
+} from '@openpacker/project-io';
 import { OpmError } from './types.js';
 import {
   ensureStableDirectory,
+  mkdirChild,
   openChild,
   openStableDirectory,
   readDirChildWithTypes,
+  removeChild,
+  renameChild,
 } from './paths.js';
 
 /**
@@ -61,16 +60,17 @@ async function isolateEntries(root: string): Promise<void> {
           'UNSAFE_PATH',
           `Project store entry is not a regular file: ${path}`,
         );
-      const info = await lstat(path);
-      if (info.nlink <= 1) continue;
-      const tmp = `${path}.copy-${randomUUID()}`;
+      // Every step is relative to the directory's handle, so a component of
+      // `root` swapped for a link since it was opened redirects none of them.
+      const info = await lstatChild(handle, entry.name);
+      if (!info.isFile() || info.nlink <= 1n) continue;
+      const tmp = `${entry.name}.copy-${randomUUID()}`;
       try {
-        await copyFile(path, tmp);
-        await chmod(tmp, (info.mode & 0o777) | 0o200);
-        await unlink(path);
-        await rename(tmp, path);
+        await copyChild(handle, entry.name, handle, tmp, Number(info.mode));
+        await removeChild(handle, entry.name);
+        await renameChild(handle, tmp, entry.name);
       } catch (error) {
-        await rm(tmp, { force: true }).catch(() => undefined);
+        await removeChild(handle, tmp, { force: true }).catch(() => undefined);
         throw error;
       }
     }
@@ -97,76 +97,176 @@ export function assertEntryName(name: string): void {
     throw error;
   }
 }
-export async function hardlinkFile(
-  existingPath: string,
-  newPath: string,
-): Promise<void> {
-  await link(existingPath, newPath);
-}
-
+/**
+ * Hard-link every file of `source` into `destination`, a directory made here.
+ *
+ * Both trees are walked through handles opened one no-follow component at a
+ * time. A file is linked relative to the two directories' handles where the
+ * platform has that (Linux), and is otherwise linked by name and then checked
+ * through the handles; either way a name that is not, afterwards, the very
+ * file inspected in `source` is removed and refused. A copy (another file
+ * system) is written through the handles.
+ */
 export async function linkTree(
   source: string,
   destination: string,
-  linkFile: (existingPath: string, newPath: string) => Promise<void>,
+  linkFile?: (existingPath: string, newPath: string) => Promise<void>,
 ): Promise<void> {
   await ensureStableDirectory(dirname(destination));
-  await mkdir(destination);
-  const handle = await openStableDirectory(source);
+  const parent = await openStableDirectory(dirname(destination));
   try {
-    await linkEntries(source, destination, linkFile);
+    await mkdirChild(parent, basename(destination));
   } finally {
-    await handle.close();
+    await parent.close();
   }
+  await linkEntries(source, destination, linkFile);
 }
 
 async function linkEntries(
   source: string,
   destination: string,
-  linkFile: (existingPath: string, newPath: string) => Promise<void>,
+  linkFile:
+    | ((existingPath: string, newPath: string) => Promise<void>)
+    | undefined,
 ): Promise<void> {
-  const handle = await openStableDirectory(source);
+  const from = await openStableDirectory(source);
   try {
-    const entries = await readDirChildWithTypes(handle);
-    for (const entry of entries) {
-      assertEntryName(entry.name);
-      const from = join(source, entry.name);
-      const to = join(destination, entry.name);
-      if (entry.isSymbolicLink())
-        throw new OpmError(
-          'UNSAFE_PATH',
-          `Shared store entry is a symbolic link: ${from}`,
-        );
-      if (entry.isDirectory()) {
-        await mkdir(to);
-        await linkEntries(from, to, linkFile);
-        continue;
+    const to = await openStableDirectory(destination);
+    try {
+      for (const entry of await readDirChildWithTypes(from)) {
+        assertEntryName(entry.name);
+        const path = join(source, entry.name);
+        if (entry.isSymbolicLink())
+          throw new OpmError(
+            'UNSAFE_PATH',
+            `Shared store entry is a symbolic link: ${path}`,
+          );
+        if (entry.isDirectory()) {
+          await mkdirChild(to, entry.name);
+          await linkEntries(path, join(destination, entry.name), linkFile);
+          continue;
+        }
+        if (!entry.isFile())
+          throw new OpmError(
+            'UNSAFE_PATH',
+            `Shared store entry is not a regular file: ${path}`,
+          );
+        await publishFile(from, to, entry.name, {
+          from: path,
+          to: join(destination, entry.name),
+          linkFile,
+        });
       }
-      if (!entry.isFile())
-        throw new OpmError(
-          'UNSAFE_PATH',
-          `Shared store entry is not a regular file: ${from}`,
-        );
-      await publishFile(from, to, linkFile);
+    } finally {
+      await to.close();
     }
   } finally {
-    await handle.close();
+    await from.close();
   }
 }
 
 async function publishFile(
-  from: string,
-  to: string,
-  linkFile: (existingPath: string, newPath: string) => Promise<void>,
+  from: FileHandle,
+  to: FileHandle,
+  name: string,
+  paths: {
+    from: string;
+    to: string;
+    linkFile:
+      | ((existingPath: string, newPath: string) => Promise<void>)
+      | undefined;
+  },
 ): Promise<void> {
+  const before = await lstatChild(from, name);
   try {
-    await linkFile(from, to);
+    if (paths.linkFile !== undefined)
+      await paths.linkFile(paths.from, paths.to);
+    else if (process.platform === 'linux')
+      await linkChild(from, name, to, name);
+    // macOS has no handle-relative link here (ADR 0045, "Not covered"): the
+    // name is linked by path and proved below to be the inspected file.
+    else await link(paths.from, paths.to);
   } catch (error) {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
-    await copyFile(from, to);
-    const mode = (await lstat(from)).mode;
     // A copy is the project's own file, so it stays writable.
-    await chmod(to, (mode & 0o777) | 0o200);
+    await copyChild(from, name, to, name, Number(before.mode) | 0o200);
+    return;
+  }
+  const placed = await lstatChild(to, name).catch(() => undefined);
+  if (
+    placed?.isFile() !== true ||
+    placed.dev !== before.dev ||
+    placed.ino !== before.ino
+  ) {
+    await removeChild(to, name, { force: true }).catch(() => undefined);
+    throw new OpmError(
+      'INPUT_CHANGED',
+      `Shared store entry changed while it was linked into the project: ${paths.to}`,
+    );
+  }
+}
+
+/**
+ * Copy the regular file `name` of `from` to a new file `as` in `to`, both
+ * opened no-follow relative to their directories' handles, with `mode`.
+ */
+async function copyChild(
+  from: FileHandle,
+  name: string,
+  to: FileHandle,
+  as: string,
+  mode: number,
+): Promise<void> {
+  const source = await openChild(
+    from,
+    name,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  );
+  try {
+    if (!(await source.stat()).isFile())
+      throw new OpmError(
+        'UNSAFE_PATH',
+        `Store entry is not a regular file: ${name}`,
+      );
+    const target = await openChild(
+      to,
+      as,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      const buffer = Buffer.alloc(1024 * 1024);
+      let offset = 0;
+      for (;;) {
+        const { bytesRead } = await source.read(
+          buffer,
+          0,
+          buffer.length,
+          offset,
+        );
+        if (bytesRead === 0) break;
+        let written = 0;
+        while (written < bytesRead) {
+          const { bytesWritten } = await target.write(
+            buffer,
+            written,
+            bytesRead - written,
+            offset + written,
+          );
+          written += bytesWritten;
+        }
+        offset += bytesRead;
+      }
+      await target.chmod(mode & 0o777);
+    } finally {
+      await target.close();
+    }
+  } finally {
+    await source.close();
   }
 }
 
