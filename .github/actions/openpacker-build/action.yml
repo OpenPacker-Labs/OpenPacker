@@ -1,0 +1,44 @@
+name: OpenPacker build setup
+description: >-
+  Checkout, Node.js, the Rust wasm32 target, wasm-bindgen 0.2.126, and npm ci
+  --ignore-scripts. The wasm cache key matches ci-build.yml.
+
+inputs:
+  node-version:
+    description: Node.js version passed to actions/setup-node
+    required: false
+    default: 22.19.0
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v6.0.2
+    - uses: actions/setup-node@v6.4.0
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+    - uses: dtolnay/rust-toolchain@1.88.0
+      with:
+        targets: wasm32-unknown-unknown
+    - name: Cache the wasm toolchain output
+      id: cache-wasm
+      uses: actions/cache@v5.0.5
+      with:
+        # Windows installs both tools with an .exe suffix. Without it the
+        # saved cache holds neither binary, the next run restores it, skips
+        # the install and fails on a missing wasm-bindgen. The v2 key
+        # abandons the entries that were saved without them.
+        path: |
+          ~/.cargo/bin/wasm-bindgen
+          ~/.cargo/bin/wasm-bindgen.exe
+          ~/.cargo/bin/wasm-bindgen-test-runner
+          ~/.cargo/bin/wasm-bindgen-test-runner.exe
+          target/wasm32-unknown-unknown
+        key: wasm-v2-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+    - name: Install wasm-bindgen (cache miss only)
+      if: steps.cache-wasm.outputs.cache-hit != 'true'
+      shell: bash
+      run: cargo install --locked wasm-bindgen-cli --version 0.2.126
+    - name: Install npm dependencies
+      shell: bash
+      run: npm ci --ignore-scripts

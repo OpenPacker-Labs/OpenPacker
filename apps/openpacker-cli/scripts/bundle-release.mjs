@@ -1,11 +1,17 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import esbuild from 'esbuild';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const releaseDir = join(root, 'release');
+const sourcePackage = JSON.parse(
+  readFileSync(join(root, 'package.json'), 'utf8'),
+);
+// Nightly and integration promotion set OPENPACKER_RELEASE_VERSION.
+const releaseVersion =
+  process.env.OPENPACKER_RELEASE_VERSION || sourcePackage.version;
 
 rmSync(releaseDir, { recursive: true, force: true });
 mkdirSync(join(releaseDir, 'dist'), { recursive: true });
@@ -58,7 +64,7 @@ writeFileSync(
   `${JSON.stringify(
     {
       name: '@openpacker/cli',
-      version: '0.0.1-alpha.1',
+      version: releaseVersion,
       description: 'OpenPacker command-line client',
       license: 'MIT',
       type: 'module',

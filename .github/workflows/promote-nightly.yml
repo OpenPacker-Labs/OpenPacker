@@ -1,0 +1,172 @@
+name: Promote nightly
+
+# Publishes @openpacker/cli from main when main has commits since the last
+# cli-v*-nightly.* tag. Trusted publishing uses OIDC (id-token: write and
+# setup-node registry-url). Do not set an npm token secret.
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: promote-nightly
+  cancel-in-progress: false
+
+env:
+  OPENPACKER_OFFLINE: '1'
+  SOURCE_DATE_EPOCH: '1785628800'
+  OPENPACKER_MISE: mise
+
+jobs:
+  promote:
+    name: Nightly promotion
+    runs-on: ubuntu-latest
+    environment:
+      name: nightly
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: true
+
+      - name: Skip when main has no commits since the last nightly tag
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          last="$(git for-each-ref --sort=-creatordate --count=1 --format='%(refname:short)' 'refs/tags/cli-v*-nightly.*')"
+          skip=false
+          if [ -n "$last" ]; then
+            count="$(git rev-list --count "${last}..${sha}")"
+            if [ "$count" = "0" ]; then
+              skip=true
+              echo "No commits on main since ${last}."
+            else
+              echo "${count} commits on main since ${last}."
+            fi
+          else
+            echo "No cli-v*-nightly.* tag yet."
+          fi
+          raw=""
+          while IFS= read -r line; do
+            case "$line" in
+              *'"version"'*)
+                raw="${line#*:}"
+                raw="${raw#*\"}"
+                raw="${raw%%\"*}"
+                break
+                ;;
+            esac
+          done < apps/openpacker-cli/package.json
+          stable="${raw%%+*}"
+          stable="${stable%%-*}"
+          case "$stable" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *)
+              echo "apps/openpacker-cli version ${raw} has no stable triplet." >&2
+              exit 1
+              ;;
+          esac
+          stamp="$(TZ=UTC date +%Y%m%d)"
+          version="${stable}-nightly.${stamp}"
+          {
+            echo "skip=${skip}"
+            echo "sha=${sha}"
+            echo "version=${version}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Planned ${version} at ${sha} (skip=${skip})."
+
+      - uses: actions/setup-node@v6.4.0
+        if: steps.plan.outputs.skip != 'true'
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - uses: dtolnay/rust-toolchain@1.88.0
+        if: steps.plan.outputs.skip != 'true'
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - name: Cache the wasm toolchain output
+        id: cache-wasm
+        if: steps.plan.outputs.skip != 'true'
+        uses: actions/cache@v5.0.5
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen.exe
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm-bindgen-test-runner.exe
+            target/wasm32-unknown-unknown
+          key: wasm-v2-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Install wasm-bindgen (cache miss only)
+        if:
+          steps.plan.outputs.skip != 'true' &&
+          steps.cache-wasm.outputs.cache-hit != 'true'
+        run: cargo install --locked wasm-bindgen-cli --version 0.2.126
+      - name: Install mise for the offline demo
+        if: steps.plan.outputs.skip != 'true'
+        uses: jdx/mise-action@v4.2.4
+        with:
+          version: 2026.7.13
+          cache: false
+      - if: steps.plan.outputs.skip != 'true'
+        run: npm ci --ignore-scripts
+      - name: Install Playwright Chromium
+        if: steps.plan.outputs.skip != 'true'
+        run: npm exec playwright install --with-deps chromium
+      - name: Full offline verification
+        if: steps.plan.outputs.skip != 'true'
+        run: npm run verify
+      - name: Integration gate
+        if: steps.plan.outputs.skip != 'true'
+        run: npm run test:integration
+      - name: Bundle the nightly version
+        if: steps.plan.outputs.skip != 'true'
+        env:
+          OPENPACKER_RELEASE_VERSION: ${{ steps.plan.outputs.version }}
+        run: npm run bundle --workspace @openpacker/cli
+      - uses: actions/setup-node@v6.4.0
+        if: steps.plan.outputs.skip != 'true'
+        with:
+          node-version: 22.19.0
+          registry-url: https://registry.npmjs.org
+      - name: Publish the nightly dist-tag with provenance
+        if: steps.plan.outputs.skip != 'true'
+        working-directory: apps/openpacker-cli/release
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if npm view "@openpacker/cli@${VERSION}" version >/dev/null 2>&1; then
+            echo "${VERSION} is already on the registry."
+          else
+            npm publish --provenance --access public --tag nightly
+          fi
+          npm dist-tag add "@openpacker/cli@${VERSION}" nightly
+      - name: Tag the commit and fast-forward nightly
+        if: steps.plan.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          SHA: ${{ steps.plan.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SHA"
+          tag="cli-v${VERSION}"
+          if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
+            existing="$(git rev-parse "${tag}^{commit}")"
+            test "$existing" = "$SHA"
+          else
+            git tag "$tag" "$SHA"
+          fi
+          git push origin "refs/tags/${tag}"
+          git push origin "${SHA}:refs/heads/nightly"

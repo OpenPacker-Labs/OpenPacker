@@ -1,14 +1,14 @@
 name: CI build
 
-# The automatic PR/push lane, kept minimal on purpose: build matrix + smoke +
-# artifacts. Scheduled security checks are separate in security.yml and
-# codeql.yml. The full offline gauntlet stays manual-dispatch in ci.yml, and
-# promotion is separate and sparse in cd.yml. Minutes are budgeted:
-# concurrency cancels superseded runs, npm/cargo caches are warm after the
-# first run, and artifacts expire after 7 days.
+# Post-merge artifact matrix on main. Pull requests use ci-advisory.yml for
+# fast, non-required feedback. The merge queue uses trunk-gate.yml, which is
+# the only required CI for merging. Scheduled security checks are separate in
+# security.yml and codeql.yml. The full offline gauntlet stays manual-dispatch
+# in ci.yml. Promotion is promote-nightly.yml, promote-integration.yml, and
+# promote-prod.yml (cd.yml is deprecated). Minutes are budgeted: concurrency
+# cancels superseded runs, npm/cargo caches are warm after the first run, and
+# artifacts expire after 7 days.
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
 

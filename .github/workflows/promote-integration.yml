@@ -1,0 +1,320 @@
+name: Promote integration
+
+# Fast-forwards integration to a nightly commit and points the next and alpha
+# dist-tags at that same nightly version. Trusted publishing uses OIDC. Do not
+# set an npm token secret. workflow_run is optional and runs only after
+# Promote nightly succeeds.
+on:
+  workflow_dispatch:
+    inputs:
+      nightly_sha:
+        description:
+          Commit SHA to fast-forward integration to. Must be an ancestor of the
+          nightly branch tip.
+        required: true
+        type: string
+  workflow_run:
+    workflows: [Promote nightly]
+    types: [completed]
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: promote-integration
+  cancel-in-progress: false
+
+env:
+  OPENPACKER_OFFLINE: '1'
+  SOURCE_DATE_EPOCH: '1785628800'
+  OPENPACKER_MISE: mise
+
+jobs:
+  resolve:
+    name: Resolve nightly SHA
+    runs-on: ubuntu-latest
+    if:
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+      version: ${{ steps.plan.outputs.version }}
+      skip: ${{ steps.plan.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Require an ancestor of the nightly tip
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SHA:
+            ${{ github.event_name == 'workflow_dispatch' && inputs.nightly_sha
+            || '' }}
+          RUN_SHA:
+            ${{ github.event_name == 'workflow_run' &&
+            github.event.workflow_run.head_sha || '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            sha="$RUN_SHA"
+          else
+            sha="$INPUT_SHA"
+          fi
+          if [ -z "$sha" ]; then
+            echo "nightly_sha is required." >&2
+            exit 1
+          fi
+          git fetch origin nightly --tags
+          git fetch origin integration || true
+          sha="$(git rev-parse "${sha}^{commit}")"
+          if ! git merge-base --is-ancestor "$sha" origin/nightly; then
+            echo "${sha} is not an ancestor of origin/nightly." >&2
+            exit 1
+          fi
+          skip=false
+          if [ "$EVENT_NAME" = "workflow_run" ] && git rev-parse --verify --quiet origin/integration >/dev/null; then
+            current="$(git rev-parse origin/integration)"
+            if [ "$current" = "$sha" ]; then
+              skip=true
+              echo "integration is already at ${sha}."
+            fi
+          fi
+          version=""
+          if [ "$skip" = "false" ]; then
+            ref="$(git for-each-ref --points-at "$sha" --count=1 --format='%(refname:short)' 'refs/tags/cli-v*-nightly.*')"
+            if [ -n "$ref" ]; then
+              version="${ref#cli-v}"
+            else
+              raw=""
+              while IFS= read -r line; do
+                case "$line" in
+                  *'"version"'*)
+                    raw="${line#*:}"
+                    raw="${raw#*\"}"
+                    raw="${raw%%\"*}"
+                    break
+                    ;;
+                esac
+              done < <(git show "${sha}:apps/openpacker-cli/package.json")
+              stable="${raw%%+*}"
+              stable="${stable%%-*}"
+              stamp="$(TZ=UTC git show -s --format=%cd --date=format-local:%Y%m%d "$sha")"
+              version="${stable}-nightly.${stamp}"
+            fi
+            case "$version" in
+              *-nightly.[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+              *)
+                echo "Refusing version that is not a nightly build: ${version}" >&2
+                exit 1
+                ;;
+            esac
+            echo "Promoting ${sha} as ${version}."
+          fi
+          {
+            echo "skip=${skip}"
+            echo "sha=${sha}"
+            echo "version=${version}"
+          } >> "$GITHUB_OUTPUT"
+
+  test:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    needs: resolve
+    if: needs.resolve.outputs.skip != 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22.19.0, 24]
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Cache the wasm toolchain output
+        id: cache-wasm
+        uses: actions/cache@v5.0.5
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen.exe
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm-bindgen-test-runner.exe
+            target/wasm32-unknown-unknown
+          key: wasm-v2-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Install wasm-bindgen (cache miss only)
+        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        shell: bash
+        run: cargo install --locked wasm-bindgen-cli --version 0.2.126
+      - uses: jdx/mise-action@v4.2.4
+        with:
+          version: 2026.7.13
+          cache: false
+      - shell: bash
+        run: npm ci --ignore-scripts
+      - shell: bash
+        run: npm run build
+      - shell: bash
+        run: npm run test:integration
+      - shell: bash
+        run: npm run test:e2e
+      - shell: bash
+        run: npm run test:conformance
+
+  supply-chain:
+    name: Licenses, scanner, gitleaks, and release audit
+    needs: resolve
+    if: needs.resolve.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 0
+      - name: gitleaks
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=8.30.1
+          archive="gitleaks_${version}_linux_x64.tar.gz"
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${version}/${archive}"
+          work="$(mktemp -d)"
+          curl -sSLf "$url" -o "${work}/gitleaks.tar.gz"
+          tar -xzf "${work}/gitleaks.tar.gz" -C "$work" gitleaks
+          install -m 0755 "${work}/gitleaks" "${work}/run-gitleaks"
+          "${work}/run-gitleaks" detect --source . --redact --no-banner --exit-code 1
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Cache the wasm toolchain output
+        id: cache-wasm
+        uses: actions/cache@v5.0.5
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen.exe
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm-bindgen-test-runner.exe
+            target/wasm32-unknown-unknown
+          key: wasm-v2-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Install wasm-bindgen (cache miss only)
+        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        run: cargo install --locked wasm-bindgen-cli --version 0.2.126
+      - run: npm ci --ignore-scripts
+      - run: cargo fetch --locked
+      - run: npm run check:licenses
+      - run: npm run build
+      - name: Codex security dry-run or the security workflow equivalent
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v codex-security >/dev/null 2>&1; then
+            npm run security:codex:dry-run
+          else
+            echo "codex-security is not on PATH. Running the security.yml equivalent."
+            npm run security:codex:test
+            npm run test:security
+          fi
+      - name: Audit release bundle dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run bundle --workspace @openpacker/cli
+          work="$(mktemp -d)"
+          cp apps/openpacker-cli/release/package.json "${work}/package.json"
+          (
+            cd "$work"
+            npm install --package-lock-only --ignore-scripts
+            npm audit --audit-level=high --omit=dev
+          )
+
+  publish:
+    name: Publish next and alpha, fast-forward integration
+    needs: [resolve, test, supply-chain]
+    if: needs.resolve.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: integration
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: true
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Cache the wasm toolchain output
+        id: cache-wasm
+        uses: actions/cache@v5.0.5
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen.exe
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm-bindgen-test-runner.exe
+            target/wasm32-unknown-unknown
+          key: wasm-v2-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Install wasm-bindgen (cache miss only)
+        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        run: cargo install --locked wasm-bindgen-cli --version 0.2.126
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Bundle the nightly version
+        env:
+          OPENPACKER_RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+        run: npm run bundle --workspace @openpacker/cli
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 22.19.0
+          registry-url: https://registry.npmjs.org
+      - name: Publish next and add the alpha dist-tag
+        working-directory: apps/openpacker-cli/release
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if npm view "@openpacker/cli@${VERSION}" version >/dev/null 2>&1; then
+            echo "${VERSION} is already on the registry; moving dist-tags."
+          else
+            npm publish --provenance --access public --tag next
+          fi
+          npm dist-tag add "@openpacker/cli@${VERSION}" next
+          npm dist-tag add "@openpacker/cli@${VERSION}" alpha
+      - name: Fast-forward integration
+        env:
+          SHA: ${{ needs.resolve.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SHA"
+          git fetch origin nightly
+          git merge-base --is-ancestor "$SHA" origin/nightly
+          git fetch origin integration || true
+          if git rev-parse --verify --quiet origin/integration >/dev/null; then
+            if ! git merge-base --is-ancestor origin/integration "$SHA"; then
+              echo "Refusing a non-fast-forward of integration." >&2
+              exit 1
+            fi
+          fi
+          git push origin "${SHA}:refs/heads/integration"

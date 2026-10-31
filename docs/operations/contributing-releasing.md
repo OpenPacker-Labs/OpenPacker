@@ -37,6 +37,9 @@ Documentation changes run the
 
 ## Release evidence
 
+Trunk promotion, dist-tags, and npm trusted publishing are specified in
+[the release pipeline](../RELEASING.md).
+
 A release candidate must have a clean `npm ci`/locked Cargo build, all mandatory
 gates, package export and clean-consumer compatibility, complete declaration
 files/exports maps, schema and generated freshness, a deterministic demo index,

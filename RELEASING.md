@@ -1,5 +1,8 @@
 # Releasing
 
+Trunk-based promotion (merge queue, nightly, integration, and production) is
+documented in [docs/RELEASING.md](docs/RELEASING.md).
+
 `@openpacker/cli` is the only package published to npm. Every other workspace
 under `apps/`, `packages/`, and `examples/` is private. The published artifact
 is the esbuild bundle in `apps/openpacker-cli/release`: workspace sources are
