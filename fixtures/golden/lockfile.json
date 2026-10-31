@@ -142,7 +142,7 @@
   "protocolVersion": "1.0-draft",
   "receiptDigest": {
     "algorithm": "sha256",
-    "value": "14677fd66d6a45461921ec02dc3bea53994b40c67b20afb24db242a8b868ac7f"
+    "value": "79d9a94c09f0b5c36f524b9a6915bcc8974051754c0a45d45af4a61c5552234a"
   },
   "rootRequirements": [
     {
@@ -206,7 +206,7 @@
   "semanticsProfile": "prex-calculus-subset-v1",
   "solutionDigest": {
     "algorithm": "sha256",
-    "value": "0f89049e69954ab8525e15d69711570bc514254796b4a25eb02b578e88d66f18"
+    "value": "b4f9b14fac2b90b284c388e16e8ac0ce09ac9059d5de3c836e07a5ebe86ecc90"
   },
   "sourceSnapshotDigests": [
     {
@@ -219,11 +219,11 @@
     },
     {
       "algorithm": "sha256",
-      "value": "c2cc24a52f2eccfba614f45fc2f552ae633eec540ddb01640a5e16191fe6837f"
+      "value": "4f81c1bfb2bade162a3b7938781cdf727bf5719796d0f84256dda449496be91f"
     },
     {
       "algorithm": "sha256",
-      "value": "c2cc24a52f2eccfba614f45fc2f552ae633eec540ddb01640a5e16191fe6837f"
+      "value": "4f81c1bfb2bade162a3b7938781cdf727bf5719796d0f84256dda449496be91f"
     },
     {
       "algorithm": "sha256",

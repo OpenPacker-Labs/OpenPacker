@@ -1,12 +1,6 @@
 {
   "manifests": [
     {
-      "artifactType": "application/vnd.openpacker.prex.receipt.v1+json",
-      "digest": "sha256:0ddd83ca35ce370efd652e7f14eecbab5a6e9947e830b143a7b47cf327f5a53d",
-      "mediaType": "application/vnd.oci.image.manifest.v1+json",
-      "size": 653
-    },
-    {
       "annotations": {
         "org.opencontainers.image.ref.name": "pkg:cargo/openpacker-zstd-wasm@1.0.0"
       },
@@ -26,6 +20,12 @@
       "digest": "sha256:52d6e51c02bfecbf2e256e5097d13a637c93d6ff4d1980ca1fc6b49e94cf2613",
       "mediaType": "application/vnd.oci.image.manifest.v1+json",
       "size": 636
+    },
+    {
+      "artifactType": "application/vnd.openpacker.prex.receipt.v1+json",
+      "digest": "sha256:95d3bf5e07117b401a022c62bb49973ad2a31f0619d0e0e04f597555cfed4416",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "size": 653
     },
     {
       "artifactType": "application/vnd.openpacker.overlay.v1+json",
