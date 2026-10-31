@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   cp,
+  mkdir,
   mkdtemp,
   readFile,
   readdir,
@@ -181,7 +182,8 @@ describe('opm recover with a copy made in another project', () => {
     const id = name!.split('-').slice(2).join('-');
     const refused = await opm(other, 'recover');
     expect(refused.code).toBe(3);
-    expect(refused.err).toMatch(/was made in another project/u);
+    expect(refused.err).toMatch(/was made in the project at/u);
+    expect(refused.err).toMatch(/then opm sync/u);
     expect(refused.err).toContain(`opm recover --abandon-step ${id}`);
     expect(await readFile(join(other, 'opm.toml'), 'utf8')).toBe(
       'the other one\n',
@@ -262,5 +264,43 @@ describe('a wait that makes no sense (N5)', () => {
       expect(run.code).toBe(3);
       expect(run.err).toContain('OPM_STEP_WAIT_MS');
     }
+  });
+});
+
+describe('a terminal escape in the name of a lock or a copy (S4)', () => {
+  const hasControl = (text: string): boolean =>
+    [...text].some((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return (code < 0x20 && code !== 0x0a) || (code >= 0x7f && code <= 0x9f);
+    });
+
+  it('is not written to the terminal by a refusal', async () => {
+    const root = await project();
+    await writeFile(
+      join(root, '.opm', 'step-\u001b]0;PWNED\u0007.lock'),
+      'not a lock',
+    );
+    const run = await opm(root, 'sync', '--offline', '--wait', '0');
+    expect(run.code).toBe(8);
+    expect(hasControl(run.err)).toBe(false);
+    expect(run.err).toContain('.opm/step-?]0;PWNED?.lock');
+    const abandon = await opm(
+      root,
+      'recover',
+      '--abandon-step',
+      'nothing-here',
+    );
+    expect(hasControl(abandon.err)).toBe(false);
+  });
+
+  it('is not written to the terminal where the copy is a directory with a bad record', async () => {
+    const root = await project();
+    const copy = join(root, '.opm', '.rollback-\u001b[31mRED\u001b[0m');
+    await mkdir(copy);
+    await writeFile(join(copy, 'rollback.json'), '{}');
+    const run = await opm(root, 'sync', '--offline', '--wait', '0');
+    expect(run.code).toBe(3);
+    expect(hasControl(run.err)).toBe(false);
+    expect(run.err).toContain('.opm/.rollback-?[31mRED?[0m/rollback.json');
   });
 });

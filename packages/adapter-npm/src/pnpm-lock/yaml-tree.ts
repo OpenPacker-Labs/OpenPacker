@@ -18,13 +18,15 @@
  *   RESOURCE_EXHAUSTION).
  * - **Refuse repeated keys in linear time.** `uniqueKeys: true` compares each
  *   key with every earlier one (40,000 packages took 50 s against 3 s without
- *   it), so the library's check is off and the walk looks each key up in the map it is building.
+ *   it), so the library's check is off (`COMPOSER_OPTIONS`) and the walk looks
+ *   each key up in the map it is building.
  * - **Keep keys strings.** A key `123:` is a number to YAML's core schema.
  *   pnpm quotes such keys, so an unquoted one was not written by pnpm.
  *
  * Maps are `Map`s in file order, so a key such as `__proto__` is data.
  */
 
+import { quote } from '@openpacker/adapter-core';
 import {
   Composer,
   Lexer,
@@ -44,6 +46,23 @@ export type YamlScalar = string | number | boolean | null;
 export type YamlMap = ReadonlyMap<string, YamlValue>;
 export type YamlList = readonly YamlValue[];
 export type YamlValue = YamlScalar | YamlMap | YamlList;
+
+/**
+ * The library's options. Its own repeated-key check (`uniqueKeys`) compares
+ * each key with every earlier one, so it is off, and the walk finds a repeated
+ * key by one lookup in the map it is building.
+ */
+export const COMPOSER_OPTIONS = {
+  version: '1.2',
+  uniqueKeys: false,
+  prettyErrors: false,
+} as const;
+
+/** Counts the walk's work, for the tests that hold a read to linear work. */
+export interface YamlMeter {
+  nodes: number;
+  keyLookups: number;
+}
 
 /**
  * Where the first character is that YAML 1.2 does not allow (`c-printable`:
@@ -153,11 +172,7 @@ function* refuseDirectives(
 function composeOne(text: string, limits: PnpmLockLimits): Document.Parsed {
   const lexer = new Lexer();
   const parser = new Parser();
-  const composer = new Composer({
-    version: '1.2',
-    uniqueKeys: false,
-    prettyErrors: false,
-  });
+  const composer = new Composer(COMPOSER_OPTIONS);
   let lexemes = 0;
   const lexemeLimit = limits.maxNodes * LEXEMES_PER_NODE;
   function* tokens() {
@@ -189,7 +204,9 @@ function composeOne(text: string, limits: PnpmLockLimits): Document.Parsed {
     if (error instanceof RangeError)
       throw new PnpmLockError(
         'limit',
-        'nests deeper than the YAML reader can follow (maxDepth)',
+        'nests deeper than the YAML reader can follow',
+        '',
+        'maxDepth',
       );
     throw error;
   }
@@ -199,10 +216,9 @@ function composeOne(text: string, limits: PnpmLockLimits): Document.Parsed {
   return document;
 }
 
-interface WalkState {
+interface WalkState extends YamlMeter {
   readonly text: string;
   readonly limits: PnpmLockLimits;
-  nodes: number;
 }
 
 function offsetOf(node: Node | null | undefined): number {
@@ -217,7 +233,11 @@ function countNode(state: WalkState): void {
 /** Anchors and tags change what a node means; pnpm writes neither. */
 function refuseAnchorAndTag(state: WalkState, node: Node): void {
   if (node.anchor !== undefined)
-    throw feature(state.text, offsetOf(node), `an anchor (&${node.anchor})`);
+    throw feature(
+      state.text,
+      offsetOf(node),
+      `an anchor ${quote(`&${node.anchor}`)}`,
+    );
   if (node.tag !== undefined)
     throw feature(state.text, offsetOf(node), `the tag ${node.tag}`);
 }
@@ -281,10 +301,11 @@ function walkValue(
     const map = new Map<string, YamlValue>();
     for (const pair of node.items) {
       const key = walkKey(state, pair.key);
+      state.keyLookups += 1;
       if (map.has(key))
         throw new PnpmLockError(
           'duplicate-key',
-          `lists the key ${JSON.stringify(key)} twice in one mapping (line ${lineOf(state.text, offsetOf(isNode(pair.key) ? pair.key : null))})`,
+          `lists the key ${quote(key)} twice in one mapping (line ${lineOf(state.text, offsetOf(isNode(pair.key) ? pair.key : null))})`,
         );
       map.set(
         key,
@@ -302,8 +323,15 @@ function walkValue(
   throw syntax(state.text, offsetOf(node), 'an unsupported kind of node');
 }
 
-/** The one document in `text` as plain data, or a `PnpmLockError` naming what is wrong. */
-export function readYamlTree(text: string, limits: PnpmLockLimits): YamlValue {
+/**
+ * The one document in `text` as plain data, or a `PnpmLockError` naming what
+ * is wrong. `meter`, when given, is added the nodes walked and keys looked up.
+ */
+export function readYamlTree(
+  text: string,
+  limits: PnpmLockLimits,
+  meter?: YamlMeter,
+): YamlValue {
   checkText(text, limits);
   const document = composeOne(text, limits);
   const first = document.errors[0];
@@ -322,5 +350,11 @@ export function readYamlTree(text: string, limits: PnpmLockLimits): YamlValue {
       warning.pos[0],
       warning.message.split('\n')[0] ?? warning.code,
     );
-  return walkValue({ text, limits, nodes: 0 }, document.contents, 0);
+  const state: WalkState = { text, limits, nodes: 0, keyLookups: 0 };
+  const tree = walkValue(state, document.contents, 0);
+  if (meter !== undefined) {
+    meter.nodes += state.nodes;
+    meter.keyLookups += state.keyLookups;
+  }
+  return tree;
 }

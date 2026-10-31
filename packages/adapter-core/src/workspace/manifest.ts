@@ -32,6 +32,18 @@ export interface WorkspaceManifest {
   readonly optionalPeers: ReadonlySet<string>;
   /** The `workspaces` field, when the manifest declares one. */
   readonly workspaces: JsonValue | undefined;
+  /**
+   * The executables it declares, name to path inside the package, as
+   * `npm-normalize-package-bin` reads `bin`: a string is named for the package
+   * (its last name segment), an object is taken as it is. Empty when there are
+   * none, or when `bin` is neither.
+   */
+  readonly bin: Readonly<Record<string, string>>;
+  /**
+   * `publishConfig.directory`, when it is a string: pnpm links such a member
+   * from that directory and records it in its lock as `publishDirectory`.
+   */
+  readonly publishDirectory?: string;
 }
 
 type JsonObject = { [key: string]: JsonValue };
@@ -92,6 +104,21 @@ function optionalPeerNames(
   return names;
 }
 
+function binMap(
+  value: JsonValue | undefined,
+  name: string | undefined,
+): Readonly<Record<string, string>> {
+  if (isJsonString(value))
+    return value === '' || name === undefined
+      ? {}
+      : { [name.split('/').at(-1)!]: value };
+  if (!isJsonObject(value)) return {};
+  const out: Record<string, string> = {};
+  for (const [key, path] of Object.entries(value))
+    if (isJsonString(path)) out[key] = path;
+  return out;
+}
+
 /**
  * Read a parsed `package.json`. `where` is the path the text came from and is
  * how every message names it. A field of the wrong type is refused, not
@@ -111,6 +138,10 @@ export function readWorkspaceManifest(
   if (version !== undefined && !isJsonString(version))
     throw invalid(where, 'version must be a string');
   const flag = value['private'];
+  const publish = value['publishConfig'];
+  const publishDirectory = isJsonObject(publish)
+    ? publish['directory']
+    : undefined;
   return {
     name,
     version,
@@ -141,6 +172,8 @@ export function readWorkspaceManifest(
     ),
     optionalPeers: optionalPeerNames(value['peerDependenciesMeta'], where),
     workspaces: value['workspaces'],
+    bin: binMap(value['bin'], name),
+    ...(isJsonString(publishDirectory) && { publishDirectory }),
   };
 }
 

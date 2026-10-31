@@ -1,4 +1,5 @@
 import { registryEcosystems } from '@openpacker/opm-project';
+import { CI_HELP } from './ci-help.js';
 import { RUN_HELP } from './run-help.js';
 
 /** The text of `opm help`. */
@@ -11,17 +12,7 @@ Usage:
   opm add <spec> [--ecosystem|-e <eco>] [--source <file|url>] [--alias <name>] [--offline|--online]
   opm remove <alias|purl>
   opm install [--offline|--online]
-  opm ci [--path <dir>] [--production] [--omit <dev|optional|peer>] [--offline|--online]
-         [--workspace|-w <name|dir>]... [--include-workspace-root] [--workspaces[=false]|--no-workspaces]
-                                      install exactly what package-lock.json says;
-                                      resolves nothing, runs no install script
-                                      (opm install --frozen is the same).
-                                      A workspace lock links each member to its
-                                      directory and gives it its own node_modules;
-                                      -w installs only those members and what they
-                                      need (--include-workspace-root adds the root's
-                                      own dependencies), --workspaces=false only
-                                      the root's
+${CI_HELP}
   opm uninstall [alias]
   opm sync [--offline|--online]
   opm update [alias...] [--latest] [--offline|--online]

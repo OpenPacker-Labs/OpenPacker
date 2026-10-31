@@ -34,12 +34,21 @@ import {
 
 export { EXIT_CODES, type CliIo } from './opmx-spawn.js';
 
+/** Seams a caller of {@link runOpmx} may replace; the process entry passes none. */
+export interface RunOpmxOptions {
+  /**
+   * How an ephemeral `pkg:` run reaches its registry: a test's network
+   * (`fetch`) or a registry of its own (`transport`). Production omits it and
+   * resolves and pins real addresses.
+   */
+  registryOptions?: RegistryOptions;
+}
+
 export async function runOpmx(
   argv = process.argv.slice(2),
   io: CliIo = process,
   cwd = process.cwd(),
-  /** Test seam: how a `pkg:` run reaches its registry. Production omits it. */
-  registryOptions?: RegistryOptions,
+  options: RunOpmxOptions = {},
 ): Promise<number> {
   try {
     if (argv.includes('--help') || argv.includes('-h') || argv.length === 0) {
@@ -101,7 +110,9 @@ export async function runOpmx(
       const tool = await fetchTool({
         purl: requested,
         ...(flags.offline && { offline: true }),
-        ...(!(registryOptions === undefined) && { registryOptions }),
+        ...(!(options.registryOptions === undefined) && {
+          registryOptions: options.registryOptions,
+        }),
       });
       const bin = selectToolBin(tool, binName);
       // Say which version actually ran. An unpinned ephemeral run resolves to

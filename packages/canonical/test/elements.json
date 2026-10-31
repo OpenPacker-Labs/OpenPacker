@@ -1,0 +1,31 @@
+{
+  "description": "Bytes an object made with Object.create(null) kept after a collection, its members set in order with the value 0, for members named by array indices (V8 keeps those as elements, not in the member table): a list of names, or count names 0, gap, 2 gap, .... Measured on Node v22.22.0 (V8 12.4.254.21-node.33), linux/x64, with --expose-gc; Node 20.20.0 and 21.7.3 (V8 11.3 and 11.8) measured within 1 percent of these for every store past 1 KB, and at most 12 percent above for an object of one member.",
+  "rows": [
+    [{ "names": ["0"] }, 336],
+    [{ "names": ["1"] }, 354],
+    [{ "names": ["10"] }, 457],
+    [{ "names": ["100"] }, 1536],
+    [{ "names": ["499"] }, 6329],
+    [{ "names": ["1000"] }, 12337],
+    [{ "names": ["1023"] }, 12616],
+    [{ "names": ["1024"] }, 401],
+    [{ "names": ["3000"] }, 402],
+    [{ "names": ["1000000"] }, 400],
+    [{ "names": ["1023", "2575"] }, 31240],
+    [{ "names": ["1023", "2574"] }, 31224],
+    [{ "names": ["0", "1040", "2600"] }, 31342],
+    [{ "names": ["1000000", "2000000"] }, 400],
+    [{ "names": ["a", "1023", "b", "2575"] }, 31240],
+    [{ "gap": 1, "count": 1000 }, 10512],
+    [{ "gap": 1, "count": 10000 }, 80230],
+    [{ "gap": 9, "count": 21846 }, 2276340],
+    [{ "gap": 10, "count": 5462 }, 555345],
+    [{ "gap": 11, "count": 1000 }, 108312],
+    [{ "gap": 11, "count": 4096 }, 407234],
+    [{ "gap": 11, "count": 10923 }, 1082421],
+    [{ "gap": 16, "count": 100 }, 17616],
+    [{ "gap": 16, "count": 4096 }, 525097],
+    [{ "gap": 27, "count": 100 }, 29824],
+    [{ "gap": 1000, "count": 1000 }, 49456]
+  ]
+}

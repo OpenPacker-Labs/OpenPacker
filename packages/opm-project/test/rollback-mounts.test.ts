@@ -1,14 +1,8 @@
-import { readFile } from 'node:fs/promises';
 import { expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
+import { VOLUME, inMounts } from './mounts-support.js';
 import { describeNamespaced, mountNamespace } from './namespaces.js';
-import {
-  child,
-  ended,
-  project,
-  sources,
-  temporary,
-} from './rollback-support.js';
+import { sources } from './rollback-support.js';
 
 configureDefaultAdapters();
 
@@ -18,74 +12,6 @@ configureDefaultAdapters();
  * back into cannot always be removed or renamed over (X1). Each case runs in a
  * mount namespace of its own (`unshare`), so that nothing outlives the test.
  */
-
-/** What the child reports, written beside the project. */
-interface Report {
-  restored?: boolean;
-  recovered?: { restored: boolean }[];
-  tree?: string[];
-  expected?: string[];
-  mounted?: boolean;
-  marked?: boolean;
-  manifest?: string;
-  leftovers?: string[];
-  copies?: string[];
-  error?: { code: string; message: string };
-}
-
-/** Run `body` in a mount namespace with `mount`, `snapshotProject` and `recover` in scope. */
-async function inMounts(body: string): Promise<Report> {
-  const root = await project(['base']);
-  const report = temporary(`${root}.report.json`);
-  const run = await child(
-    root,
-    `import { execFileSync } from 'node:child_process';
-     import { cp, lstat, mkdir, readdir, rename, stat } from 'node:fs/promises';
-     const mount = (...args: string[]) => execFileSync('mount', args);
-     const { snapshotProject } = await import(${JSON.stringify(sources.rollback)});
-     const { recoverInterruptedSteps } = await import(${JSON.stringify(sources.index)});
-     const report: Record<string, unknown> = {};
-     const listing = async (dir: string, base = dir): Promise<string[]> => {
-       const out: string[] = [];
-       for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
-         const path = join(dir, entry.name);
-         out.push(path.slice(base.length) + (entry.isDirectory() ? '/' : ''));
-         if (entry.isDirectory()) out.push(...(await listing(path, base)));
-       }
-       return out;
-     };
-     /** The copy's owner has gone: the next step's business. */
-     const dead = async () => {
-       const { spawnSync } = await import('node:child_process');
-       const exited = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))']);
-       const [name] = (await readdir(join(root, '.opm'))).filter((n) => n.startsWith('.rollback-'));
-       const path = join(root, '.opm', name, 'rollback.json');
-       const record = JSON.parse(await readFile(path, 'utf8'));
-       record.owner.pid = Number(exited.stdout);
-       await writeFile(path, JSON.stringify(record));
-     };
-     const device = async (path: string) => (await stat(path)).dev;
-     try {
-       ${body}
-     } catch (error) {
-       report.error = { code: error.code, message: error.message };
-     }
-     await writeFile(${JSON.stringify(report)}, JSON.stringify(report));`,
-    mountNamespace!,
-  );
-  expect(await ended(run)).toEqual({ code: 0, signal: null });
-  // SAFETY: written by the child a moment ago.
-  return JSON.parse(await readFile(report, 'utf8')) as Report;
-}
-
-/** node_modules as a volume that holds the installed tree. */
-const VOLUME = `
-  await cp(join(root, 'node_modules'), join(root, 'nm.save'), { recursive: true, verbatimSymlinks: true });
-  mount('-t', 'tmpfs', 'tmpfs', join(root, 'node_modules'));
-  await cp(join(root, 'nm.save'), join(root, 'node_modules'), { recursive: true, verbatimSymlinks: true });
-  await rm(join(root, 'nm.save'), { recursive: true });
-  report.expected = await listing(join(root, 'node_modules'));
-`;
 
 describeNamespaced('a project laid out over mounts', mountNamespace, () => {
   it('puts node_modules back when it is a volume: the directory stays, its contents come back', async () => {
@@ -108,6 +34,29 @@ describeNamespaced('a project laid out over mounts', mountNamespace, () => {
     expect(report.tree?.length).toBeGreaterThan(1);
     expect(report.mounted).toBe(true);
     expect(report.copies).toEqual([]);
+  }, 60_000);
+
+  it('gives a volume back the mode it had (a tmpfs root is 1777), and the directories in it theirs', async () => {
+    const report = await inMounts(`
+        ${VOLUME}
+        await chmod(join(root, 'node_modules', 'base'), 0o775);
+        const modes = async (dir: string, name = '.'): Promise<string[]> => {
+          const out = [name + ' ' + (await lstat(dir)).mode.toString(8)];
+          for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name)))
+            if (entry.isDirectory()) out.push(...(await modes(join(dir, entry.name), name + '/' + entry.name)));
+          return out;
+        };
+        report.before = await modes(join(root, 'node_modules'));
+        await snapshotProject(root);
+        await rm(join(root, 'node_modules', 'base'), { recursive: true });
+        await dead();
+        report.recovered = await recoverInterruptedSteps(root);
+        report.after = await modes(join(root, 'node_modules'));
+      `);
+    expect(report.error).toBeUndefined();
+    expect(report.before?.[0]).toBe('. 41777');
+    expect(report.before).toContain('./base 40775');
+    expect(report.after).toEqual(report.before);
   }, 60_000);
 
   it('puts node_modules back when it is a volume and the step undoes itself', async () => {

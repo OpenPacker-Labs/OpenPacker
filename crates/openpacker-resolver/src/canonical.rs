@@ -60,16 +60,15 @@ fn validate_raw_numbers(input: &str) -> Result<(), ResolverError> {
                 index += 1;
             }
             let token = &input[start..index];
-            if let Ok(value) = token.parse::<f64>() {
-                if !value.is_finite()
+            if let Ok(value) = token.parse::<f64>()
+                && (!value.is_finite()
                     || value.fract() != 0.0
                     || value == 0.0 && token.starts_with('-')
-                    || value.abs() > MAX_SAFE_INTEGER as f64
-                {
-                    return Err(ResolverError::Canonical(
-                        "PREX canonical numbers must be safe integers and not negative zero".into(),
-                    ));
-                }
+                    || value.abs() > MAX_SAFE_INTEGER as f64)
+            {
+                return Err(ResolverError::Canonical(
+                    "PREX canonical numbers must be safe integers and not negative zero".into(),
+                ));
             }
             continue;
         }
@@ -266,10 +265,10 @@ pub fn digest_projection<T: Serialize>(
         }
     };
     for path in excluded {
-        if let Some(parent) = object_at_mut(&mut value, &path[..path.len().saturating_sub(1)]) {
-            if let Some(key) = path.last() {
-                parent.remove(*key);
-            }
+        if let Some(parent) = object_at_mut(&mut value, &path[..path.len().saturating_sub(1)])
+            && let Some(key) = path.last()
+        {
+            parent.remove(*key);
         }
     }
     for path in ordered {

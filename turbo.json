@@ -2,7 +2,13 @@
   "$schema": "https://turbo.build/schema.json",
   "ui": "stream",
   "globalDependencies": ["tsconfig.base.json"],
-  "globalPassThroughEnv": ["CARGO_HOME", "RUSTUP_HOME"],
+  "globalPassThroughEnv": [
+    "CARGO_HOME",
+    "RUSTUP_HOME",
+    "CARGO_TARGET_DIR",
+    "CARGO_INCREMENTAL",
+    "CARGO_BUILD_JOBS"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

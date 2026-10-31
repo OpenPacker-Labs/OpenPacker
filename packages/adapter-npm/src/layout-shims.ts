@@ -7,11 +7,21 @@
  * own executables are shimmed in the project's `.bin`, where npm links them
  * (it links the member's name there, so the `.bin` beside that link holds
  * them), and address the member's directory directly.
+ *
+ * pnpm gives each importer its own executables instead: every direct
+ * dependency of the project or of a member is shimmed in that importer's own
+ * `.bin`, wherever the package was written, and in a `.bin` only the
+ * importer's own direct dependencies rank as direct. The executables of a
+ * member go to the `.bin` of each importer that links it, and to no other. A
+ * frozen install of a pnpm lock says which those are (`importers`).
  */
 
 import { lstat } from 'node:fs/promises';
-import { join } from 'node:path';
-import type { NativeLayoutMember } from '@openpacker/adapter-core';
+import { join, posix } from 'node:path';
+import type {
+  NativeLayoutMember,
+  NativeLayoutWorkspace,
+} from '@openpacker/adapter-core';
 import { writeFileAtomic } from '@openpacker/project-io';
 import {
   NODE,
@@ -24,6 +34,7 @@ import {
   type PackageBin,
 } from './layout-bins.js';
 import { containerOf, directoryOf, modulesOf } from './layout-dirs.js';
+import { placePath } from './layout-links.js';
 import type { Placement } from './layout-plan.js';
 
 /** One executable that wants a name in a `.bin`. */
@@ -69,13 +80,20 @@ async function interpreterOfMemberScript(script: string): Promise<Interpreter> {
   return NODE;
 }
 
+/**
+ * The executables a member declares, as candidates for the `.bin` of the
+ * importer at `importerDir` (`''` for the project): they address the member's
+ * directory directly.
+ */
 async function memberCandidates(
   projectRoot: string,
   member: NativeLayoutMember,
+  importerDir: string,
   skipped: { path: string; reason: string }[],
 ): Promise<Candidate[]> {
   const { bins, refused } = await validateBins(Object.entries(member.bin));
-  const where = join(modulesOf(projectRoot, ''), '.bin');
+  const from = posix.join(importerDir, 'node_modules', '.bin');
+  const where = join(modulesOf(projectRoot, importerDir), '.bin');
   for (const refusal of refused)
     skipped.push({
       path: join(where, refusal.name),
@@ -83,7 +101,7 @@ async function memberCandidates(
     });
   const out: Candidate[] = [];
   for (const bin of bins) {
-    const relative = `../../${member.dir}/${bin.target}`;
+    const relative = posix.relative(from, posix.join(member.dir, bin.target));
     if (!SHIM_PATH.test(relative)) {
       skipped.push({
         path: join(where, bin.name),
@@ -108,15 +126,35 @@ async function memberCandidates(
 }
 
 /**
- * Write the shims for every placed package and every installed member.
- * `placements` are already on disk, so their `package.json` can be read.
+ * Write the shims for every placed package and every installed member, and,
+ * given `importers`, for each importer's direct dependencies in its own
+ * `.bin`. `placements` are already on disk, so their `package.json` can be
+ * read.
  */
 export async function writeShims(
   projectRoot: string,
   placements: readonly Placement[],
-  members: readonly NativeLayoutMember[],
+  workspace: {
+    members: readonly NativeLayoutMember[];
+    importers?: NativeLayoutWorkspace['importers'];
+  },
   skipped: { path: string; reason: string }[],
 ): Promise<Shims> {
+  const { members, importers } = workspace;
+  // An importer's own: a direct dependency in the importer's `node_modules`.
+  const own =
+    importers === undefined
+      ? undefined
+      : new Set(
+          importers.flatMap((importer) =>
+            importer.dependencies.map((path) => `${importer.dir}\0${path}`),
+          ),
+        );
+  // What each place offers, and the importer `node_modules` it is the top of.
+  const binsAt = new Map<
+    string,
+    { topOf: string | undefined; candidates: Candidate[] }
+  >();
   const byContainer = new Map<string, Map<string, Candidate>>();
   const offer = (container: string, candidate: Candidate): void => {
     const taken = byContainer.get(container) ?? new Map<string, Candidate>();
@@ -152,23 +190,58 @@ export async function writeShims(
         path: join(directory, 'package.json'),
         reason: `${placement.entry.name}: bin ${JSON.stringify(refusal.name)} ${refusal.reason}`,
       });
-    for (const bin of bins)
-      offer(containerOf(modules, placement.chain), {
-        owner: installed,
-        direct: placement.entry.direct,
-        member: false,
-        bin,
-        relative: `../${installed}/${bin.target}`,
-        script: join(directory, ...bin.target.split('/')),
-      });
+    const base = placement.base ?? '';
+    const path = placePath(placement.chain, placement.base);
+    const candidates = bins.map((bin) => ({
+      owner: installed,
+      direct:
+        own === undefined
+          ? placement.entry.direct
+          : placement.chain.length === 1 && own.has(`${base}\0${path}`),
+      member: false,
+      bin,
+      relative: `../${installed}/${bin.target}`,
+      script: join(directory, ...bin.target.split('/')),
+    }));
+    binsAt.set(path, {
+      topOf: placement.chain.length === 1 ? base : undefined,
+      candidates,
+    });
+    for (const candidate of candidates)
+      offer(containerOf(modules, placement.chain), candidate);
   }
+  // An importer's direct dependency written elsewhere, from its own `.bin`.
+  for (const importer of importers ?? [])
+    for (const path of importer.dependencies) {
+      const at = binsAt.get(path);
+      if (at === undefined || at.topOf === importer.dir) continue;
+      const from = posix.join(importer.dir, 'node_modules', '.bin');
+      for (const candidate of at.candidates) {
+        const relative = `${posix.relative(from, path)}/${candidate.bin.target}`;
+        if (!SHIM_PATH.test(relative)) continue;
+        offer(modulesOf(projectRoot, importer.dir), {
+          ...candidate,
+          direct: true,
+          relative,
+        });
+      }
+    }
+  // A member's own executables: the project's `.bin` where npm links them,
+  // and, given the importers (pnpm), the `.bin` of each importer that links
+  // the member, so that they never compete with another importer's.
   for (const member of members)
-    for (const candidate of await memberCandidates(
-      projectRoot,
-      member,
-      skipped,
-    ))
-      offer(modulesOf(projectRoot, ''), candidate);
+    for (const dir of importers === undefined
+      ? ['']
+      : importers
+          .filter((importer) => importer.members.includes(member.dir))
+          .map((importer) => importer.dir))
+      for (const candidate of await memberCandidates(
+        projectRoot,
+        member,
+        dir,
+        skipped,
+      ))
+        offer(modulesOf(projectRoot, dir), candidate);
 
   const shims: Shims = { total: 0, names: new Map() };
   for (const [container, taken] of byContainer) {

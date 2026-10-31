@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import {
+  OpmError,
   abandonStep,
   currentOwner,
   describeRecovery,
@@ -12,6 +13,7 @@ import {
 } from '../src/index.js';
 import { snapshotProject } from '../src/project-rollback.js';
 import { copyId } from '../src/rollback-recovery.js';
+import { lockOwnerOf } from '../src/step-abandon.js';
 import {
   copies,
   deadCopy,
@@ -217,18 +219,22 @@ describe('a lock opm cannot read', () => {
     },
   );
 
-  it('with --force leaves the copies of other steps to ordinary recovery', async () => {
+  it("with --force removes that file and changes nothing else, a gone step's copy included", async () => {
     const root = await project(['base']);
+    const name = await deadCopy(root);
+    await writeFile(join(root, 'opm.toml'), 'edited after the kill\n');
     const before = await snapshot(root);
-    await deadCopy(root);
     const id = randomUUID();
     await aged(root, id, 'hello');
     const result = await abandonStep(root, id, { force: true });
-    // The dead step's copy is put back as any step would; the lock was only removed.
-    expect(result.recovered).toEqual([
-      expect.objectContaining({ restored: true }),
+    expect(result.recovered).toEqual([]);
+    expect(result.removedLocks).toEqual([
+      { file: join('.opm', `step-${id}.lock`) },
     ]);
+    // What the refusal promised: nothing else was changed.
     expect(await snapshot(root)).toEqual(before);
+    expect(await copies(root)).toEqual([name]);
+    expect(await stepLocks(root)).toEqual([]);
   }, 60_000);
 
   it('is named by the id its file name carries, whatever that is', async () => {
@@ -303,4 +309,58 @@ describe('a copy made in another project', () => {
     expect(await copies(other)).toEqual([]);
     expect(await copies(root)).toEqual([name]);
   }, 60_000);
+});
+
+describe('reading a lock to see whose it is (N4)', () => {
+  const state = (code: string) => new OpmError(code, `simulated ${code}`);
+  const errno = (code: string) =>
+    Object.assign(new Error(`simulated ${code}`), { code });
+  const reading = (throwing: Error) => async (): Promise<string> => {
+    throw throwing;
+  };
+  const ok = async () =>
+    `${JSON.stringify({ lockVersion: 1, owner: { pid: 4, host: 'vm' } })}\n`;
+
+  it('says who holds it when it can', async () => {
+    expect(await lockOwnerOf('/x', 'step-a.lock', ok)).toEqual({
+      pid: 4,
+      host: 'vm',
+    });
+  });
+
+  it.each([
+    ['a lock that is empty', async () => ''],
+    ['a lock cut short', async () => '{"lockVersion":1,"owner":{"pid":'],
+    ['a lock of a newer version', async () => '{"lockVersion":2}'],
+    ['a link', reading(state('UNSAFE_PATH'))],
+    [
+      'a file that is not a file, or too large',
+      reading(state('INVALID_STATE')),
+    ],
+  ])(
+    '%s says nothing, and may be removed with --force',
+    async (_what, read) => {
+      expect(await lockOwnerOf('/x', 'step-a.lock', read)).toBeUndefined();
+    },
+  );
+
+  it.each([
+    ['too many open files', errno('EMFILE')],
+    ['an input/output error', errno('EIO')],
+    ['permission denied', errno('EACCES')],
+    ['gone while it was read', errno('ENOENT')],
+    ['changed while it was read', state('INPUT_CHANGED')],
+  ])(
+    'a read that failed (%s) is not the lock saying nothing: nothing is taken for unreadable',
+    async (_what, failure) => {
+      await expect(
+        lockOwnerOf('/x', 'step-a.lock', reading(failure)),
+      ).rejects.toMatchObject({
+        code: 'UNAVAILABLE',
+        message: expect.stringMatching(
+          /could not read \.opm\/step-a\.lock.*Nothing was changed.*run this again/su,
+        ),
+      });
+    },
+  );
 });

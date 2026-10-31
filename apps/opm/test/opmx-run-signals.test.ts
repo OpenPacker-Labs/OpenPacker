@@ -153,7 +153,7 @@ async function killedRegistryRun(signal: NodeJS.Signals) {
        ${JSON.stringify(['pkg:npm/idler@1.0.0', '--', marker])},
        process,
        ${JSON.stringify(work)},
-       { transport: registry },
+       { registryOptions: { transport: registry } },
      );
     `,
   });

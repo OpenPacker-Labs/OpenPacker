@@ -3,6 +3,16 @@ import { plainLine, plainText } from '../src/index.js';
 import { FORBIDDEN, holdsForbidden } from './forbidden.js';
 
 /**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
+/**
  * `plainText` is `plainLine` for a writer whose messages are lists: it removes
  * the same things and keeps the line breaks a message carries, as line feeds.
  */
@@ -145,9 +155,9 @@ describe('plainText on a large text', () => {
     for (const size of SIZES) {
       const count = Math.ceil(size / unit.length);
       const text = unit.repeat(count);
-      const start = performance.now();
+      const start = cpuMs();
       const shown = plainText(text);
-      const milliseconds = performance.now() - start;
+      const milliseconds = cpuMs() - start;
       expect(milliseconds).toBeLessThan(BOUND_MS);
       // A tab at the very end is dropped; a line feed is not.
       expect(shown).toBe(

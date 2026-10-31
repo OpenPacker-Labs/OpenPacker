@@ -6,6 +6,12 @@ const never = async (): Promise<number> => {
   throw new Error('the library was loaded for a command that does not need it');
 };
 
+// A failure is reported through the full CLI's handleError, which main()
+// imports on the first failure: the whole opm module graph, seconds to
+// transform and load under a loaded machine. It is loaded here, while the file
+// is collected, so that no test's time budget holds a one-time load.
+await import('../src/opm.js');
+
 describe('the process entry', () => {
   it('answers run and exec itself', async () => {
     const root = await makeProject({

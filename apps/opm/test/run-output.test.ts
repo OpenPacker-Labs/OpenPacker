@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { MemberOutput, memberLabel } from '../src/commands/run-output.js';
 
+/**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
 /** Every write, in order, with the stream it went to. */
 function recorder() {
   const writes: string[] = [];
@@ -223,12 +233,12 @@ describe('MemberOutput, a line with no newline', () => {
     const m = new MemberOutput(io, 'p', 'stream');
     const s = m.step('t');
     const chunk = 'z'.repeat(64 * 1024);
-    const before = performance.now();
+    const before = cpuMs();
     for (let i = 0; i < 1600; i += 1) s.stdout.write(chunk);
     m.finish();
     // 100 MiB of it. The buffer this replaced re-joined and re-split the whole
     // held line on every chunk and needed minutes.
-    expect(performance.now() - before).toBeLessThan(20_000);
+    expect(cpuMs() - before).toBeLessThan(20_000);
   });
 });
 
