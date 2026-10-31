@@ -245,20 +245,28 @@ export function passedOn(io: CliIo): {
   };
 }
 
+/** What ends a wait on a stream that asked to be waited for. */
+const TAKEN = ['drain', 'close', 'error', 'finish'] as const;
+
 /**
  * Nothing when `stream` took what was written (`wrote`); when it asked to wait,
  * a promise that settles once it drains, or once it closes or fails, after
- * which nothing more will wait on it. A stream that is not an event emitter
- * (a test's) is never waited on.
+ * which nothing more will wait on it. The first of those removes the
+ * listeners for the others: a pipe that is behind asks again and again, and a
+ * wait must leave nothing on it. A stream that is not an event emitter (a
+ * test's) is never waited on.
  */
 function whenTaken(stream: unknown, wrote: boolean): Promise<void> | undefined {
   if (wrote !== false) return undefined;
-  // SAFETY: only `once` is used, and only where the stream has it.
-  const once = (stream as { once?: unknown }).once;
-  if (typeof once !== 'function') return undefined;
+  // SAFETY: only `once` and `off` are used, and only where the stream has both.
+  const { once, off } = stream as { once?: unknown; off?: unknown };
+  if (typeof once !== 'function' || typeof off !== 'function') return undefined;
   return new Promise<void>((resolve) => {
-    for (const event of ['drain', 'close', 'error', 'finish'])
-      once.call(stream, event, () => resolve());
+    const settle = () => {
+      for (const event of TAKEN) off.call(stream, event, settle);
+      resolve();
+    };
+    for (const event of TAKEN) once.call(stream, event, settle);
   });
 }
 

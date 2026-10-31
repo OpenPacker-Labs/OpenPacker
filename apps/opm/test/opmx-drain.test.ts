@@ -66,4 +66,21 @@ describe('the sink opmx hands a tool’s output to', () => {
     out.stream.destroy();
     await waiting;
   });
+
+  it('leaves no listener behind on a stream after waiting on it many times', async () => {
+    const out = slowStream();
+    const err = slowStream();
+    const events = ['drain', 'close', 'error', 'finish'] as const;
+    const counted = () =>
+      events.map((event) => out.stream.listenerCount(event));
+    const before = counted();
+    const { sink } = passedOn({ stdout: out.stream, stderr: err.stream });
+    for (let index = 0; index < 50; index += 1) {
+      const waiting = sink.stdout(Buffer.from('w'.repeat(16)));
+      expect(waiting).toBeInstanceOf(Promise);
+      out.release();
+      await waiting;
+    }
+    expect(counted()).toEqual(before);
+  });
 });
