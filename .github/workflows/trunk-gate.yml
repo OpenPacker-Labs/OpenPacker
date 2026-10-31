@@ -18,6 +18,7 @@ permissions:
 env:
   OPENPACKER_OFFLINE: '1'
   SOURCE_DATE_EPOCH: '1785628800'
+  TURBO_CONCURRENCY: '4'
 
 jobs:
   gate:
