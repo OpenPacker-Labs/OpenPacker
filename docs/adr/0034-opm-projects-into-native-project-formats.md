@@ -286,10 +286,10 @@ corrects on c6f931a) and passes after it:
   base after; and a root retargeted mid-command (`INPUT_CHANGED` from
   `storePathForDigest`);
 - `opm-project/test/symlinked-base.writes.test.ts`: a link swapped in where a
-  half-linked store entry is removed, where a step discards its copy, where an
-  owner file is written, and where the auth config is written inside a project
-  that holds a link there: each refused, and the directory it points at left as
-  it was;
+  half-linked store entry is removed, where a step discards its copy and where
+  it puts the copy back, where an owner file is written, and where a tool cache
+  and the auth config are made inside a project that holds a link there: each
+  refused, and the directory it points at left as it was;
 - `sandbox/src/trusted-base.test.ts`: a jail run in, and binding, a directory
   under a linked `TMPDIR` and under the macOS shape (with an authority opened
   through the link), and the user home known by its real path; and a grant

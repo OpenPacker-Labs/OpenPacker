@@ -1,13 +1,15 @@
 /**
  * The writes and removals that reach a project or a store by path once its
  * base is taken, each with a link swapped in where it acts: the store's
- * removal of a half-linked entry, the rollback copy's discard, the owner file,
- * the auth config. Each is refused and leaves what the link points at as it
- * was (ADR 0034, amendment of 2026-10-31).
+ * removal of a half-linked entry, the rollback copy's discard and its putting
+ * back, the owner file, the tool cache, the auth config. Each is refused and
+ * leaves what the link points at as it was (ADR 0034, amendment of
+ * 2026-10-31).
  */
 
 import { createHash } from 'node:crypto';
 import {
+  cp,
   mkdir,
   mkdtemp,
   readFile,
@@ -23,6 +25,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { forgetBases, packTarGzip } from '@openpacker/project-io';
 import {
+  fetchTool,
   initProject,
   materializeThroughSharedStore,
   projectPaths,
@@ -114,6 +117,54 @@ describe.runIf(POSIX)('a link swapped in where opm writes by path', () => {
     expect(await readFile(join(outside, holder, 'keep.txt'), 'utf8')).toBe(
       'not opm’s',
     );
+  });
+
+  it('is refused where a step puts its copy back, and the copy it points at stays whole', async () => {
+    const base = await world();
+    const root = join(base, 'project');
+    await mkdir(join(root, 'node_modules'), { recursive: true });
+    await writeFile(join(root, 'node_modules', 'kept.txt'), 'before');
+    await initProject({ root, name: 'swapped' });
+    const snapshot = await snapshotProject(root);
+    // What the link points at is a copy of `.opm`, rollback copy and all: a
+    // putting back that followed the link would move it into the project.
+    const outside = join(base, 'outside');
+    await cp(join(root, '.opm'), outside, {
+      recursive: true,
+      verbatimSymlinks: true,
+    });
+    await swapForLink(join(root, '.opm'), outside);
+    const before = (await readdir(outside, { recursive: true })).sort();
+
+    await expect(snapshot.restore()).rejects.toMatchObject({
+      code: 'UNSAFE_PATH',
+    });
+    expect((await readdir(outside, { recursive: true })).sort()).toEqual(
+      before,
+    );
+  });
+
+  it('is refused where a tool cache named inside a project is made, and nothing is made where it points', async () => {
+    const base = await world();
+    const root = join(base, 'project');
+    const outside = join(base, 'outside');
+    await mkdir(root);
+    await mkdir(outside);
+    await symlink(outside, join(root, 'tools'));
+    projectPaths(root);
+
+    await expect(
+      fetchTool({
+        purl: 'pkg:npm/left-pad@1.3.0',
+        cacheRoot: join(root, 'tools', 'x'),
+        registryOptions: {
+          fetch: () => Promise.reject(new Error('no registry in this test')),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: expect.stringMatching(/^(ENOTDIR|ELOOP|UNSAFE_PATH)$/u),
+    });
+    expect(await readdir(outside)).toEqual([]);
   });
 
   it('is refused where an owner file is written, and nothing is written where it points', async () => {
