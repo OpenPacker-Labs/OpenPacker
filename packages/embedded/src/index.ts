@@ -64,54 +64,97 @@ function decode<T>(value: string): T {
   return JSON.parse(value) as T;
 }
 
+/**
+ * What the engine refused, whichever binding it came through. The wasm
+ * binding throws the engine's message as a string (wasm-bindgen's `JsValue`)
+ * and the Node-API addon as an `Error`; {@link EmbeddedResolver} turns both
+ * into this, with the message unchanged. It has no `cause`: what was thrown
+ * says nothing the message does not (the addon's `code` is always
+ * GenericFailure), and a reporter that prints a cause chain, as opm's does for
+ * an unexpected failure, would print the same line twice.
+ */
+export class EmbeddedRefusal extends Error {
+  override readonly name = 'EmbeddedRefusal';
+  /**
+   * The code the engine's message starts with (`UNSATISFIABLE`,
+   * `RESOURCE_LIMIT`, `INTERNAL_ERROR`), or undefined for a message with none
+   * (an input the engine could not read).
+   */
+  readonly refusal: string | undefined;
+
+  constructor(message: string) {
+    super(message);
+    this.refusal = /^([A-Z][A-Z_]*[A-Z]):/u.exec(message)?.[1];
+  }
+}
+
+/** Run one binding call; whatever it throws comes out as an {@link EmbeddedRefusal}. */
+function engine<T>(call: () => T): T {
+  try {
+    return call();
+  } catch (thrown) {
+    if (thrown instanceof EmbeddedRefusal) throw thrown;
+    throw new EmbeddedRefusal(
+      thrown instanceof Error ? thrown.message : String(thrown),
+    );
+  }
+}
+
 export class EmbeddedResolver {
   constructor(private readonly bindings: EmbeddedBindings) {}
 
   solve(input: EmbeddedSolveInput): EmbeddedSolveOutput {
-    return decode(this.bindings.solve_json(encode(input)));
+    const encoded = encode(input);
+    return decode(engine(() => this.bindings.solve_json(encoded)));
   }
 
   check(
     input: EmbeddedSolveInput,
     output: EmbeddedSolveOutput,
   ): ProofCheckResult {
-    return decode(this.bindings.check_json(encode(input), encode(output)));
+    const encoded = [encode(input), encode(output)] as const;
+    return decode(engine(() => this.bindings.check_json(...encoded)));
   }
 
   validateUniverse(universe: ResolutionUniverse): void {
-    this.bindings.validate_universe_json(encode(universe));
+    const encoded = encode(universe);
+    engine(() => this.bindings.validate_universe_json(encoded));
   }
 
   bruteForceOracle(input: EmbeddedSolveInput): OracleResult {
-    return decode(this.bindings.brute_force_oracle_json(encode(input)));
+    const encoded = encode(input);
+    return decode(engine(() => this.bindings.brute_force_oracle_json(encoded)));
   }
 
   canonicalize(value: JsonValue): string {
-    return this.bindings.canonicalize_json(encode(value));
+    const encoded = encode(value);
+    return engine(() => this.bindings.canonicalize_json(encoded));
   }
 
   digest(value: JsonValue): Digest {
-    return decode(this.bindings.digest_json(encode(value)));
+    const encoded = encode(value);
+    return decode(engine(() => this.bindings.digest_json(encoded)));
   }
 
   versionSatisfies(version: string, vers: string): boolean {
-    return this.bindings.version_satisfies(version, vers);
+    return engine(() => this.bindings.version_satisfies(version, vers));
   }
 
   normalizePurl(value: string): string {
-    return this.bindings.normalize_purl(value);
+    return engine(() => this.bindings.normalize_purl(value));
   }
 
   parseVers(value: string): import('@openpacker/contracts').VersionConstraint {
-    return decode(this.bindings.parse_vers_json(value));
+    return decode(engine(() => this.bindings.parse_vers_json(value)));
   }
 
   verifyArtifactDigest(bytes: Uint8Array, expected: string): boolean {
-    return this.bindings.verify_sha256(bytes, expected);
+    return engine(() => this.bindings.verify_sha256(bytes, expected));
   }
 
   verifyReceiptDigest(receipt: JsonValue, expected: string): boolean {
-    return this.bindings.verify_receipt_digest(encode(receipt), expected);
+    const encoded = encode(receipt);
+    return engine(() => this.bindings.verify_receipt_digest(encoded, expected));
   }
 }
 

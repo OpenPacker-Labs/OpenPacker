@@ -10,7 +10,20 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const fixtureTgz = join(repoRoot, 'fixtures/opm/demo-tool-1.1.0.tgz');
 
 const temps: string[] = [];
+// The commands a test started and has not seen end. A test that times out
+// leaves its command running in the project; removing the project under it
+// fails (ENOTEMPTY) and buries the timeout under a second error. Cleanup waits
+// for every command first.
+const running = new Set<Promise<number>>();
+function opm(...args: Parameters<typeof runOpm>): Promise<number> {
+  const command = runOpm(...args);
+  running.add(command);
+  const done = () => running.delete(command);
+  command.then(done, done);
+  return command;
+}
 afterEach(async () => {
+  await Promise.allSettled(running);
   await Promise.all(
     temps.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
   );
@@ -63,7 +76,7 @@ async function writeCatalog(
 describe('opm update CLI', () => {
   it('documents alias selection and --latest', async () => {
     const cap = capture();
-    expect(await runOpm(['help'], cap.io)).toBe(0);
+    expect(await opm(['help'], cap.io)).toBe(0);
     expect(cap.out).toContain(
       'opm update [alias...] [--latest] [--offline|--online]',
     );
@@ -74,16 +87,14 @@ describe('opm update CLI', () => {
     const root = await mkdtemp(join(tmpdir(), 'opm-cli-update-'));
     temps.push(root);
     let cap = capture();
-    expect(await runOpm(['init', '--name', 'cli-update'], cap.io, root)).toBe(
-      0,
-    );
+    expect(await opm(['init', '--name', 'cli-update'], cap.io, root)).toBe(0);
     await writeCatalog(root, [
       { name: 'alpha', version: '1.0.0' },
       { name: 'alpha', version: '1.2.0' },
     ]);
     cap = capture();
     expect(
-      await runOpm(['add', 'pkg:npm/alpha@1.0.0', '--offline'], cap.io, root),
+      await opm(['add', 'pkg:npm/alpha@1.0.0', '--offline'], cap.io, root),
     ).toBe(0);
 
     const toml = await readFile(join(root, 'opm.toml'), 'utf8');
@@ -93,12 +104,12 @@ describe('opm update CLI', () => {
     );
 
     cap = capture();
-    expect(await runOpm(['update', '--offline'], cap.io, root)).toBe(0);
+    expect(await opm(['update', '--offline'], cap.io, root)).toBe(0);
     expect(cap.out).toContain('Updated 1 package(s): alpha');
     expect(cap.out).not.toContain('Synced');
 
     cap = capture();
-    expect(await runOpm(['update', '--offline'], cap.io, root)).toBe(0);
+    expect(await opm(['update', '--offline'], cap.io, root)).toBe(0);
     expect(cap.out).toContain('Already up to date');
     expect(cap.out).not.toContain('Synced');
   });

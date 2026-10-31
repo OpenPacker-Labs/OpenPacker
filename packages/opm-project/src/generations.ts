@@ -29,6 +29,7 @@ import {
 } from './paths.js';
 import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
 import { readProjectState, writeProjectState } from './install.js';
+import { isStoreView, sweepAbandonedViews } from './store-view.js';
 import { projectStep, type StepOptions } from './project-step.js';
 import { collectFilesFromHandle } from '@openpacker/project-io';
 
@@ -686,7 +687,7 @@ export async function collectableStorePaths(input: {
   try {
     storeHandle = await openStableDirectory(paths.store);
     present = (await readDirChildWithTypes(storeHandle))
-      .filter((entry) => entry.isDirectory())
+      .filter((entry) => entry.isDirectory() && !isStoreView(entry.name))
       .map((entry) => join(paths.store, entry.name));
   } catch (error) {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -722,6 +723,7 @@ async function collectInStep(input: {
   keep?: number;
 }): Promise<{ removed: string[]; retained: Generation[] }> {
   const { collectable, retained } = await collectableStorePaths(input);
+  await sweepAbandonedViews(projectPaths(input.root).store);
 
   for (const path of collectable) {
     await removeStableTree(path);

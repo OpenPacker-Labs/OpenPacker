@@ -1,14 +1,25 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, readdir, rm, utimes } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   materializeThroughSharedStore,
   storeKeyFromDigest,
 } from '@openpacker/opm-project';
 import { runOpm } from '../src/opm.js';
+
+/** The materializer's defaults, written out: apps/opm does not depend on it. */
+const LIMITS = {
+  maximumFiles: 10_000,
+  maximumExpandedBytes: 64 * 1024 * 1024,
+  maximumCompressedBytes: 64 * 1024 * 1024,
+  maximumCompressionRatio: 32,
+  maximumMemoryBytes: 192 * 1024 * 1024,
+  maximumPathBytes: 4096,
+  maximumDepth: 128,
+};
 
 const temps: string[] = [];
 let previous: string | undefined;
@@ -18,6 +29,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   if (previous === undefined) delete process.env.OPM_STORE_HOME;
   else process.env.OPM_STORE_HOME = previous;
   await Promise.all(
@@ -54,6 +66,7 @@ async function sharedEntry(shared: string): Promise<string> {
   temps.push(project);
   const key = storeKeyFromDigest(digest);
   await materializeThroughSharedStore({
+    limits: LIMITS,
     digest,
     projectStorePath: join(project, key),
     bytes,
@@ -71,8 +84,10 @@ describe('opm gc --shared', () => {
     temps.push(shared);
     process.env.OPM_STORE_HOME = shared;
     const key = await sharedEntry(shared);
-    const old = new Date(Date.now() - 3_600_000);
-    await utimes(join(shared, `${key}.tree`), old, old);
+    // An hour on, for the entry directory as well as its record: gc dates an
+    // entry by both, and a directory's ctime cannot be set back.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 3_600_000);
 
     const dry = capture();
     expect(await runOpm(['gc', '--shared', '--dry-run'], dry.io, shared)).toBe(

@@ -128,12 +128,17 @@ describeNamespaced(
       const dir = await mkdtemp(join(tmpdir(), 'opm-owner-pidns-'));
       temps.push(dir);
       const script = join(dir, 'owner.ts');
+      // The report is written beside its name and renamed into it, so the
+      // name stands for a whole report: the wait below is for the name, and a
+      // file opened but not yet written read as "Unexpected end of JSON input".
       const report = join(dir, 'owner.json');
+      const part = `${report}.part`;
       await writeFile(
         script,
-        `import { writeFile } from 'node:fs/promises';
+        `import { rename, writeFile } from 'node:fs/promises';
        import { currentOwner } from ${JSON.stringify(ownerSource)};
-       await writeFile(${JSON.stringify(report)}, JSON.stringify(await currentOwner()));
+       await writeFile(${JSON.stringify(part)}, JSON.stringify(await currentOwner()));
+       await rename(${JSON.stringify(part)}, ${JSON.stringify(report)});
        setInterval(() => {}, 1000);`,
       );
       const [command, ...options] = pidNamespace!;
@@ -145,7 +150,7 @@ describeNamespaced(
       try {
         while (!existsSync(report))
           await new Promise((resolve) => setTimeout(resolve, 50));
-        // SAFETY: written by the child a moment ago.
+        // SAFETY: written whole by the child, then named.
         const owner = JSON.parse(
           await readFile(report, 'utf8'),
         ) as ProcessOwner;

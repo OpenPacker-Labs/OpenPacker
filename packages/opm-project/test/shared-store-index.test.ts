@@ -3,6 +3,7 @@ import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { DEFAULT_MATERIALIZATION_LIMITS } from '@openpacker/materializer';
 import { packTarGzip } from '@openpacker/project-io';
 import { adoptSharedEntry, publishSharedEntry } from '../src/shared-store.js';
 import {
@@ -88,6 +89,7 @@ describe('publishing and adopting a shared entry', () => {
     const { bytes, digest } = archive();
     expect(await adoptSharedEntry(dir, digest)).toBeUndefined();
     const published = await publishSharedEntry({
+      limits: DEFAULT_MATERIALIZATION_LIMITS,
       sharedRoot: dir,
       digest,
       format: 'tar+gzip',
@@ -100,6 +102,7 @@ describe('publishing and adopting a shared entry', () => {
     const dir = await root();
     const sealed = archive();
     const entry = await publishSharedEntry({
+      limits: DEFAULT_MATERIALIZATION_LIMITS,
       sharedRoot: dir,
       digest: sealed.digest,
       format: 'tar+gzip',
@@ -111,6 +114,7 @@ describe('publishing and adopting a shared entry', () => {
 
     const scratch = await root();
     const open = await publishSharedEntry({
+      limits: DEFAULT_MATERIALIZATION_LIMITS,
       sharedRoot: scratch,
       digest: sealed.digest,
       format: 'tar+gzip',
@@ -127,6 +131,7 @@ describe('publishing and adopting a shared entry', () => {
     const { bytes } = archive();
     await expect(
       publishSharedEntry({
+        limits: DEFAULT_MATERIALIZATION_LIMITS,
         sharedRoot: dir,
         digest: DIGEST,
         format: 'tar+gzip',

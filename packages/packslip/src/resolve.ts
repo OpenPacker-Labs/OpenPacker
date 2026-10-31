@@ -1,4 +1,3 @@
-import { parseCanonicalJson } from '@openpacker/canonical';
 import {
   chooseRecommendation,
   rankCandidates,
@@ -12,6 +11,7 @@ import { checkForge } from './forge.js';
 import type { GithubEndpoints } from './github.js';
 import type { DetectedHost } from './host.js';
 import { forgeIssuer, parseProject, type Project } from './project.js';
+import { MAX_BUNDLE_BYTES, parseSignedPayload } from './payload.js';
 import { decodeReleaseList } from './release-list.js';
 import { checkRequirements, type RequirementReport } from './requirements.js';
 import { selectResources, type ResourceGroup } from './resources.js';
@@ -20,7 +20,6 @@ import { decodeReleaseStatement } from './statement.js';
 import { evaluateTrust, type TrustMemory } from './trust.js';
 import type { Artifact, ReleaseList, ReleaseStatement } from './types.js';
 import {
-  MAX_BUNDLE_BYTES,
   verifyBundle,
   type SignerExpectation,
   type VerifiedBundle,
@@ -282,7 +281,7 @@ export async function discoverReleases(
   };
   const verifyList = (bundle: Uint8Array): ReleaseList => {
     const verified = verifyBundle({ bundle, ...verifyOptions });
-    const list = decodeReleaseList(parseCanonicalJson(verified.payload));
+    const list = decodeReleaseList(parseSignedPayload(verified.payload));
     checkSigner(project, list.project, verified, input.memory, notes);
     return list;
   };
@@ -350,7 +349,7 @@ export async function resolveRelease(
       );
     const verified = verifyBundle({ bundle, ...verifyOptions });
     const statement = decodeReleaseStatement(
-      parseCanonicalJson(verified.payload),
+      parseSignedPayload(verified.payload),
     );
     if (statement.version !== candidate.version)
       throw new PackslipError(

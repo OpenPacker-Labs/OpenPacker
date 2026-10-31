@@ -160,6 +160,12 @@ export {
 } from './lifecycle.js';
 
 export { runSandboxedPackageProcess } from './sandbox-run.js';
+export {
+  ephemeralNodeRun,
+  layOutTool,
+  type ToolLayout,
+  type ToolPackage,
+} from './ephemeral-layout.js';
 
 export {
   addPackage,
@@ -286,6 +292,7 @@ export {
   type FrozenInstallInput,
   type FrozenInstallResult,
 } from './frozen-install.js';
+export { planFrozen, type FrozenPlan } from './frozen-plan.js';
 export type { FrozenWorkspaceRequest } from './frozen-workspace.js';
 export { MAXIMUM_ARCHIVE_BYTES } from './frozen-fetch.js';
 export {

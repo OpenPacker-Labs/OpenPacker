@@ -19,13 +19,14 @@
   "module": "./dist/esm/index.js",
   "types": "./dist/esm/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs",
+    "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:security": "vitest run",
     "test:integration": "vitest run"
   },
   "dependencies": {
+    "@openpacker/adapter-core": "0.1.0",
     "@openpacker/artifact-model": "0.1.0",
     "@openpacker/canonical": "0.1.0",
     "@openpacker/contracts": "0.1.0",

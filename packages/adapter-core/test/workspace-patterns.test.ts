@@ -13,6 +13,16 @@ import {
 } from '../src/index.js';
 
 /**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
+/**
  * The golden file was produced by running the two tools themselves over one
  * directory tree: pnpm 10.28.0's `findPackages` (tinyglobby 0.2.14, the root
  * always included, `node_modules` ignored) and npm 10.9.4's
@@ -318,9 +328,9 @@ describe('workspace glob dialect', () => {
     const pattern = `${'*a'.repeat(30)}*b`;
     const name = 'a'.repeat(250);
     const [glob] = compileGlob(pattern, limits);
-    const started = performance.now();
+    const started = cpuMs();
     expect(globMatches(glob!, [name])).toBe(false);
-    expect(performance.now() - started).toBeLessThan(250);
+    expect(cpuMs() - started).toBeLessThan(250);
   });
 
   it('tells where a descent can stop', () => {

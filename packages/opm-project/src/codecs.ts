@@ -17,3 +17,21 @@ export function codecFor(ecosystem: string): EcosystemCodec {
     throw error;
   }
 }
+
+/**
+ * Whether an ecosystem's adapter exports a codec.
+ *
+ * One that does not (a delegated plugin's) cannot tell a version from a range
+ * or order two releases, so the host can lock a package it serves but cannot
+ * walk the package's dependencies or read a range for it.
+ */
+export function hasCodec(ecosystem: string): boolean {
+  try {
+    codecFor(ecosystem);
+    return true;
+  } catch (error) {
+    if (error instanceof OpmError && error.code === 'UNSUPPORTED_ECOSYSTEM')
+      return false;
+    throw error;
+  }
+}

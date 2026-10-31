@@ -9,6 +9,7 @@ export * from './github.js';
 export * from './host.js';
 export * from './json.js';
 export * from './minisign.js';
+export * from './payload.js';
 export * from './project.js';
 export * from './release-list.js';
 export * from './requirements.js';

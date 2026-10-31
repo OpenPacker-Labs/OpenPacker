@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { echoedValue } from '@openpacker/adapter-core';
 import {
   canonicalDigest,
+  documentParseLimits,
   parseCanonicalJson,
   parseUntrustedUrl,
 } from '@openpacker/canonical';
@@ -287,11 +288,26 @@ async function resolvePackDirectory(
   return input.from;
 }
 
+/**
+ * The most a pack receipt is read of, and so what its parse may cost: as much
+ * as an honest document of these bytes (`documentParseLimits`, 64 MiB). The
+ * directory is the one `--from` names, which a build may have filled, and 4
+ * MiB of `{"1023":0}` costs gigabytes to hold (ADR 0044, "Documents other
+ * than packuments").
+ */
+const PACK_RECEIPT_BYTES = 4 * 1024 * 1024;
+
 async function readPackReceipt(directory: string): Promise<PackReceipt> {
-  const raw = await readStableFile(join(directory, PACK_RECEIPT));
+  const raw = await readStableFile(
+    join(directory, PACK_RECEIPT),
+    PACK_RECEIPT_BYTES,
+  );
   try {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
-    return parseCanonicalJson(raw) as PackReceipt;
+    return parseCanonicalJson(
+      raw,
+      documentParseLimits(PACK_RECEIPT_BYTES),
+    ) as PackReceipt;
   } catch (error) {
     throw new OpmError(
       'INVALID_SPEC',

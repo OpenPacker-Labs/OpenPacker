@@ -1,6 +1,19 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { EXIT_CODES, runCli, type CliIo } from '../src/index.js';
+
+/**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
 
 /**
  * A provider's answer names where an artifact is, and the service URL is the
@@ -11,6 +24,14 @@ import { EXIT_CODES, runCli, type CliIo } from '../src/index.js';
  */
 const HOST = 'ß.é.'.repeat(16384);
 const FAST_MS = 50;
+/**
+ * A prefix that is not there, so the refusal is the location's. `/nonexistent`
+ * was: a machine where something made it (with files in it) had the CLI refuse
+ * the destination first, with an internal error.
+ */
+const scratch = mkdtempSync(join(tmpdir(), 'openpacker-cli-'));
+const MISSING_PREFIX = join(scratch, 'prefix');
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 function io(): CliIo & { out: string; err: string } {
   const result = {
@@ -57,12 +78,12 @@ async function materializeFrom(transport: 'https' | 'file', uri: string) {
       }),
     );
     last = io();
-    const started = performance.now();
+    const started = cpuMs();
     exit = await runCli(
-      ['materialize', 'pkg:npm/demo@1.0.0', '--install-prefix', '/nonexistent'],
+      ['materialize', 'pkg:npm/demo@1.0.0', '--install-prefix', MISSING_PREFIX],
       last,
     );
-    best = Math.min(best, performance.now() - started);
+    best = Math.min(best, cpuMs() - started);
   }
   return { exit, output: last, ms: best };
 }
@@ -88,7 +109,7 @@ describe('the openpacker CLI', () => {
     let exit = -1;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const output = io();
-      const started = performance.now();
+      const started = cpuMs();
       exit = await runCli(
         [
           'normalize',
@@ -99,7 +120,7 @@ describe('the openpacker CLI', () => {
         ],
         output,
       );
-      best = Math.min(best, performance.now() - started);
+      best = Math.min(best, cpuMs() - started);
       expect(output.err).not.toContain('ß');
     }
     expect(exit).toBe(EXIT_CODES.usage);
