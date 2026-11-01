@@ -70,7 +70,7 @@
     "prettier": "3.6.2",
     "testcontainers": "^10.28.0",
     "turbo": "2.10.8",
-    "typescript": "5.9.2",
+    "typescript": "7.0.2",
     "vitest": "3.2.7"
   }
 }
