@@ -9,7 +9,7 @@
  *
  * The project is read-only as on a read-only mount: bwrap binds it so for the
  * built opmx, since root writes whatever the mode bits say. Run
- * `npm run build -w @openpacker/opm` first.
+ * `npm run build -w @openpacker/cli` first.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -132,7 +132,7 @@ async function activated(
   context: { skip(when: boolean, why: string): void },
   more: FixturePackage[] = [],
 ) {
-  expect(existsSync(opmx), 'run: npm run build -w @openpacker/opm').toBe(true);
+  expect(existsSync(opmx), 'run: npm run build -w @openpacker/cli').toBe(true);
   const root = await installedProject([hello, ...more]);
   const probe = spawnSync(bwrap!, [
     '--dev-bind',
@@ -186,7 +186,7 @@ async function startingAnother(
     await mkdir(join(file, '..'), { recursive: true });
     await mkdir(join(dir, 'bin'));
     await symlink(
-      '../lib/node_modules/@openpacker/opm/dist/opmx-main.js',
+      '../lib/node_modules/@openpacker/cli/dist/opmx-main.js',
       other,
     );
   }

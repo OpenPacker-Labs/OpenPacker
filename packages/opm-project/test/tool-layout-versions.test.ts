@@ -110,7 +110,7 @@ describe('a tool whose closure holds two versions of one name', () => {
 
 describe('what the sandbox binds for a tool', () => {
   // opmx binds the layout's root and nothing beside it (`runtimePaths` in
-  // apps/opm's opmx-spawn.ts), so that root is the `tree` of the run's scratch
+  // apps/openpacker-cli's opmx-spawn.ts), so that root is the `tree` of the run's scratch
   // directory: the `.owner` beside it says who made the run, and a tool that
   // could see it, or write one, could take part in judging its own run.
   it('is the tree of the run scratch, which does not hold its owner', async () => {

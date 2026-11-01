@@ -1,16 +1,23 @@
 {
   "name": "@openpacker/cli",
   "version": "0.0.1-alpha.1",
-  "description": "OpenPacker command-line client",
+  "description": "OpenPacker CLI: `opm` project manager, `opmx` runner, and PREX control plane",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "openpacker": "./dist/index.js"
+    "opm": "./dist/main.js",
+    "opmx": "./dist/opmx-main.js",
+    "opkg": "./dist/main.js",
+    "opkgm": "./dist/main.js"
   },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./opm": {
+      "types": "./dist/opm.d.ts",
+      "import": "./dist/opm.js"
     }
   },
   "files": [
@@ -29,17 +36,23 @@
   },
   "dependencies": {
     "@openpacker/adapter-core": "0.0.1-alpha.1",
+    "@openpacker/adapters-default": "0.0.1-alpha.1",
     "@openpacker/artifact-model": "0.0.1-alpha.1",
     "@openpacker/canonical": "0.0.1-alpha.1",
     "@openpacker/conformance": "0.0.1-alpha.1",
     "@openpacker/contracts": "0.0.1-alpha.1",
     "@openpacker/embedded": "0.0.1-alpha.1",
     "@openpacker/lock-import": "0.0.1-alpha.1",
-    "@openpacker/openpackerd": "0.0.1-alpha.1",
     "@openpacker/materializer": "0.0.1-alpha.1",
+    "@openpacker/openpackerd": "0.0.1-alpha.1",
+    "@openpacker/opm-project": "0.0.1-alpha.1",
+    "@openpacker/plugin-host": "0.0.1-alpha.1",
+    "@openpacker/plugin-store": "0.0.1-alpha.1",
     "@openpacker/sdk": "0.0.1-alpha.1"
   },
   "devDependencies": {
+    "@openpacker/packslip-testkit": "0.0.1-alpha.1",
+    "@openpacker/sandbox": "0.0.1-alpha.1",
     "@types/node": "24.2.1",
     "esbuild": "0.28.1"
   },

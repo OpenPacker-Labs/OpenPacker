@@ -45,7 +45,7 @@ package-manager façade; it does not claim full npm/Cargo/pip supersession.
 - README and user guides lead with `opm` / `opmx` for day-to-day use.
 - Protocol docs and `openpacker` remain for integrators and advanced ops.
 - Project model lives in `@openpacker/opm-project`; CLI bins in
-  `@openpacker/opm`.
+  `@openpacker/cli`.
 - v1 ecosystems prioritize npm/cargo/pypi install paths with fail-closed offline
   catalogs; other ecosystems follow the same lock/store model.
 

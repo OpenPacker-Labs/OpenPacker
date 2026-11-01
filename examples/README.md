@@ -5,7 +5,8 @@
 **[opm-project/](opm-project/)**
 
 **PREX control-plane CLI:**  
-**[docs/guides/cli.md](../docs/guides/cli.md)** · **[cli/](cli/)** sample inputs
+**[docs/guides/opm.md](../docs/guides/opm.md#prex-control-plane)** ·
+**[cli/](cli/)** sample inputs
 
 Library packages below are compile-checked and tested offline.
 
@@ -84,9 +85,9 @@ Examples above are library-first. Equivalent CLI commands are documented in
 [User surface](../docs/product/user-surface.md):
 
 ```sh
-npx openpacker normalize --input req.json --json
-npx openpacker import-lock --input fixtures/locks/npm/package-lock.json --json
-npx openpacker solve --input fixtures/protocol/solve/request.json --json
+npx opm normalize --input req.json --json
+npx opm import-lock --input fixtures/locks/npm/package-lock.json --json
+npx opm solve --input fixtures/protocol/solve/request.json --json
 ```
 
 Root demos:

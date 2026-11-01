@@ -1,6 +1,6 @@
 # Getting started with OpenPacker
 
-**Day-to-day package CLI recipes:** **[cli.md](cli.md)** (start there if you
+**Day-to-day and PREX CLI recipes:** **[opm.md](opm.md)** (start there if you
 want commands, not setup theory).
 
 This page is install + first run. All mandatory steps are **offline** after
@@ -92,9 +92,9 @@ integration, e2e, browser, fuzz, benchmarks, and both demos.
 
 ```sh
 # After npm run build
-npx openpacker serve --host 127.0.0.1 --port 7337
+npx opm serve --host 127.0.0.1 --port 7337
 # or with a committed universe fixture:
-npx openpacker serve --universe fixtures/epoch/universe.json --port 7337
+npx opm serve --universe fixtures/epoch/universe.json --port 7337
 ```
 
 Discovery:
@@ -119,15 +119,15 @@ printf '%s\n' '{
   ]
 }' > /tmp/normalize.json
 
-npx openpacker normalize --input /tmp/normalize.json --json
+npx opm normalize --input /tmp/normalize.json --json
 ```
 
 ### Import a native lockfile (daemon required)
 
 ```sh
-npx openpacker serve --port 7337 &
+npx opm serve --port 7337 &
 # wait for ready, then:
-npx openpacker import-lock \
+npx opm import-lock \
   --input fixtures/locks/cargo/Cargo.lock \
   --format cargo-lock \
   --base-url http://127.0.0.1:7337 \

@@ -90,10 +90,10 @@ describe('publishable CLI bundle', () => {
 
     const bin =
       process.platform === 'win32'
-        ? join(prefix, 'openpacker.cmd')
-        : join(prefix, 'bin', 'openpacker');
+        ? join(prefix, 'opm.cmd')
+        : join(prefix, 'bin', 'opm');
     const help = await run(bin, ['--help']);
     expectExit(help);
-    expect(help.stdout).toContain('Usage');
+    expect(help.stdout).toMatch(/opm — Open Package Manager/u);
   }, 300_000);
 });

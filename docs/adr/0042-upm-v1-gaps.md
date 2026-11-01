@@ -27,7 +27,7 @@ WIT component host, Maven/PyPI/Go inspect without sidecars, publish+yank, real
 product would violate ADR 0020 (supersession), ADR 0032 (TS bridge is a valid v1
 host), ADR 0034 (native workspace files are projection), and ADR 0041 (tokens
 are named env vars on pinned origins). It would also collide on
-`apps/opm/src/opm.ts` and `packages/opm-project`.
+`apps/openpacker-cli/src/opm.ts` and `packages/opm-project`.
 
 ## Decision
 

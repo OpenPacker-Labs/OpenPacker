@@ -1,7 +1,8 @@
 # Recommended user surface
 
 **Want shell recipes, not a table of verbs?** Use the
-**[CLI cookbook](../guides/cli.md)** and
+**[opm guide](../guides/opm.md)** (including
+[PREX control plane](../guides/opm.md#prex-control-plane)) and
 **[examples/cli](../../examples/cli/)**.
 
 OpenPacker is a package control plane. The recommended CLI and API surface

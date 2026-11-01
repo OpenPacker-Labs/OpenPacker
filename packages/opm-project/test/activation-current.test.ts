@@ -161,7 +161,7 @@ async function npmGlobalOpmx(): Promise<{ link: string; target: string }> {
   await writeFile(target, '#!/usr/bin/env node\n');
   await chmod(target, 0o755);
   const link = join(prefix, 'bin', 'opmx');
-  await symlink('../lib/node_modules/@openpacker/opm/dist/opmx-main.js', link);
+  await symlink('../lib/node_modules/@openpacker/cli/dist/opmx-main.js', link);
   return { link, target };
 }
 

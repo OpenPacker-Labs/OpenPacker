@@ -35,7 +35,7 @@ beforeAll(async () => {
   for (const target of Object.values(bin))
     await access(join(appRoot, target)).catch(() => {
       throw new Error(
-        `${target} is not built; run: npm run build -w @openpacker/opm`,
+        `${target} is not built; run: npm run build -w @openpacker/cli`,
       );
     });
 });

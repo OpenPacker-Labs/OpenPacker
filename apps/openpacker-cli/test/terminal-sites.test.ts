@@ -1,5 +1,5 @@
 /**
- * Every write to a terminal in `apps/opm/src` carries fixed text, or passes
+ * Every write to a terminal in `apps/openpacker-cli/src` carries fixed text, or passes
  * through `say` / `terminalSafe` or `report` (`@openpacker/canonical`, which
  * makes the text plain), or is one of the few raw outputs listed here with the
  * reason it is raw (the review of #179, round 6, N-a). `out`, `outJson` and
@@ -121,7 +121,7 @@ function sources(): { file: string; text: string }[] {
     }));
 }
 
-describe('what apps/opm writes to a terminal', () => {
+describe('what apps/openpacker-cli writes to a terminal', () => {
   const writes = sources().flatMap(({ file, text }) =>
     [
       ...text.matchAll(

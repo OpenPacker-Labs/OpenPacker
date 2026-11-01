@@ -36,7 +36,7 @@ end
 
 function M.cli(ctx, arguments)
     local cmd = require("cmd")
-    local executable = option(ctx, "openpacker_bin", "OPENPACKER_BIN", "openpacker")
+    local executable = option(ctx, "opm_bin", "OPENPACKER_BIN", "opm")
     local service = option(ctx, "service_url", "OPENPACKER_URL", "http://127.0.0.1:7337")
     local command = shell_quote(executable)
     for _, argument in ipairs(arguments) do command = command .. " " .. shell_quote(argument) end

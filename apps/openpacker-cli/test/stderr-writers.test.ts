@@ -29,10 +29,6 @@ const here = dirname(fileURLToPath(import.meta.url));
  */
 const ROOTS = [
   { prefix: '', directory: join(here, '../src') },
-  {
-    prefix: 'openpacker-cli/',
-    directory: join(here, '../../openpacker-cli/src'),
-  },
   { prefix: 'openpackerd/', directory: join(here, '../../openpackerd/src') },
 ] as const;
 
@@ -212,7 +208,7 @@ describe('what opm writes to stderr', () => {
         'commands/run-output.ts',
         'commands/run.ts',
         'commands/shell.ts',
-        'openpacker-cli/index.ts',
+        'index.ts',
         'openpackerd/cli.ts',
       ]),
     );

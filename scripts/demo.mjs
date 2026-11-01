@@ -56,7 +56,7 @@ rmSync(output, { recursive: true, force: true });
 mkdirSync(output, { recursive: true });
 
 const cliCandidates = [
-  'apps/openpacker-cli/dist/index.js',
+  'apps/openpacker-cli/dist/main.js',
   'apps/openpacker-cli/dist/esm/index.js',
   'apps/openpacker-cli/dist/cli.js',
 ].map((path) => join(root, path));

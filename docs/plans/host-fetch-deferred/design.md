@@ -1311,7 +1311,7 @@ merge.
 - **Description:** Record D1–D6-N and D2-H. Status: accepted, implementation
   stacked. **Do not** amend `delegated-adapter.md` MUST lines for
   `artifact_origins` or bearers yet (host still rejects those toml keys). **Do
-  not** change `apps/opm/src/opm.ts` help. No example secret values.
+  not** change `apps/openpacker-cli/src/opm.ts` help. No example secret values.
 
 ### PR 3 — `[plugins.<id>] artifact_origins` parse and pin composition
 
@@ -1328,8 +1328,10 @@ merge.
   - `packages/opm-project/test/host-fetch.test.ts` (D5 table except auth rows)
   - `packages/plugin-host/src/register.ts` only if the binding type flows
     through `verifyPluginBindings` (digest check unchanged)
-  - `apps/opm/src/opm.ts` help for `artifact_origins` (not token envs yet)
-  - `apps/opm/test/opm.test.ts` project fixture with `artifact_origins`
+  - `apps/openpacker-cli/src/opm.ts` help for `artifact_origins` (not token envs
+    yet)
+  - `apps/openpacker-cli/test/opm.test.ts` project fixture with
+    `artifact_origins`
   - `docs/guides/opm.md` pin composition (env ∪ toml; public same-origin still
     pin-free for unauthenticated GET)
 - **Description:** Implement D1 and D5. Ephemeral = env only. Project = env ∪
@@ -1369,7 +1371,7 @@ merge.
     not win)
   - `docs/guides/opm.md` (env **names** only; recipe: pin even if public to
     authenticate; smallest pin set when using a bearer)
-  - `apps/opm/src/opm.ts` help for `artifact_origin_token_envs` /
+  - `apps/openpacker-cli/src/opm.ts` help for `artifact_origin_token_envs` /
     `OPM_HOST_FETCH_TOKEN_ENVS`
 - **Description:** Implement D2. Attach `Authorization: Bearer` only when
   `tokenEnvNameFor(url.origin)` is a non-empty name **and** that env is set,

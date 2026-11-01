@@ -26,7 +26,7 @@ which blocks advertising `prex-calculus-subset-v1` for the same result.
 ```sh
 npm run demo:lock-import
 npm run test --workspace @openpacker/example-lock-import
-npx openpacker import-lock --input fixtures/locks/npm/package-lock.json --json
+npx opm import-lock --input fixtures/locks/npm/package-lock.json --json
 ```
 
 **Formats.** package-lock v3, Cargo.lock, NuGet project.assets /
