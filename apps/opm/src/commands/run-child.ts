@@ -1,4 +1,3 @@
-import { outRaw } from '@openpacker/canonical';
 /**
  * Start a child on the person's own authority and report how it ended
  * (ADR 0047).
@@ -157,7 +156,7 @@ export function startChild(
     }
     child.stdout?.setEncoding('utf8');
     child.stderr?.setEncoding('utf8');
-    child.stdout?.on('data', (chunk: string) => outRaw(io, chunk));
+    child.stdout?.on('data', (chunk: string) => io.stdout.write(chunk));
     child.stderr?.on('data', (chunk: string) => io.stderr.write(chunk));
     child.once('error', (error) => {
       reject(spawnFailure(spec, error));
