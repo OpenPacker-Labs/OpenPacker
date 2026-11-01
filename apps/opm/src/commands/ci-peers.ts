@@ -6,8 +6,8 @@
  * its dependent load two copies of a peer, which pnpm's symlinks never do.
  */
 
-import type { FrozenLockPeers } from '@openpacker/adapter-core';
-import { say } from '../error-report.js';
+import { terminalSafe, type FrozenLockPeers } from '@openpacker/adapter-core';
+import { report } from '@openpacker/canonical';
 import type { CommandIo } from './yank.js';
 
 /** The line about `peers`, ending in a newline. */
@@ -32,5 +32,7 @@ export function printPeerNotice(
   io: Pick<CommandIo, 'stderr'>,
   peers: FrozenLockPeers,
 ): void {
-  say(io.stderr, peerNotice(peers));
+  // The names are escaped where they could not be made plain without being
+  // misread (`terminalSafe`), and the line goes through the one writer.
+  io.stderr.write(report('', terminalSafe(peerNotice(peers)).trimEnd()));
 }

@@ -482,23 +482,3 @@ describe('an add that does not resolve', () => {
     }
   });
 });
-
-describe('an add that does not resolve', () => {
-  it('leaves opm.toml as it was, so the next install does not trip over it', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'opm-closure-'));
-    try {
-      await initProject({ root, name: 'closure' });
-      const before = await readFile(join(root, 'opm.toml'), 'utf8');
-      await expect(
-        addPackage({
-          root,
-          spec: 'pkg:npm/not-in-any-catalog@1.0.0',
-          offline: true,
-        }),
-      ).rejects.toMatchObject({ code: 'UNRESOLVABLE' });
-      expect(await readFile(join(root, 'opm.toml'), 'utf8')).toBe(before);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-});

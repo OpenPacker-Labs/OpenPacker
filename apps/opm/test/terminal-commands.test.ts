@@ -2,9 +2,10 @@
  * What a command prints of a path, a time or a pin it did not make up itself,
  * reached through the command: a project in a directory a repository named, a
  * store, a plugin home and a generation record carrying ESC, BEL, a C1 control
- * and a right-to-left override. Each line must reach the terminal escaped, so
- * that taking the escape out of a command fails here (the review of #179,
- * round 6, N-a). The printers themselves are in `terminal-records.test.ts`;
+ * and a right-to-left override. Each line must reach the terminal plain, as
+ * `out` and `report` (`@openpacker/canonical`) make it: the title-setting
+ * sequence removed whole and the rest of the value kept, so that taking the
+ * writer out of a command fails here (the review of #179, round 6, N-a).
  * `terminal-sites.test.ts` holds every write in the source to the same rule.
  */
 
@@ -23,7 +24,8 @@ import { unsafeIn } from './terminal-fixture.js';
 
 /** An OSC title (ESC ... BEL), a CSI as its C1 control, and a right-to-left override. */
 const HOSTILE = 'v\u001b]0;PWN\u0007\u009b2J\u202ex';
-const SHOWN = 'v\\u001b]0;PWN\\u0007\\u009b2J\\u202ex';
+/** `HOSTILE` as the writers show it. */
+const SHOWN = 'v2Jx';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const fixtureTgz = join(repoRoot, 'fixtures/opm/demo-tool-1.1.0.tgz');

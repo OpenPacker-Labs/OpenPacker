@@ -12,14 +12,6 @@ import { lstat, type FileHandle } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { ProjectIoError } from './index.js';
 import {
-  recordedLinkText,
-  type CollectTreeOptions,
-  type CollectedLink,
-  type CollectedTree,
-  type RecordedLinks,
-} from './layout-links.js';
-import {
-  linkChild,
   lstatChild,
   mkdirChild,
   openChild,
@@ -40,21 +32,6 @@ import {
   snapshot,
   type TreeEntrySnapshot,
 } from './tree-snapshot.js';
-
-export interface MaterialiseOptions {
-  /**
-   * Hard-link each file from `source` instead of copying its bytes.
-   *
-   * The linked entry must be the very inode that was opened and inspected
-   * through the source directory handle; a name that was swapped between the
-   * inspection and the link is refused, never kept. A filesystem that cannot
-   * link (another device, a platform without handle-relative links, a file
-   * system that refuses) falls back to a verified copy for the rest of the
-   * tree, and `copied` says so. Linked files share their inode with the
-   * source, so their mode is the source's and is never changed from here.
-   */
-  link?: boolean;
-}
 
 export interface MaterialiseOptions {
   /**

@@ -724,11 +724,6 @@ export function moduleFileFromStack(stack: string): string | undefined {
   return locateModuleFile(stack, 'handle-path');
 }
 
-/** Where this module was loaded from, in a form `createRequire` accepts. */
-export function moduleFileFromStack(stack: string): string | undefined {
-  return locateModuleFile(stack, 'handle-path');
-}
-
 function loadKoffi(): Koffi {
   const file = moduleFileFromStack(new Error().stack ?? '');
   if (file === undefined) {

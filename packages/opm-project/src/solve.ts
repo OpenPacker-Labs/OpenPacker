@@ -50,6 +50,13 @@ export const CLOSURE_OBJECTIVES = [
  * newest-satisfying walk. An unsatisfiable graph therefore produces an
  * explanation instead of a silently wrong tree.
  */
+/** Message from a solver refusal, including wasm-bindgen string throws. */
+function solverFailureMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return String(error);
+}
+
 export async function solveGraph(input: {
   graph: ResolvedGraph;
   rootRequirements: readonly { purl: string; vers?: string }[];
@@ -161,9 +168,13 @@ export async function solveGraph(input: {
       // `@openpacker/embedded` throws every refusal as an EmbeddedRefusal,
       // whichever binding made it. Its code is read, not its class: with both
       // the ESM and the CommonJS build loaded, `instanceof` could miss it.
-      // SAFETY: only the `refusal` an EmbeddedRefusal carries is read.
+      // A binding that still throws a string is read the same way.
       const refusal = (error as { refusal?: unknown } | null)?.refusal;
-      if (refusal !== 'UNSATISFIABLE') throw error;
+      if (
+        refusal !== 'UNSATISFIABLE' &&
+        !/^UNSATISFIABLE\b/u.test(solverFailureMessage(error))
+      )
+        throw error;
       const causes = explainUnsatisfiable({
         dropped: viable.dropped,
         kept: viable.kept,

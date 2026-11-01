@@ -162,22 +162,6 @@ function npmPackagePurl(name: string): string {
   });
 }
 
-export {
-  classifyDependencySpec,
-  type NpmDependencySpecKind,
-} from './dependency-spec.js';
-import { classifyDependencySpec } from './dependency-spec.js';
-
-function npmPackagePurl(name: string): string {
-  const coordinate = new NpmCodec().parseNativeCoordinate(name);
-  return formatPurl({
-    type: 'npm',
-    namespace: npmNamespace(coordinate.namespace),
-    name: coordinate.name,
-    qualifiers: {},
-  });
-}
-
 function npmRequirement(
   dependerNodeId: string,
   name: string,
@@ -416,7 +400,6 @@ export class NpmCodec
               ? asBundled(requirement, `/${field}/${name}`)
               : requirement,
           );
-          requirements.push(requirement);
         } catch (error) {
           if (enforced) throw error;
           const reason = error instanceof Error ? error.message : String(error);

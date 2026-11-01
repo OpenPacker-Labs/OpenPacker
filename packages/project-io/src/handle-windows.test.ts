@@ -139,40 +139,6 @@ describe.skipIf(process.platform !== 'win32')(
       await removeChild(dir, 'plain', {});
     });
 
-    it('creates a directory and a file under an open directory', async () => {
-      trace('mkdirChild sub');
-      await mkdirChild(dir, 'sub');
-      trace('openChild a.txt (create, exclusive)');
-      const file = await openChild(
-        dir,
-        'a.txt',
-        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
-        0o644,
-      );
-      trace('writeFile');
-      await file.writeFile('hello');
-      trace('close');
-      await file.close();
-    });
-
-    it('lists and stats what it made', async () => {
-      trace('readDirChild');
-      expect((await readDirChild(dir)).sort()).toEqual(['a.txt', 'sub']);
-      trace('lstatChild');
-      expect(Number((await lstatChild(dir, 'a.txt')).size)).toBe(5);
-    });
-
-    it('renames and removes children', async () => {
-      trace('renameChild');
-      await renameChild(dir, 'a.txt', 'b.txt');
-      expect((await readDirChild(dir)).sort()).toEqual(['b.txt', 'sub']);
-      trace('removeChild file');
-      await removeChild(dir, 'b.txt', {});
-      trace('removeChild directory');
-      await removeChild(dir, 'sub', { recursive: true });
-      expect(await readDirChild(dir)).toEqual([]);
-    });
-
     it('refuses a name that would leave the directory', async () => {
       trace('openChild ..');
       await expect(

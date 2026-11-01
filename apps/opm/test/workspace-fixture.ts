@@ -55,13 +55,14 @@ export interface WorkspaceOptions {
 }
 
 /**
- * `node trace.cjs <id> [milliseconds] [exit code] [--wait=ids]`: log the
- * start, mark it with a file (both once SIGTERM is logged as `term`, so a
- * member told to end after its mark says so), wait until each id in the
- * comma-separated list has marked its own start (so a test can prove members
- * ran at the same time without a clock; a run that serialised them would wait
- * out the twenty seconds and fail), hold for the milliseconds, log the end and
- * exit.
+ * `node trace.cjs <id> [milliseconds] [exit code] [--wait=ids]`: take SIGTERM
+ * (log `term`, exit 143), log the start and mark it with a file, hold there
+ * until the file named by `TRACE_RELEASE` exists (when that is set, so a test
+ * can send a signal while the member is still starting), wait until each id
+ * in the comma-separated list has marked its own start (so a test can prove
+ * members ran at the same time without a clock; a run that serialised them
+ * would wait out the twenty seconds and fail), hold for the milliseconds, log
+ * the end and exit.
  */
 const TRACE = `
 const fs = require('node:fs');
@@ -72,6 +73,8 @@ const [id, wait = '0', code = '0'] = argv.filter((a) => !a.startsWith('--wait=')
 const dir = process.env.INIT_CWD;
 const log = path.join(dir, 'log.txt');
 const note = (what) => fs.appendFileSync(log, what + ' ' + id + ' ' + Date.now() + '\\n');
+// Ready for SIGTERM before saying it started: a test that waits for the
+// start may send the signal in the next instant.
 process.on('SIGTERM', () => { note('term'); process.exit(143); });
 note('start');
 fs.writeFileSync(path.join(dir, 'started-' + id), '');

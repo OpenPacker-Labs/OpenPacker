@@ -23,7 +23,6 @@
 
 import type { NativeLockEntry } from '@openpacker/adapter-core';
 import { compareText, compareVersions } from './layout-compare.js';
-import { checkLayoutLinks } from './layout-links.js';
 import {
   chooseRootVersions,
   directName,

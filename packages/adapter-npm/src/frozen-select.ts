@@ -196,7 +196,7 @@ export function planFrozenPackageLock(input: {
       left.delete(entry);
       refused.push({
         path: entry.path,
-        reason: `${label(entry)} is for ${describeDeclared(entry)}, not this machine (${describeTarget(target)}), and is not optional`,
+        reason: `${label(entry)} is for ${describeDeclared(entry)}, not this machine (${describeTargets(targets)}), and is not optional`,
       });
     }
   }

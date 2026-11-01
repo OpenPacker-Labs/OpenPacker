@@ -8,7 +8,6 @@ import {
   type Generation,
   type StepOptions,
 } from '@openpacker/opm-project';
-import { out } from '@openpacker/canonical';
 import type { CommandArgs, CommandIo } from './yank.js';
 
 function option(args: CommandArgs, name: string): string | undefined {

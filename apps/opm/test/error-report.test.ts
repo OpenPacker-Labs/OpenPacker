@@ -158,9 +158,11 @@ describe('formatFailure', () => {
         tool: 'opmx',
         env: {},
       });
-      expect(text.startsWith('opmx: ')).toBe(true);
-      expect(text).toContain('\\u001b]0;PWN\\u0007');
-      expect(text).toContain('\\u202e');
+      expect(text.startsWith('opmx: a')).toBe(true);
+      // Made plain (`report`, `plainText`): the title-setting sequence is
+      // removed whole, with what it would have set, and the rest is kept.
+      expect(text).not.toContain('PWN');
+      expect(text).toContain('2Jb');
       expect(unsafeIn(text)).toEqual([]);
     }
   });

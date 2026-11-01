@@ -40,8 +40,6 @@ export {
 } from './host-target.js';
 export * from './workspace/index.js';
 export { quote, terminalSafe } from './terminal-text.js';
-export { ProviderError } from './provider-error.js';
-import { ProviderError } from './provider-error.js';
 import { createNpmRangeEngine, type RangeEngine } from './workspace/ranges.js';
 import { npmAst } from './npm-semver-range.js';
 export { npmVersion, npmVersionsEqual } from './npm-semver-range.js';

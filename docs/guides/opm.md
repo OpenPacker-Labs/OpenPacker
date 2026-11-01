@@ -760,11 +760,6 @@ workspace's too ([below](#installing-a-workspace-lock)); `opm add`, `opm sync`
 and `opm update` resolve the project's `opm.toml` and do not read a workspace's
 members.
 
-`opm ci` installs both shapes from a lock without resolving anything, a
-workspace's too ([below](#installing-a-workspace-lock)); `opm add`, `opm sync`
-and `opm update` resolve the project's `opm.toml` and do not read a workspace's
-members.
-
 **Limits.** A package a required peer dependency points at must be one version:
 a closure that needs it at two fails and names who requires what, as npm's
 `ERESOLVE` does. A dist-tag the package does not have fails the resolve and

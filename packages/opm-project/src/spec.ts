@@ -40,11 +40,6 @@ export function parsePackageSpec(
   const aliasAt = trimmed.indexOf('@npm:', 1);
   if (aliasAt > 0) return parseAliasSpec(trimmed, aliasAt, options);
 
-  // `string-width-cjs@npm:string-width@^4.2.0`: npm's alias, installed under
-  // the first name. Only npm spells it, so the ecosystem is npm.
-  const aliasAt = trimmed.indexOf('@npm:', 1);
-  if (aliasAt > 0) return parseAliasSpec(trimmed, aliasAt, options);
-
   const ecosystem = options.ecosystem;
   if (!ecosystem) {
     throw new OpmError(

@@ -25,6 +25,7 @@ import {
   importNativeProject,
   initProject,
   installProject,
+  listGenerations,
   listInstalled,
   buildPackageManifest,
   hostSandboxFromPolicy,
@@ -62,12 +63,8 @@ import { routeRun, unknownCommandHint } from './commands/run-route.js';
 import { RunError } from './commands/run-error.js';
 import { helpText } from './commands/help-text.js';
 import { formatFailure, parseFailure, report } from './error-report.js';
-import {
-  runGcCommand,
-  runRollbackCommand,
-  runSharedGcCommand,
-} from './commands/generations.js';
-import { cliStep, runRecoverCommand } from './commands/recover.js';
+import { isBooleanFlag, shortToLong } from './cli-flags.js';
+import { runRollbackCommand } from './commands/generations.js';
 import { importHeading, importLine, listLine } from './stdout-lines.js';
 
 export const EXIT_CODES = {
@@ -107,18 +104,6 @@ export interface RunOpmOptions {
   fetch?: typeof fetch;
   /** Adapters registered beside the bundled ones, as a bound plugin is. */
   adapters?: readonly AdapterModule[];
-}
-
-/** Seams a caller of {@link runOpm} may replace; the process entry passes none. */
-export interface RunOpmOptions {
-  /** Network used by `plugin add`; production resolves and pins real addresses. */
-  fetch?: typeof fetch;
-}
-
-/** Seams a caller of {@link runOpm} may replace; the process entry passes none. */
-export interface RunOpmOptions {
-  /** Network used by `plugin add`; production resolves and pins real addresses. */
-  fetch?: typeof fetch;
 }
 
 export async function runOpm(
@@ -498,8 +483,7 @@ export async function runOpm(
           }),
         });
         if (graph.truncated.length > 0)
-          say(
-            io.stderr,
+          io.stderr.write(
             `opm: candidate sets were bounded for ${graph.truncated.length} package(s); ` +
               `a solve over a truncated universe can report unsatisfiable for a solvable problem\n`,
           );
@@ -704,8 +688,6 @@ export async function runOpm(
         }
         return EXIT_CODES.success;
       }
-      case 'recover':
-        return await runRecoverCommand(args, io, cwd, step);
       case 'rollback': {
         return await runRollbackCommand(
           args,
@@ -746,7 +728,6 @@ export async function runOpm(
 
 /** Report a failure and choose the exit code that tells a script what kind it was. */
 export function handleError(error: unknown, io: CliIo): number {
-  const report = (text: string) => say(io.stderr, text);
   if (error instanceof UsageError) {
     io.stderr.write(report('', error.message));
     io.stderr.write(`\n${helpText()}\n`);
@@ -868,7 +849,7 @@ export function handleError(error: unknown, io: CliIo): number {
       }
     }
   }
-  report(
+  io.stderr.write(
     formatFailure(parseFailure(error), { tool: 'opm', internalError: true }),
   );
   return EXIT_CODES.internal;
@@ -1147,7 +1128,7 @@ function writeHostInstallResult(
   if (outcome.stdout) outRaw(io, outcome.stdout);
   if (outcome.stderr) io.stderr.write(outcome.stderr);
   if (outcome.exitCode !== 0) {
-    say(io.stderr, `opm: host install exited ${outcome.exitCode}\n`);
+    io.stderr.write(`opm: host install exited ${outcome.exitCode}\n`);
     return EXIT_CODES.internal;
   }
   out(

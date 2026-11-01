@@ -244,8 +244,7 @@ function proxyHint(env: Environment): string | undefined {
  * A coded failure is one opm expected and named; it is reported as before, one
  * line. Any other is unexpected: its message is scrubbed, its cause chain
  * follows, and a connection fault that coincides with an unused proxy setting
- * ends with the one hint that explains it. Either way the text is made safe
- * for a terminal (`terminalSafe`), as `opmx` prints it unchanged.
+ * ends with the one hint that explains it.
  */
 export function formatFailure(
   failure: Failure,
@@ -260,18 +259,5 @@ export function formatFailure(
     const hint = proxyHint(env);
     if (hint !== undefined) lines.push(`${tool}: ${hint}`);
   }
-  return terminalSafe(`${lines.join('\n')}\n`);
-}
-
-/**
- * Write one of opm's or opmx's own lines, made safe for a terminal first
- * (`terminalSafe`): a line may carry text a repository, an archive, a plugin
- * store, a package argument or the user's own path wrote. What a child process
- * prints is the child's own and does not pass through here.
- */
-export function say(
-  stream: Pick<NodeJS.WriteStream, 'write'>,
-  text: string,
-): void {
-  stream.write(terminalSafe(text));
+  return `${lines.join('\n')}\n`;
 }

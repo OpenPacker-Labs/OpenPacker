@@ -56,7 +56,8 @@ Accepted decisions:
 52. [A pnpm lockfile is a model before it is an install](0052-pnpm-lockfile-model.md)
 53. [`opm run` and `opm exec` across the members of a workspace](0053-opm-run-across-workspace-members.md)
 54. [Aliases and several versions of one package in the closure](0054-aliases-and-several-versions-in-the-closure.md)
-55. [A step finishes or leaves the project as it was](0056-a-step-finishes-or-leaves-the-project-as-it-was.md)
+55. [`opm ci` installs a pnpm lock](0055-opm-ci-installs-a-pnpm-lock.md)
+56. [A step finishes or leaves the project as it was](0056-a-step-finishes-or-leaves-the-project-as-it-was.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

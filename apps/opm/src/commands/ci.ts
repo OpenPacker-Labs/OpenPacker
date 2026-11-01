@@ -8,9 +8,14 @@ import {
   type FrozenWorkspaceRequest,
   type StepOptions,
 } from '@openpacker/opm-project';
-import type { FrozenOmit } from '@openpacker/adapter-core';
+import {
+  detectNativeTarget,
+  type FrozenOmit,
+  type NativeTarget,
+} from '@openpacker/adapter-core';
 import { out, plainLine } from '@openpacker/canonical';
 import { report } from '../error-report.js';
+import { printPeerNotice } from './ci-peers.js';
 import type { CommandArgs, CommandIo } from './yank.js';
 
 /** What `opm ci` accepts beyond the shared argument shape. */
@@ -210,18 +215,18 @@ function leftOut(result: Pick<FrozenPlan, 'skipped'>): string | undefined {
  * nothing done. The same plan is the same text, so it carries no wall time.
  */
 function printPlan(plan: FrozenPlan, io: CommandIo, root: string): void {
-  say(
-    io.stdout,
+  out(
+    io,
     `Plan for ${resolve(root)} (${plan.lockPath}): nothing was fetched or written\n` +
       `  ${plan.instances} package${plan.instances === 1 ? '' : 's'} in ${plan.places} place${plan.places === 1 ? '' : 's'} under node_modules, from ${plan.archives} archive${plan.archives === 1 ? '' : 's'}\n`,
   );
   const clause = leftOut(plan);
-  if (clause !== undefined) say(io.stdout, `  left out: ${clause}\n`);
+  if (clause !== undefined) out(io, `  left out: ${clause}\n`);
   if (plan.targets !== undefined)
-    say(io.stdout, `  platforms: ${describeTargets(plan.targets)}\n`);
+    out(io, `  platforms: ${describeTargets(plan.targets)}\n`);
   if (plan.workspace !== undefined)
-    say(
-      io.stdout,
+    out(
+      io,
       `  workspace: ${plan.workspace.installed} of ${plan.workspace.members} member${plan.workspace.members === 1 ? '' : 's'} installed, ${plan.workspace.linked} linked at the project\n`,
     );
 }
@@ -258,7 +263,14 @@ export async function runCiCommand(
     ...(args.options.has('online') && { offline: false }),
     ...(options.fetch !== undefined && { fetch: options.fetch }),
     ...(options.step !== undefined && { step: options.step }),
-  });
+  };
+  if (args.options.has('plan')) {
+    const plan = await planFrozen(request);
+    printPlan(plan, io, root);
+    if (plan.peers !== undefined) printPeerNotice(io, plan.peers);
+    return 0;
+  }
+  const result = await installFrozen(request);
 
   const noScripts = result.installScripts.length;
   out(
@@ -270,6 +282,8 @@ export async function runCiCommand(
   );
   const clause = leftOut(result);
   if (clause !== undefined) out(io, `  left out: ${clause}\n`);
+  if (result.targets !== undefined)
+    out(io, `  platforms: ${describeTargets(result.targets)}\n`);
   if (result.workspace !== undefined)
     out(
       io,

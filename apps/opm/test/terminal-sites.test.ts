@@ -1,10 +1,12 @@
 /**
  * Every write to a terminal in `apps/opm/src` carries fixed text, or passes
- * through `say` / `terminalSafe`, or is one of the few raw outputs listed here
- * with the reason it is raw (the review of #179, round 6, N-a). A line that
- * interpolates a value, written straight to a stream, is how a registry, a
- * lock or a repository got ESC, BEL or a right-to-left override onto a
- * terminal; a new one fails here before a review has to find it.
+ * through `say` / `terminalSafe` or `report` (`@openpacker/canonical`, which
+ * makes the text plain), or is one of the few raw outputs listed here with the
+ * reason it is raw (the review of #179, round 6, N-a). `out`, `outJson` and
+ * `outRaw` write standard output for the code that uses them and name no stream
+ * here. A line that interpolates a value, written straight to a stream, is how
+ * a registry, a lock or a repository got ESC, BEL or a right-to-left override
+ * onto a terminal; a new one fails here before a review has to find it.
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -16,27 +18,32 @@ const SOURCE = fileURLToPath(new URL('../src/', import.meta.url));
 
 /** What may be written raw: the argument as the source spells it, and why. */
 const RAW: readonly { file: string; argument: string; why: string }[] = [
-  { file: 'opm.ts', argument: 'help()', why: 'the help text is fixed' },
-  { file: 'opmx.ts', argument: 'help()', why: 'the help text is fixed' },
   {
     file: 'opm.ts',
-    argument: 'await environmentScript({ root })',
-    why: 'the script `eval "$(opm shell)"` runs: escaping it would change the values it sets',
+    argument: '`\\n${helpText()}\\n`',
+    why: "opm's own usage text, after the usage error has been written",
   },
   {
     file: 'opm.ts',
-    argument: 'outcome.stdout',
-    why: "a host installer's own output, passed through as a child's is",
+    argument:
+      '`opm: candidate sets were bounded for ${graph.truncated.length} package(s); ` +\n              `a solve over a truncated universe can report unsatisfiable for a solvable problem\\n`',
+    why: 'a constant sentence around a count',
+  },
+  {
+    file: 'opm.ts',
+    argument: '`opm: host install exited ${outcome.exitCode}\\n`',
+    why: 'a constant sentence around an exit status',
+  },
+  {
+    file: 'opm.ts',
+    argument:
+      "formatFailure(parseFailure(error), { tool: 'opm', internalError: true })",
+    why: '`formatFailure` makes plain what it formats (`report`, `plainText`)',
   },
   {
     file: 'opm.ts',
     argument: 'outcome.stderr',
     why: "a host installer's own output, passed through as a child's is",
-  },
-  {
-    file: 'opmx.ts',
-    argument: 'outcome.stdout',
-    why: "a tool's own output, passed through",
   },
   {
     file: 'opmx.ts',
@@ -46,7 +53,7 @@ const RAW: readonly { file: string; argument: string; why: string }[] = [
   {
     file: 'opmx.ts',
     argument: "formatFailure(parseFailure(error), { tool: 'opmx' })",
-    why: '`formatFailure` escapes what it formats',
+    why: '`formatFailure` makes plain what it formats (`report`, `plainText`)',
   },
   {
     file: 'commands/run-child.ts',
@@ -56,7 +63,7 @@ const RAW: readonly { file: string; argument: string; why: string }[] = [
   {
     file: 'commands/run-output.ts',
     argument: 'text',
-    why: "a member's own line, passed through as a child's is, behind a prefix of the member's name that `oneLine` escapes (run-workspace-labels.test.ts)",
+    why: "a member's own line, passed through as a child's is, behind a prefix of the member's label and step that `plainLine` makes one plain line (run-workspace-labels.test.ts)",
   },
 ];
 
@@ -129,21 +136,23 @@ describe('what apps/opm writes to a terminal', () => {
   it('finds the writes it is meant to hold (it is not vacuous)', () => {
     expect(writes.length).toBeGreaterThan(15);
     expect(
-      writes.filter(({ argument }) => fixed(argument)).length,
+      writes.filter(({ argument }) => argument.startsWith('report(')).length,
     ).toBeGreaterThan(8);
-    // The values go through `say` instead: far more of those than raw writes.
+    // The values go through a writer instead: far more of those than raw writes.
     const says = sources().reduce(
-      (count, { text }) => count + (text.match(/\bsay\(/gu)?.length ?? 0),
+      (count, { text }) =>
+        count + (text.match(/\b(?:say|out|outJson|report)\(/gu)?.length ?? 0),
       0,
     );
     expect(says).toBeGreaterThan(40);
   });
 
-  it('is fixed text, `terminalSafe`, or listed as raw with its reason', () => {
+  it('is fixed text, `terminalSafe`, `report`, or listed as raw with its reason', () => {
     const loose = writes.filter(
       ({ file, argument }) =>
         !fixed(argument) &&
         !argument.startsWith('terminalSafe(') &&
+        !argument.startsWith('report(') &&
         !RAW.some((raw) => raw.file === file && raw.argument === argument),
     );
     expect(loose).toEqual([]);

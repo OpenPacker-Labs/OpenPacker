@@ -15,23 +15,6 @@ import {
   requirementTag,
 } from './requirement-info.js';
 import {
-  assignEdges,
-  describeUnmet,
-  duplicatedNames,
-  explainUnsatisfiable,
-  INSTALLED_KINDS,
-  reachableSelection,
-  unifyDuplicates,
-  viableCandidates,
-  type ClosureEdge,
-} from './closure-edges.js';
-import {
-  isAliasRequirement,
-  isBundledRequirement,
-  nativeRange,
-  requirementTag,
-} from './requirement-info.js';
-import {
   detectNativeTarget,
   evaluateTargetPredicate,
   type NativeTarget,
@@ -912,33 +895,6 @@ export async function resolveGraph(input: {
         });
     }
   }
-
-  // A dist-tag on an alias is the version the registry said it pointed at, for
-  // the solve and for every check after it. A tag the registry did not know
-  // becomes a requirement nothing satisfies, so a dependent that needs it cannot
-  // be selected, and the walk has already said so.
-  for (const edge of tagEdges)
-    pinTag(edge, resolvedTags.get(`${edge.base}|${edge.tag}`));
-
-  // An optional dependency that was admitted is installed, so the edge to it
-  // is a requirement of the solve. One whose every candidate was left out stays
-  // optional and the solve ignores it, as npm does.
-  for (const edge of optionalEdges) {
-    const codec = codecFor(edge.ecosystem);
-    const range = nativeRange(edge.requirement);
-    const admittedCandidate = packages.some((instance) => {
-      if (instance.identity.canonicalPurl !== edge.base) return false;
-      if (range === undefined) return true;
-      try {
-        return codec.satisfies(instance.nativeVersion, range);
-      } catch {
-        return true;
-      }
-    });
-    if (admittedCandidate) edge.requirement.optional = false;
-  }
-  for (const { entry, item } of askedFor)
-    if (item.by.size > 0) entry.requiredBy = [...item.by].sort();
 
   // A dist-tag on an alias is the version the registry said it pointed at, for
   // the solve and for every check after it. A tag the registry did not know
