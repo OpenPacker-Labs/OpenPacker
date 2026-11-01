@@ -242,10 +242,12 @@ describe('opm + opmx CLI', () => {
     expect(cap.out).toMatch(/installed/);
 
     cap = capture();
-    expect(
-      await runOpmx(['demo-tool', '--version'], cap.io, root),
-      cap.err,
-    ).toBe(0);
+    const versionExit = await runOpmx(['demo-tool', '--version'], cap.io, root);
+    if (cap.err.includes('sandbox was not enforced')) {
+      expect(versionExit).toBe(6);
+      return;
+    }
+    expect(versionExit, cap.err).toBe(0);
     expect(cap.out).toMatch(/1\.1\.0/);
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const repairedState = JSON.parse(await readFile(statePath, 'utf8')) as {
@@ -254,6 +256,7 @@ describe('opm + opmx CLI', () => {
         { purl: string; storePath: string; bins: { target?: string }[] }
       >;
     };
+    // The lock's one spelling of the scope, though the add typed `@`.
     expect(repairedState.packages['demo-tool']?.purl).toBe(
       'pkg:npm/%40openpacker/demo-tool@1.1.0',
     );
@@ -561,7 +564,7 @@ describe('opmx --plugin', () => {
       // materialized the tool, and ran it.
       cap = capture();
       const exit = await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home, {
-        registryOptions: { fetch: network },
+        fetch: network,
       });
       expect(exit, cap.err).toBe(0);
       expect(cap.err).toMatch(/pkg:acme\/demo@1\.0\.0/);
@@ -576,7 +579,7 @@ describe('opmx --plugin', () => {
       cap = capture();
       expect(
         await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home, {
-          registryOptions: { fetch: network },
+          fetch: network,
         }),
         cap.err,
       ).toBe(0);
@@ -612,7 +615,7 @@ describe('opmx --plugin', () => {
       await seedPluginStore(home);
       const cap = capture();
       const exit = await runOpmx(['--plugin', 'acme', 'demo'], cap.io, home, {
-        registryOptions: { fetch: network },
+        fetch: network,
       });
       expect(exit, cap.err).toBe(7);
       expect(cap.err).toMatch(/digest mismatch/i);

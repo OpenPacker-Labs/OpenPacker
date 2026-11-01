@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/sdk",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Standard-fetch client for PREX and OpenPacker",
   "license": "MIT",
   "type": "module",
@@ -35,7 +36,12 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/contracts": "0.1.0"
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenPacker-Labs/OpenPacker.git",
+    "directory": "packages/sdk"
   }
 }

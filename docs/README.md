@@ -69,6 +69,7 @@ API detail.
 | [Supply chain](security/supply-chain.md)                           | Capture + mitigate attacks       |
 | [Codex Security](security/codex-security.md)                       | Local AI security scan           |
 | [Contributing and releasing](operations/contributing-releasing.md) | Change control and gates         |
+| [Trunk release pipeline](RELEASING.md)                             | Merge queue and npm promotion    |
 | [Testing strategy](guides/testing.md)                              | Test-type matrix and authorities |
 | [ADRs](adr/README.md)                                              | Stable architecture decisions    |
 

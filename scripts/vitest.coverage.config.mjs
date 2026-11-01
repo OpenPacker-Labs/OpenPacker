@@ -8,6 +8,9 @@ export default mergeConfig(
     root: resolve(import.meta.dirname, '..'),
     test: {
       fileParallelism: false,
+      maxWorkers: 1,
+      minWorkers: 1,
+      teardownTimeout: 120_000,
       // V8 precise coverage makes filesystem/process tests materially slower;
       // keep the coverage gate from turning instrumentation overhead into a
       // false timeout while ordinary test runs retain Vitest's tighter default.

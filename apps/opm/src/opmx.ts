@@ -42,6 +42,11 @@ export interface RunOpmxOptions {
    * resolves and pins real addresses.
    */
   registryOptions?: RegistryOptions;
+  /**
+   * Network for an ephemeral `pkg:` run. When `registryOptions` is also set,
+   * this `fetch` is the one the run dials.
+   */
+  fetch?: typeof fetch;
 }
 
 export async function runOpmx(
@@ -113,6 +118,7 @@ export async function runOpmx(
         ...(!(options.registryOptions === undefined) && {
           registryOptions: options.registryOptions,
         }),
+        ...(!(options.fetch === undefined) && { fetch: options.fetch }),
       });
       const bin = selectToolBin(tool, binName);
       // Say which version actually ran. An unpinned ephemeral run resolves to

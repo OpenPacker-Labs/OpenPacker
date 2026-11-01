@@ -1,0 +1,255 @@
+name: Promote nightly
+
+# Publishes @openpacker/cli from main when main has commits since the last
+# cli-v*-nightly.* tag. Provenance uses id-token: write on this public
+# repository. NPM_TOKEN, when set, is the npm publish fallback. An empty
+# secret leaves registry auth to OIDC trusted publishing. Never print tokens.
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  packages: write
+
+concurrency:
+  group: promote-nightly
+  cancel-in-progress: false
+
+env:
+  OPENPACKER_OFFLINE: '1'
+  SOURCE_DATE_EPOCH: '1785628800'
+  OPENPACKER_MISE: mise
+  TURBO_CONCURRENCY: '1'
+
+jobs:
+  promote:
+    name: Nightly promotion
+    runs-on: ubuntu-latest
+    environment:
+      name: nightly
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: true
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Skip when main has no commits since the last nightly tag
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          last="$(git for-each-ref --sort=-creatordate --count=1 --format='%(refname:short)' 'refs/tags/cli-v*-nightly.*')"
+          skip=false
+          if [ -n "$last" ]; then
+            count="$(git rev-list --count "${last}..${sha}")"
+            if [ "$count" = "0" ]; then
+              skip=true
+              echo "No commits on main since ${last}."
+            else
+              echo "${count} commits on main since ${last}."
+            fi
+          else
+            echo "No cli-v*-nightly.* tag yet."
+          fi
+          short="${sha:0:7}"
+          stamp="$(TZ=UTC date +%Y%m%d)"
+          plan_file="$(mktemp)"
+          # release_title contains spaces and parentheses. A heredoc keeps the
+          # whole value; name=value is easy to split on the first equals.
+          write_output() {
+            local name="$1"
+            local value="$2"
+            local delim="OP${RANDOM}${RANDOM}${RANDOM}"
+            {
+              printf '%s<<%s\n' "$name" "$delim"
+              printf '%s\n' "$value"
+              printf '%s\n' "$delim"
+            } >> "$GITHUB_OUTPUT"
+          }
+          RELEASE_STAMP="$stamp" node scripts/release/plan-cli-release.mjs --mode nightly --sha "$short" | tee "$plan_file"
+          while IFS= read -r line || [ -n "$line" ]; do
+            key="${line%%=*}"
+            value="${line#*=}"
+            case "$key" in
+              version|tag|release_title|short_sha|npm_dist_tag|also_github_packages)
+                write_output "$key" "$value"
+                ;;
+            esac
+          done < "$plan_file"
+          got_short="$(sed -n 's/^short_sha=//p' "$plan_file")"
+          version="$(sed -n 's/^version=//p' "$plan_file")"
+          test "$got_short" = "$short"
+          case "$version" in
+            *-nightly."${stamp}") ;;
+            *)
+              echo "Refusing version that is not a nightly build: ${version}" >&2
+              exit 1
+              ;;
+          esac
+          write_output skip "$skip"
+          write_output sha "$sha"
+          echo "Planned ${version} at ${sha} (skip=${skip})."
+      - uses: dtolnay/rust-toolchain@1.88.0
+        if: steps.plan.outputs.skip != 'true'
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - name: Cache the wasm toolchain output
+        id: cache-wasm
+        if: steps.plan.outputs.skip != 'true'
+        uses: actions/cache@v5.0.5
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen.exe
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm-bindgen-test-runner.exe
+            target/wasm32-unknown-unknown
+          key: wasm-v2-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Install wasm-bindgen (cache miss only)
+        if:
+          steps.plan.outputs.skip != 'true' &&
+          steps.cache-wasm.outputs.cache-hit != 'true'
+        run: cargo install --locked wasm-bindgen-cli --version 0.2.126
+      - name: Install mise for the offline demo
+        if: steps.plan.outputs.skip != 'true'
+        uses: jdx/mise-action@v4.2.4
+        with:
+          version: 2026.7.13
+          cache: false
+      - if: steps.plan.outputs.skip != 'true'
+        run: npm ci --ignore-scripts
+      - name: Install Playwright Chromium
+        if: steps.plan.outputs.skip != 'true'
+        run: npm exec playwright install --with-deps chromium
+      # opm contract tests execute the built CLI bins.
+      - name: Build workspace packages
+        if: steps.plan.outputs.skip != 'true'
+        run: npm run build
+      - name: Full offline verification
+        if: steps.plan.outputs.skip != 'true'
+        run: npm run verify
+      - name: Integration gate
+        if: steps.plan.outputs.skip != 'true'
+        run: npm run test:integration
+      - name: Bundle the nightly version
+        if: steps.plan.outputs.skip != 'true'
+        env:
+          OPENPACKER_RELEASE_VERSION: ${{ steps.plan.outputs.version }}
+        run: npm run bundle --workspace @openpacker/cli
+      - name: Pack the npm tarball
+        if: steps.plan.outputs.skip != 'true'
+        id: pack
+        working-directory: apps/openpacker-cli/release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tarball="$(npm pack --json | node -p "JSON.parse(require('node:fs').readFileSync(0,'utf8'))[0].filename")"
+          test -n "$tarball"
+          test -f "$tarball"
+          case "$tarball" in
+            *.tgz) ;;
+            *)
+              echo "npm pack did not report a tarball: ${tarball}" >&2
+              exit 1
+              ;;
+          esac
+          echo "tarball=${tarball}" >> "$GITHUB_OUTPUT"
+      - name: Publish the nightly dist-tag with provenance
+        if: steps.plan.outputs.skip != 'true'
+        uses: ./.github/actions/publish-openpacker-cli
+        with:
+          npm-dist-tag: nightly
+          publish-github-packages: 'false'
+          npm-token: ${{ secrets.NPM_TOKEN }}
+      # publish: false installs npm 11.21.1 and writes NPM_CONFIG_USERCONFIG.
+      # An empty NPM_TOKEN leaves no _authToken line, so dist-tag can use OIDC.
+      # A non-empty token stores the ${NODE_AUTH_TOKEN} placeholder. That
+      # variable is set only on the dist-tag step, never in GITHUB_ENV.
+      - name: Configure npm for dist-tag
+        if: steps.plan.outputs.skip != 'true'
+        uses: ./.github/actions/publish-openpacker-cli
+        with:
+          publish: 'false'
+          npm-token: ${{ secrets.NPM_TOKEN }}
+      - name: Point the nightly dist-tag at this version
+        if: steps.plan.outputs.skip != 'true'
+        working-directory: apps/openpacker-cli/release
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm dist-tag add "@openpacker/cli@${VERSION}" nightly --registry https://registry.npmjs.org
+      - name: Tag the commit and fast-forward nightly
+        if: steps.plan.outputs.skip != 'true'
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+          SHA: ${{ steps.plan.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SHA"
+          if git rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null; then
+            existing="$(git rev-parse "${TAG}^{commit}")"
+            test "$existing" = "$SHA"
+          else
+            git tag "$TAG" "$SHA"
+          fi
+          git push origin "refs/tags/${TAG}"
+          git push origin "${SHA}:refs/heads/nightly"
+      - name: Publish the GitHub prerelease
+        if: steps.plan.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          TITLE: ${{ steps.plan.outputs.release_title }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          SHORT_SHA: ${{ steps.plan.outputs.short_sha }}
+          SHA: ${{ steps.plan.outputs.sha }}
+          TARBALL: apps/openpacker-cli/release/${{ steps.pack.outputs.tarball }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes="$(mktemp)"
+          printf '%s\n' \
+            "@openpacker/cli ${VERSION}" \
+            "" \
+            "npm version: ${VERSION}" \
+            "Build metadata: +${SHORT_SHA}" \
+            "" \
+            "npm publishes this semver without +build metadata. npm strips build metadata, so the short git SHA is recorded in the release title and in these notes." \
+            "" \
+            "Git commit: ${SHA}" \
+            "Git tag: ${TAG}" \
+            "npm dist-tag: nightly. latest is unchanged." \
+            > "$notes"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$TARBALL" --clobber
+          else
+            gh release create "$TAG" "$TARBALL" \
+              --target "$SHA" \
+              --prerelease \
+              --title "$TITLE" \
+              --notes-file "$notes"
+          fi
+      - name: Mirror the release on GitHub Packages
+        if: steps.plan.outputs.skip != 'true'
+        uses: ./.github/actions/publish-openpacker-cli
+        with:
+          npm-dist-tag: nightly
+          publish-github-packages: 'true'
+          npm-token: ${{ secrets.NPM_TOKEN }}
