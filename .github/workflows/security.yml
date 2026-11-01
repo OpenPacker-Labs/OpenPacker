@@ -41,6 +41,23 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - uses: dtolnay/rust-toolchain@360a4e93673de6630fac2478bc9e35244b01a759 # 1.88.0
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Cache the wasm toolchain output
+        id: cache-wasm
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen.exe
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm-bindgen-test-runner.exe
+            target/wasm32-unknown-unknown
+          key: wasm-v2-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Install wasm-bindgen (cache miss only)
+        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        run: cargo install --locked wasm-bindgen-cli --version 0.2.126
       - run: npm ci --ignore-scripts
       - run: npm run lint:anti-slop
       - run: npm run check:test-inventory
