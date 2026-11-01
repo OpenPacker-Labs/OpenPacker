@@ -1,6 +1,6 @@
 {
   "name": "@openpacker/example-embedded-resolver",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
   "private": true,
   "description": "Compile-checked embedded PREX resolver and proof example",
   "license": "MIT",
@@ -13,6 +13,6 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/embedded": "0.1.0"
+    "@openpacker/embedded": "0.0.1-alpha.1"
   }
 }

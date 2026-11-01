@@ -99,14 +99,17 @@ export async function fetchTool(input: {
    * it unset and dials the pinned, classified address of each registry; a
    * caller that hands one in (a test serving a fixture registry) is
    * responsible for what it reaches, so no address is resolved or pinned.
+   * Merged into `registryOptions` as the host-fetch byte transport.
    */
   fetch?: typeof fetch;
   /** Transport / endpoint overrides for hosts and tests. */
   registryOptions?: RegistryOptions;
 }): Promise<EphemeralTool> {
   const ecosystem = ecosystemFromPurl(input.purl);
-  const options: RegistryOptions = { ...input.registryOptions };
-  if (input.fetch !== undefined) options.fetch = input.fetch;
+  const options: RegistryOptions = {
+    ...input.registryOptions,
+    ...(input.fetch !== undefined && { fetch: input.fetch }),
+  };
   if (!requireAdapterRegistry().has(ecosystem))
     throw new OpmError(
       'UNSUPPORTED_ECOSYSTEM',
