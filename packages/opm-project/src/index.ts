@@ -163,9 +163,11 @@ export { runSandboxedPackageProcess } from './sandbox-run.js';
 export {
   ephemeralNodeRun,
   layOutTool,
+  type NodeRun,
   type ToolLayout,
   type ToolPackage,
 } from './ephemeral-layout.js';
+export { installedClosure, installedNodeRun } from './installed-closure.js';
 
 export {
   addPackage,

@@ -7,6 +7,7 @@ import {
   runSandboxedPackageProcess,
   type BinDeclaration,
   type EphemeralTool,
+  type NodeRun,
 } from '@openpacker/opm-project';
 import { report } from './error-report.js';
 
@@ -52,19 +53,48 @@ export async function runTool(
   cwd: string,
   signal?: AbortSignal,
 ): Promise<number> {
-  const layout = await ephemeralNodeRun(tool, bin);
+  return runLaidOut(
+    await ephemeralNodeRun(tool, bin),
+    { bin, storePath: tool.storePath, runtimePaths: tool.runtimePaths },
+    args,
+    io,
+    cwd,
+    {
+      packageId: tool.exactPurl,
+      ...(!(signal === undefined) && { signal }),
+    },
+  );
+}
+
+/**
+ * Run a bin from `layout`, the node_modules its npm script needs, with that
+ * layout as the one tree bound and its `.bin` first on PATH, and remove the
+ * layout when the run ends; with no layout, run `bin` as it is, from its store
+ * tree with `runtimePaths` bound.
+ */
+export async function runLaidOut(
+  layout: NodeRun | undefined,
+  as: {
+    bin: BinDeclaration;
+    storePath: string;
+    runtimePaths: readonly string[];
+  },
+  args: readonly string[],
+  io: CliIo,
+  cwd: string,
+  context: Omit<SandboxContext, 'storePaths' | 'pathPrefix'> = {},
+): Promise<number> {
   try {
     return await spawnDeclared(
-      layout?.bin ?? bin,
-      layout?.root ?? tool.storePath,
+      layout?.bin ?? as.bin,
+      layout?.root ?? as.storePath,
       args,
       io,
       cwd,
       {
-        runtimePaths: layout === undefined ? tool.runtimePaths : [layout.root],
+        ...context,
+        runtimePaths: layout === undefined ? as.runtimePaths : [layout.root],
         ...(!(layout === undefined) && { pathPrefix: [layout.binDirectory] }),
-        packageId: tool.exactPurl,
-        ...(!(signal === undefined) && { signal }),
       },
     );
   } finally {

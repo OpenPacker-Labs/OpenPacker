@@ -95,20 +95,22 @@ export async function ensurePrivateRoot(
   root: string,
   explicit: boolean,
   create = true,
+  /** What the root is, in what is said of it. */
+  what = 'Shared store root',
 ): Promise<void> {
   if (create) await mkdir(root, { recursive: true, mode: 0o700 });
   const info = await lstat(root);
   if (info.isSymbolicLink() || !info.isDirectory())
     throw new OpmError(
       'UNSAFE_PATH',
-      `Shared store root is linked or not a directory: ${root}`,
+      `${what} is linked or not a directory: ${root}`,
     );
   if (process.platform !== 'win32') {
     const uid = process.geteuid?.();
     if (uid !== undefined && info.uid !== uid)
       throw new OpmError(
         'UNSAFE_PATH',
-        `Shared store root ${root} is not owned by the current user`,
+        `${what} ${root} is not owned by the current user`,
       );
     // The default is ours to create, so it must be exactly private. A root an
     // operator named may be looser, but never writable by anyone else: whoever
@@ -117,7 +119,7 @@ export async function ensurePrivateRoot(
     if ((info.mode & forbidden) !== 0)
       throw new OpmError(
         'UNSAFE_PATH',
-        `Shared store root ${root} is accessible to other users (mode ${(info.mode & 0o777).toString(8)}); it must be private to its owner`,
+        `${what} ${root} is accessible to other users (mode ${(info.mode & 0o777).toString(8)}); it must be private to its owner`,
       );
   }
   await ensureStableDirectory(root);

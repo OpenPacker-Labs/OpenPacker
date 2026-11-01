@@ -35,9 +35,10 @@ const idle = 'setInterval(() => {}, 1000);\n';
 
 /**
  * A project of fifteen installed packages, one more than the handles left for
- * a run beside its project and the jail's home, so the run binds their store
- * through a view. The first has a bin `idler`; `.opm/bin/direct` is a file no
- * package of the project owns.
+ * a run beside its project and the jail's home, so a run that binds their
+ * store binds it through a view. The first has a bin `idler`, which runs from
+ * a layout of the npm packages in `.opm/runs`; `.opm/bin/direct` is a file no
+ * package of the project owns, which runs with the store bound.
  */
 async function installedProject() {
   const root = await mkdtemp(join(tmpdir(), 'opmx-run-signals-'));
@@ -75,36 +76,46 @@ async function installedProject() {
   return { root, store: join(root, '.opm', 'store') };
 }
 
-/** `runOpmx` in a child process, killed by `signal` once the tool is running. */
-async function killedRun(bin: string, signal: NodeJS.Signals) {
+/**
+ * `runOpmx` in a child process, killed by `signal` once the tool is running
+ * and the one thing the run made for it is there: a store view, or a layout.
+ */
+async function killedRun(
+  bin: string,
+  signal: NodeJS.Signals,
+  made: 'view' | 'layout',
+) {
   const { root, store } = await installedProject();
+  const runs = join(root, '.opm', 'runs');
   const views = async () =>
     (await readdir(store)).filter((name) => name.startsWith('.view-'));
+  const layouts = async () => await readdir(runs).catch(() => []);
   const marker = `--opmx-run-signals-${randomUUID()}`;
   const run = await signalledScript({
     work: root,
     marker,
     signal,
-    made: async () => (await views()).length === 1,
+    made: async () =>
+      (await (made === 'view' ? views : layouts)()).length === 1,
     script: `import { runOpmx } from ${source('../src/opmx.ts')};
      ${PLAIN_NODE}
      process.exitCode = await runOpmx(${JSON.stringify([bin, '--', marker])}, process, ${JSON.stringify(root)});
     `,
   });
-  return { ...run, views: await views() };
+  return { ...run, left: [...(await views()), ...(await layouts())] };
 }
 
 describe.runIf(canSandbox)(
   'opmx stopped while it runs an installed tool',
   () => {
-    it('ends a declared bin and removes the store view, by SIGHUP', async () => {
-      const { how, views } = await killedRun('idler', 'SIGHUP');
-      expect([how, views]).toEqual(['SIGHUP', []]);
+    it('ends a declared bin and removes its layout, by SIGHUP', async () => {
+      const { how, left } = await killedRun('idler', 'SIGHUP', 'layout');
+      expect([how, left]).toEqual(['SIGHUP', []]);
     }, 120_000);
 
     it('ends a bin no package owns and removes the store view, by SIGINT', async () => {
-      const { how, views } = await killedRun('direct', 'SIGINT');
-      expect([how, views]).toEqual(['SIGINT', []]);
+      const { how, left } = await killedRun('direct', 'SIGINT', 'view');
+      expect([how, left]).toEqual(['SIGINT', []]);
     }, 120_000);
   },
 );
