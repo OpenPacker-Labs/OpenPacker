@@ -38,7 +38,7 @@
     "@openpacker/project-io": "0.0.1-alpha.1"
   },
   "optionalDependencies": {
-    "@microsoft/mxc-sdk": "0.7.0"
+    "@microsoft/mxc-sdk": "1.0.1"
   },
   "devDependencies": {
     "@types/node": "24.2.1"
