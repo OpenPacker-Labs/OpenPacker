@@ -1,8 +1,9 @@
 name: Promote nightly
 
 # Publishes @openpacker/cli from main when main has commits since the last
-# cli-v*-nightly.* tag. Trusted publishing uses OIDC (id-token: write and
-# setup-node registry-url). Do not set an npm token secret.
+# cli-v*-nightly.* tag. Provenance uses id-token: write on this public
+# repository. NPM_TOKEN, when set, is the npm publish fallback. An empty
+# secret leaves registry auth to OIDC trusted publishing. Never print tokens.
 on:
   schedule:
     - cron: '0 6 * * *'
@@ -12,6 +13,7 @@ permissions:
   contents: write
   id-token: write
   attestations: write
+  packages: write
 
 concurrency:
   group: promote-nightly
@@ -36,6 +38,11 @@ jobs:
           fetch-tags: true
           persist-credentials: true
 
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 22.19.0
+          cache: npm
+
       - name: Skip when main has no commits since the last nightly tag
         id: plan
         shell: bash
@@ -55,40 +62,44 @@ jobs:
           else
             echo "No cli-v*-nightly.* tag yet."
           fi
-          raw=""
-          while IFS= read -r line; do
-            case "$line" in
-              *'"version"'*)
-                raw="${line#*:}"
-                raw="${raw#*\"}"
-                raw="${raw%%\"*}"
-                break
+          short="${sha:0:7}"
+          stamp="$(TZ=UTC date +%Y%m%d)"
+          plan_file="$(mktemp)"
+          # release_title contains spaces and parentheses. A heredoc keeps the
+          # whole value; name=value is easy to split on the first equals.
+          write_output() {
+            local name="$1"
+            local value="$2"
+            local delim="OP${RANDOM}${RANDOM}${RANDOM}"
+            {
+              printf '%s<<%s\n' "$name" "$delim"
+              printf '%s\n' "$value"
+              printf '%s\n' "$delim"
+            } >> "$GITHUB_OUTPUT"
+          }
+          RELEASE_STAMP="$stamp" node scripts/release/plan-cli-release.mjs --mode nightly --sha "$short" | tee "$plan_file"
+          while IFS= read -r line || [ -n "$line" ]; do
+            key="${line%%=*}"
+            value="${line#*=}"
+            case "$key" in
+              version|tag|release_title|short_sha|npm_dist_tag|also_github_packages)
+                write_output "$key" "$value"
                 ;;
             esac
-          done < apps/openpacker-cli/package.json
-          stable="${raw%%+*}"
-          stable="${stable%%-*}"
-          case "$stable" in
-            [0-9]*.[0-9]*.[0-9]*) ;;
+          done < "$plan_file"
+          got_short="$(sed -n 's/^short_sha=//p' "$plan_file")"
+          version="$(sed -n 's/^version=//p' "$plan_file")"
+          test "$got_short" = "$short"
+          case "$version" in
+            *-nightly."${stamp}") ;;
             *)
-              echo "apps/openpacker-cli version ${raw} has no stable triplet." >&2
+              echo "Refusing version that is not a nightly build: ${version}" >&2
               exit 1
               ;;
           esac
-          stamp="$(TZ=UTC date +%Y%m%d)"
-          version="${stable}-nightly.${stamp}"
-          {
-            echo "skip=${skip}"
-            echo "sha=${sha}"
-            echo "version=${version}"
-          } >> "$GITHUB_OUTPUT"
+          write_output skip "$skip"
+          write_output sha "$sha"
           echo "Planned ${version} at ${sha} (skip=${skip})."
-
-      - uses: actions/setup-node@v6.4.0
-        if: steps.plan.outputs.skip != 'true'
-        with:
-          node-version: 22.19.0
-          cache: npm
       - uses: dtolnay/rust-toolchain@1.88.0
         if: steps.plan.outputs.skip != 'true'
         with:
@@ -133,40 +144,107 @@ jobs:
         env:
           OPENPACKER_RELEASE_VERSION: ${{ steps.plan.outputs.version }}
         run: npm run bundle --workspace @openpacker/cli
-      - uses: actions/setup-node@v6.4.0
+      - name: Pack the npm tarball
         if: steps.plan.outputs.skip != 'true'
-        with:
-          node-version: 22.19.0
-          registry-url: https://registry.npmjs.org
+        id: pack
+        working-directory: apps/openpacker-cli/release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tarball="$(npm pack --json | node -p "JSON.parse(require('node:fs').readFileSync(0,'utf8'))[0].filename")"
+          test -n "$tarball"
+          test -f "$tarball"
+          case "$tarball" in
+            *.tgz) ;;
+            *)
+              echo "npm pack did not report a tarball: ${tarball}" >&2
+              exit 1
+              ;;
+          esac
+          echo "tarball=${tarball}" >> "$GITHUB_OUTPUT"
       - name: Publish the nightly dist-tag with provenance
+        if: steps.plan.outputs.skip != 'true'
+        uses: ./.github/actions/publish-openpacker-cli
+        with:
+          npm-dist-tag: nightly
+          publish-github-packages: 'false'
+          npm-token: ${{ secrets.NPM_TOKEN }}
+      # publish: false installs npm 11.21.1 and writes NPM_CONFIG_USERCONFIG.
+      # An empty NPM_TOKEN leaves no _authToken line, so dist-tag can use OIDC.
+      # A non-empty token stores the ${NODE_AUTH_TOKEN} placeholder. That
+      # variable is set only on the dist-tag step, never in GITHUB_ENV.
+      - name: Configure npm for dist-tag
+        if: steps.plan.outputs.skip != 'true'
+        uses: ./.github/actions/publish-openpacker-cli
+        with:
+          publish: 'false'
+          npm-token: ${{ secrets.NPM_TOKEN }}
+      - name: Point the nightly dist-tag at this version
         if: steps.plan.outputs.skip != 'true'
         working-directory: apps/openpacker-cli/release
         env:
           VERSION: ${{ steps.plan.outputs.version }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          if npm view "@openpacker/cli@${VERSION}" version >/dev/null 2>&1; then
-            echo "${VERSION} is already on the registry."
-          else
-            npm publish --provenance --access public --tag nightly
-          fi
-          npm dist-tag add "@openpacker/cli@${VERSION}" nightly
+          npm dist-tag add "@openpacker/cli@${VERSION}" nightly --registry https://registry.npmjs.org
       - name: Tag the commit and fast-forward nightly
         if: steps.plan.outputs.skip != 'true'
         env:
-          VERSION: ${{ steps.plan.outputs.version }}
+          TAG: ${{ steps.plan.outputs.tag }}
           SHA: ${{ steps.plan.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SHA"
-          tag="cli-v${VERSION}"
-          if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
-            existing="$(git rev-parse "${tag}^{commit}")"
+          if git rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null; then
+            existing="$(git rev-parse "${TAG}^{commit}")"
             test "$existing" = "$SHA"
           else
-            git tag "$tag" "$SHA"
+            git tag "$TAG" "$SHA"
           fi
-          git push origin "refs/tags/${tag}"
+          git push origin "refs/tags/${TAG}"
           git push origin "${SHA}:refs/heads/nightly"
+      - name: Publish the GitHub prerelease
+        if: steps.plan.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          TITLE: ${{ steps.plan.outputs.release_title }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          SHORT_SHA: ${{ steps.plan.outputs.short_sha }}
+          SHA: ${{ steps.plan.outputs.sha }}
+          TARBALL: apps/openpacker-cli/release/${{ steps.pack.outputs.tarball }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes="$(mktemp)"
+          printf '%s\n' \
+            "@openpacker/cli ${VERSION}" \
+            "" \
+            "npm version: ${VERSION}" \
+            "Build metadata: +${SHORT_SHA}" \
+            "" \
+            "npm publishes this semver without +build metadata. npm strips build metadata, so the short git SHA is recorded in the release title and in these notes." \
+            "" \
+            "Git commit: ${SHA}" \
+            "Git tag: ${TAG}" \
+            "npm dist-tag: nightly. latest is unchanged." \
+            > "$notes"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$TARBALL" --clobber
+          else
+            gh release create "$TAG" "$TARBALL" \
+              --target "$SHA" \
+              --prerelease \
+              --title "$TITLE" \
+              --notes-file "$notes"
+          fi
+      - name: Mirror the release on GitHub Packages
+        if: steps.plan.outputs.skip != 'true'
+        uses: ./.github/actions/publish-openpacker-cli
+        with:
+          npm-dist-tag: nightly
+          publish-github-packages: 'true'
+          npm-token: ${{ secrets.NPM_TOKEN }}

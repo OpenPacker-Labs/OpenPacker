@@ -4,7 +4,7 @@
 #   .github/workflows/promote-integration.yml  (dist-tags next and alpha)
 #   .github/workflows/promote-prod.yml         (workflow_dispatch, dist-tag latest)
 # This file remains only for the legacy tag and dispatch path. New releases
-# go through the promote-*.yml workflows and docs/RELEASING.md.
+# go through the promote-*.yml workflows, release-cli.yml, and docs/RELEASING.md.
 name: CD promotion
 
 # Sparse by design: release tags or explicit dispatch only. The GitHub plan

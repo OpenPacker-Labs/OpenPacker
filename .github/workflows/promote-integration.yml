@@ -1,9 +1,11 @@
 name: Promote integration
 
 # Fast-forwards integration to a nightly commit and points the next and alpha
-# dist-tags at that same nightly version. Trusted publishing uses OIDC. Do not
-# set an npm token secret. workflow_run is optional and runs only after
-# Promote nightly succeeds.
+# dist-tags at that same nightly version. Does not npm publish. Nightly must
+# already have published the version. NPM_TOKEN, when set, authenticates
+# dist-tag moves. An empty secret leaves registry auth to OIDC trusted
+# publishing (id-token: write). Never print tokens. workflow_run is optional
+# and runs only after Promote nightly succeeds.
 on:
   workflow_dispatch:
     inputs:
@@ -243,7 +245,7 @@ jobs:
           )
 
   publish:
-    name: Publish next and alpha, fast-forward integration
+    name: Point next and alpha, fast-forward integration
     needs: [resolve, test, supply-chain]
     if: needs.resolve.outputs.skip != 'true'
     runs-on: ubuntu-latest
@@ -283,24 +285,30 @@ jobs:
         env:
           OPENPACKER_RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
         run: npm run bundle --workspace @openpacker/cli
-      - uses: actions/setup-node@v6.4.0
+      # Integration does not npm publish. Nightly already published this
+      # version. publish: false only installs npm 11.21.1 and writes
+      # NPM_CONFIG_USERCONFIG. npm-dist-tag stays empty because it is ignored
+      # unless publish is true.
+      - name: Configure npm for dist-tag
+        uses: ./.github/actions/publish-openpacker-cli
         with:
-          node-version: 22.19.0
-          registry-url: https://registry.npmjs.org
-      - name: Publish next and add the alpha dist-tag
+          publish: 'false'
+          npm-dist-tag: ''
+          npm-token: ${{ secrets.NPM_TOKEN }}
+      - name: Point next and alpha at this version
         working-directory: apps/openpacker-cli/release
         env:
           VERSION: ${{ needs.resolve.outputs.version }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          if npm view "@openpacker/cli@${VERSION}" version >/dev/null 2>&1; then
-            echo "${VERSION} is already on the registry; moving dist-tags."
-          else
-            npm publish --provenance --access public --tag next
+          if ! npm view "@openpacker/cli@${VERSION}" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
+            echo "Nightly must publish ${VERSION} before integration can move dist-tags." >&2
+            exit 1
           fi
-          npm dist-tag add "@openpacker/cli@${VERSION}" next
-          npm dist-tag add "@openpacker/cli@${VERSION}" alpha
+          npm dist-tag add "@openpacker/cli@${VERSION}" next --registry https://registry.npmjs.org
+          npm dist-tag add "@openpacker/cli@${VERSION}" alpha --registry https://registry.npmjs.org
       - name: Create release GitHub App token
         id: release-app
         uses: actions/create-github-app-token@v2.2.2
