@@ -696,7 +696,7 @@ export async function runOpm(
             `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'} from ${plainLine(result.root)}; ` +
               `${result.referenced} still used by a project, ${result.held} in use by an install in progress, ${result.tooNew} too new to judge\n`,
           );
-          for (const path of result.removed) out(io, `  ${path}\n`);
+          for (const path of result.removed) out(io, `  ${plainLine(path)}\n`);
           return EXIT_CODES.success;
         }
         const root = await requireOpmRoot(cwd);
