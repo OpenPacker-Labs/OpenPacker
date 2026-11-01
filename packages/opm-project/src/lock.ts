@@ -51,6 +51,30 @@ export function serializeLockfile(lock: OpmLockfile): string {
 }
 
 export function parseLockfile(text: string): OpmLockfile {
+  try {
+    return parseLockfileBody(text);
+  } catch (error) {
+    if (error instanceof OpmError) throw error;
+    throw new OpmError(
+      'INVALID_LOCK',
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+function lockScalar(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean')
+    return String(value);
+  if (value === null) return 'null';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '[unprintable]';
+  }
+}
+
+function parseLockfileBody(text: string): OpmLockfile {
   let value: unknown;
   try {
     value = parseCanonicalJson(text);
@@ -68,13 +92,13 @@ export function parseLockfile(text: string): OpmLockfile {
   if (record.schemaVersion !== 1) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Unsupported lock schemaVersion: ${String(record.schemaVersion)}`,
+      `Unsupported lock schemaVersion: ${lockScalar(record.schemaVersion)}`,
     );
   }
   if (record.generatedBy !== 'opm') {
     throw new OpmError(
       'INVALID_LOCK',
-      `Unexpected generatedBy: ${String(record.generatedBy)}`,
+      `Unexpected generatedBy: ${lockScalar(record.generatedBy)}`,
     );
   }
   if (
