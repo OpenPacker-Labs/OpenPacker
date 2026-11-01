@@ -39,6 +39,7 @@ import {
   stripPurlVersion,
   planSystemInstall,
   projectPaths,
+  projectStep,
   readEnvironmentState,
   removePackage,
   registryEcosystems,
@@ -200,6 +201,17 @@ export async function runOpm(
       );
     }
 
+    const step = cliStep(io, args.options);
+    // A command's work on its project is one step (`project-step.ts`): the
+    // lock is taken, and what a killed step left is put back, before the
+    // manifest is read. Bound plugins are verified inside that step. The
+    // library calls inside it neither lock nor recover again.
+    const inStep = <T>(root: string, work: () => Promise<T>) =>
+      projectStep(root, step, async () => {
+        await registerBoundPlugins(root, adapterRegistry);
+        return work();
+      });
+
     switch (args.command) {
       case 'init': {
         const root = option(args, 'path') ?? cwd;
@@ -208,6 +220,7 @@ export async function runOpm(
           root,
           ...(name !== undefined && { name }),
           force: args.options.has('force'),
+          step,
         });
         out(
           io,
@@ -225,6 +238,7 @@ export async function runOpm(
         const result = await importNativeProject({
           root,
           force: args.options.has('force'),
+          step,
         });
         out(io, importHeading(result.imported.length, result.manifestPath));
         for (const item of result.imported) out(io, importLine(item));
@@ -262,19 +276,20 @@ export async function runOpm(
         }
         const root = (await findOpmRoot(cwd)) ?? (await requireOpmRoot(cwd));
         const offline = offlineOverride(args);
-        // A project that binds plugins resolves through them; verify the
-        // binding before any registry read it could influence.
-        await registerBoundPlugins(root, adapterRegistry);
-        const result = await addPackage({
-          allowElevation: args.options.has('allow-elevation'),
-          dryRun: args.options.has('dry-run'),
-          root,
-          spec,
-          ...(ecosystemOpt !== undefined && { ecosystem: ecosystemOpt }),
-          ...(source !== undefined && { source }),
-          ...(alias !== undefined && { alias }),
-          ...(!(offline === undefined) && { offline }),
-        });
+        // A project that binds plugins resolves through them; the binding is
+        // verified after recovery, before any registry read it could influence.
+        const result = await inStep(root, () =>
+          addPackage({
+            allowElevation: args.options.has('allow-elevation'),
+            dryRun: args.options.has('dry-run'),
+            root,
+            spec,
+            ...(ecosystemOpt !== undefined && { ecosystem: ecosystemOpt }),
+            ...(source !== undefined && { source }),
+            ...(alias !== undefined && { alias }),
+            ...(!(offline === undefined) && { offline }),
+          }),
+        );
         if (result.hostInstall) {
           return writeHostInstallResult(result.hostInstall, args, io);
         }
@@ -296,33 +311,36 @@ export async function runOpm(
         const alias = args.positionals[0];
         if (!alias) throw usage('opm remove requires a package alias');
         const offline = offlineOverride(args);
-        // remove rewrites the manifest and lock; verify bound plugins first.
-        await registerBoundPlugins(root, adapterRegistry);
-        await removePackage({
-          root,
-          alias,
-          ...(!(offline === undefined) && { offline }),
-        });
+        // remove rewrites the manifest and lock; bound plugins are verified
+        // after what a killed step left is put back.
+        await inStep(root, () =>
+          removePackage({
+            root,
+            alias,
+            ...(!(offline === undefined) && { offline }),
+          }),
+        );
         out(io, `Removed ${alias} from manifest, lock, and install\n`);
         return EXIT_CODES.success;
       }
       case 'ci': {
         const { runCiCommand } = await import('./commands/ci.js');
-        return await runCiCommand(args, io, cwd, options);
+        return await runCiCommand(args, io, cwd, { ...options, step });
       }
       case 'install': {
         // `--frozen` is `opm ci`: install exactly what the lock says.
         if (args.options.has('frozen')) {
           const { runCiCommand } = await import('./commands/ci.js');
-          return await runCiCommand(args, io, cwd, options);
+          return await runCiCommand(args, io, cwd, { ...options, step });
         }
         const root = await requireOpmRoot(cwd);
         const offline = offlineOverride(args);
-        await registerBoundPlugins(root, adapterRegistry);
-        const result = await installProject({
-          root,
-          ...(!(offline === undefined) && { offline }),
-        });
+        const result = await inStep(root, () =>
+          installProject({
+            root,
+            ...(!(offline === undefined) && { offline }),
+          }),
+        );
         const count = Object.keys(result.state.packages).length;
         out(
           io,
@@ -338,11 +356,9 @@ export async function runOpm(
       case 'uninstall': {
         const root = await requireOpmRoot(cwd);
         const alias = args.positionals[0];
-        await registerBoundPlugins(root, adapterRegistry);
-        await uninstallProject({
-          root,
-          ...(alias !== undefined && { alias }),
-        });
+        await inStep(root, () =>
+          uninstallProject({ root, ...(alias !== undefined && { alias }) }),
+        );
         out(
           io,
           alias
@@ -354,11 +370,9 @@ export async function runOpm(
       case 'sync': {
         const root = await requireOpmRoot(cwd);
         const offline = offlineOverride(args);
-        await registerBoundPlugins(root, adapterRegistry);
-        const result = await syncProject({
-          root,
-          ...(!(offline === undefined) && { offline }),
-        });
+        const result = await inStep(root, () =>
+          syncProject({ root, ...(!(offline === undefined) && { offline }) }),
+        );
         const count = Object.keys(result.lock.packages).length;
         out(io, `Synced ${count} package(s); lock and .opm/ store updated\n`);
         writeNativeProjection(result.native, io);
@@ -367,13 +381,14 @@ export async function runOpm(
       case 'update': {
         const root = await requireOpmRoot(cwd);
         const offline = offlineOverride(args);
-        await registerBoundPlugins(root, adapterRegistry);
-        const result = await updateProject({
-          root,
-          ...(args.positionals.length > 0 && { aliases: args.positionals }),
-          latest: args.options.has('latest'),
-          ...(!(offline === undefined) && { offline }),
-        });
+        const result = await inStep(root, () =>
+          updateProject({
+            root,
+            ...(args.positionals.length > 0 && { aliases: args.positionals }),
+            latest: args.options.has('latest'),
+            ...(!(offline === undefined) && { offline }),
+          }),
+        );
         out(
           io,
           result.updated.length === 0
@@ -668,17 +683,22 @@ export async function runOpm(
         }
         return EXIT_CODES.success;
       }
+      case 'recover':
+        return await runRecoverCommand(args, io, cwd, step);
       case 'rollback': {
-        const root = await requireOpmRoot(cwd);
-        return runRollbackCommand(args, io, root, cliStep(io, args.options));
-      }
-      case 'recover': {
-        return runRecoverCommand(args, io, cwd, cliStep(io, args.options));
+        return await runRollbackCommand(
+          args,
+          io,
+          await requireOpmRoot(cwd),
+          step,
+        );
       }
       case 'gc': {
-        if (args.options.has('shared')) return runSharedGcCommand(args, io);
-        const root = await requireOpmRoot(cwd);
-        return runGcCommand(args, io, root, cliStep(io, args.options));
+        // The shared store belongs to the user, not to a project, so this
+        // needs no project and never runs as part of a project's own gc.
+        if (args.options.has('shared'))
+          return await runSharedGcCommand(args, io);
+        return await runGcCommand(args, io, await requireOpmRoot(cwd), step);
       }
       case 'shell': {
         const root = await requireOpmRoot(cwd);
@@ -757,6 +777,9 @@ export function handleError(error: unknown, io: CliIo): number {
       // The entry can be fetched again; a digest that does not match stays a
       // verification failure above.
       case 'STORE_ENTRY_VANISHED':
+      // Another step holds the project, or is still running here (ADR 0056).
+      case 'PROJECT_BUSY':
+      case 'STEP_ALIVE':
       case 'PLUGIN_ERROR':
       case 'PLUGIN_FAILED':
       case 'PLUGIN_REGISTRY_UNCONFIGURED':
