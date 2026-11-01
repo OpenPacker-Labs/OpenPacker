@@ -5,7 +5,7 @@ name: CI advisory
 # and in the merge queue.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'cursor/**']
   workflow_dispatch:
 
 concurrency:

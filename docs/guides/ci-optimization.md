@@ -69,3 +69,14 @@ pinned versions in workflow files. Install dependencies with `npm ci`.
 
 `.devcontainer/` provides a pinned Node + Rust environment aligned with CI for
 Codespaces or VS Code Dev Containers. It does not replace the merge queue gate.
+
+## CLI runtime container
+
+The publishable `@openpacker/cli` bundle has a multi-stage runtime image at
+`apps/openpacker-cli/Dockerfile` (digest-pinned Node base, non-root `65532`
+user). Build from the repository root:
+
+```sh
+docker build -f apps/openpacker-cli/Dockerfile -t openpacker-cli:local .
+docker run --rm openpacker-cli:local --help
+```
