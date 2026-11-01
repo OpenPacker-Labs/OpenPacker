@@ -324,15 +324,17 @@ tarball, and publishes on the `alpha` dist-tag. Promotion workflows run
 [trunk-gate.yml](../.github/workflows/trunk-gate.yml)) so long `@openpacker/opm`
 contract tests are not starved while turbo runs the rest of the monorepo.
 `apps/opm/vitest.config.ts` runs opm contract files serially for the same
-reason. A non-empty `NPM_TOKEN` passes `--provenance`. An empty token leaves
-provenance at the default so OIDC can attach it. It then points `alpha` and
-`next` at that version. It does not set `latest`. It creates the git tag from
-the plan (`cli-v${version}`), pushes that tag, and opens a GitHub prerelease
-with `gh release create --target` set to the planned commit. The title comes
-from the plan. The pack tarball is attached. If the release already exists, the
-tarball is uploaded with `--clobber`. It then mirrors the same directory to
-GitHub Packages. If the version is already on a registry, publish is skipped and
-that step still succeeds.
+reason. `npm run coverage` uses a single vitest worker so V8 precise-coverage
+snapshots merge deterministically before the 100% per-workspace file gate. A
+non-empty `NPM_TOKEN` passes `--provenance`. An empty token leaves provenance at
+the default so OIDC can attach it. It then points `alpha` and `next` at that
+version. It does not set `latest`. It creates the git tag from the plan
+(`cli-v${version}`), pushes that tag, and opens a GitHub prerelease with
+`gh release create --target` set to the planned commit. The title comes from the
+plan. The pack tarball is attached. If the release already exists, the tarball
+is uploaded with `--clobber`. It then mirrors the same directory to GitHub
+Packages. If the version is already on a registry, publish is skipped and that
+step still succeeds.
 
 ### NPM_TOKEN (one-time, Tyler)
 
