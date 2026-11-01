@@ -112,10 +112,11 @@ describe.skipIf(!glibcLinux())('a walk meeting a recorded member link', () => {
 
   it('refuses a link swapped for a new one with the same text while the tree is walked', async () => {
     const p = await project();
-    let swapped = false;
+    let pkgReadlinks = 0;
     const { backend } = recording(async (operation, name) => {
-      if (operation !== 'readlink' || name !== 'pkg' || swapped) return;
-      swapped = true;
+      if (operation !== 'readlink' || name !== 'pkg') return;
+      pkgReadlinks += 1;
+      if (pkgReadlinks !== 2) return;
       // A new link with the very same text, put in place atomically: a new inode.
       await symlink('../packages/pkg', join(p.modules, '.swap'));
       await rename(join(p.modules, '.swap'), join(p.modules, 'pkg'));
@@ -130,7 +131,7 @@ describe.skipIf(!glibcLinux())('a walk meeting a recorded member link', () => {
     } finally {
       restore();
     }
-    expect(swapped).toBe(true);
+    expect(pkgReadlinks).toBeGreaterThanOrEqual(2);
   });
 
   it('refuses a link repointed while the tree is walked', async () => {

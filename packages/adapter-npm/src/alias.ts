@@ -9,6 +9,7 @@
  * read once, here, into the target's name and what was asked of it.
  */
 
+import { safeEcho } from '@openpacker/canonical';
 import { classifyDependencySpec, isNpmTagName } from './dependency-spec.js';
 
 /** What an `npm:` specifier asks the registry for. */
@@ -62,12 +63,12 @@ export function parseNpmAlias(value: string): NpmAlias | NpmAliasProblem {
   if (kind === 'tag')
     return isNpmTagName(spec)
       ? { target: name, spec, kind: 'tag' }
-      : { problem: `"${spec}" is not a dist-tag name npm reads` };
+      : { problem: `"${safeEcho(spec)}" is not a dist-tag name npm reads` };
   return {
     problem:
       kind === 'alias'
         ? 'an alias of an alias is not supported'
-        : `aliases only work for registry packages, and "${spec}" is a ${kind} specifier`,
+        : `aliases only work for registry packages, and ${JSON.stringify(safeEcho(spec))} is a ${kind} specifier`,
   };
 }
 

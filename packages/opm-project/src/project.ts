@@ -953,7 +953,7 @@ async function resolveRequirement(input: {
         if (!newest)
           throw new OpmError(
             'UNRESOLVABLE',
-            `The ${ecosystem} registry published no versions of ${echoed(input.req.purl)}.`,
+            `The ${echoed(ecosystem)} registry published no versions of ${echoed(input.req.purl)}.`,
           );
         return newest;
       })());

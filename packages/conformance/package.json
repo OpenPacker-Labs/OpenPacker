@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/conformance",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Executable PREX conformance validators and vectors",
   "license": "MIT",
   "type": "module",
@@ -32,9 +33,14 @@
     "check:generated": "npm run check:generated -w @openpacker/contracts"
   },
   "dependencies": {
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/contracts": "0.1.0",
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
     "ajv": "8.18.0",
     "ajv-formats": "3.0.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenPacker-Labs/OpenPacker.git",
+    "directory": "packages/conformance"
   }
 }

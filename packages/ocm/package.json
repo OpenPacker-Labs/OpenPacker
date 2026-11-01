@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/ocm",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Location-independent Open Component Model mappings for PREX solutions",
   "license": "MIT",
   "type": "module",
@@ -26,7 +27,7 @@
     "test:integration": "vitest run"
   },
   "dependencies": {
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/contracts": "0.1.0"
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1"
   }
 }

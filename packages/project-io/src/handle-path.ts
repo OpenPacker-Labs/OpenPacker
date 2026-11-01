@@ -160,6 +160,11 @@ export function useChildBackendForTesting(backend: ChildBackend): () => void {
   };
 }
 
+/** True while a test file has installed a backend via {@link useChildBackendForTesting}. */
+export function isChildBackendUnderTest(): boolean {
+  return testBackend !== undefined;
+}
+
 /**
  * The libc backend for this call, or undefined to use /proc/self/fd. The
  * platform is read at call time, as the Windows branch always has been.
