@@ -1,3 +1,4 @@
+import { out, outJson, plainLine } from '@openpacker/canonical';
 import {
   OpmError,
   exactPurl,
@@ -17,6 +18,7 @@ import {
   type RegistryOptions,
   type StepOptions,
 } from '@openpacker/opm-project';
+import { report } from '../error-report.js';
 import { cliStep } from './recover.js';
 
 export interface CommandArgs {
@@ -170,28 +172,27 @@ async function verify(
   const signer = signerOf(release);
   const executables = (inspection.executables ?? []).map((bin) => bin.name);
   for (const warning of inspection.warnings)
-    io.stderr.write(`opm: ${warning.code}: ${warning.message}\n`);
+    io.stderr.write(
+      report(
+        'opm: ',
+        `${plainLine(warning.code)}: ${plainLine(warning.message)}`,
+      ),
+    );
 
   if (args.options.has('json')) {
-    io.stdout.write(
-      `${JSON.stringify(
-        {
-          purl: release.purl,
-          signer: attestation.signerIdentity,
-          scheme: text(signer.scheme),
-          issuer: attestation.issuer,
-          fingerprint: text(signer.fingerprint),
-          repositoryId: text(signer.repository_id),
-          logged: attestation.signedAtVerified,
-          signedAt: attestation.signedAt,
-          trustTier: attestation.trustTier,
-          evidence: attestation.evidence,
-          executables,
-        },
-        null,
-        2,
-      )}\n`,
-    );
+    outJson(io, {
+      purl: release.purl,
+      signer: attestation.signerIdentity,
+      scheme: text(signer.scheme),
+      issuer: attestation.issuer,
+      fingerprint: text(signer.fingerprint),
+      repositoryId: text(signer.repository_id),
+      logged: attestation.signedAtVerified,
+      signedAt: attestation.signedAt,
+      trustTier: attestation.trustTier,
+      evidence: attestation.evidence,
+      executables,
+    });
     return 0;
   }
   const lines: [string, string | undefined][] = [
@@ -217,10 +218,10 @@ async function verify(
     ['trust tier', attestation.trustTier],
     ['executables', executables.join(', ') || '(none declared)'],
   ];
-  io.stdout.write(`${release.purl}\n`);
+  out(io, `${plainLine(release.purl)}\n`);
   for (const [label, value] of lines)
     if (value !== undefined && value !== '')
-      io.stdout.write(`  ${label.padEnd(12)}${value}\n`);
+      out(io, `  ${plainLine(label.padEnd(12))}${plainLine(value)}\n`);
   return 0;
 }
 
@@ -247,10 +248,13 @@ async function pin(
     );
   const stanza = `[adapters.packslip.trust."${release.project}"]\npin = ["${fingerprint}"]\n`;
   if (write !== true) {
-    io.stdout.write(stanza);
+    out(io, stanza);
     io.stderr.write(
-      'opm: this fingerprint is what the release showed just now. Confirm it with the vendor ' +
-        'before relying on it; pass --write to record it in opm.toml.\n',
+      report(
+        'opm: ',
+        'this fingerprint is what the release showed just now. Confirm it with the vendor ' +
+          'before relying on it; pass --write to record it in opm.toml.',
+      ),
     );
     return 0;
   }
@@ -308,7 +312,7 @@ async function pinIn(
       packslip: { ...settings, trust },
     },
   });
-  io.stdout.write(`Pinned ${project} to ${fingerprint}\n`);
+  out(io, `Pinned ${plainLine(project)} to ${plainLine(fingerprint)}\n`);
   return 0;
 }
 
@@ -342,7 +346,7 @@ async function approveIn(
       ? [settings.approvals]
       : [];
   if (held.includes(id)) {
-    io.stdout.write(`Proposal ${id} is already approved\n`);
+    out(io, `Proposal ${plainLine(id)} is already approved\n`);
     return 0;
   }
   await writeManifestFile(projectPaths(root).manifest, {
@@ -352,8 +356,9 @@ async function approveIn(
       packslip: { ...settings, approvals: [...held, id].sort() },
     },
   });
-  io.stdout.write(
-    `Approved proposal ${id}. The next opm sync or opm update accepts exactly that change and nothing else.\n`,
+  out(
+    io,
+    `Approved proposal ${plainLine(id)}. The next opm sync or opm update accepts exactly that change and nothing else.\n`,
   );
   return 0;
 }
