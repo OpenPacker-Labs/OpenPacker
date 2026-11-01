@@ -5,7 +5,7 @@
 ## Checklist
 
 - [ ] This change follows
-      [CONTRIBUTING.md](https://github.com/Tyler-R-Kendrick/OpenPacker/blob/main/CONTRIBUTING.md),
+      [CONTRIBUTING.md](https://github.com/OpenPacker-Labs/OpenPacker/blob/main/CONTRIBUTING.md),
       including human review of the diff.
 - [ ] Behavior changes include tests. `npm run verify` is the review gate.
       Documentation changes also pass `npm run test:docs`.

@@ -1,3 +1,4 @@
+import { out, plainLine } from '@openpacker/canonical';
 import {
   OpmError,
   collectGarbage,
@@ -7,7 +8,6 @@ import {
   type Generation,
   type StepOptions,
 } from '@openpacker/opm-project';
-import { out } from '@openpacker/canonical';
 import type { CommandArgs, CommandIo } from './yank.js';
 
 function option(args: CommandArgs, name: string): string | undefined {
@@ -26,7 +26,7 @@ export async function runRollbackCommand(
   const target = to
     ? await switchGeneration({ root, target: Number(to), step })
     : await rollbackToPrevious(root, step);
-  out(io, `Rolled back to generation ${target.sequence}\n`);
+  out(io, `Rolled back to generation ${plainLine(String(target.sequence))}\n`);
   return 0;
 }
 
@@ -66,11 +66,11 @@ export async function runSharedGcCommand(
       (result.records.length === 0
         ? ''
         : ` and ${result.records.length} integrity record${result.records.length === 1 ? '' : 's'} naming an entry that is gone`) +
-      ` from ${result.root}; ` +
+      ` from ${plainLine(result.root)}; ` +
       `${result.referenced} still used by a project, ${result.held} in use by an install in progress, ${result.tooNew} too new to judge\n`,
   );
   for (const path of [...result.removed, ...result.records])
-    out(io, `  ${path}\n`);
+    out(io, `  ${plainLine(path)}\n`);
   return 0;
 }
 
@@ -93,6 +93,6 @@ export async function runGcCommand(
     io,
     `${verb} ${result.removed.length} store path(s); retained ${result.retained.length} generation(s)\n`,
   );
-  for (const path of result.removed) out(io, `  ${path}\n`);
+  for (const path of result.removed) out(io, `  ${plainLine(path)}\n`);
   return 0;
 }

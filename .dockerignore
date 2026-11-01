@@ -1,0 +1,11 @@
+# CLI runtime image build context — monorepo root.
+.git
+**/.git
+**/node_modules
+**/.turbo
+**/dist
+target
+.cursor
+coverage
+*.log
+docs/plans

@@ -1,0 +1,84 @@
+name: Trunk gate
+
+# The only required CI for merging to main through the merge queue.
+# The repository ruleset requires this status check context exactly:
+#   Trunk gate / Required merge queue gate
+# Pull requests targeting main run this job so the required check reports before
+# enqueue. ci-advisory.yml remains optional fast feedback.
+# ci-build.yml builds the artifact matrix. Promotion is promote-*.yml.
+on:
+  merge_group:
+    types: [checks_requested]
+  pull_request:
+    branches: [main, 'cursor/**']
+  workflow_dispatch:
+
+concurrency:
+  group: trunk-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress:
+    ${{ github.event_name != 'merge_group' && github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  OPENPACKER_OFFLINE: '1'
+  SOURCE_DATE_EPOCH: '1785628800'
+  TURBO_CONCURRENCY: '1'
+  FORCE_COLOR: '0'
+  NO_COLOR: '1'
+
+jobs:
+  gate:
+    name: Trunk gate / Required merge queue gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Fetch PR base for affected Turbo scope
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
+      - uses: ./.github/actions/openpacker-turbo-cache
+        with:
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          read-only:
+            ${{ github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.fork && 'true' || 'false' }}
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Cache the wasm toolchain output
+        id: cache-wasm
+        uses: actions/cache@v5.0.5
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen.exe
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm-bindgen-test-runner.exe
+            target/wasm32-unknown-unknown
+          key: wasm-v2-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Install wasm-bindgen (cache miss only)
+        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        run: cargo install --locked wasm-bindgen-cli --version 0.2.126
+      - run: npm ci --ignore-scripts
+      - run: npm run format:check
+      - run: npm run lint:anti-slop
+      - name: Typecheck (scoped on PR, full in merge queue)
+        run: node scripts/ci/run-scoped-turbo.mjs typecheck
+      - name: Build (scoped on PR, full in merge queue)
+        run: node scripts/ci/run-scoped-turbo.mjs build
+      - name: Root unit gate (scoped on PR, full in merge queue)
+        run: |
+          set -euo pipefail
+          node scripts/ci/run-scoped-turbo.mjs test
+          node scripts/run-gate.mjs unit
+      - name: Publishable CLI bundle
+        run: npm test --workspace @openpacker/cli -- test/release-bundle.test.ts

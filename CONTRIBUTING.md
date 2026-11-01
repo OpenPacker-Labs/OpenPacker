@@ -15,6 +15,12 @@ Agent coordination uses the repo-local **sdlc** skill (mirrored in
 [`AGENTS.md`](AGENTS.md). After editing a skill tree, run
 `npm run skills:mirror-check` and keep both mirrors byte-identical.
 
+Pull request CI uses affected-only Turbo scope; the merge queue runs the full
+gate. Optional local review attestation:
+[gh-signoff](https://github.com/basecamp/gh-signoff)
+(`gh extension install basecamp/gh-signoff`). CI remains authoritative — see
+[`docs/guides/ci-optimization.md`](docs/guides/ci-optimization.md).
+
 ## Development
 
 Use Node `^22.19.0 || >=24`, npm workspaces with the committed lockfile, stable
