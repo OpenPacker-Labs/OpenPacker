@@ -24,7 +24,7 @@ const built = spawnSync('npm run build', {
 if (built.status !== 0) process.exit(built.status ?? 1);
 
 const dependencies = {
-  '@microsoft/mxc-sdk': '0.7.0',
+  '@microsoft/mxc-sdk': '1.0.1',
   '@sigstore/bundle': '4.0.0',
   '@sigstore/core': '3.2.1',
   '@sigstore/protobuf-specs': '0.5.2',
@@ -73,7 +73,7 @@ writeFileSync(
       },
       files: ['dist'],
       engines: {
-        node: '^22.19.0 || >=24',
+        node: '^22.22.2 || >=24',
       },
       publishConfig: {
         access: 'public',

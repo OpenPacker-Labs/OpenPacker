@@ -459,11 +459,14 @@ describe('@openpacker/sandbox', () => {
       const child = new EventEmitter() as EventEmitter & {
         stdout: PassThrough;
         stderr: PassThrough;
-        kill: ReturnType<typeof vi.fn>;
+      kill: (signal?: NodeJS.Signals) => boolean;
       };
       child.stdout = new PassThrough();
       child.stderr = new PassThrough();
-      child.kill = vi.fn(() => setImmediate(() => child.emit('close', 1)));
+      child.kill = vi.fn(() => {
+        setImmediate(() => child.emit('close', 1));
+        return true;
+      }) as (signal?: NodeJS.Signals) => boolean;
       const abort = new AbortController();
       const running = collectMxcChild(
         child,
