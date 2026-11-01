@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { out, plainLine, report } from '@openpacker/canonical';
+import { out, plainLine } from '@openpacker/canonical';
 import {
   DEFAULT_STEP_WAIT_MS,
   OpmError,
