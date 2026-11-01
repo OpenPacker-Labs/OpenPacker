@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { platform } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { SandboxBackendError } from './mock.js';
 import type { BackendProbe, SandboxBackend } from '../types.js';
