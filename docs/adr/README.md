@@ -63,6 +63,7 @@ Accepted decisions:
 59. [An optional build's own manifest names its C library](0059-an-optional-builds-own-manifest-names-its-libc.md)
 60. [`opm ci` runs the install scripts a project approved](0060-opm-ci-runs-the-install-scripts-a-project-approved.md)
 61. [Isolated dev shells via `opm shell --isolate`](0061-isolated-dev-shells.md)
+62. [`@openpacker/cli` ships `opm`, `opmx`, and PREX control-plane verbs](0062-opm-cli-unified-package.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

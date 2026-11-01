@@ -1034,7 +1034,7 @@ class InputError extends Error {
 }
 
 function help(): string {
-  return `Usage: openpacker <command> [subcommand] [options]\n\nCommands:\n  normalize identify enumerate inspect solve resolve explain materialize verify pack publish\n  import-lock\n  receipt inspect|verify\n  catalog import|snapshot\n  lifecycle apply\n  export lock|sbom\n  serve demo\n\nCommon options: --input <file|-> --json --offline --base-url <url> --target <os/arch|json> --policy-file <file> --auth-token-file <file>\nimport-lock: --input <lockfile> [--format auto|package-lock|cargo-lock|nuget-assets|...] [--json] [--output <lock.json>]\nServe options: --operations-module <path> --database <path> --host <host> --port <port>\nDemo options: --workflow-module <path> --output <directory> --evaluation-time <timestamp>\n`;
+  return `Usage: opm <command> [subcommand] [options]\n\nPREX control plane:\n  normalize identify enumerate inspect solve resolve explain materialize verify pack publish\n  import-lock\n  receipt inspect|verify\n  catalog import|snapshot\n  lifecycle apply\n  export lock|sbom\n  serve demo\n\nProject manager:\n  init import add remove install ci sync update run exec list …\n\nCommon PREX options: --input <file|-> --json --offline --base-url <url> --target <os/arch|json> --policy-file <file> --auth-token-file <file>\nimport-lock: --input <lockfile> [--format auto|package-lock|cargo-lock|nuget-assets|...] [--json] [--output <lock.json>]\nServe options: --operations-module <path> --database <path> --host <host> --port <port>\nDemo options: --workflow-module <path> --output <directory> --evaluation-time <timestamp>\n`;
 }
 
 if (

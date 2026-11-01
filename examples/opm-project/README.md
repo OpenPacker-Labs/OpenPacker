@@ -8,16 +8,16 @@ From the repo root (after `npm run build`):
 
 ```sh
 cd examples/opm-project
-node ../../apps/opm/dist/opm.js sync --offline
-node ../../apps/opm/dist/opm.js list
-node ../../apps/opm/dist/opmx.js demo-tool --version
-node ../../apps/opm/dist/opmx.js demo-tool hello from opm
+node ../../apps/openpacker-cli/dist/opm.js sync --offline
+node ../../apps/openpacker-cli/dist/opm.js list
+node ../../apps/openpacker-cli/dist/opmx.js demo-tool --version
+node ../../apps/openpacker-cli/dist/opmx.js demo-tool hello from opm
 ```
 
 Or with linked bins:
 
 ```sh
-npm link -w @openpacker/opm
+npm link -w @openpacker/cli
 cd examples/opm-project
 opm sync --offline
 opmx demo-tool --version

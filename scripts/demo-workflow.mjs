@@ -1367,7 +1367,7 @@ export async function runOpenPackerDemo({ output, evaluationTime, offline }) {
     const quoted = (text) => `'${text.replaceAll("'", `'\\''`)}'`;
     await writeFile(
       openpackerBin,
-      `#!/bin/sh\nexec ${quoted(process.execPath)} ${quoted(join(root, 'apps/openpacker-cli/dist/index.js'))} "$@"\n`,
+      `#!/bin/sh\nexec ${quoted(process.execPath)} ${quoted(join(root, 'apps/openpacker-cli/dist/main.js'))} "$@"\n`,
       { mode: 0o755 },
     );
     const miseEnv = {

@@ -1,12 +1,12 @@
 /**
  * A bin shim written by `opm` started from a source build: `node
- * apps/opm/dist/main.js`, as the guide's from-a-checkout instructions run it.
+ * apps/openpacker-cli/dist/main.js`, as the guide's from-a-checkout instructions run it.
  * The shim re-enters through the `opmx` beside the entry it was written by,
  * and found `dist/opmx.js`, which tsc does not make executable; it spawned it
  * as a program, and every `.opm/bin/<tool>` failed with `spawn … EACCES`,
  * exit 78. A shim now starts a JavaScript `opmx` with Node.
  *
- * This runs the build output: `npm run build -w @openpacker/opm` first.
+ * This runs the build output: `npm run build -w @openpacker/cli` first.
  */
 import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
@@ -25,7 +25,7 @@ const main = join(appRoot, 'dist', 'main.js');
 beforeAll(async () => {
   await access(main).catch(() => {
     throw new Error(
-      'dist/main.js is not built; run: npm run build -w @openpacker/opm',
+      'dist/main.js is not built; run: npm run build -w @openpacker/cli',
     );
   });
 });

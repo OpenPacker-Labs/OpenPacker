@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * its own (`opm.test.ts` covers `runOpmx`), so what is checked here is that
  * loading it runs the command line the process was started with and exits with
  * the code the command returned. No test loaded it before, so the coverage gate
- * counted apps/opm one file short.
+ * counted apps/openpacker-cli one file short.
  */
 
 // What opmx-main.ts runs is the whole opmx CLI: seconds to transform and load

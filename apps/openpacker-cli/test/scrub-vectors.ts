@@ -1,5 +1,5 @@
 /**
- * Every text the tests of `apps/opm` sent through `scrub` when the list was
+ * Every text the tests of `apps/openpacker-cli` sent through `scrub` when the list was
  * taken (a run of the whole suite with the input of each call recorded, repeats
  * removed): the cases of `error-report.test.ts`, `error-text.test.ts` and
  * `error-lines.test.ts`, as `scrub` receives them after the writer has made

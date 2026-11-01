@@ -18,7 +18,7 @@ review. See
 | **Project site / releases**      | [OpenPacker Pages](https://openpacker-labs.github.io/OpenPacker/)                                                                                                                                       |
 | **Package manager (start here)** | **[docs/guides/opm.md](docs/guides/opm.md)**                                                                                                                                                            |
 | **Example project**              | [examples/opm-project/](examples/opm-project/)                                                                                                                                                          |
-| **PREX / advanced CLI**          | [docs/guides/cli.md](docs/guides/cli.md)                                                                                                                                                                |
+| **PREX control plane (`opm …`)** | [docs/guides/opm.md#prex-control-plane](docs/guides/opm.md#prex-control-plane)                                                                                                                          |
 | **Protocol**                     | [spec/prex/v1/](spec/prex/v1/)                                                                                                                                                                          |
 | **License**                      | [MIT](LICENSE)                                                                                                                                                                                          |
 | **Community**                    | [Code of Conduct](https://github.com/OpenPacker-Labs/.github/blob/main/CODE_OF_CONDUCT.md) · [Governance](GOVERNANCE.md) · [Security](https://github.com/OpenPacker-Labs/.github/blob/main/SECURITY.md) |
@@ -41,7 +41,7 @@ and **running** installed package binaries.
 ```sh
 npm ci
 npm run build
-npm link -w @openpacker/opm   # puts opm, opmx, opkg, opkgm on PATH
+npm link -w @openpacker/cli   # puts opm, opmx, opkg, opkgm on PATH
 
 mkdir my-app && cd my-app
 opm init
@@ -57,9 +57,9 @@ opmx demo-tool --version
 ```sh
 npm ci && npm run build
 cd examples/opm-project
-node ../../apps/opm/dist/opm.js sync --offline
-node ../../apps/opm/dist/opm.js list
-node ../../apps/opm/dist/opmx.js demo-tool --version
+node ../../apps/openpacker-cli/dist/opm.js sync --offline
+node ../../apps/openpacker-cli/dist/opm.js list
+node ../../apps/openpacker-cli/dist/opmx.js demo-tool --version
 # → 1.1.0
 ```
 
@@ -95,24 +95,25 @@ Aliases: **`opkg`**, **`opkgm`** → `opm`.
 
 ---
 
-## Advanced: PREX control plane (`openpacker`)
+## Advanced: PREX control plane
 
 For protocol operations (normalize, solve, import-lock, prove digests) use the
-**`openpacker`** CLI — not the daily package manager.
+same **`opm`** binary with PREX verbs — not the project-manager commands above.
 
 ```sh
-npx openpacker serve \
+npx opm serve \
   --universe fixtures/epoch/universe.json \
   --host 127.0.0.1 --port 7337
 
 export OPENPACKER_URL=http://127.0.0.1:7337
-npx openpacker normalize 'pkg:NPM/%40OpenPacker/Demo-Tool@v1.0.0' --json
-npx openpacker import-lock --input fixtures/locks/cargo/Cargo.lock \
+npx opm normalize 'pkg:NPM/%40OpenPacker/Demo-Tool@v1.0.0' --json
+npx opm import-lock --input fixtures/locks/cargo/Cargo.lock \
   --format cargo-lock --json --output cargo.openpacker.json
 ```
 
-Recipes: **[docs/guides/cli.md](docs/guides/cli.md)** · samples:
-[examples/cli/](examples/cli/)
+Recipes:
+**[docs/guides/opm.md#prex-control-plane](docs/guides/opm.md#prex-control-plane)**
+· samples: [examples/cli/](examples/cli/)
 
 ```sh
 npm run demo:lock-import   # offline native lock import
@@ -126,9 +127,9 @@ npm run demo               # offline demo of the production path, fixtures only
 | You need                                              | Use                                                    |
 | ----------------------------------------------------- | ------------------------------------------------------ |
 | Manage packages in a project (add/install/run)        | **`opm` / `opmx`**                                     |
-| Capture `package-lock.json` / `Cargo.lock` selections | `openpacker import-lock`                               |
-| Canonical package URLs across ecosystems              | `openpacker normalize`                                 |
-| Deterministic cross-ecosystem solve + proof           | `openpacker solve` / `npm run demo`                    |
+| Capture `package-lock.json` / `Cargo.lock` selections | `opm import-lock`                                      |
+| Canonical package URLs across ecosystems              | `opm normalize`                                        |
+| Deterministic cross-ecosystem solve + proof           | `opm solve` / `npm run demo`                           |
 | Tool binary install via mise                          | [docs/integrations/mise.md](docs/integrations/mise.md) |
 | Install a vendor's tool from its signed release       | [packslip guide](docs/integrations/packslip.md)        |
 
@@ -143,7 +144,7 @@ are in [RELEASING.md](RELEASING.md).
 npm ci
 npm run build
 npm test --workspace @openpacker/opm-project
-npm test --workspace @openpacker/opm
+npm test --workspace @openpacker/cli
 npm run agent:check   # local hooks / gates (see org CONTRIBUTING)
 ```
 

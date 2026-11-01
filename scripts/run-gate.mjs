@@ -113,7 +113,7 @@ const vitestTargets = {
     'packages/sandbox',
     'packages/opm-project',
     'apps/openpackerd',
-    'apps/opm',
+    'apps/openpacker-cli',
   ],
   integration: [
     'packages/adapter-core',
@@ -135,7 +135,6 @@ const vitestTargets = {
     'packages/opm-project',
     'apps/openpackerd',
     'apps/openpacker-cli',
-    'apps/opm',
   ],
   compat: [
     'packages/sdk',

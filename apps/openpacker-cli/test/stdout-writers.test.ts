@@ -24,10 +24,6 @@ import { findStdoutUses, type Use } from './stderr-scan.js';
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOTS = [
   { prefix: '', directory: join(here, '../src') },
-  {
-    prefix: 'openpacker-cli/',
-    directory: join(here, '../../openpacker-cli/src'),
-  },
   { prefix: 'openpackerd/', directory: join(here, '../../openpackerd/src') },
 ] as const;
 

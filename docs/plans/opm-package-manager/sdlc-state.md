@@ -9,7 +9,7 @@
 
 ## Session deliverables (in merge)
 
-- `opm` / `opmx` / `opkg` / `opkgm` package-manager CLI (`apps/opm`)
+- `opm` / `opmx` / `opkg` / `opkgm` package-manager CLI (`apps/openpacker-cli`)
 - `@openpacker/opm-project` — manifest, lock, store, install, path containment
 - Offline fixtures + `examples/opm-project`
 - ADR 0022 dual surface; README/docs front door for `opm`
@@ -40,5 +40,5 @@ squash.
 
 - `npm run agent:check:staged` / pre-commit hooks
 - `npm test --workspace @openpacker/opm-project` (6 tests)
-- `npm test --workspace @openpacker/opm` (1 test)
+- `npm test --workspace @openpacker/cli` (1 test)
 - `npm run test:docs`

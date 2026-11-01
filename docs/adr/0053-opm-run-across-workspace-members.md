@@ -28,7 +28,7 @@ counted, not guessed: every `pnpm`, `npm` and `npx` command line in their
 Dockerfiles, devcontainer and spawn-style calls with a literal argument list
 (HoBo's vendored `external/` excluded; three matches inside printed text
 dropped), at the commits listed in
-`apps/opm/test/fixtures/workspace-run-forms.json`:
+`apps/openpacker-cli/test/fixtures/workspace-run-forms.json`:
 
 | Group                                                                  | Command lines | Share |
 | ---------------------------------------------------------------------- | ------------: | ----: |
@@ -39,9 +39,10 @@ dropped), at the commits listed in
 | Total                                                                  |           482 |       |
 
 (34 distinct forms; the guide prints them all, with how often each occurs in
-which repository and what `opm` does with it. `apps/opm/test/run-forms.test.ts`
-reads every one of them the way the process entry does, so a change that turns
-one into a usage error fails.) Three things in the counts decided the rest:
+which repository and what `opm` does with it.
+`apps/openpacker-cli/test/run-forms.test.ts` reads every one of them the way the
+process entry does, so a change that turns one into a usage error fails.) Three
+things in the counts decided the rest:
 
 - 147 of the 382 are not `run` at all but a **script's name where a command
   goes** (`pnpm typecheck`, `pnpm --filter @opensesame/pages build:profile`,

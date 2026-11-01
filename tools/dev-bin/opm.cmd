@@ -8,7 +8,7 @@ setlocal
 set "OPENPACKER_REPO=%~dp0..\.."
 if not "%OPENPACKER_DEV_NO_BUILD%"=="1" (
   pushd "%OPENPACKER_REPO%"
-  call npx turbo run build --filter=@openpacker/opm... >nul 2>&1
+  call npx turbo run build --filter=@openpacker/cli... >nul 2>&1
   if errorlevel 1 (
     echo opm: build failed, refusing to run a stale binary. 1>&2
     echo opm: run `npm run build` in %OPENPACKER_REPO% to see the error. 1>&2

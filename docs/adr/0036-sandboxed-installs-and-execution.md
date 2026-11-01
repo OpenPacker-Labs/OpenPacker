@@ -315,13 +315,14 @@ Limits:
   `run-scratch-removal.test.ts`, `tool-pinned-version.test.ts`,
   `fetch-tool-closure.test.ts`, `tool-layout-versions.test.ts` and
   `tool-peer.test.ts` (opm-project), `opmx-signals.test.ts`,
-  `opmx-run-signals.test.ts` and `opmx-bin-path.test.ts` (apps/opm), and
-  `root-capabilities.test.ts`, `handles.test.ts` and `handles-oracle.test.ts`
-  (sandbox) cover it. The sandboxed ones are skipped where bwrap is absent. The
-  automatic CI lane does not run these suites; the manual one (`ci.yml`) runs
-  them on GitHub's `ubuntu-latest` with no step that installs bubblewrap, and
-  whether that image has it was not checked. The root-only ones (capabilities, a
-  sweep in another PID namespace) are skipped for any other user.
+  `opmx-run-signals.test.ts` and `opmx-bin-path.test.ts` (apps/openpacker-cli),
+  and `root-capabilities.test.ts`, `handles.test.ts` and
+  `handles-oracle.test.ts` (sandbox) cover it. The sandboxed ones are skipped
+  where bwrap is absent. The automatic CI lane does not run these suites; the
+  manual one (`ci.yml`) runs them on GitHub's `ubuntu-latest` with no step that
+  installs bubblewrap, and whether that image has it was not checked. The
+  root-only ones (capabilities, a sweep in another PID namespace) are skipped
+  for any other user.
 
 ## Amendment (2026-10-24) — an installed npm bin runs from a node_modules too
 
@@ -363,17 +364,17 @@ sandbox binds besides the project, and its `node_modules/.bin` is first on PATH
   out the same way. The layout is then no reason a project must be writable, and
   nor is activation (the amendment of 2026-10-31).
 
-`opmx-installed-deps.test.ts` (apps/opm) runs an installed bin that requires
-`helper@^1` in a project that also holds `helper@2.0.0` and gets version 1;
-`installed-closure.test.ts` (opm-project) pins the closure and the by-name
-cases; `opmx-run-signals.test.ts` stops an installed declared bin by SIGHUP and
-finds its layout removed; `tool-layout-readonly.test.ts` lays a tool out from a
-store bwrap binds read-only, and is refused a temporary directory others may
-write; `temporary-runs.test.ts` names that directory by the uid, makes one of
-this user's at 0755 or 0775 0700, refuses 0777, removes a dead entry from the
-old shared name, is not stopped by another user's there, and has a second user's
-run, as uid 65534 on a shared temporary directory where root's runs made theirs,
-make its own.
+`opmx-installed-deps.test.ts` (apps/openpacker-cli) runs an installed bin that
+requires `helper@^1` in a project that also holds `helper@2.0.0` and gets
+version 1; `installed-closure.test.ts` (opm-project) pins the closure and the
+by-name cases; `opmx-run-signals.test.ts` stops an installed declared bin by
+SIGHUP and finds its layout removed; `tool-layout-readonly.test.ts` lays a tool
+out from a store bwrap binds read-only, and is refused a temporary directory
+others may write; `temporary-runs.test.ts` names that directory by the uid,
+makes one of this user's at 0755 or 0775 0700, refuses 0777, removes a dead
+entry from the old shared name, is not stopped by another user's there, and has
+a second user's run, as uid 65534 on a shared temporary directory where root's
+runs made theirs, make its own.
 
 ## Amendment (2026-10-24) — a tool's output reaches the terminal as it is written
 
@@ -410,8 +411,8 @@ limits above still end a tool that runs or writes past them, a server included.
 
 `output-sink.test.ts` (sandbox) shows a process's first lines handed on while it
 runs, by the mock backend and by bwrap, and the limits ending a tree whose
-output is handed on; `opmx-stream.test.ts` (apps/opm) shows the same through
-`opmx`'s spawn, and a split character written whole.
+output is handed on; `opmx-stream.test.ts` (apps/openpacker-cli) shows the same
+through `opmx`'s spawn, and a split character written whole.
 
 ## Amendment (2026-10-24) — a tool someone runs: how long, how much, which network, what it leaves, and what stopped it
 
@@ -457,15 +458,15 @@ Decision:
 What a run is still bounded by: the person who started it (Ctrl-C, SIGTERM,
 SIGHUP, as the amendment of 2026-10-17 says), and the limit they ask for.
 
-`opmx-long-run.test.ts` (apps/opm) runs, through bwrap, an installed tool that
-writes 3 MiB to stdout and 1.5 MiB to stderr, and finds all of it written and
-exit 0; and a tool that never ends, ended by `opmx_timeout_ms = 500`, by
-`timeout_ms = 400` where the project sets no `opmx_timeout_ms`, and by
-`--timeout 400` over the project's. `opmx-timeout.test.ts` (opm-project) pins
-the order, that the library applies the limit its caller gives and refuses a run
-given none, and the key's round trip and refusals; `output-sink.test.ts`
-(sandbox) hands 4.5 MiB to a sink through the mock backend and bwrap, and still
-cuts kept output at its limit.
+`opmx-long-run.test.ts` (apps/openpacker-cli) runs, through bwrap, an installed
+tool that writes 3 MiB to stdout and 1.5 MiB to stderr, and finds all of it
+written and exit 0; and a tool that never ends, ended by
+`opmx_timeout_ms = 500`, by `timeout_ms = 400` where the project sets no
+`opmx_timeout_ms`, and by `--timeout 400` over the project's.
+`opmx-timeout.test.ts` (opm-project) pins the order, that the library applies
+the limit its caller gives and refuses a run given none, and the key's round
+trip and refusals; `output-sink.test.ts` (sandbox) hands 4.5 MiB to a sink
+through the mock backend and bwrap, and still cuts kept output at its limit.
 
 ### Which network
 
@@ -510,15 +511,16 @@ Decision:
    `/proc/<pid>/task/<pid>/children`, MXC, the mock backend) nothing is said;
    `opmx --help` and the opm guide say the same in words.
 
-`opmx-network.test.ts` (apps/opm) runs an installed server through bwrap: with
-no grant a request to its port is refused and `opmx` says so, once, with the
-port; with `--allow-network`, and with the project's grant to its package, the
-request is answered and nothing is said. `listen-watch.test.ts` (sandbox) has a
-process listen in a run without network and is told its port, does not read a
-server in a namespace of its own listed as the child of a process it is not the
-child of, and finds nothing told of a process listening in the caller's own
-namespace; `listen-watch.user.test.ts` does the first as uid 65534, through
-`runInSandbox` and an unprivileged bwrap, where the test runs as root.
+`opmx-network.test.ts` (apps/openpacker-cli) runs an installed server through
+bwrap: with no grant a request to its port is refused and `opmx` says so, once,
+with the port; with `--allow-network`, and with the project's grant to its
+package, the request is answered and nothing is said. `listen-watch.test.ts`
+(sandbox) has a process listen in a run without network and is told its port,
+does not read a server in a namespace of its own listed as the child of a
+process it is not the child of, and finds nothing told of a process listening in
+the caller's own namespace; `listen-watch.user.test.ts` does the first as uid
+65534, through `runInSandbox` and an unprivileged bwrap, where the test runs as
+root.
 
 ### What a run killed outright leaves
 
@@ -632,14 +634,14 @@ a sink (`letGoOfHeld`): what they hold is dropped and they close, so a reader
 that never drains cannot keep the run from ending until a second signal. A wait
 on a stream that is behind settles on the first of drain, close, error or
 finish, and removes the listeners for the other three. `opmx-pipe.test.ts`
-(apps/opm) runs `opmx yes | head -1` in bash: one line, exit 141, and no process
-of the tool left; `opmx-drain.test.ts` waits fifty times on a stream and finds
-no listener left on it.
+(apps/openpacker-cli) runs `opmx yes | head -1` in bash: one line, exit 141, and
+no process of the tool left; `opmx-drain.test.ts` waits fifty times on a stream
+and finds no listener left on it.
 
 `stop.test.ts` (sandbox) ends a run by each of the three signals, by the
 timeout, and by a bare abort, through the mock backend and bwrap, and an MXC run
-by a signal; `opmx-run-signals.test.ts` (apps/opm) finds the signal named when
-`opmx` is sent SIGHUP, SIGINT and SIGTERM.
+by a signal; `opmx-run-signals.test.ts` (apps/openpacker-cli) finds the signal
+named when `opmx` is sent SIGHUP, SIGINT and SIGTERM.
 
 ## Amendment (2026-10-31) — activation writes nothing when the project is up to date
 
@@ -723,9 +725,10 @@ file this user may not run, or that names `/usr/bin/env`, a program named `foo`,
 or a link named `opmx` to `foo`. `store-view-budget.test.ts` binds one entry
 more than the handles from a store it may not write through a view under the
 temporary directory, and finds nothing left there. `opmx-readonly.test.ts`
-(apps/opm) runs the built opmx where it may write, which activates the project,
-then again with the project read-only: the tool runs and every entry of the
-project is as it was, also when its shim starts another opmx, or a global npm
-link to one, and when a program binds twenty store entries through a view; with
-a shim changed, or the other opmx removed, opmx exits 8 with the one line; where
-it may write, a shim that starts another opmx is rewritten to start this one.
+(apps/openpacker-cli) runs the built opmx where it may write, which activates
+the project, then again with the project read-only: the tool runs and every
+entry of the project is as it was, also when its shim starts another opmx, or a
+global npm link to one, and when a program binds twenty store entries through a
+view; with a shim changed, or the other opmx removed, opmx exits 8 with the one
+line; where it may write, a shim that starts another opmx is rewritten to start
+this one.

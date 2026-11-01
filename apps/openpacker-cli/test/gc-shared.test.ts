@@ -17,7 +17,7 @@ import {
 } from '@openpacker/opm-project';
 import { runOpm } from '../src/opm.js';
 
-/** The materializer's defaults, written out: apps/opm does not depend on it. */
+/** The materializer's defaults, written out: apps/openpacker-cli does not depend on it. */
 const LIMITS = {
   maximumFiles: 10_000,
   maximumExpandedBytes: 64 * 1024 * 1024,

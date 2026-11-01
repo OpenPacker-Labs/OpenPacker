@@ -10,7 +10,7 @@ import { NpmRegistryFixture } from './npm-registry-fixture.js';
  * What `opm add` and `opm install` end with when the closure cannot be locked.
  * It is a list, written with line feeds: the reason, then a line for each
  * candidate the walk set aside. The CLI's writer keeps those line feeds
- * (`apps/opm/test/error-lines.test.ts` pins the writer with this shape).
+ * (`apps/openpacker-cli/test/error-lines.test.ts` pins the writer with this shape).
  */
 describe('a closure that cannot be locked', () => {
   it('is refused with the reason, then one indented line for each candidate set aside', async () => {

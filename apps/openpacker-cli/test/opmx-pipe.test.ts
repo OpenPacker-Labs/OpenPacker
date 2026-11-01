@@ -6,7 +6,7 @@
  * SIGPIPE: opmx now stops forwarding, ends the tool's tree by SIGPIPE and then
  * as it ends any run, and exits 141, as a writer SIGPIPE ended does.
  *
- * This runs the build output: `npm run build -w @openpacker/opm` first.
+ * This runs the build output: `npm run build -w @openpacker/cli` first.
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -71,7 +71,7 @@ describe.runIf(canSandbox)(
   { timeout: INSTALLED_TIMEOUT_MS },
   () => {
     it('ends the tool as a shell pipeline would, and exits 141', async () => {
-      expect(existsSync(opmx), 'run: npm run build -w @openpacker/opm').toBe(
+      expect(existsSync(opmx), 'run: npm run build -w @openpacker/cli').toBe(
         true,
       );
       const root = await installedProject([yes]);

@@ -96,7 +96,7 @@ content-tree hashes, not OpenPacker sha256 of zip bytes.
 
 1. Build: `npm run build`
 2. Serve with a universe module or fixture:
-   `npx openpacker serve --universe fixtures/epoch/universe.json`
+   `npx opm serve --universe fixtures/epoch/universe.json`
 3. Point `@openpacker/sdk` or any PREX client at the base URL
 4. Prefer `--offline` clients against loopback for CI
 
