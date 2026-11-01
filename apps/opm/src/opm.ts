@@ -693,8 +693,8 @@ export async function runOpm(
           const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
           out(
             io,
-            `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'} from ${result.root}; ` +
-              `${result.referenced} still used by a project, ${result.tooNew} too new to judge\n`,
+            `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'} from ${plainLine(result.root)}; ` +
+              `${result.referenced} still used by a project, ${result.held} in use by an install in progress, ${result.tooNew} too new to judge\n`,
           );
           for (const path of result.removed) out(io, `  ${path}\n`);
           return EXIT_CODES.success;

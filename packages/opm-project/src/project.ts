@@ -1,5 +1,6 @@
 import { access, mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { plainLine } from '@openpacker/canonical';
 import type {
   LockPackage,
   OpmLockfile,
@@ -939,7 +940,7 @@ async function resolveRequirement(input: {
         if (!newest)
           throw new OpmError(
             'UNRESOLVABLE',
-            `The ${ecosystem} registry published no versions of ${input.req.purl}.`,
+            `The ${plainLine(ecosystem)} registry published no versions of ${plainLine(input.req.purl)}.`,
           );
         return newest;
       })());
@@ -1061,7 +1062,7 @@ async function resolveRequirement(input: {
 
   throw new OpmError(
     'UNRESOLVABLE',
-    `Cannot resolve "${input.alias}" (${input.req.purl}${versionHint ? `@${versionHint}` : ''}). ` +
+    `Cannot resolve "${plainLine(input.alias)}" (${plainLine(input.req.purl)}${versionHint ? `@${plainLine(versionHint)}` : ''}). ` +
       `Provide source = "file:..." in ${MANIFEST_NAME}, pass --source, or add a catalog entry ` +
       `(${CATALOG_NAME} / OPM_CATALOG). Offline catalogs are required when offline.`,
   );
