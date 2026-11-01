@@ -10,7 +10,7 @@ import { access, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 /** `path`, `path.posix` or `path.win32`: the one place a flavour is chosen. */
-export type PathFlavor = path.PlatformPath;
+export type PathFlavor = typeof path.posix;
 
 /**
  * `node_modules/.bin` of `root` and of each ancestor directory, nearest first.
