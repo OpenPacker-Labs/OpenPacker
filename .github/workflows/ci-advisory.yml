@@ -43,6 +43,27 @@ jobs:
           node-version: 22.19.0
           cache: npm
       - run: npm ci --ignore-scripts
+      - uses: dtolnay/rust-toolchain@1.88.0
+        if: github.event_name == 'pull_request'
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Cache the wasm toolchain output
+        if: github.event_name == 'pull_request'
+        id: cache-wasm
+        uses: actions/cache@v5.0.5
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen.exe
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm-bindgen-test-runner.exe
+            target/wasm32-unknown-unknown
+          key: wasm-v2-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Install wasm-bindgen (cache miss only)
+        if:
+          github.event_name == 'pull_request' &&
+          steps.cache-wasm.outputs.cache-hit != 'true'
+        run: cargo install --locked wasm-bindgen-cli --version 0.2.126
       - run: npm run format:check
       - run: npm run lint:anti-slop
       - name: Affected typecheck (PR only)
