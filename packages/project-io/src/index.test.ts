@@ -572,8 +572,13 @@ describe('materialiseTree', () => {
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
           const remaining = await readdir(old).catch(() => [] as string[]);
           if (remaining.length < oldCount) {
-            await writeFile(join(root, staging, 'attacker'), 'late mutation');
-            mutated = true;
+            try {
+              await writeFile(join(root, staging, 'attacker'), 'late mutation');
+              mutated = true;
+            } catch (error) {
+              const code = (error as NodeJS.ErrnoException).code;
+              if (code !== 'ENOENT') throw error;
+            }
           }
         }
         if (!mutated)
