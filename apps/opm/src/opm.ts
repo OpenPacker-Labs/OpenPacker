@@ -2,6 +2,7 @@
 import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
+import type { AdapterModule } from '@openpacker/adapter-host';
 import {
   registerInstalledPlugins,
   verifyPluginBindings,
@@ -100,6 +101,8 @@ const OPM_VERSION = '0.1.0';
 export interface RunOpmOptions {
   /** Network used by `plugin add`; production resolves and pins real addresses. */
   fetch?: typeof fetch;
+  /** Test and harness adapters registered after the bundled set. */
+  adapters?: readonly AdapterModule[];
 }
 
 export async function runOpm(
@@ -150,7 +153,7 @@ export async function runOpm(
   }
   try {
     // Process entry registers adapters; core never imports ecosystems by name.
-    const adapterRegistry = configureDefaultAdapters();
+    const adapterRegistry = configureDefaultAdapters(options.adapters ?? []);
     // Delegated adapter plugins (ADR 0039) register after the first-party
     // set: a plugin never displaces a bundled adapter (conflicts are
     // refused), and a tampered or broken plugin is reported and skipped —
