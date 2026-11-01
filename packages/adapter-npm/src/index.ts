@@ -38,8 +38,6 @@ import {
   packageNodeId,
   parsePurl,
   ProviderError,
-  MetadataLimitError,
-  ResponseTooLargeError,
   providerErrorForStatus,
   rangeToConstraint,
   semanticLoss,
@@ -852,24 +850,6 @@ export class NpmRegistryProvider implements CatalogProvider {
       return json<{ time?: Record<string, string> }>(response).time;
     } catch (error) {
       if (signal?.aborted) throw error;
-      const code =
-        typeof error === 'object' && error !== null && 'code' in error
-          ? (error as { code: unknown }).code
-          : undefined;
-      if (
-        code === 'UPSTREAM_RESPONSE_TOO_LARGE' ||
-        code === 'INVALID_PROVIDER_METADATA'
-      ) {
-        const subject = `The full packument of ${npmName(parsed.namespace, parsed.name)}`;
-        if (error instanceof ResponseTooLargeError) throw error.about(subject);
-        if (error instanceof MetadataLimitError) throw error.about(subject);
-        if (code === 'INVALID_PROVIDER_METADATA' && error instanceof Error)
-          throw new ProviderError(
-            'INVALID_PROVIDER_METADATA',
-            `${subject} is not usable: ${error.message}`,
-          );
-        throw error;
-      }
       return undefined;
     }
   }
