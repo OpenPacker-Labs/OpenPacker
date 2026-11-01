@@ -699,17 +699,6 @@ export async function runOpm(
   }
 }
 
-/** Roll back one step, which is the common case. */
-async function rollbackToPrevious(root: string): Promise<Generation> {
-  const target = await rollbackTarget(root);
-  if (!target)
-    throw new OpmError(
-      'NOT_FOUND',
-      'There is no earlier generation to roll back to',
-    );
-  return switchGeneration({ root, target: target.generationDigest });
-}
-
 /** Report a failure and choose the exit code that tells a script what kind it was. */
 export function handleError(error: unknown, io: CliIo): number {
   if (error instanceof UsageError) {
