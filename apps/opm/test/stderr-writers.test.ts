@@ -224,6 +224,7 @@ describe('what opm writes to stderr', () => {
         'commands/auth.ts',
         'commands/ci.ts',
         'commands/packslip.ts',
+        'commands/recover.ts',
         'commands/run-child.ts',
         'commands/run-members.ts',
         'commands/run-output.ts',
