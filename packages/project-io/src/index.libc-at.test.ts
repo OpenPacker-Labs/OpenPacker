@@ -4,18 +4,15 @@
  * implementation has to pass the tests the /proc/self/fd one passes.
  */
 
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, expect, it } from 'vitest';
 import { useChildBackendForTesting } from './handle-path.js';
 import { counting, glibcBackend, glibcLinux } from './handle-test-support.js';
 
 if (glibcLinux()) {
   const { backend, calls } = counting(glibcBackend());
-  let restore: (() => void) | undefined;
-  beforeAll(() => {
-    restore = useChildBackendForTesting(backend);
-  });
+  const restore = useChildBackendForTesting(backend);
   afterAll(() => {
-    restore?.();
+    restore();
     // The suite did its I/O through the backend under test, not around it.
     expect(calls()).toBeGreaterThan(100);
   });

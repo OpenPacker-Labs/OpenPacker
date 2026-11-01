@@ -1,0 +1,46 @@
+name: OpenPacker Turbo cache
+description: >-
+  Vercel remote cache when TURBO_TOKEN and TURBO_TEAM are configured; otherwise
+  actions/cache on .turbo/cache. Fork pull requests use read-only remote cache.
+
+inputs:
+  turbo-token:
+    description: TURBO_TOKEN secret (empty skips remote cache)
+    required: false
+    default: ''
+  turbo-team:
+    description: TURBO_TEAM variable (Vercel team slug)
+    required: false
+    default: ''
+  read-only:
+    description: Set TURBO_REMOTE_CACHE_READ_ONLY (fork PRs)
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Configure Turbo remote cache
+      shell: bash
+      env:
+        TURBO_TOKEN: ${{ inputs.turbo-token }}
+        TURBO_TEAM: ${{ inputs.turbo-team }}
+        READ_ONLY: ${{ inputs.read-only }}
+      run: |
+        set -euo pipefail
+        if [ -n "${TURBO_TOKEN:-}" ] && [ -n "${TURBO_TEAM:-}" ]; then
+          echo "TURBO_TEAM=${TURBO_TEAM}" >> "$GITHUB_ENV"
+          echo "TURBO_TOKEN=${TURBO_TOKEN}" >> "$GITHUB_ENV"
+          if [ "$READ_ONLY" = 'true' ]; then
+            echo "TURBO_REMOTE_CACHE_READ_ONLY=true" >> "$GITHUB_ENV"
+          fi
+        fi
+    - name: Cache local Turbo output
+      uses: actions/cache@v5.0.5
+      with:
+        path: .turbo/cache
+        key:
+          turbo-${{ runner.os }}-${{ hashFiles('package-lock.json',
+          'turbo.json') }}-${{ github.sha }}
+        restore-keys: |
+          turbo-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-

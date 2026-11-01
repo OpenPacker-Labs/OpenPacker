@@ -1,6 +1,6 @@
 {
   "name": "@openpacker/openpacker-registry",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
   "description": "A PREX registry: serves package manifests over the registry HTTP binding",
   "license": "MIT",
   "type": "module",
@@ -17,16 +17,16 @@
     "check:contracts": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-host": "0.1.0",
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/conformance": "0.1.0",
-    "@openpacker/contracts": "0.1.0",
-    "@openpacker/registry-client": "0.1.0",
-    "@openpacker/trust": "0.1.0",
+    "@openpacker/adapter-host": "0.0.1-alpha.1",
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/conformance": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
+    "@openpacker/registry-client": "0.0.1-alpha.1",
+    "@openpacker/trust": "0.0.1-alpha.1",
     "fastify": "5.11.2"
   },
   "devDependencies": {
-    "@openpacker/adapter-core": "0.1.0",
+    "@openpacker/adapter-core": "0.0.1-alpha.1",
     "@types/node": "24.2.1"
   }
 }

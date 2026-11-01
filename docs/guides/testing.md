@@ -82,12 +82,12 @@ with `OPM_STORE_HOME` set and requires that store to stay empty.
 
 The shared config sets no time bound. A package keeps vitest's 5 s default
 unless its config states one, as before (opm-project 15 s, the gate config 15 s,
-the coverage config 30 s), and `tests/unit/repository.test.mjs` fails a config
-that states another. A vitest started from the repository root finds no config
-there, so it names one: `--config scripts/vitest.gate.config.mjs`
-(`test:pack-parity`, its native lane, the CI step) or the coverage config; the
-same file refuses a root run in a script, a spawned command or a workflow that
-names neither.
+the coverage config 30 s) or opm's 120 s hook bound, the vitest-worker RPC
+window under turbo (#231). `tests/unit/repository.test.mjs` fails a config that
+states another. A vitest started from the repository root finds no config there,
+so it names one: `--config scripts/vitest.gate.config.mjs` (`test:pack-parity`,
+its native lane, the CI step) or the coverage config; the same file refuses a
+root run in a script, a spawned command or a workflow that names neither.
 
 `HOME` and `XDG_CONFIG_HOME` are left as the caller has them, and a few reads
 through them are not isolated, only read: opm-project looks for an installed
