@@ -19,6 +19,7 @@ import {
   type RegistryArtifact,
   type RegistryOptions,
 } from './registry.js';
+import { isChangedUnderTheResolve } from './registry-changed.js';
 import { resolveGraph, type ResolvedGraph } from './resolve.js';
 import { solveGraph } from './solve.js';
 import { purlPackageName, stripPurlVersion } from './spec.js';
@@ -328,6 +329,7 @@ export async function resolveTransitive(input: {
     // missing. The policy, digest and size refusals already propagated as they
     // were; the rest now say what stopped the closure.
     if (error instanceof OpmError && isClosureRefusal(error)) throw error;
+    if (isChangedUnderTheResolve(error)) throw error;
     const reason = error instanceof Error ? error.message : String(error);
     throw new OpmError(
       error instanceof OpmError ? error.code : 'UNRESOLVABLE',

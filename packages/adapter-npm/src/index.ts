@@ -5,12 +5,13 @@ import {
   sha256,
 } from '@openpacker/canonical';
 import * as dependencyText from './dependency-spec.js';
+import { HeldPackuments, type PackumentRecord } from './held-packuments.js';
+import { PublishTimes } from './publish-time.js';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
 import { isNpmAlias, parseNpmAlias } from './alias.js';
 import { aliasRequirement } from './alias-requirement.js';
 import {
   identityFromPurl,
-  isTimestamp,
   npmName,
   npmNamespace,
   sriSha256,
@@ -20,8 +21,6 @@ import { unsafeNameProblem } from './layout-plan.js';
 import { asBundled, bundledDependencyNames } from './bundled.js';
 import { npmTargetPredicate } from './platform.js';
 import {
-  FULL_PACKUMENT_LIMITS,
-  MAXIMUM_FULL_PACKUMENT_BYTES,
   MAXIMUM_PACKUMENT_BYTES,
   PACKUMENT_LIMITS,
   aboutPackument,
@@ -47,8 +46,8 @@ import {
   compareCodePoints,
   formatPurl,
   header,
-  isDocumentRefusal,
   json,
+  jsonWithCost,
   packageNodeId,
   parsePurl,
   ProviderError,
@@ -685,11 +684,8 @@ export class NpmRegistryProvider implements CatalogProvider {
     offlineReplay: true,
     extensions: { 'openpacker.dev/packument': 'abbreviated-install-v1' },
   };
-  readonly #records = new Map<string, ProviderRecord<NpmPackument>>();
-  readonly #times = new Map<
-    string,
-    Promise<Record<string, string> | undefined>
-  >();
+  readonly #records: HeldPackuments;
+  readonly #times: PublishTimes;
   readonly #libc = new Map<
     string,
     Promise<{ libc?: string[]; reason: string }>
@@ -700,7 +696,12 @@ export class NpmRegistryProvider implements CatalogProvider {
     private readonly clock: Clock,
     private readonly endpoint = 'https://registry.npmjs.org',
     private readonly codec = new NpmCodec(),
-  ) {}
+  ) {
+    this.#records = new HeldPackuments(transport, endpoint);
+    this.#times = new PublishTimes(transport, endpoint, (base, signal) =>
+      this.packument(base, signal),
+    );
+  }
 
   async identify(query: string): Promise<readonly PackageIdentity[]> {
     const coordinate = query.startsWith('pkg:')
@@ -711,10 +712,10 @@ export class NpmRegistryProvider implements CatalogProvider {
   }
 
   invalidate(purl?: string): void {
-    if (purl === undefined) this.#records.clear();
+    if (purl === undefined) this.#records.invalidate();
     else {
       const parsed = parsePurl(this.codec.canonicalizePurl(purl));
-      this.#records.delete(formatPurl({ ...parsed, version: undefined }));
+      this.#records.invalidate(formatPurl({ ...parsed, version: undefined }));
     }
   }
 
@@ -827,55 +828,13 @@ export class NpmRegistryProvider implements CatalogProvider {
   ): Promise<PublishTimeEvidence | undefined> {
     const parsed = parsePurl(this.codec.canonicalizePurl(exactPurl));
     if (!parsed.version) return undefined;
-    const base = formatPurl({ ...parsed, version: undefined });
-    const record = await this.packument(base, signal);
-    const listed = record.body.time?.[parsed.version];
-    if (isTimestamp(listed))
-      return { publishedAt: listed, source: 'packument-time' };
-    const modified = record.body.modified;
-    if (
-      needed.settledBefore !== undefined &&
-      isTimestamp(modified) &&
-      Date.parse(modified) <= Date.parse(needed.settledBefore)
-    )
-      return { publishedNoLaterThan: modified, source: 'packument-modified' };
-    let pending = this.#times.get(base);
-    if (pending === undefined) {
-      pending = this.fetchFullTimes(parsed, signal);
-      this.#times.set(base, pending);
-    }
-    const times = await pending;
-    const exact = times?.[parsed.version];
-    return isTimestamp(exact)
-      ? { publishedAt: exact, source: 'full-packument' }
-      : undefined;
-  }
-
-  private async fetchFullTimes(
-    parsed: ReturnType<typeof parsePurl>,
-    signal?: AbortSignal,
-  ): Promise<Record<string, string> | undefined> {
-    const name = npmName(parsed.namespace, parsed.name);
-    try {
-      const response = await this.transport.request({
-        url: `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(name)}`,
-        signal,
-        maximumBytes: MAXIMUM_FULL_PACKUMENT_BYTES,
-        headers: { accept: 'application/json' },
-      });
-      return json<{ time?: Record<string, string> }>(
-        response,
-        FULL_PACKUMENT_LIMITS,
-      ).time;
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      // A document refused for its size or shape is a fact about it, and the
-      // caller needs it to say why no time was had. A registry that is down or
-      // answers with an error is not: that stays "no time", as it always was.
-      if (isDocumentRefusal(error))
-        throw aboutPackument(name, error, 'full packument');
-      return undefined;
-    }
+    return this.#times.of(
+      formatPurl({ ...parsed, version: undefined }),
+      npmName(parsed.namespace, parsed.name),
+      parsed.version,
+      needed,
+      signal,
+    );
   }
 
   async fetchArtifactRecord(
@@ -966,7 +925,7 @@ export class NpmRegistryProvider implements CatalogProvider {
         .map(async (record) => ({
           key: record.key,
           ...(!(record.etag === undefined) && { etag: record.etag }),
-          digest: formatDigest(await sha256(record.rawBody)),
+          digest: await this.#records.digest(record),
         })),
     );
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -1091,14 +1050,23 @@ export class NpmRegistryProvider implements CatalogProvider {
     );
   }
 
-  private async packument(
+  private packument(
     purl: string,
     signal?: AbortSignal,
-  ): Promise<ProviderRecord<NpmPackument>> {
-    const canonical = this.codec.canonicalizePurl(purl);
-    const parsed = parsePurl(canonical);
+  ): Promise<PackumentRecord> {
+    const parsed = parsePurl(this.codec.canonicalizePurl(purl));
     const key = formatPurl({ ...parsed, version: undefined });
-    const existing = this.#records.get(key);
+    return this.#records.once(key, () => this.read(parsed, key, signal));
+  }
+
+  private async read(
+    parsed: ReturnType<typeof parsePurl>,
+    key: string,
+    signal?: AbortSignal,
+  ): Promise<PackumentRecord> {
+    // A packument let go to stay within the resolve's budget is asked for
+    // afresh, with no validator: there is nothing here to revalidate.
+    const existing = this.#records.record(key);
     const name = npmName(parsed.namespace, parsed.name);
     const url = `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(name)}`;
     let response: HttpResponse;
@@ -1126,19 +1094,21 @@ export class NpmRegistryProvider implements CatalogProvider {
           `Received 304 without cached metadata for ${key}`,
           304,
         );
-      const revalidated = { ...existing, retrievedAt: this.clock.now() };
-      this.#records.set(key, revalidated);
-      return revalidated;
+      return this.#records.revalidated(existing, this.clock.now());
     }
     let body: NpmPackument;
+    let retained: number;
     try {
-      body = json<NpmPackument>(response, PACKUMENT_LIMITS);
+      ({ value: body, retained } = jsonWithCost<NpmPackument>(
+        response,
+        PACKUMENT_LIMITS,
+      ));
     } catch (error) {
       throw error instanceof ProviderError
         ? aboutPackument(name, error)
         : error;
     }
-    const record: ProviderRecord<NpmPackument> = {
+    const record: PackumentRecord = {
       key,
       endpoint: response.url,
       ...(!(header(response, 'etag') === undefined) && {
@@ -1148,8 +1118,7 @@ export class NpmRegistryProvider implements CatalogProvider {
       rawBody: response.body,
       retrievedAt: this.clock.now(),
     };
-    this.#records.set(record.key, record);
-    return record;
+    return this.#records.admit(name, record, retained);
   }
 }
 
@@ -1157,9 +1126,11 @@ export { NpmProjectFormat, npmPublishPaths } from './project.js';
 export { npmPackageRuns, npmTargetPredicate } from './platform.js';
 export {
   FULL_PACKUMENT_LIMITS,
+  FULL_PACKUMENT_PARSE_COST,
   MAXIMUM_FULL_PACKUMENT_BYTES,
   MAXIMUM_PACKUMENT_BYTES,
   PACKUMENT_LIMITS,
+  PACKUMENT_PARSE_COST,
 } from './packument-limits.js';
 export {
   chainOfLockPath,
