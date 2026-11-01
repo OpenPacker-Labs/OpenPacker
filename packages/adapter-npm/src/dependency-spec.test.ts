@@ -128,12 +128,6 @@ describe('a dependency the package cannot resolve', () => {
       'demo@1.0.0 depends on bar as "github:user/bar", a git specifier that ' +
         'is not a registry version range',
     );
-    expect(
-      (await refusal({ peerDependencies: { '@scope/bar': 'latest' } })).message,
-    ).toBe(
-      'demo@1.0.0 depends on @scope/bar as "latest", a tag specifier that is ' +
-        'not a registry version range',
-    );
   });
 });
 

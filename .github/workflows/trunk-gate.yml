@@ -3,11 +3,14 @@ name: Trunk gate
 # The only required CI for merging to main through the merge queue.
 # The repository ruleset requires this status check context exactly:
 #   Trunk gate / Required merge queue gate
-# Pull requests get fast feedback from ci-advisory.yml. After the merge,
+# Pull requests targeting main run this job so the required check reports before
+# enqueue. ci-advisory.yml remains optional fast feedback.
 # ci-build.yml builds the artifact matrix. Promotion is promote-*.yml.
 on:
   merge_group:
     types: [checks_requested]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -15,10 +18,13 @@ permissions:
 env:
   OPENPACKER_OFFLINE: '1'
   SOURCE_DATE_EPOCH: '1785628800'
+  TURBO_CONCURRENCY: '1'
+  FORCE_COLOR: '0'
+  NO_COLOR: '1'
 
 jobs:
   gate:
-    name: Required merge queue gate
+    name: Trunk gate / Required merge queue gate
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

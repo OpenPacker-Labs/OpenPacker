@@ -31,7 +31,7 @@
   "description": "Windows applications via winget",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Tyler-R-Kendrick/OpenPacker.git",
+    "url": "git+https://github.com/OpenPacker-Labs/OpenPacker.git",
     "directory": "packages/adapter-winget"
   }
 }

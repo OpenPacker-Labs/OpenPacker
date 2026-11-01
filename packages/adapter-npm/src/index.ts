@@ -1,4 +1,9 @@
-import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
+import {
+  canonicalDigest,
+  formatDigest,
+  safeEcho,
+  sha256,
+} from '@openpacker/canonical';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
 import { isNpmAlias, parseNpmAlias } from './alias.js';
 import { aliasRequirement } from './alias-requirement.js';
@@ -40,6 +45,8 @@ import {
   ProviderError,
   providerErrorForStatus,
   rangeToConstraint,
+  ResponseTooLargeError,
+  MetadataLimitError,
   semanticLoss,
   sourceRef,
   verifyNativeDigest,
@@ -136,6 +143,13 @@ export {
 } from './dependency-spec.js';
 import { classifyDependencySpec } from './dependency-spec.js';
 import { nonRangeRequirement } from './spec-requirement.js';
+import {
+  aboutPackument,
+  FULL_PACKUMENT_LIMITS,
+  MAXIMUM_FULL_PACKUMENT_BYTES,
+  MAXIMUM_PACKUMENT_BYTES,
+  PACKUMENT_LIMITS,
+} from './packument-limits.js';
 
 function npmPackagePurl(name: string): string {
   const coordinate = new NpmCodec().parseNativeCoordinate(name);
@@ -250,7 +264,7 @@ export class NpmCodec
     if (!match)
       throw new ProviderError(
         'INVALID_NATIVE_COORDINATE',
-        `Invalid npm coordinate: ${value}`,
+        `Invalid npm coordinate: ${safeEcho(value)}`,
       );
     const result: NativeCoordinate = {
       ecosystem: 'npm',
@@ -343,7 +357,7 @@ export class NpmCodec
       [metadata.devDependencies, 'development', true, 'devDependencies'],
     ];
     const losses: SemanticLoss[] = [];
-    const owner = `${metadata.name}@${metadata.version}`;
+    const owner = `${safeEcho(metadata.name)}@${safeEcho(metadata.version, 128)}`;
     const bundled = bundledDependencyNames(metadata);
     for (const [dependencies, kind, optionalByKind, field] of fields) {
       for (const [name, range] of Object.entries(dependencies ?? {}).sort(
@@ -394,7 +408,7 @@ export class NpmCodec
               'npm',
               'NPM_DEPENDENCY_NOT_REPRESENTABLE',
               `/${field}/${name}`,
-              `The ${field} entry "${name}": "${range}" cannot be represented: ${error instanceof Error ? error.message : String(error)}`,
+              `The ${field} entry ${JSON.stringify(safeEcho(name))}: ${JSON.stringify(safeEcho(range))} cannot be represented: ${error instanceof Error ? safeEcho(error.message) : safeEcho(String(error))}`,
               undefined,
               'info',
             ),
@@ -660,7 +674,6 @@ export interface PublishTimeEvidence {
 }
 
 /** A response this big is a mirror misbehaving; the largest real one is 39 MB. */
-const FULL_PACKUMENT_LIMIT = 96 * 1024 * 1024;
 
 export class NpmRegistryProvider implements CatalogProvider {
   readonly providerId = 'npm-registry';
@@ -844,12 +857,27 @@ export class NpmRegistryProvider implements CatalogProvider {
       const response = await this.transport.request({
         url: `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(npmName(parsed.namespace, parsed.name))}`,
         signal,
-        maximumBytes: FULL_PACKUMENT_LIMIT,
+        maximumBytes: MAXIMUM_FULL_PACKUMENT_BYTES,
         headers: { accept: 'application/json' },
       });
-      return json<{ time?: Record<string, string> }>(response).time;
+      return json<{ time?: Record<string, string> }>(
+        response,
+        FULL_PACKUMENT_LIMITS,
+      ).time;
     } catch (error) {
       if (signal?.aborted) throw error;
+      if (
+        error instanceof ResponseTooLargeError ||
+        error instanceof MetadataLimitError ||
+        (error instanceof ProviderError &&
+          error.code === 'INVALID_PROVIDER_METADATA')
+      ) {
+        throw aboutPackument(
+          npmName(parsed.namespace, parsed.name),
+          error as ProviderError,
+          'full packument',
+        );
+      }
       return undefined;
     }
   }
@@ -1077,40 +1105,44 @@ export class NpmRegistryProvider implements CatalogProvider {
     const existing = this.#records.get(key);
     const name = npmName(parsed.namespace, parsed.name);
     const url = `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(name)}`;
-    const response = await this.transport.request({
-      url,
-      signal,
-      maximumBytes: 8 * 1024 * 1024,
-      headers: {
-        accept: 'application/vnd.npm.install-v1+json',
-        ...(!(existing?.etag === undefined) && {
-          'if-none-match': existing.etag,
+    try {
+      const response = await this.transport.request({
+        url,
+        signal,
+        maximumBytes: MAXIMUM_PACKUMENT_BYTES,
+        headers: {
+          accept: 'application/vnd.npm.install-v1+json',
+          ...(!(existing?.etag === undefined) && {
+            'if-none-match': existing.etag,
+          }),
+        },
+      });
+      if (response.status === 304) {
+        if (!existing)
+          throw new ProviderError(
+            'STALE_METADATA',
+            `Received 304 without cached metadata for ${key}`,
+            304,
+          );
+        const revalidated = { ...existing, retrievedAt: this.clock.now() };
+        this.#records.set(key, revalidated);
+        return revalidated;
+      }
+      const record: ProviderRecord<NpmPackument> = {
+        key,
+        endpoint: response.url,
+        ...(!(header(response, 'etag') === undefined) && {
+          etag: header(response, 'etag'),
         }),
-      },
-    });
-    if (response.status === 304) {
-      if (!existing)
-        throw new ProviderError(
-          'STALE_METADATA',
-          `Received 304 without cached metadata for ${key}`,
-          304,
-        );
-      const revalidated = { ...existing, retrievedAt: this.clock.now() };
-      this.#records.set(key, revalidated);
-      return revalidated;
+        body: json<NpmPackument>(response, PACKUMENT_LIMITS),
+        rawBody: response.body,
+        retrievedAt: this.clock.now(),
+      };
+      this.#records.set(record.key, record);
+      return record;
+    } catch (error) {
+      throw aboutPackument(name, error as ProviderError);
     }
-    const record: ProviderRecord<NpmPackument> = {
-      key,
-      endpoint: response.url,
-      ...(!(header(response, 'etag') === undefined) && {
-        etag: header(response, 'etag'),
-      }),
-      body: json<NpmPackument>(response),
-      rawBody: response.body,
-      retrievedAt: this.clock.now(),
-    };
-    this.#records.set(record.key, record);
-    return record;
   }
 }
 

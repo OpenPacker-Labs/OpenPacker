@@ -121,7 +121,7 @@ independent review), nits repaired mid-stack, squash-merged bottom-up, and
 
 Independent review of `16ffe4e..0a4a028` plus a full `npm run verify` (exit 0,
 1135/1149 tests) found two defects, both repaired in
-[#117](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/117) (`527f5e6`):
+[#117](https://github.com/OpenPacker-Labs/OpenPacker/pull/117) (`527f5e6`):
 
 1. First-party OCI ephemeral path: deferred resolution used the inspect
    _manifest_ digest as the store key while `fetchArtifactRecord` returns the

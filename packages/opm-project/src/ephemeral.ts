@@ -92,9 +92,14 @@ export async function fetchTool(input: {
   cacheRoot?: string;
   /** Transport / endpoint overrides for hosts and tests. */
   registryOptions?: RegistryOptions;
+  /** Host-fetch byte transport; merged into `registryOptions`. */
+  fetch?: typeof fetch;
 }): Promise<EphemeralTool> {
   const ecosystem = ecosystemFromPurl(input.purl);
-  const options = input.registryOptions ?? {};
+  const options: RegistryOptions = {
+    ...input.registryOptions,
+    ...(input.fetch !== undefined && { fetch: input.fetch }),
+  };
   if (!requireAdapterRegistry().has(ecosystem))
     throw new OpmError(
       'UNSUPPORTED_ECOSYSTEM',

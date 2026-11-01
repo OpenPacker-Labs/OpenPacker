@@ -4,9 +4,9 @@
 
 Do not open a public issue for a suspected vulnerability. Use GitHub private
 vulnerability reporting (Security Advisories) for the
-`Tyler-R-Kendrick/OpenPacker` repository:
+`OpenPacker-Labs/OpenPacker` repository:
 
-<https://github.com/Tyler-R-Kendrick/OpenPacker/security/advisories/new>
+<https://github.com/OpenPacker-Labs/OpenPacker/security/advisories/new>
 
 Include the affected version or commit, attack prerequisites, a minimal
 reproduction, impact, and any known digest or key IDs. Do not include registry

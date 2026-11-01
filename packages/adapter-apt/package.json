@@ -31,7 +31,7 @@
   "description": "Debian/Ubuntu system packages via apt-get",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Tyler-R-Kendrick/OpenPacker.git",
+    "url": "git+https://github.com/OpenPacker-Labs/OpenPacker.git",
     "directory": "packages/adapter-apt"
   }
 }
