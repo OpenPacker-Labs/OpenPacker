@@ -482,34 +482,6 @@ export async function readStableFileBytesAt(
   }
 }
 
-function stableFileBytes(contents: string | Uint8Array): Buffer {
-  return typeof contents === 'string'
-    ? Buffer.from(contents)
-    : Buffer.from(contents);
-}
-
-async function stableMetadataMatchesAt(
-  parent: FileHandle,
-  name: string,
-  contents: string | Uint8Array,
-  displayPath: string,
-): Promise<boolean> {
-  const expected = stableFileBytes(contents);
-  try {
-    const actual = await readStableFileBytesAt(
-      parent,
-      name,
-      64 * 1024 * 1024,
-      displayPath,
-    );
-    return actual.equals(expected);
-  } catch (error) {
-    if (error instanceof OpmError && error.code === 'INPUT_CHANGED')
-      return false;
-    throw error;
-  }
-}
-
 export async function writeStableFile(
   path: string,
   contents: string | Uint8Array,
@@ -557,12 +529,16 @@ export async function writeStableFileAt(
         `Metadata staging file changed before publication: ${displayPath}`,
       );
     await renameChild(parent, temporary, name);
+    // A second publisher of the same bytes can rename over this name in the
+    // gap after our rename. The name then names their inode, not ours. That
+    // is still our publication when the bytes match, and a swap when they do
+    // not. Several installs recording one shared-store digest hit this gap.
+    // The replacement can itself be replaced before a read settles, so retry.
     for (let attempt = 0; attempt < 16; attempt += 1) {
       const publishedInfo = await lstatChild(parent, name);
       if (opened.dev === publishedInfo.dev && opened.ino === publishedInfo.ino)
         return;
-      if (await stableMetadataMatchesAt(parent, name, contents, displayPath))
-        return;
+      if (await sameStableBytes(parent, name, contents, displayPath)) return;
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
     throw new OpmError(
@@ -575,6 +551,52 @@ export async function writeStableFileAt(
       () => undefined,
     );
   }
+}
+
+/**
+ * Whether `name` in `parent` holds exactly `contents` for a whole read.
+ *
+ * Peers republishing the same file replace the inode while a read is in
+ * progress; that read reports INPUT_CHANGED and is tried again. A different
+ * file, a link, or a name that never settles is not a match.
+ */
+async function sameStableBytes(
+  parent: FileHandle,
+  name: string,
+  contents: string | Uint8Array,
+  displayPath: string,
+): Promise<boolean> {
+  const expected =
+    typeof contents === 'string'
+      ? Buffer.from(contents)
+      : Buffer.from(contents.buffer, contents.byteOffset, contents.byteLength);
+  const maximumBytes = Math.max(expected.byteLength, 1);
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    try {
+      const observed = await readStableFileBytesAt(
+        parent,
+        name,
+        maximumBytes,
+        displayPath,
+      );
+      return observed.equals(expected);
+    } catch (error) {
+      const code =
+        error instanceof OpmError
+          ? error.code
+          : ((error as NodeJS.ErrnoException).code ?? '');
+      if (code === 'INPUT_CHANGED' || code === 'ENOENT') continue;
+      if (
+        code === 'ELOOP' ||
+        code === 'EISDIR' ||
+        code === 'INVALID_STATE' ||
+        error instanceof OpmError
+      )
+        return false;
+      throw error;
+    }
+  }
+  return false;
 }
 
 export async function revalidateStableDirectory(
