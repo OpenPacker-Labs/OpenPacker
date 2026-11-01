@@ -799,6 +799,9 @@ export function handleError(error: unknown, io: CliIo): number {
       case 'OFFLINE':
       case 'FETCH_FAILED':
       case 'UNAVAILABLE':
+      // The entry can be fetched again; a digest that does not match stays a
+      // verification failure above.
+      case 'STORE_ENTRY_VANISHED':
       case 'PLUGIN_ERROR':
       case 'PLUGIN_FAILED':
       case 'PLUGIN_REGISTRY_UNCONFIGURED':
