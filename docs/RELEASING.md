@@ -67,6 +67,10 @@ That string is the workflow name, a slash, and the job name from
 `merge_group` and on `pull_request` targeting `main`, with
 `OPENPACKER_OFFLINE=1` and `SOURCE_DATE_EPOCH=1785628800`, in this order:
 
+On **pull requests**, typecheck, build, and workspace tests use affected-only
+Turbo scope (`...[origin/$GITHUB_BASE_REF]`); the **merge queue** run is the
+full monorepo gate. See [ci-optimization.md](guides/ci-optimization.md).
+
 1. `npm run format:check`
 2. `npm run lint:anti-slop`
 3. `npm run typecheck`
