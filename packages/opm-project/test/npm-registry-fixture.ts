@@ -3,10 +3,14 @@ import { gzipSync } from 'node:zlib';
 import { packTarGzip } from '@openpacker/project-io';
 import {
   ProviderError,
+  ResponseTooLargeError,
   type HttpRequest,
   type HttpResponse,
   type HttpTransport,
 } from '@openpacker/adapter-core';
+import { padded, type Padding } from './npm-registry-padding.js';
+
+export type { Padding };
 
 /**
  * A stand-in npm registry that behaves like registry.npmjs.org where it
@@ -163,9 +167,15 @@ export interface FixturePackage {
    * names it; a tag given as `undefined` is left out of the document.
    */
   distTags?: Record<string, string | undefined>;
+  /** Makes the packument as heavy as a real one with many versions. */
+  padding?: Padding;
+  /** The full document served as exactly this text, whatever it is. */
+  fullBody?: string;
 }
 
 export const OLD = '2026-01-01T00:00:00.000Z';
+
+const encoder = new TextEncoder();
 
 const ABBREVIATED_KEYS = [
   'dependencies',
@@ -266,7 +276,23 @@ export class NpmRegistryFixture implements HttpTransport {
     );
   }
 
+  /** Like a real transport, refuses a body past the bound the request set. */
   async request(request: HttpRequest): Promise<HttpResponse> {
+    const response = await this.answer(request);
+    if (
+      request.maximumBytes !== undefined &&
+      response.body.byteLength > request.maximumBytes
+    )
+      throw new ResponseTooLargeError(
+        request.maximumBytes,
+        response.body.byteLength,
+        'delivered',
+        response.status,
+      );
+    return response;
+  }
+
+  private async answer(request: HttpRequest): Promise<HttpResponse> {
     const accept = request.headers?.accept;
     this.requests.push({ url: request.url, accept });
     if (request.url.endsWith('.tgz')) {
@@ -343,7 +369,18 @@ export class NpmRegistryFixture implements HttpTransport {
         },
       }),
     };
-    return withUrl(json(document));
+    if (!abbreviated && found.fullBody !== undefined)
+      return withUrl({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: encoder.encode(found.fullBody),
+        url: '',
+      });
+    const heavy =
+      found.padding !== undefined &&
+      (found.padding.only ?? (abbreviated ? 'abbreviated' : 'full')) ===
+        (abbreviated ? 'abbreviated' : 'full');
+    return withUrl(heavy ? padded(document, found.padding!) : json(document));
   }
 }
 
