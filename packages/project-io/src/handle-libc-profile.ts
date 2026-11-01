@@ -342,15 +342,14 @@ export function decodeStat(buffer: Buffer, layout: StatLayout): DecodedStat {
 const NS_PER_MS = 1_000_000n;
 
 const instantFromNs = (ns: bigint): BigIntStats['atimeInstant'] => {
-  const Instant = (
-    globalThis as {
-      Temporal?: { Instant: { fromEpochNanoseconds(value: bigint): unknown } };
-    }
-  ).Temporal?.Instant;
+  interface TemporalGlobal {
+    Instant: { fromEpochNanoseconds(value: bigint): BigIntStats['atimeInstant'] };
+  }
+  const Instant = (globalThis as { Temporal?: TemporalGlobal }).Temporal?.Instant;
   if (!Instant) {
     throw new Error('Temporal is required to synthesize fs.BigIntStats timestamps');
   }
-  return Instant.fromEpochNanoseconds(ns) as BigIntStats['atimeInstant'];
+  return Instant.fromEpochNanoseconds(ns);
 };
 
 /** `fs.BigIntStats` from a decoded `struct stat`. */

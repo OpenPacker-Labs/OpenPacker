@@ -1,12 +1,24 @@
 /** Minimal surface for optional @microsoft/mxc-sdk/v1 (types-only when optional install is skipped). */
+
+export interface MxcPolicyInput {
+  version: string;
+  filesystem: { readonlyPaths: string[]; readwritePaths: string[] };
+  network: { allowOutbound: boolean };
+  timeoutMs?: number;
+}
+
+export interface MxcSandboxConfig {
+  process?: { commandLine?: string; cwd?: string; env?: string[] };
+}
+
 declare module '@microsoft/mxc-sdk/v1' {
   export function getPlatformSupport(): { isSupported: boolean };
   export function getTemporaryFilesPolicy(): { readwritePaths: string[] };
-  export function createConfigFromPolicy(config: unknown): {
-    process?: { commandLine?: string; cwd?: string; env?: string[] };
-  };
+  export function createConfigFromPolicy(
+    config: MxcPolicyInput,
+  ): MxcSandboxConfig;
   export function spawnSandboxFromConfig(
-    config: unknown,
+    config: MxcSandboxConfig,
     options: { usePty: boolean },
   ): {
     stdout?: NodeJS.ReadableStream | null;
