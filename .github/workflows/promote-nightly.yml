@@ -133,6 +133,10 @@ jobs:
       - name: Install Playwright Chromium
         if: steps.plan.outputs.skip != 'true'
         run: npm exec playwright install --with-deps chromium
+      # opm contract tests execute the built CLI bins.
+      - name: Build workspace packages
+        if: steps.plan.outputs.skip != 'true'
+        run: npm run build
       - name: Full offline verification
         if: steps.plan.outputs.skip != 'true'
         run: npm run verify

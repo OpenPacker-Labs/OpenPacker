@@ -93,7 +93,9 @@ Environment `nightly`.
 
 It checks out `main` with full history and skips when `HEAD` has no commits
 after the newest tag matching `cli-v*-nightly.*`. Otherwise it runs
-`npm run verify` and `npm run test:integration`, then publishes.
+`npm run build` before `npm run verify` and `npm run test:integration`, then
+publishes. Promotion workflows run `npm run build` before `npm run verify`
+because verify begins with `check:contracts`.
 
 The npm version is planned by
 `node scripts/release/plan-cli-release.mjs --mode nightly`. The workflow passes
@@ -314,12 +316,14 @@ environment, checks out `main`, and does not fast-forward `nightly`,
 `integration`, or `prod`.
 
 It plans an alpha release from `apps/openpacker-cli/package.json` (the version
-must be a prerelease), runs `npm run verify` unless `skip_verify` is true,
-bundles with `OPENPACKER_RELEASE_VERSION`, packs the tarball, and publishes on
-the `alpha` dist-tag. A non-empty `NPM_TOKEN` passes `--provenance`. An empty
-token leaves provenance at the default so OIDC can attach it. It then points
-`alpha` and `next` at that version. It does not set `latest`. It creates the git
-tag from the plan (`cli-v${version}`), pushes that tag, and opens a GitHub
+must be a prerelease), runs `npm run build` before `npm run verify` unless
+`skip_verify` is true, bundles with `OPENPACKER_RELEASE_VERSION`, packs the
+tarball, and publishes on the `alpha` dist-tag. Promotion workflows run
+`npm run build` before `npm run verify` because verify begins with
+`check:contracts`. A non-empty `NPM_TOKEN` passes `--provenance`. An empty token
+leaves provenance at the default so OIDC can attach it. It then points `alpha`
+and `next` at that version. It does not set `latest`. It creates the git tag
+from the plan (`cli-v${version}`), pushes that tag, and opens a GitHub
 prerelease with `gh release create --target` set to the planned commit. The
 title comes from the plan. The pack tarball is attached. If the release already
 exists, the tarball is uploaded with `--clobber`. It then mirrors the same
