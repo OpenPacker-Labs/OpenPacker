@@ -5,7 +5,7 @@ description: >-
   token writes an .npmrc with no _authToken and leaves NODE_AUTH_TOKEN unset so
   npm can use OIDC trusted publishing, which attaches provenance only when
   --provenance is left at its default. Callers must set id-token: write.
-  Upgrades npm to 11.21.1 (Node 22.19.0's bundled npm cannot do dist-tag OIDC).
+  Upgrades npm to 11.21.1 (Node 22.22.2's bundled npm cannot do dist-tag OIDC).
   Optionally mirrors the same directory to GitHub Packages. Skips a registry
   that already has this version. Never prints tokens.
 
@@ -55,7 +55,7 @@ runs:
             exit 1
             ;;
         esac
-        # Node 22.19.0 ships npm 10. Trusted publishing needs npm 11.5.1.
+        # Node 22.22.2 ships npm 10. Trusted publishing needs npm 11.5.1.
         # dist-tag OIDC needs npm 11.21.0. Do not log registry credentials.
         npm install -g npm@11.21.1 --no-fund --no-audit
         hash -r
