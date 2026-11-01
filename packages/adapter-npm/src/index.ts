@@ -673,9 +673,6 @@ export interface PublishTimeEvidence {
   source: 'packument-time' | 'packument-modified' | 'full-packument';
 }
 
-/** @deprecated use {@link MAXIMUM_FULL_PACKUMENT_BYTES} */
-const FULL_PACKUMENT_LIMIT = MAXIMUM_FULL_PACKUMENT_BYTES;
-
 export class NpmRegistryProvider implements CatalogProvider {
   readonly providerId = 'npm-registry';
   readonly capabilities: ProviderCapabilities = {
