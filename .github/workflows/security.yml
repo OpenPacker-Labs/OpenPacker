@@ -44,5 +44,6 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run lint:anti-slop
       - run: npm run check:test-inventory
+      - run: npm run build
       - run: npm run test:security
       - run: node --test scripts/codex-security.test.mjs
