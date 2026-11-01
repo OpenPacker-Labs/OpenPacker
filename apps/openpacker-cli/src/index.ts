@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import { lookup } from 'node:dns/promises';
@@ -17,6 +18,7 @@ import {
   canonicalDigest,
   compareCanonicalStrings,
   formatDigest,
+  OverlongHostError,
   parseCanonicalJson,
   out,
   outJson,
@@ -223,11 +225,13 @@ async function execute(
       const response = await client.materialize(input as never, requestOptions);
       const destination = option(args, 'install-prefix');
       if (!destination) return response;
+      const source = locationSource(
+        response.data.descriptor,
+        args.options.has('offline'),
+      );
+      await source.stat(response.data.descriptor);
       const installation = await materialize({
-        source: locationSource(
-          response.data.descriptor,
-          args.options.has('offline'),
-        ),
+        source,
         descriptor: response.data.descriptor,
         destination,
         format: archiveFormat(response.data.descriptor),
@@ -767,7 +771,8 @@ function parseTarget(value: string): JsonValue {
 function providerLocation(uri: string): URL {
   try {
     return parseUntrustedUrl(uri);
-  } catch {
+  } catch (error) {
+    if (error instanceof OverlongHostError) throw error;
     throw new InputError('Provider artifact location is not a URL');
   }
 }
@@ -784,8 +789,13 @@ function locationSource(
     );
   if (!location)
     throw new InputError('No artifact location is permitted by offline policy');
+  providerLocation(location.uri);
   return {
-    stat: async () => ({ descriptor, rangeSupported: location.rangeSupported }),
+    stat: async () => {
+      if (location.transport === 'file' || location.transport === 'https')
+        providerLocation(location.uri);
+      return { descriptor, rangeSupported: location.rangeSupported };
+    },
     open: async (_descriptor, _range, signal) => {
       signal?.throwIfAborted();
       if (location.transport === 'file') {
@@ -954,6 +964,7 @@ function exitCode(error: unknown): number {
   if (error instanceof UsageError) return EXIT_CODES.usage;
   if (
     error instanceof InputError ||
+    error instanceof OverlongHostError ||
     error instanceof SyntaxError ||
     error instanceof TypeError ||
     error instanceof RangeError
@@ -1026,5 +1037,8 @@ function help(): string {
   return `Usage: openpacker <command> [subcommand] [options]\n\nCommands:\n  normalize identify enumerate inspect solve resolve explain materialize verify pack publish\n  import-lock\n  receipt inspect|verify\n  catalog import|snapshot\n  lifecycle apply\n  export lock|sbom\n  serve demo\n\nCommon options: --input <file|-> --json --offline --base-url <url> --target <os/arch|json> --policy-file <file> --auth-token-file <file>\nimport-lock: --input <lockfile> [--format auto|package-lock|cargo-lock|nuget-assets|...] [--json] [--output <lock.json>]\nServe options: --operations-module <path> --database <path> --host <host> --port <port>\nDemo options: --workflow-module <path> --output <directory> --evaluation-time <timestamp>\n`;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href)
+if (
+  import.meta.url ===
+  pathToFileURL(process.argv[1] ? realpathSync(process.argv[1]) : '').href
+)
   process.exitCode = await runCli();

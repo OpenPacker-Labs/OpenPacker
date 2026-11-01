@@ -1,10 +1,9 @@
 {
   "name": "@openpacker/cli",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
   "description": "OpenPacker command-line client",
   "license": "MIT",
   "type": "module",
-  "private": true,
   "bin": {
     "openpacker": "./dist/index.js"
   },
@@ -19,6 +18,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "bundle": "node scripts/bundle-release.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run",
@@ -28,18 +28,31 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-core": "0.1.0",
-    "@openpacker/artifact-model": "0.1.0",
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/conformance": "0.1.0",
-    "@openpacker/contracts": "0.1.0",
-    "@openpacker/embedded": "0.1.0",
-    "@openpacker/lock-import": "0.1.0",
-    "@openpacker/openpackerd": "0.1.0",
-    "@openpacker/materializer": "0.1.0",
-    "@openpacker/sdk": "0.1.0"
+    "@openpacker/adapter-core": "0.0.1-alpha.1",
+    "@openpacker/artifact-model": "0.0.1-alpha.1",
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/conformance": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
+    "@openpacker/embedded": "0.0.1-alpha.1",
+    "@openpacker/lock-import": "0.0.1-alpha.1",
+    "@openpacker/openpackerd": "0.0.1-alpha.1",
+    "@openpacker/materializer": "0.0.1-alpha.1",
+    "@openpacker/sdk": "0.0.1-alpha.1"
   },
   "devDependencies": {
-    "@types/node": "24.2.1"
+    "@types/node": "24.2.1",
+    "esbuild": "0.28.1"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenPacker-Labs/OpenPacker.git",
+    "directory": "apps/openpacker-cli"
   }
 }

@@ -48,6 +48,13 @@ export interface FixtureVersion {
   tarballFails?: boolean;
 }
 
+export interface PackumentPadding {
+  bytes: number;
+  values?: number;
+  /** When set, padding applies only to that packument shape. */
+  only?: 'full' | 'abbreviated';
+}
+
 export interface FixturePackage {
   name: string;
   versions: Record<string, FixtureVersion>;
@@ -60,24 +67,10 @@ export interface FixturePackage {
    * names it; a tag given as `undefined` is left out of the document.
    */
   distTags?: Record<string, string | undefined>;
-  /** Makes the packument as heavy as a real one with many versions. */
-  padding?: Padding;
-  /** The full document served as exactly this text, whatever it is. */
+  /** Inflate the packument to an exact byte size (and optional value count). */
+  padding?: PackumentPadding;
+  /** Raw full-document body instead of the generated JSON packument. */
   fullBody?: string;
-}
-
-/**
- * What `typescript` (8.7 MB, 260,520 values) and `next` (25.6 MB, 846,076) have
- * that a fixture does not: weight. The packument is served with a member the
- * walk never reads, so its size and value count are what a real one's are.
- */
-export interface Padding {
-  /** Serialized size of the packument, exactly. */
-  bytes?: number;
-  /** At least this many values (empty arrays) in the packument. */
-  values?: number;
-  /** Which document is heavy; the abbreviated one is read first and always. */
-  only?: 'abbreviated' | 'full';
 }
 
 export const OLD = '2026-01-01T00:00:00.000Z';
@@ -143,33 +136,67 @@ const json = (value: unknown): HttpResponse => ({
 
 const encoder = new TextEncoder();
 
-function padded(
+function paddingApplies(
+  padding: PackumentPadding,
+  abbreviated: boolean,
+): boolean {
+  if (padding.only === 'full') return !abbreviated;
+  if (padding.only === 'abbreviated') return abbreviated;
+  return true;
+}
+
+/** A packument of exactly `bytes` bytes, the rest a string no parser minds. */
+function packumentOfBytes(document: Record<string, unknown>, bytes: number) {
+  const bare = encoder.encode(JSON.stringify({ ...document, pad: '' }));
+  return encoder.encode(
+    JSON.stringify({
+      ...document,
+      pad: 'x'.repeat(bytes - bare.length),
+    }),
+  );
+}
+
+/** A packument of exactly `bytes` bytes holding at least `values` values. */
+function packumentHolding(
   document: Record<string, unknown>,
-  padding: Padding,
-): HttpResponse {
-  const empties =
-    padding.values === undefined
-      ? undefined
-      : Array.from({ length: padding.values }, () => []);
+  bytes: number,
+  values: number,
+) {
+  const empties = Array.from({ length: values }, () => []);
   const make = (fill: number) =>
     encoder.encode(
-      JSON.stringify({
-        ...document,
-        ...(empties && { 'x-values': empties }),
-        ...(padding.bytes !== undefined && { 'x-padding': 'x'.repeat(fill) }),
-      }),
+      JSON.stringify({ ...document, empties, pad: 'x'.repeat(fill) }),
     );
-  const body =
-    padding.bytes === undefined
-      ? make(0)
-      : make(padding.bytes - make(0).length);
-  return {
-    status: 200,
-    headers: { 'content-type': 'application/json' },
-    body,
-    url: '',
-  };
+  return make(bytes - make(0).length);
 }
+
+function paddedPackumentBody(
+  document: Record<string, unknown>,
+  padding: PackumentPadding,
+): Uint8Array {
+  if (padding.values !== undefined)
+    return packumentHolding(document, padding.bytes, padding.values);
+  return packumentOfBytes(document, padding.bytes);
+}
+
+function enforceMaximumBytes(body: Uint8Array, request: HttpRequest): void {
+  if (
+    request.maximumBytes !== undefined &&
+    body.byteLength > request.maximumBytes
+  )
+    throw new ResponseTooLargeError(
+      request.maximumBytes,
+      body.byteLength,
+      'delivered',
+    );
+}
+
+const octetStream = (body: Uint8Array, url: string): HttpResponse => ({
+  status: 200,
+  headers: { 'content-type': 'application/json' },
+  body,
+  url,
+});
 
 export interface RecordedRequest {
   url: string;
@@ -304,18 +331,18 @@ export class NpmRegistryFixture implements HttpTransport {
         },
       }),
     };
-    if (!abbreviated && found.fullBody !== undefined)
-      return withUrl({
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-        body: encoder.encode(found.fullBody),
-        url: '',
-      });
-    const heavy =
-      found.padding !== undefined &&
-      (found.padding.only ?? (abbreviated ? 'abbreviated' : 'full')) ===
-        (abbreviated ? 'abbreviated' : 'full');
-    return withUrl(heavy ? padded(document, found.padding!) : json(document));
+    if (!abbreviated && found.fullBody !== undefined) {
+      const body = encoder.encode(found.fullBody);
+      enforceMaximumBytes(body, request);
+      return withUrl(octetStream(body, request.url));
+    }
+    const padding = found.padding;
+    if (padding !== undefined && paddingApplies(padding, abbreviated)) {
+      const body = paddedPackumentBody(document, padding);
+      enforceMaximumBytes(body, request);
+      return withUrl(octetStream(body, request.url));
+    }
+    return withUrl(json(document));
   }
 }
 

@@ -1,4 +1,9 @@
-import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
+import {
+  canonicalDigest,
+  formatDigest,
+  safeEcho,
+  sha256,
+} from '@openpacker/canonical';
 import * as dependencyText from './dependency-spec.js';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
 import { isNpmAlias, parseNpmAlias } from './alias.js';
@@ -353,7 +358,7 @@ export class NpmCodec
       [metadata.devDependencies, 'development', true, 'devDependencies'],
     ];
     const losses: SemanticLoss[] = [];
-    const owner = `${metadata.name}@${metadata.version}`;
+    const owner = `${safeEcho(metadata.name)}@${safeEcho(metadata.version, 128)}`;
     const bundled = bundledDependencyNames(metadata);
     for (const [dependencies, kind, optionalByKind, field] of fields) {
       for (const [name, range] of Object.entries(dependencies ?? {}).sort(

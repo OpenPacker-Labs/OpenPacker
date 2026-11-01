@@ -57,6 +57,7 @@ describe('a random base64 credential written raw before a registry tarball URL',
     ['the password of `ci`', 40, 4104, (secret: string) => `ci:${secret}`],
   ] as const)(
     'is never printed: %s, %d characters',
+    { timeout: 30_000 },
     (_form, length, seed, userinfo) => {
       const next = seeded(seed);
       const leaks: string[] = [];

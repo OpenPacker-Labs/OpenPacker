@@ -34,6 +34,7 @@ import {
   windowsNtHandlePathForm,
   writeFileAtomic,
 } from './index.js';
+import { isChildBackendUnderTest } from './handle-path.js';
 
 describe('stable tree collection', () => {
   it('keeps reading the authorized tree after its pathname is replaced', async () => {
