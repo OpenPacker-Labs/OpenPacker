@@ -24,7 +24,7 @@ env:
 
 jobs:
   gate:
-    name: Required merge queue gate
+    name: Trunk gate / Required merge queue gate
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
