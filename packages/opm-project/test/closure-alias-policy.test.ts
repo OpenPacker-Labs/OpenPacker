@@ -58,7 +58,7 @@ describe('policy applies to the real package, not to its alias', () => {
     ).rejects.toMatchObject({
       code: 'UNRESOLVABLE',
       message: expect.stringMatching(
-        /pkg:npm\/app@1\.0\.0 requires pkg:npm\/fresh 1\.1\.0 \(as x\), and no such release can be installed.*What the policy set aside:\n  - pkg:npm\/fresh@1\.1\.0: published inside the 1440-minute minimum release age \(required by pkg:npm\/app@1\.0\.0\)/su,
+        /Cannot lock the dependency closure of pkg:npm\/app@1\.0\.0:.*What the walk could not use:\n  - pkg:npm\/fresh: no candidate satisfying 1\.1\.0 can be installed here \(required by pkg:npm\/app@1\.0\.0\).*What the policy set aside:\n  - pkg:npm\/fresh@1\.1\.0: published inside the 1440-minute minimum release age \(required by pkg:npm\/app@1\.0\.0\)/su,
       ),
     });
   });

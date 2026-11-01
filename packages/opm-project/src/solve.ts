@@ -165,6 +165,7 @@ export async function solveGraph(input: {
     } catch (error) {
       // The engine's refusal is a JSON document naming the project's own
       // requirement ids; what a person needs is which edge nothing satisfies.
+      // wasm-bindgen can throw a string rather than an Error; treat both the same.
       if (!/^UNSATISFIABLE\b/u.test(solverFailureMessage(error))) throw error;
       const causes = explainUnsatisfiable({
         dropped: viable.dropped,
