@@ -2,19 +2,29 @@
  * Leases on the shared store: held while their holder runs, abandoned the
  * moment it is gone, however it went.
  *
- * The holders that die are separate `node` processes running the lease module
- * as it is (it imports only Node's built-ins), killed with SIGKILL.
+ * The holders that die are separate processes running the lease module as it
+ * is (it imports only Node's built-ins), killed with SIGKILL.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { collectSharedStore } from '../src/index.js';
 import { holdSharedStore, openCollection } from '../src/shared-store-lease.js';
+import { LeaseReader } from '../src/store-lease-reader.js';
 import { leaseDirectory, openLease } from '../src/store-lease.js';
 import { cleanupWorlds, storeWithEntry } from './gc-race-fixture.js';
-import { childEnv, source, tsNodeArgs } from './ts-child.js';
+import { childEnv } from './ts-child.js';
+
+const PACKAGE = fileURLToPath(new URL('..', import.meta.url));
+const VITE_NODE = fileURLToPath(
+  new URL('../../../node_modules/.bin/vite-node', import.meta.url),
+);
+const HOLDER = fileURLToPath(
+  new URL('./fixtures/store-lease-holder.ts', import.meta.url),
+);
 
 const children: ChildProcess[] = [];
 afterEach(async () => {
@@ -28,30 +38,26 @@ async function holder(
   kind: 'install' | 'gc',
   line: string,
 ): Promise<ChildProcess> {
-  const script = [
-    'const [modulePath, directory, kind, line] = process.argv.slice(1);',
-    'const { openLease } = await import(modulePath);',
-    'const lease = await openLease(directory, kind);',
-    'await lease.write(line);',
-    "process.stdout.write('held\\n');",
-    'setInterval(() => {}, 1 << 30);',
-  ].join('\n');
-  const child = spawn(
-    process.execPath,
-    tsNodeArgs(script, [
-      source('store-lease'),
-      leaseDirectory(store),
-      kind,
-      line,
-    ]),
-    { stdio: ['ignore', 'pipe', 'inherit'], env: childEnv() },
-  );
+  const child = spawn(VITE_NODE, [HOLDER, store, kind, line], {
+    cwd: PACKAGE,
+    stdio: ['ignore', 'pipe', 'inherit'],
+    env: childEnv(),
+  });
   children.push(child);
   await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error('holder did not start within 30s')),
+      30_000,
+    );
     child.stdout!.on('data', (chunk: Buffer) => {
-      if (chunk.toString().includes('held')) resolve();
+      if (!chunk.toString().includes('held')) return;
+      clearTimeout(timeout);
+      resolve();
     });
-    child.on('exit', (code) => reject(new Error(`holder exited ${code}`)));
+    child.on('exit', (code) => {
+      clearTimeout(timeout);
+      reject(new Error(`holder exited ${code}`));
+    });
   });
   return child;
 }
@@ -62,6 +68,22 @@ async function kill(child: ChildProcess): Promise<void> {
   );
   child.kill('SIGKILL');
   await exited;
+}
+
+/** The parent sees a live cross-process lease holding `key` before GC runs. */
+async function waitForLiveLease(
+  store: string,
+  kind: 'install' | 'gc',
+  key: string,
+  timeoutMs = 30_000,
+): Promise<void> {
+  const reader = new LeaseReader(leaseDirectory(store), kind, false);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await reader.holds(key)) return;
+    await new Promise((wait) => setTimeout(wait, 20));
+  }
+  throw new Error(`${kind} lease never held ${key} live`);
 }
 
 describe('a lease', () => {
@@ -79,7 +101,14 @@ describe('a lease', () => {
   it("keeps another process's entry from a collection, and stops when that process is killed", async () => {
     const { env, store, key } = await storeWithEntry();
     const install = await holder(store, 'install', key);
+    await waitForLiveLease(store, 'install', key);
 
+    const dry = await collectSharedStore({
+      env,
+      minimumAgeMs: 0,
+      dryRun: true,
+    });
+    expect(dry).toMatchObject({ removed: [], held: 1 });
     const held = await collectSharedStore({ env, minimumAgeMs: 0 });
     expect(held).toMatchObject({ removed: [], held: 1 });
     // The other process's claim does not stop this one from using the store.
@@ -91,11 +120,12 @@ describe('a lease', () => {
     const freed = await collectSharedStore({ env, minimumAgeMs: 0 });
     expect(freed).toMatchObject({ removed: [join(store, key)], held: 0 });
     expect(await readdir(store)).not.toContain('.leases');
-  });
+  }, 60_000);
 
   it('lets an install go on once a collection that was settling its entry is killed', async () => {
     const { store, key } = await storeWithEntry();
     const collection = await holder(store, 'gc', `+${key}`);
+    await waitForLiveLease(store, 'gc', key);
     let pauses = 0;
     const hold = await holdSharedStore(store, {
       pause: async () => {
@@ -108,7 +138,7 @@ describe('a lease', () => {
     await hold.release();
 
     expect(pauses).toBe(1);
-  });
+  }, 60_000);
 
   it('makes an install wait while a collection settles its entry, and no longer', async () => {
     const { store, key } = await storeWithEntry();

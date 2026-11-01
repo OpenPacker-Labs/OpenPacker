@@ -8,6 +8,7 @@
 | [Trust, lifecycle, and policy](trust-lifecycle-policy.md)  | Separate evidence roles, deterministic reduction, forensic materialization, and receipts  |
 | [Benchmarking](benchmarking.md)                            | Reproducible methodology and bounded regression thresholds                                |
 | [Contributing and releasing](contributing-releasing.md)    | Contract-first changes, quality gates, packaging, and release evidence                    |
+| [Trunk release pipeline](../RELEASING.md)                  | Merge queue, nightly, integration, production, and npm trusted publishing                 |
 
 OpenPacker can run directly on the host; Docker is not required for the
 mandatory offline demo. The optional compose environment is for live registry

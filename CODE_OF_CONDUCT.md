@@ -61,7 +61,7 @@ representative at an online or offline event.
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement through GitHub
 private reporting for this repository
-([Tyler-R-Kendrick/OpenPacker](https://github.com/Tyler-R-Kendrick/OpenPacker/security/advisories/new))
+([OpenPacker-Labs/OpenPacker](https://github.com/OpenPacker-Labs/OpenPacker/security/advisories/new))
 and/or by contacting maintainer
 [@Tyler-R-Kendrick](https://github.com/Tyler-R-Kendrick) on GitHub. All
 complaints will be reviewed and investigated promptly and fairly.

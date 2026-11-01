@@ -1,3 +1,7 @@
+import { safeEcho } from '@openpacker/canonical';
+import { NPM_NAME_LIMIT } from './packument-limits.js';
+import { parseNpmRange } from './npm-range.js';
+
 /**
  * What the right-hand side of a dependency entry asks npm to do, and how a
  * message names one.
@@ -5,10 +9,6 @@
  * Anything that is not a version range and not a recognizable source is a
  * dist-tag, as npm reads it.
  */
-
-import { safeEcho } from '@openpacker/canonical';
-import { NPM_NAME_LIMIT } from './packument-limits.js';
-import { parseNpmRange } from './npm-range.js';
 
 export type NpmDependencySpecKind =
   | 'range'
@@ -41,6 +41,16 @@ export function classifyDependencySpec(spec: string): NpmDependencySpecKind {
   } catch {
     return 'tag';
   }
+}
+
+/**
+ * Whether npm reads `tag` as a dist-tag name at all: npm-package-arg@14.0.0
+ * (`lib/npa.js` 468-469) refuses one that `encodeURIComponent` would change
+ * ("Invalid tag name ... Tags may not have any characters that
+ * encodeURIComponent encodes").
+ */
+export function isNpmTagName(tag: string): boolean {
+  return tag !== '' && encodeURIComponent(tag) === tag;
 }
 
 /**
@@ -90,6 +100,11 @@ export function specifierNotARange(specKind: string, range: string): string {
   return `The ${specKind} specifier "${safeEcho(range, RANGE_LIMIT)}" is not a registry version range`;
 }
 
+/** Why an alias cannot be followed, which may repeat what a registry wrote. */
+export function echoedReason(reason: string): string {
+  return safeEcho(reason, REASON_LIMIT);
+}
+
 /** What is recorded of an entry that could not be read, and is not walked. */
 export function entryNotRepresentable(
   field: string,
@@ -101,14 +116,4 @@ export function entryNotRepresentable(
     `The ${field} entry "${echoedName(name)}": "${safeEcho(range, RANGE_LIMIT)}" ` +
     `cannot be represented: ${safeEcho(reason, REASON_LIMIT)}`
   );
-}
-
-/**
- * Whether npm reads `tag` as a dist-tag name at all: npm-package-arg@14.0.0
- * (`lib/npa.js` 468-469) refuses one that `encodeURIComponent` would change
- * ("Invalid tag name ... Tags may not have any characters that
- * encodeURIComponent encodes").
- */
-export function isNpmTagName(tag: string): boolean {
-  return tag !== '' && encodeURIComponent(tag) === tag;
 }

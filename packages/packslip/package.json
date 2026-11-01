@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/packslip",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Consumer-side implementation of the packslip v1 signed release manifest",
   "license": "MIT",
   "type": "module",
@@ -32,18 +33,23 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/contracts": "0.1.0",
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
     "@sigstore/bundle": "4.0.0",
     "@sigstore/core": "3.2.1",
     "@sigstore/protobuf-specs": "0.5.2",
     "@sigstore/verify": "3.1.1"
   },
   "devDependencies": {
-    "@openpacker/packslip-testkit": "0.1.0",
-    "@openpacker/project-io": "0.1.0",
+    "@openpacker/packslip-testkit": "0.0.1-alpha.1",
+    "@openpacker/project-io": "0.0.1-alpha.1",
     "@types/semver": "7.7.1",
     "fast-check": "4.9.0",
     "semver": "7.8.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenPacker-Labs/OpenPacker.git",
+    "directory": "packages/packslip"
   }
 }
