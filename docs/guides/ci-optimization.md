@@ -80,3 +80,12 @@ user). Build from the repository root:
 docker build -f apps/openpacker-cli/Dockerfile -t openpacker-cli:local .
 docker run --rm openpacker-cli:local --help
 ```
+
+## Testcontainers (integration services)
+
+Integration tests that need an OCI distribution registry use
+[Testcontainers](https://node.testcontainers.org/) with digest-pinned images
+(`tests/support/pinned-container-images.mjs`). Tests skip when Docker is
+unavailable so offline `npm run verify` still passes on hosts without Docker.
+Manual live-compat (`live-compat.yml`) starts Zot through
+`scripts/live-compat/run-with-zot.mjs` instead of ad-hoc `docker run`.
