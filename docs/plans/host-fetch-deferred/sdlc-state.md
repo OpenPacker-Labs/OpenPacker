@@ -35,15 +35,15 @@ User-resolved open questions: no require-pin profile; first-party pin-mode now
 
 ## Stack layers
 
-| Layer | Branch                                       | Scope                                                              | PR                                                                        |
-| ----- | -------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| 01    | sdlc/host-fetch-deferred-01-pin-mode         | Extract classify-and-pin into BoundedFetchTransport (undici Agent) | [#120](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/120) `55b7f41` |
-| 02    | sdlc/host-fetch-deferred-02-adr              | ADR 0041 decision record                                           | [#121](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/121) `b87b319` |
-| 03    | sdlc/host-fetch-deferred-03-artifact-origins | `[plugins.<id>] artifact_origins` union env pins                   | [#122](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/122) `d319565` |
-| 04    | sdlc/host-fetch-deferred-04-bearer           | Per-origin bearer + sandbox deny + `--allow-env` refusal           | [#123](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/123) `95a381a` |
-| 05    | sdlc/host-fetch-deferred-05-extra-header     | Extra operator header grant                                        | [#124](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/124) `7ef8475` |
-| 06    | sdlc/host-fetch-deferred-06-honesty          | Ambient-credential honesty tests                                   | [#125](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/125) `d934850` |
-| 07    | sdlc/host-fetch-deferred-07-first-party      | First-party classify-and-pin + CDN narrowing + OCI wrap            | [#126](https://github.com/Tyler-R-Kendrick/OpenPacker/pull/126) `98ebf1c` |
+| Layer | Branch                                       | Scope                                                              | PR                                                                       |
+| ----- | -------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| 01    | sdlc/host-fetch-deferred-01-pin-mode         | Extract classify-and-pin into BoundedFetchTransport (undici Agent) | [#120](https://github.com/OpenPacker-Labs/OpenPacker/pull/120) `55b7f41` |
+| 02    | sdlc/host-fetch-deferred-02-adr              | ADR 0041 decision record                                           | [#121](https://github.com/OpenPacker-Labs/OpenPacker/pull/121) `b87b319` |
+| 03    | sdlc/host-fetch-deferred-03-artifact-origins | `[plugins.<id>] artifact_origins` union env pins                   | [#122](https://github.com/OpenPacker-Labs/OpenPacker/pull/122) `d319565` |
+| 04    | sdlc/host-fetch-deferred-04-bearer           | Per-origin bearer + sandbox deny + `--allow-env` refusal           | [#123](https://github.com/OpenPacker-Labs/OpenPacker/pull/123) `95a381a` |
+| 05    | sdlc/host-fetch-deferred-05-extra-header     | Extra operator header grant                                        | [#124](https://github.com/OpenPacker-Labs/OpenPacker/pull/124) `7ef8475` |
+| 06    | sdlc/host-fetch-deferred-06-honesty          | Ambient-credential honesty tests                                   | [#125](https://github.com/OpenPacker-Labs/OpenPacker/pull/125) `d934850` |
+| 07    | sdlc/host-fetch-deferred-07-first-party      | First-party classify-and-pin + CDN narrowing + OCI wrap            | [#126](https://github.com/OpenPacker-Labs/OpenPacker/pull/126) `98ebf1c` |
 
 ## Gates
 

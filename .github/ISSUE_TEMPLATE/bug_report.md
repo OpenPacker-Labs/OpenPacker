@@ -41,6 +41,6 @@ registry credentials, tokens, private package bytes, and personal data.
 ## Security
 
 If this is a vulnerability, do not file it here. Use GitHub private
-vulnerability reporting (Security Advisories) for `Tyler-R-Kendrick/OpenPacker`,
+vulnerability reporting (Security Advisories) for `OpenPacker-Labs/OpenPacker`,
 as described in
-[SECURITY.md](https://github.com/Tyler-R-Kendrick/OpenPacker/blob/main/SECURITY.md).
+[SECURITY.md](https://github.com/OpenPacker-Labs/OpenPacker/blob/main/SECURITY.md).

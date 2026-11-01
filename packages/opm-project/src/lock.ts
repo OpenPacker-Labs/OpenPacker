@@ -1,6 +1,4 @@
-import { echoed } from '@openpacker/adapter-core';
-import { parseCanonicalJson, printable } from '@openpacker/canonical';
-import type { JsonValue } from '@openpacker/contracts';
+import { parseCanonicalJson, plainLine } from '@openpacker/canonical';
 import { isSourceKind, isTrustTier } from '@openpacker/policy';
 import { canonicalLockPurl } from './lock-purl.js';
 import { readStableFile, writeStableFile } from './paths.js';
@@ -53,29 +51,58 @@ export function serializeLockfile(lock: OpmLockfile): string {
 }
 
 export function parseLockfile(text: string): OpmLockfile {
-  let value: JsonValue;
+  try {
+    return parseLockfileBody(text);
+  } catch (error) {
+    if (error instanceof OpmError) throw error;
+    throw new OpmError(
+      'INVALID_LOCK',
+      plainLine(error instanceof Error ? error.message : String(error)),
+    );
+  }
+}
+
+function lockScalar(value: unknown): string {
+  if (typeof value === 'string') return plainLine(value);
+  if (typeof value === 'number' || typeof value === 'boolean')
+    return String(value);
+  if (value === null) return 'null';
+  try {
+    return plainLine(JSON.stringify(value));
+  } catch {
+    return '[unprintable]';
+  }
+}
+
+function lockAlias(alias: string): string {
+  return plainLine(alias);
+}
+
+function parseLockfileBody(text: string): OpmLockfile {
+  let value: unknown;
   try {
     value = parseCanonicalJson(text);
   } catch (error) {
     throw new OpmError(
       'INVALID_LOCK',
-      `opm.lock.json is not valid JSON: ${echoed(error instanceof Error ? error.message : String(error))}`,
+      `opm.lock.json is not valid JSON: ${plainLine(error instanceof Error ? error.message : String(error))}`,
     );
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new OpmError('INVALID_LOCK', 'opm.lock.json must be a JSON object');
   }
-  const record = value;
-  if (record.schemaVersion !== 1) {
+  // SAFETY: The surrounding boundary establishes the asserted domain contract.
+  const record = value as Record<string, unknown>;
+  if (typeof record.schemaVersion !== 'number' || record.schemaVersion !== 1) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Unsupported lock schemaVersion: ${echoed(printable(record.schemaVersion))}`,
+      `Unsupported lock schemaVersion: ${lockScalar(record.schemaVersion)}`,
     );
   }
-  if (record.generatedBy !== 'opm') {
+  if (typeof record.generatedBy !== 'string' || record.generatedBy !== 'opm') {
     throw new OpmError(
       'INVALID_LOCK',
-      `Unexpected generatedBy: ${echoed(printable(record.generatedBy))}`,
+      `Unexpected generatedBy: ${lockScalar(record.generatedBy)}`,
     );
   }
   if (
@@ -106,7 +133,7 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Invalid lock package entry: ${echoed(alias)}`,
+      `Invalid lock package entry: ${lockAlias(alias)}`,
     );
   }
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -116,7 +143,7 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
     if (typeof value !== 'string' || value === '') {
       throw new OpmError(
         'INVALID_LOCK',
-        `Package "${echoed(alias)}" missing string field ${key}`,
+        `Package "${lockAlias(alias)}" missing string field ${key}`,
       );
     }
     return value;
@@ -125,28 +152,28 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   if (typeof size !== 'number' || !Number.isInteger(size) || size < 0) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${echoed(alias)}" has invalid size`,
+      `Package "${lockAlias(alias)}" has invalid size`,
     );
   }
   const format = requiredString('format');
   if (format !== 'tar' && format !== 'tar+gzip' && format !== 'zip') {
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${echoed(alias)}" has unsupported format ${echoed(format)}`,
+      `Package "${lockAlias(alias)}" has unsupported format ${plainLine(format)}`,
     );
   }
   const binsRaw = pkg.bins;
   if (!Array.isArray(binsRaw)) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${echoed(alias)}" bins must be an array`,
+      `Package "${lockAlias(alias)}" bins must be an array`,
     );
   }
   const bins = binsRaw.map((entry, index) => {
     if (typeof entry !== 'object' || entry === null) {
       throw new OpmError(
         'INVALID_LOCK',
-        `Package "${echoed(alias)}" bins[${index}] invalid`,
+        `Package "${lockAlias(alias)}" bins[${index}] invalid`,
       );
     }
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
@@ -154,7 +181,7 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
     if (typeof bin.name !== 'string' || typeof bin.path !== 'string') {
       throw new OpmError(
         'INVALID_LOCK',
-        `Package "${echoed(alias)}" bins[${index}] needs name and path`,
+        `Package "${lockAlias(alias)}" bins[${index}] needs name and path`,
       );
     }
     // interpreter/entry ride along so a lock round-trip keeps how the bin
@@ -170,14 +197,14 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
     if (rawInterpreter !== undefined && interpreter === undefined) {
       throw new OpmError(
         'INVALID_LOCK',
-        `Package "${echoed(alias)}" bins[${index}] has invalid interpreter`,
+        `Package "${lockAlias(alias)}" bins[${index}] has invalid interpreter`,
       );
     }
     const binEntry = bin.entry;
     if (binEntry !== undefined && typeof binEntry !== 'string') {
       throw new OpmError(
         'INVALID_LOCK',
-        `Package "${echoed(alias)}" bins[${index}] has invalid entry`,
+        `Package "${lockAlias(alias)}" bins[${index}] has invalid entry`,
       );
     }
     return {
@@ -191,19 +218,19 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   if (reason !== 'direct' && reason !== 'transitive') {
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${echoed(alias)}" has invalid reason`,
+      `Package "${lockAlias(alias)}" has invalid reason`,
     );
   }
   if (pkg.trustLevel !== undefined && !isTrustTier(pkg.trustLevel)) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${echoed(alias)}" has invalid trustLevel`,
+      `Package "${lockAlias(alias)}" has invalid trustLevel`,
     );
   }
   if (pkg.sourceKind !== undefined && !isSourceKind(pkg.sourceKind)) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${echoed(alias)}" has invalid sourceKind`,
+      `Package "${lockAlias(alias)}" has invalid sourceKind`,
     );
   }
   if (
@@ -212,7 +239,7 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   ) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${echoed(alias)}" has invalid publishedAt`,
+      `Package "${lockAlias(alias)}" has invalid publishedAt`,
     );
   }
   if (
@@ -221,13 +248,13 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   ) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${echoed(alias)}" has invalid registryId`,
+      `Package "${lockAlias(alias)}" has invalid registryId`,
     );
   }
   if (pkg.lifecycle !== undefined && !isLifecycleState(pkg.lifecycle))
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${echoed(alias)}" has invalid lifecycle`,
+      `Package "${lockAlias(alias)}" has invalid lifecycle`,
     );
   if (
     pkg.nativeIntegrity !== undefined &&
@@ -235,7 +262,7 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   )
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${echoed(alias)}" has invalid nativeIntegrity`,
+      `Package "${lockAlias(alias)}" has invalid nativeIntegrity`,
     );
   const attestation = parseAttestation(alias, pkg.attestation);
   if (
@@ -247,7 +274,7 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   )
     throw new OpmError(
       'INVALID_LOCK',
-      `Package "${echoed(alias)}" has invalid dependencies`,
+      `Package "${lockAlias(alias)}" has invalid dependencies`,
     );
   const aliases = parseAliases(alias, pkg.aliases);
   const installName = parseInstallName(alias, pkg.installName);
@@ -309,7 +336,7 @@ function parseAttestation(
   const invalid = (why: string): OpmError =>
     new OpmError(
       'INVALID_LOCK',
-      `Package "${alias}" has invalid attestation: ${why}`,
+      `Package "${lockAlias(alias)}" has invalid attestation: ${why}`,
     );
   if (typeof value !== 'object' || value === null || Array.isArray(value))
     throw invalid('it must be an object');

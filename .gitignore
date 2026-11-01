@@ -1,6 +1,8 @@
 node_modules/
 target/
 dist/
+_site/
+apps/openpacker-cli/release/
 coverage/
 .turbo/
 .demo-output/
@@ -13,3 +15,4 @@ coverage/
 # PATH. It stays local — .envrc is a common home for secrets, and agent:check
 # refuses to stage anything matching .env*.
 .envrc
+actionlint
