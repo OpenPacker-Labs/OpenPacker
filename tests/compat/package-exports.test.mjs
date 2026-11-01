@@ -1,21 +1,19 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 import { join, resolve } from 'node:path';
+import { dualExportPackages } from './dual-export-packages.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const require = createRequire(import.meta.url);
-const dual = readdirSync(join(root, 'packages'))
-  .filter((name) => {
-    const manifest = JSON.parse(
-      readFileSync(join(root, 'packages', name, 'package.json'), 'utf8'),
-    );
-    return manifest.private !== true;
-  })
-  .sort();
+const dual = dualExportPackages(root).map(({ directory }) => directory);
 
-test('public Node packages declare real dual ESM/CommonJS exports', async () => {
+test('dual-export libraries declare real dual ESM/CommonJS exports', async () => {
+  assert.ok(
+    dual.includes('sdk'),
+    'dual-export libraries include @openpacker/sdk',
+  );
   for (const name of dual) {
     const manifest = JSON.parse(
       readFileSync(join(root, 'packages', name, 'package.json'), 'utf8'),

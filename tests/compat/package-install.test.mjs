@@ -12,21 +12,14 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { copyWithoutScripts } from './pack-installed.mjs';
+import { dualExportPackages } from './dual-export-packages.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const publicManifests = readdirSync(join(root, 'packages'))
-  .map((name) =>
-    JSON.parse(
-      readFileSync(join(root, 'packages', name, 'package.json'), 'utf8'),
-    ),
-  )
-  .filter((manifest) => manifest.private !== true);
-const publicWorkspaces = publicManifests
-  .map((manifest) => manifest.name)
-  .sort();
+const libraries = dualExportPackages(root);
+const libraryNames = libraries.map(({ manifest }) => manifest.name).sort();
 const externalPackages = new Map();
-const pending = publicManifests.flatMap((manifest) =>
+const pending = libraries.flatMap(({ manifest }) =>
   Object.keys(manifest.dependencies ?? {}).filter(
     (name) => !name.startsWith('@openpacker/'),
   ),
@@ -79,13 +72,13 @@ function packInstalled(directory, tarballs, scratch, index, environment) {
   );
 }
 
-test('packed public packages install and run in a clean CommonJS TypeScript consumer', () => {
+test('packed dual-export libraries install and run in a clean CommonJS TypeScript consumer', () => {
   const fixture = mkdtempSync(join(tmpdir(), 'openpacker-sdk-consumer-'));
   const tarballs = join(fixture, 'tarballs');
   const npmEnvironment = { npm_config_cache: join(fixture, 'npm-cache') };
   mkdirSync(tarballs);
   try {
-    for (const workspace of publicWorkspaces)
+    for (const workspace of libraryNames)
       run(
         npm,
         [
@@ -126,7 +119,7 @@ test('packed public packages install and run in a clean CommonJS TypeScript cons
 
     writeFileSync(
       join(fixture, 'consumer.cjs'),
-      `for (const name of ${JSON.stringify(publicWorkspaces)}) require(name);\nconst { createOpenPackerClient } = require('@openpacker/sdk');\nif (typeof createOpenPackerClient !== 'function') process.exit(1);\n`,
+      `for (const name of ${JSON.stringify(libraryNames)}) require(name);\nconst { createOpenPackerClient } = require('@openpacker/sdk');\nif (typeof createOpenPackerClient !== 'function') process.exit(1);\n`,
     );
     writeFileSync(
       join(fixture, 'consumer.ts'),
