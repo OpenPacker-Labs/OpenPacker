@@ -46,7 +46,20 @@ describe('shims', () => {
     expect(shim.split('\n')[0]).toBe('#!/bin/sh');
     expect(shim).toContain(`"$basedir"'/../it'\\''s/a $(b)/cli.js'`);
     expect(shim).toContain("exec 'node' ");
-    expect(shim.endsWith('"$@"\n')).toBe(true);
+    // sh stops at the exec, which ends its line; node reads the target as a
+    // JSON string literal.
+    const lines = shim.split('\n');
+    expect(lines[1]!.startsWith("':' //; ")).toBe(true);
+    expect(lines[1]!.endsWith('"$@"')).toBe(true);
+    expect(shim).toContain(JSON.stringify("../it's/a $(b)/cli.js"));
+  });
+
+  it('writes a plain shell shim for an interpreter that is not node', () => {
+    const shim = renderPosixShim('../x/run.sh', { program: 'sh', args: [] });
+    expect(shim.split('\n').at(-2)).toBe(
+      'exec \'sh\' "$basedir"\'/../x/run.sh\' "$@"',
+    );
+    expect(shim).not.toContain('import(');
   });
 
   it('puts the interpreter flags before the script', () => {

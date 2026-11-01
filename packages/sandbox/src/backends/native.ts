@@ -317,21 +317,32 @@ export function buildBwrapArgv(input: {
   const cwdPath = resolve(input.cwd);
   if (!rw.has(cwdPath) && !ro.has(cwdPath)) ro.add(cwdPath);
 
-  for (const path of rw) {
+  // bwrap mounts in the order it is told, and a mount covers what was mounted
+  // below it before. So a parent goes first, whatever its mode: a writable
+  // package directory inside a read-only project stays writable, and a
+  // read-only path inside a writable one stays read-only.
+  const binds = [
+    ...[...rw].map((path) => ({ path, writable: true })),
+    ...[...ro]
+      .filter((path) => !rw.has(path))
+      .map((path) => ({ path, writable: false })),
+  ].sort(
+    (left, right) =>
+      left.path.split('/').length - right.path.split('/').length ||
+      Number(left.writable) - Number(right.writable),
+  );
+  for (const { path, writable } of binds) {
     const authority = input.directoryAuthorities?.find(
       ({ path: target }) => resolve(target) === path,
     );
     if (!authority && !existsSync(path)) continue;
-    if (authority) args.push('--bind-fd', String(authority.childFd), path);
-    else args.push('--bind', path, path);
-  }
-  for (const path of ro) {
-    if (rw.has(path)) continue;
-    const authority = input.directoryAuthorities?.find(
-      ({ path: target }) => resolve(target) === path,
-    );
-    if (authority) args.push('--ro-bind-fd', String(authority.childFd), path);
-    else if (existsSync(path)) args.push('--ro-bind', path, path);
+    if (authority)
+      args.push(
+        writable ? '--bind-fd' : '--ro-bind-fd',
+        String(authority.childFd),
+        path,
+      );
+    else args.push(writable ? '--bind' : '--ro-bind', path, path);
   }
 
   // Remask after RW overlays. Host-install `--bind / /` would otherwise

@@ -101,12 +101,14 @@ tool but not a dependency tree, where a native build alone is 287 MB unpacked.
    leaves the previous `node_modules` alone. The shared store is found by that
    digest (`by-integrity/<algorithm>-<hex>` records the entry's sha256, only
    after verification) and the entry it names is adopted the usual way, so a
-   stale index costs a download and cannot cost a wrong package. What is not in
-   the store is fetched through the bounded, destination-classifying transport
-   with an allowlist that is exactly the origins of the `resolved` URLs being
-   installed: no environment variable adds one and a redirect elsewhere is
-   refused. Only an origin the operator named (`OPM_REGISTRY_<ECOSYSTEM>`) may
-   resolve to a private address.
+   stale index costs a download and cannot cost a wrong package.
+   `opm gc --shared` removes a record with the entry it names, and any record
+   whose entry is already gone, so a record never outlives its entry. What is
+   not in the store is fetched through the bounded, destination-classifying
+   transport with an allowlist that is exactly the origins of the `resolved`
+   URLs being installed: no environment variable adds one and a redirect
+   elsewhere is refused. Only an origin the operator named
+   (`OPM_REGISTRY_<ECOSYSTEM>`) may resolve to a private address.
 
 6. **The layout is the lock's.** `planLayoutFromPaths` places each package at
    the chain its key gives; it chooses nothing and refuses what cannot be

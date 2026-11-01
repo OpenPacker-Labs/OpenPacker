@@ -1,8 +1,17 @@
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  readlink,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { planFrozen } from '../src/index.js';
 import { cleanup, pnpmWorld, type PnpmWorld } from './frozen-pnpm-fixture.js';
+import { storedNames } from './frozen-workspace-fixture.js';
 
 afterEach(cleanup);
 
@@ -101,6 +110,54 @@ describe('the platforms of a pnpm install', () => {
     expect(await w2.list('node_modules')).not.toContain('plat-arm64');
   });
 
+  // pnpm writes `libc` only when the registry's metadata had it, so a lock can
+  // list a musl build as for linux/x64 alone; the archive's own package.json
+  // says musl (OpenSesame: @anthropic-ai/claude-agent-sdk-linux-x64-musl, 258 MiB).
+  it("leaves out an optional package whose package.json names another libc than the lock's, and never extracts it", async () => {
+    const w = await pnpmWorld();
+    const native = (name: string, libc: string) =>
+      w.pkg({
+        name,
+        version: '1.0.0',
+        os: ['linux'],
+        cpu: ['x64'],
+        optional: true,
+        manifest: { os: ['linux'], cpu: ['x64'], libc: [libc] },
+      });
+    native('sdk-linux-x64', 'glibc');
+    native('sdk-linux-x64-musl', 'musl');
+    w.pkg({
+      name: 'sdk',
+      version: '1.0.0',
+      optionalDeps: {
+        'sdk-linux-x64': '1.0.0',
+        'sdk-linux-x64-musl': '1.0.0',
+      },
+    });
+    w.importer('.', { dependencies: { sdk: ['^1.0.0', '1.0.0'] } });
+    await w.write();
+
+    const result = await w.install();
+
+    expect(await w.list('node_modules')).toEqual([
+      '.opm-layout.json',
+      'sdk',
+      'sdk-linux-x64',
+    ]);
+    expect(result.skipped).toEqual([
+      expect.objectContaining({
+        name: 'sdk-linux-x64-musl',
+        kind: 'platform',
+        reason: expect.stringMatching(/libc "musl".*its package\.json/u),
+      }),
+    ]);
+    expect(result.installed).toBe(2);
+    expect(await storedNames(`${w.dir}-store`)).toEqual([
+      'sdk',
+      'sdk-linux-x64',
+    ]);
+  });
+
   it('refuses a package that does not run here and is not optional, before it fetches', async () => {
     const w = await pnpmWorld();
     w.pkg({ name: 'arm-only', version: '1.0.0', cpu: ['arm64'] });
@@ -114,6 +171,30 @@ describe('the platforms of a pnpm install', () => {
 });
 
 describe('choosing members of a pnpm workspace', () => {
+  // HoBo lists the members of a git submodule in pnpm-workspace.yaml; in a
+  // checkout that has not initialised it they are not there, and the member
+  // that links one cannot be selected. Saying so beats "no member is named".
+  it('names the members the workspace lists that are not on disk, when a filtered member links one', async () => {
+    const w = await pnpmWorld();
+    w.pkg({ name: 'left', version: '1.0.0' });
+    w.importer('.', {}, { name: 'root' });
+    w.importer('packages/app', {
+      dependencies: {
+        lib: ['workspace:*', 'link:../../vendor/lib'],
+        left: ['^1.0.0', '1.0.0'],
+      },
+    });
+    w.importer('vendor/lib', {});
+    await w.write({
+      workspaceYaml: 'packages:\n  - "packages/*"\n  - "vendor/lib"\n',
+    });
+    await rm(join(w.dir, 'vendor'), { recursive: true });
+    await expect(w.install({ workspace: { filter: ['app'] } })).rejects.toThrow(
+      /no workspace member is named "lib".*pnpm-workspace\.yaml lists vendor\/lib, which is not on disk \(a git submodule that is not checked out\?\)/u,
+    );
+    expect(w.registry.requests).toEqual([]);
+  });
+
   it('installs the filtered member, the members it links and what they need, not the project', async () => {
     const w = await fixture();
     await w.install({ workspace: { filter: ['web'] } });
@@ -131,6 +212,26 @@ describe('choosing members of a pnpm workspace', () => {
     expect(w.load('right/package.json', 'packages/lib')).toMatchObject({
       version: '1.0.0',
     });
+  });
+
+  // pnpm links an importer's `link:` dependency in that importer's own
+  // node_modules, and code relies on the path: HoBo's packages/runtime imports
+  // "../node_modules/@hobo/wit/src/generated/…". A link to a member is the one
+  // symlink node_modules may hold (ADR 0050), and every link to it resolves to
+  // the member's own directory, so there is one copy of it.
+  it("links a member's workspace dependency in the member's own node_modules, as pnpm does", async () => {
+    const w = await fixture();
+    await w.install();
+    const local = join(w.dir, 'packages/web/node_modules/lib');
+    expect((await lstat(local)).isSymbolicLink()).toBe(true);
+    expect(await readlink(local)).toBe('../../lib');
+    expect(await realpath(local)).toBe(
+      await realpath(join(w.dir, 'packages/lib')),
+    );
+    // The project's link stays, for what is hoisted there.
+    expect(
+      (await lstat(join(w.dir, 'node_modules/lib'))).isSymbolicLink(),
+    ).toBe(true);
   });
 
   it('adds the project with --include-workspace-root', async () => {

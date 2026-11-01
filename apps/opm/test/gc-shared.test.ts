@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -102,6 +109,28 @@ describe('opm gc --shared', () => {
     expect(real.out).toContain('Removed 1 unreferenced entry');
     expect(real.out).toContain('0 in use by an install in progress');
     expect(await readdir(shared)).toEqual([]);
+  });
+
+  it('removes and lists the integrity records of the entries it removes', async () => {
+    const shared = await mkdtemp(join(tmpdir(), 'opm-gc-shared-'));
+    temps.push(shared);
+    process.env.OPM_STORE_HOME = shared;
+    const key = await sharedEntry(shared);
+    const record = join(shared, 'by-integrity', `sha512-${'ab'.repeat(64)}`);
+    await mkdir(dirname(record));
+    await writeFile(record, `${key.replace('sha256-', 'sha256:')}\n`);
+    // An hour on, for the entry directory as well as its record: gc dates an
+    // entry by both, and a directory's ctime cannot be set back.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 3_600_000);
+
+    const real = capture();
+    expect(await runOpm(['gc', '--shared'], real.io, shared)).toBe(0);
+    expect(real.out).toContain(
+      'Removed 1 unreferenced entry and 1 integrity record naming an entry that is gone',
+    );
+    expect(real.out).toContain(`  ${record}\n`);
+    expect(await readdir(join(shared, 'by-integrity'))).toEqual([]);
   });
 
   it('needs no project, and says plainly when there is no shared store', async () => {

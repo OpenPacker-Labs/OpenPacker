@@ -62,10 +62,15 @@ export async function runSharedGcCommand(
   const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
   out(
     io,
-    `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'} from ${plainLine(result.root)}; ` +
+    `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'}` +
+      (result.records.length === 0
+        ? ''
+        : ` and ${result.records.length} integrity record${result.records.length === 1 ? '' : 's'} naming an entry that is gone`) +
+      ` from ${plainLine(result.root)}; ` +
       `${result.referenced} still used by a project, ${result.held} in use by an install in progress, ${result.tooNew} too new to judge\n`,
   );
-  for (const path of result.removed) out(io, `  ${plainLine(path)}\n`);
+  for (const path of [...result.removed, ...result.records])
+    out(io, `  ${plainLine(path)}\n`);
   return 0;
 }
 

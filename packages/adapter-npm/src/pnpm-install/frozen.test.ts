@@ -68,12 +68,33 @@ describe.each([
         top.edges.flatMap((edge) => (edge.kind === 'link' ? [edge.as] : [])),
       ),
     );
+    const paths = lock.workspace!.layout.links.map((link) => link.path);
     expect(
-      lock.workspace!.layout.links.map((link) => link.path).sort(),
+      paths.filter((path) => path.startsWith('node_modules/')).sort(),
     ).toEqual([...linked].map((link) => `node_modules/${link}`).sort());
     expect(lock.workspace!.memberDirs).toHaveLength(
       [...model.tops.keys()].filter((id) => id !== '.').length,
     );
+  });
+
+  it("links each member's workspace dependencies in its own node_modules too, as pnpm does", async () => {
+    const lock = await read(name);
+    const model = buildPnpmModel(readPnpmLock(fixtureBytes(name)).lock);
+    const placed = new Set(lock.packages.map((pkg) => pkg.path));
+    const wanted = [...model.tops.values()]
+      .filter((top) => top.dir !== '')
+      .flatMap((top) =>
+        top.edges.flatMap((edge) =>
+          edge.kind === 'link' && edge.memberId !== undefined
+            ? [`${top.dir}/node_modules/${edge.as}`]
+            : [],
+        ),
+      )
+      .filter((path) => !placed.has(path));
+    const paths = new Set(
+      lock.workspace!.layout.links.map((link) => link.path),
+    );
+    for (const path of wanted) expect(paths).toContain(path);
   });
 });
 

@@ -477,6 +477,39 @@ describe.skipIf(!bwrapReady)('native bwrap package-exec suite', () => {
     expect(existsSync(target)).toBe(true);
   });
 
+  // An install script runs in its package's directory under node_modules: that
+  // directory is writable and the project around it, where the script finds
+  // its dependencies, is read-only. bwrap mounts in order, so the read-only
+  // parent has to be mounted before the writable directory inside it.
+  it('keeps a writable path writable inside a read-only one', async () => {
+    const project = mkdtempSync(join(tmpdir(), 'op-escape-nested-'));
+    const pkg = join(project, 'node_modules', 'built');
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(
+      join(project, 'node_modules', 'dep.js'),
+      'module.exports = 7;\n',
+    );
+    const target = join(pkg, 'built.txt');
+    const outside = join(project, 'outside.txt');
+    const outcome = await runInSandbox({
+      argv: [
+        process.execPath,
+        '-e',
+        `const fs = require('fs'); fs.writeFileSync(${JSON.stringify(target)}, String(require('../dep.js'))); try { fs.writeFileSync(${JSON.stringify(outside)}, 'x'); } catch { process.exit(0); } process.exit(9);`,
+      ],
+      cwd: pkg,
+      policy: { mode: 'fail-closed', prefer: 'native' },
+      profile: 'package-exec',
+      readwritePaths: [pkg],
+      readonlyPaths: [project],
+      backend,
+    });
+    expect(outcome.exitCode, outcome.stderr).toBe(0);
+    expect(readFileSync(target, 'utf8')).toBe('7');
+    expect(existsSync(outside)).toBe(false);
+    rmSync(project, { recursive: true, force: true });
+  });
+
   it('denies outbound network by default', async () => {
     const pkg = scratch('op-escape-net-');
     const outcome = await runInSandbox({

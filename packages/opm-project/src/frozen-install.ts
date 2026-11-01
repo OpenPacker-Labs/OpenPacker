@@ -45,7 +45,9 @@ import { checkArchiveIdentities } from './frozen-identity.js';
 import { patchArchives } from './frozen-patch.js';
 import { installScriptFlags, scriptedPackages } from './frozen-scripts.js';
 import { layOutFromStore, type FrozenInstallSeams } from './frozen-layout.js';
+import { runApprovedBuilds, type BuiltPackage } from './frozen-builds.js';
 import { projectStep } from './project-step.js';
+import { OpmError } from './types.js';
 import {
   frozenArchiveLimits,
   labelOf,
@@ -77,6 +79,8 @@ export interface FrozenInstallResult {
   patched: { packages: number; patches: number };
   /** Installed packages that declare an install script. None was run. */
   installScripts: readonly { name: string; version: string; path: string }[];
+  /** The packages whose approved install scripts ran, in place (ADR 0060). */
+  built: readonly BuiltPackage[];
   /** For a workspace lock: the members the lock holds, and the ones linked here. */
   workspace?: { members: number; linked: number };
   /** Present when the places do not keep every shared peer to one copy of it. */
@@ -105,18 +109,9 @@ async function installFrozenInStep(
   input: FrozenInstallInput,
   seams: FrozenInstallSeams,
 ): Promise<FrozenInstallResult> {
-  const {
-    started,
-    read,
-    root,
-    env,
-    ecosystem,
-    format,
-    detected,
-    offline,
-    lock,
-    claims,
-  } = await prepareFrozen(input);
+  const first = await prepareFrozen(input);
+  const { started, root, env, ecosystem, format, detected, offline } = first;
+  let { read, lock, claims } = first;
 
   const store = await openStore(root, env);
   let hold: StoreHold | undefined;
@@ -139,7 +134,47 @@ async function installFrozenInStep(
       options: input,
       ...(hold !== undefined && { hold }),
     };
+    // A package whose lock entry leaves its C library unsaid is decided by
+    // what its archive declares, before anything else is fetched: one that
+    // does not run here is never extracted (`frozen-archive-platform.ts`).
+    const marked = lock.packages.filter((pkg) => pkg.platformFromArchive);
+    const early =
+      marked.length === 0 || lock.archiveRuns === undefined
+        ? undefined
+        : await storeArchives({
+            lock: { ...lock, packages: marked },
+            ...from,
+            runs: lock.archiveRuns,
+          });
+    if (early !== undefined && early.platforms.size > 0) {
+      const again = await prepareFrozen(input, early.platforms);
+      if (again.lock.lockDigest !== lock.lockDigest)
+        throw new OpmError(
+          'INPUT_CHANGED',
+          `${lock.lockPath} changed while it was installed; nothing was installed from it`,
+        );
+      ({ read, lock, claims } = again);
+      from.claims = claims;
+    }
     const stored = await storeArchives({ lock, ...from });
+    if (early !== undefined) {
+      // An archive fetched to read its lists is fetched, whichever pass keeps
+      // it: the second pass finds it in the store.
+      const fetchedEarly = new Set(
+        [...early.byPath.values()]
+          .filter((item) => item.fetched && item.leftOut !== true)
+          .map((item) => item.digest),
+      );
+      const counted = new Set<string>();
+      for (const item of stored.byPath.values()) {
+        if (item.fetched || counted.has(item.digest)) continue;
+        counted.add(item.digest);
+        if (!fetchedEarly.has(item.digest)) continue;
+        stored.fetched += 1;
+        stored.fromStore -= 1;
+      }
+      stored.fetchedBytes += early.fetchedBytes;
+    }
     const fetched = now();
     // The archives are proved to be the lock's packages before any is patched,
     // and what declares a script is read from what is installed: the patched
@@ -228,6 +263,10 @@ async function installFrozenInStep(
             });
           },
         });
+    // The install scripts the project approved, in place, now that every
+    // package they may need is laid out (ADR 0060).
+    const built = await runApprovedBuilds({ root, lock, declares });
+    const ran = new Set(built.map((item) => item.path));
     const done = now();
     return {
       ecosystem,
@@ -241,13 +280,20 @@ async function installFrozenInStep(
       skipped: lock.skipped,
       ...(lock.targets !== undefined && { targets: lock.targets }),
       ...(lock.peers !== undefined && { peers: lock.peers }),
-      installScripts: scriptedPackages(lock.packages, declares, byPath),
+      installScripts: scriptedPackages(lock.packages, declares, byPath).filter(
+        (item) => !ran.has(item.path),
+      ),
+      built,
       patched,
       layout,
       ...(lock.workspace !== undefined && {
         workspace: {
           members: lock.workspace.memberDirs.length,
-          linked: lock.workspace.layout.links.length,
+          // The links in the project's own node_modules; a member's own
+          // links (pnpm's place for its `link:` dependencies) are not counted.
+          linked: lock.workspace.layout.links.filter((link) =>
+            link.path.startsWith('node_modules/'),
+          ).length,
         },
       }),
       milliseconds: {

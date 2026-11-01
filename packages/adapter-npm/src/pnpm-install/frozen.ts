@@ -11,6 +11,7 @@
 
 import { createHash } from 'node:crypto';
 import type {
+  ArchivePlatform,
   DetectedProject,
   FrozenLock,
   FrozenLockOptions,
@@ -49,7 +50,12 @@ import { lockPatches } from './patches.js';
 import { readProjectPatches } from './patch-files.js';
 import { selectTops } from './scope.js';
 import { platformsOf } from './targets.js';
-import { selectInstances, type Selection } from './select.js';
+import { declaredOf, selectInstances, type Selection } from './select.js';
+import {
+  libcUnstated,
+  npmPackageRuns,
+  withArchivePlatform,
+} from '../platform.js';
 
 const PUBLIC_REGISTRY = 'https://registry.npmjs.org';
 
@@ -122,6 +128,9 @@ export async function readFrozenPnpmLock(
     tops,
     omit: options.omit,
     targets,
+    ...(options.archivePlatforms !== undefined && {
+      archivePlatforms: options.archivePlatforms,
+    }),
   });
   const { sources, refused: sourceRefusals } = instanceSources(
     model,
@@ -194,11 +203,37 @@ export async function readFrozenPnpmLock(
       }),
       // Every key of the lock is the project's once the lock is fresh.
       ...(patch !== undefined && { patch: declared.patches.get(patch)! }),
+      ...(instance.optional &&
+        libcUnstated(declaredOf(instance, options.archivePlatforms)) && {
+          platformFromArchive: true as const,
+        }),
     };
   });
+  // What an archive says decides only for the packages marked: the lock's own
+  // lists already let them through.
+  const lockOf = new Map(
+    placement.placed.map((place) => [
+      placePath(place.chain, place.base),
+      model.instances.get(place.key)!.pkg,
+    ]),
+  );
   const direct = directPlaces(input, placement);
+  const occupied = new Set(packages.map((pkg) => pkg.path));
   const workspace = workspaceOf(model, tops, present, disk, {
     links: placement.links,
+    // pnpm links an importer's `link:` dependency in the importer's own
+    // node_modules too, and code relies on the path; a place a package of the
+    // lock already holds keeps the package.
+    memberLinks: input.tops.flatMap((top) =>
+      top.dir === ''
+        ? []
+        : top.links
+            .map((link) => ({
+              path: `${top.dir}/node_modules/${link.as}`,
+              memberDir: link.memberDir,
+            }))
+            .filter((link) => !occupied.has(link.path)),
+    ),
     importers: input.tops.map((top) => ({
       dir: top.dir,
       dependencies: (direct.get(top.dir) ?? []).map(({ place }) =>
@@ -215,6 +250,17 @@ export async function readFrozenPnpmLock(
     refused: [],
     ...(workspace !== undefined && { workspace }),
     ...peersOf(model, placement),
+    ...(root.config.approvedBuilds !== undefined && {
+      approvedBuilds: root.config.approvedBuilds,
+    }),
+    ...(packages.some((pkg) => pkg.platformFromArchive) && {
+      archiveRuns: (pkg: FrozenLockPackage, archive: ArchivePlatform) => {
+        const lock = lockOf.get(pkg.path);
+        if (lock === undefined) return true;
+        const declared = withArchivePlatform(lock, archive);
+        return targets.some((target) => npmPackageRuns(declared, target));
+      },
+    }),
   };
 }
 
@@ -284,6 +330,8 @@ function workspaceOf(
   disk: readonly WorkspaceMember[],
   planned: {
     links: readonly { name: string; memberDir: string }[];
+    /** Links in an importer's own node_modules: project-relative place and member. */
+    memberLinks: readonly { path: string; memberDir: string }[];
     importers: NonNullable<FrozenLockWorkspace['layout']['importers']>;
   },
 ): FrozenLockWorkspace | undefined {
@@ -310,10 +358,16 @@ function workspaceOf(
             bin: member?.manifest.bin ?? {},
           };
         }),
-      links: planned.links.map((link) => {
-        const path = `node_modules/${link.name}`;
-        return { path, target: linkTargetBetween(path, link.memberDir) };
-      }),
+      links: [
+        ...planned.links.map((link) => {
+          const path = `node_modules/${link.name}`;
+          return { path, target: linkTargetBetween(path, link.memberDir) };
+        }),
+        ...planned.memberLinks.map((link) => ({
+          path: link.path,
+          target: linkTargetBetween(link.path, link.memberDir),
+        })),
+      ],
       importers: planned.importers,
     },
   };

@@ -32,6 +32,7 @@ import {
   shownScheme,
 } from '@openpacker/adapter-core';
 import type {
+  FrozenLock,
   FrozenLockOptions,
   FrozenLockPackage,
   FrozenLockRefusal,
@@ -42,7 +43,13 @@ import type {
 } from '@openpacker/adapter-core';
 import { buildGraph, optionalSet } from './frozen-graph.js';
 import type { LockEntry, PackageLockTree } from './lock-tree.js';
-import { npmPackageRuns } from './platform.js';
+import {
+  describePlatform,
+  libcUnstated,
+  npmPackageRuns,
+  withArchivePlatform,
+  type DeclaredPlatform,
+} from './platform.js';
 import { npmPurl } from './purl.js';
 import { scopeOfWorkspace, workspaceLayout } from './frozen-workspace.js';
 
@@ -51,6 +58,7 @@ export interface FrozenInstallPlan {
   skipped: FrozenLockSkip[];
   refused: FrozenLockRefusal[];
   workspace?: FrozenLockWorkspace;
+  archiveRuns?: NonNullable<FrozenLock['archiveRuns']>;
 }
 
 /** A locked package as a message names it: its name, `@`, its version. */
@@ -66,14 +74,8 @@ function describeTargets(targets: readonly NativeTarget[]): string {
   return targets.map(describeTarget).join(' or ');
 }
 
-function describeDeclared(entry: LockEntry): string {
-  return [
-    entry.os && `os ${entry.os.map((item) => echoed(item)).join(',')}`,
-    entry.cpu && `cpu ${entry.cpu.map((item) => echoed(item)).join(',')}`,
-    entry.libc && `libc ${entry.libc.map((item) => echoed(item)).join(',')}`,
-  ]
-    .filter(Boolean)
-    .join(' ');
+function describeDeclared(declared: DeclaredPlatform): string {
+  return describePlatform(declared, (item) => echoed(item));
 }
 
 /** Where an entry's `resolved` points, as far as its shape shows. */
@@ -188,15 +190,25 @@ export function planFrozenPackageLock(input: {
     else left.add(entry);
   }
 
+  // An archive's own lists hold an optional package only: one the lock needs
+  // outright is installed as the lock says.
+  const declared = (entry: LockEntry): DeclaredPlatform =>
+    withArchivePlatform(
+      entry,
+      entry.optional && entry.integrity !== undefined
+        ? options.archivePlatforms?.get(entry.integrity)
+        : undefined,
+    );
   const failed: LockEntry[] = [];
   for (const entry of left) {
-    if (targets.some((candidate) => npmPackageRuns(entry, candidate))) continue;
+    if (targets.some((candidate) => npmPackageRuns(declared(entry), candidate)))
+      continue;
     if (entry.optional) failed.push(entry);
     else {
       left.delete(entry);
       refused.push({
         path: entry.path,
-        reason: `${label(entry)} is for ${describeDeclared(entry)}, not this machine (${describeTargets(targets)}), and is not optional`,
+        reason: `${label(entry)} is for ${describeDeclared(declared(entry))}, not this machine (${describeTargets(targets)}), and is not optional`,
       });
     }
   }
@@ -205,7 +217,7 @@ export function planFrozenPackageLock(input: {
     skip(
       entry,
       'platform',
-      `optional, and for ${describeDeclared(entry)}, not ${describeTargets(targets)}`,
+      `optional, and for ${describeDeclared(declared(entry))}, not ${describeTargets(targets)}`,
     );
   }
   for (const entry of failed)
@@ -264,10 +276,29 @@ export function planFrozenPackageLock(input: {
             : 'runtime',
       hasInstallScript: entry.hasInstallScript,
       ...(entry.deprecated !== undefined && { deprecated: entry.deprecated }),
+      ...(entry.optional &&
+        libcUnstated(declared(entry)) && {
+          platformFromArchive: true as const,
+        }),
     });
   }
   const workspace = workspaceLayout(tree, selection.members);
-  return { packages, skipped, refused, ...(workspace && { workspace }) };
+  return {
+    packages,
+    skipped,
+    refused,
+    ...(workspace && { workspace }),
+    // What an archive says decides only for the packages marked: the lock's
+    // own lists already let them through.
+    ...(packages.some((pkg) => pkg.platformFromArchive) && {
+      archiveRuns: (pkg: FrozenLockPackage, archive) => {
+        const entry = byPath.get(pkg.path);
+        if (entry === undefined) return true;
+        const both = withArchivePlatform(entry, archive);
+        return targets.some((candidate) => npmPackageRuns(both, candidate));
+      },
+    }),
+  };
 }
 
 /** The names each top (the project `''`, or a member by directory) declares. */

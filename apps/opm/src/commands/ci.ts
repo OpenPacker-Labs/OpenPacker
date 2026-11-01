@@ -303,6 +303,11 @@ export async function runCiCommand(
       io,
       `  workspace: ${result.workspace.linked} of ${result.workspace.members} member${result.workspace.members === 1 ? '' : 's'} linked, not fetched; their scripts are not run\n`,
     );
+  for (const item of result.built)
+    out(
+      io,
+      `  install script run, as the project approved: ${plainLine(item.name)}@${plainLine(item.version)} (${plainLine(item.path)})\n`,
+    );
   const shown = result.installScripts.slice(0, 50);
   for (const item of shown)
     out(

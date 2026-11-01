@@ -76,6 +76,24 @@ export interface FrozenLockOptions {
    * judged against the members on disk.
    */
   workspace?: FrozenWorkspaceInput;
+  /**
+   * What archives said they run on, keyed by the lock's integrity value: a
+   * list the lock leaves out is taken from here (a list it has wins), so an
+   * optional package whose own manifest names another platform is left out
+   * like one whose lock entry does. The host fills it from the archives of the
+   * packages a first read marked `platformFromArchive`.
+   */
+  archivePlatforms?: ReadonlyMap<string, ArchivePlatform>;
+}
+
+/**
+ * The platform lists an archive's own manifest declares, in the ecosystem's
+ * vocabulary (npm's `os`, `cpu` and `libc`); absent when it declares none.
+ */
+export interface ArchivePlatform {
+  readonly os?: readonly string[];
+  readonly cpu?: readonly string[];
+  readonly libc?: readonly string[];
 }
 
 /**
@@ -146,6 +164,13 @@ export interface FrozenLockPackage {
    * of their own: never the unpatched archive's, and never another patch's.
    */
   patch?: FrozenPatch;
+  /**
+   * The package is optional and its lock entry restricts the platform without
+   * saying which C library (a lock written from registry metadata that lacked
+   * `libc`): the host reads what its archive declares before extracting it,
+   * and asks the format again with `archivePlatforms`.
+   */
+  platformFromArchive?: true;
 }
 
 export interface FrozenLockSkip {
@@ -238,4 +263,21 @@ export interface FrozenLock {
   workspace?: FrozenLockWorkspace;
   /** Present when the places do not keep every shared peer to one copy. */
   peers?: FrozenLockPeers;
+  /**
+   * Present when a package carries `platformFromArchive`: whether that package
+   * runs on the machines this lock was read for, given what its archive
+   * declares and what its lock entry does.
+   */
+  archiveRuns?: (pkg: FrozenLockPackage, declared: ArchivePlatform) => boolean;
+  /**
+   * The packages whose install scripts the project approved, in a declaration
+   * package managers read (pnpm's `onlyBuiltDependencies` and `allowBuilds`,
+   * Bun's `trustedDependencies`): a name, or `name@version`. Absent when the
+   * project approves none; no other script is ever run.
+   */
+  approvedBuilds?: {
+    readonly entries: readonly string[];
+    /** Where they were declared, as a message names it. */
+    readonly declaredIn: readonly string[];
+  };
 }
