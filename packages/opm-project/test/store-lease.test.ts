@@ -48,10 +48,35 @@ async function holder(
   );
   children.push(child);
   await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error('holder did not start within 15s')),
+      15_000,
+    );
     child.stdout!.on('data', (chunk: Buffer) => {
-      if (chunk.toString().includes('held')) resolve();
+      if (!chunk.toString().includes('held')) return;
+      void (async () => {
+        const dir = leaseDirectory(store);
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          try {
+            const names = await readdir(dir);
+            if (names.some((name) => name.endsWith('.lock'))) {
+              clearTimeout(timeout);
+              resolve();
+              return;
+            }
+          } catch {
+            // The lease directory appears after the first write.
+          }
+          await new Promise((wait) => setTimeout(wait, 20));
+        }
+        clearTimeout(timeout);
+        reject(new Error('holder lease files never appeared'));
+      })();
     });
-    child.on('exit', (code) => reject(new Error(`holder exited ${code}`)));
+    child.on('exit', (code) => {
+      clearTimeout(timeout);
+      reject(new Error(`holder exited ${code}`));
+    });
   });
   return child;
 }
