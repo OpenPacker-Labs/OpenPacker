@@ -59,6 +59,10 @@
     "verify": "npm run format:check && npm run check:contracts && npm run check:generated && npm run check:test-inventory && npm run test:docs && npm run check:licenses && npm run skills:mirror-check && npm run typecheck && npm run build && npm test && npm run coverage && npm run test:conformance && npm run test:security && npm run security:codex:test && npm run test:integration && npm run test:e2e && npm run test:behavior && npm run test:compat && npm run test:browser && npm run test:pack-parity && npm run check:rust && npm run demo && npm run demo:lock-import && npm run benchmark && npm run golden:check && npm run test:fuzz",
     "dev:shell": "node scripts/dev-shell.mjs"
   },
+  "overrides": {
+    "glob": "14.0.3",
+    "minimatch": "11.0.3"
+  },
   "devDependencies": {
     "@oxlint/plugins": "^1.79.0",
     "@playwright/test": "1.62.1",
@@ -69,9 +73,9 @@
     "oxlint": "^1.79.0",
     "packageurl-js": "^2.0.1",
     "prettier": "3.6.2",
-    "testcontainers": "^10.28.0",
+    "testcontainers": "^12.2.1",
     "turbo": "2.10.8",
     "typescript": "5.9.2",
-    "vitest": "3.2.7"
+    "vitest": "5.0.5"
   }
 }
