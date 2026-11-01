@@ -1,4 +1,9 @@
-import { canonicalDigest, formatDigest, sha256 } from '@openpacker/canonical';
+import {
+  canonicalDigest,
+  formatDigest,
+  safeEcho,
+  sha256,
+} from '@openpacker/canonical';
 import { readPackageLock, type LockEntry } from './lock-tree.js';
 import { isNpmAlias, parseNpmAlias } from './alias.js';
 import { aliasRequirement } from './alias-requirement.js';
@@ -250,7 +255,7 @@ export class NpmCodec
     if (!match)
       throw new ProviderError(
         'INVALID_NATIVE_COORDINATE',
-        `Invalid npm coordinate: ${value}`,
+        `Invalid npm coordinate: ${safeEcho(value)}`,
       );
     const result: NativeCoordinate = {
       ecosystem: 'npm',
@@ -343,7 +348,7 @@ export class NpmCodec
       [metadata.devDependencies, 'development', true, 'devDependencies'],
     ];
     const losses: SemanticLoss[] = [];
-    const owner = `${metadata.name}@${metadata.version}`;
+    const owner = `${safeEcho(metadata.name)}@${safeEcho(metadata.version, 128)}`;
     const bundled = bundledDependencyNames(metadata);
     for (const [dependencies, kind, optionalByKind, field] of fields) {
       for (const [name, range] of Object.entries(dependencies ?? {}).sort(
@@ -394,7 +399,7 @@ export class NpmCodec
               'npm',
               'NPM_DEPENDENCY_NOT_REPRESENTABLE',
               `/${field}/${name}`,
-              `The ${field} entry "${name}": "${range}" cannot be represented: ${error instanceof Error ? error.message : String(error)}`,
+              `The ${field} entry ${JSON.stringify(safeEcho(name))}: ${JSON.stringify(safeEcho(range))} cannot be represented: ${error instanceof Error ? safeEcho(error.message) : safeEcho(String(error))}`,
               undefined,
               'info',
             ),
