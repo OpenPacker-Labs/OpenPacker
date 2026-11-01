@@ -127,9 +127,10 @@ export {
  *   rewrites a raw machine id or a boot id without dashes into a digest, and
  *   {@link parseProcessOwner} is for records this module wrote, so such a
  *   holder builds its owners itself rather than through it. A raw machine id in
- *   a file name is the confidential id this module keeps out of a project: a
- *   keyed digest in the codec's own alphabet (hex; a `placeDigest` has a dash)
- *   serves, as it does for the lock and the record. It judges with
+ *   a file name is the confidential id this module keeps out of a project, so
+ *   the lease writes the keyed digest in its codec's own alphabet (`placeHex`,
+ *   hex; a `placeDigest` has a dash), and itself reads the id an earlier opm
+ *   wrote as that digest before it maps an owner here. It judges with
  *   `ownerPlace(owner, reader, options)` first and
  *   `isOwnerAlive(owner, reader, probe, options)` for what is `here`; both
  *   take {@link PlaceOptions}. A digest of the host name is as good as the

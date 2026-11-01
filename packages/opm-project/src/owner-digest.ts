@@ -17,6 +17,14 @@ export type PlaceKind = 'machine' | 'boot';
  * and as a boot are two digests, and neither gives the id back.
  */
 export function placeDigest(kind: PlaceKind, raw: string): string {
+  return `d1-${placeHex(kind, raw)}`;
+}
+
+/**
+ * The digest {@link placeDigest} writes, without its `d1-`: 32 hex digits, for
+ * a codec whose alphabet is hex (a lease's file name, `lease-owner.ts`).
+ */
+export function placeHex(kind: PlaceKind, raw: string): string {
   const key = `opm.owner.${kind}.v1`;
-  return `d1-${createHmac('sha256', key).update(raw).digest('hex').slice(0, 32)}`;
+  return createHmac('sha256', key).update(raw).digest('hex').slice(0, 32);
 }
