@@ -293,8 +293,7 @@ test('CI actions and installed Rust tools use exact versions', () => {
     workflows,
     /uses:\s+[^\s@]+@(?:stable|main|master|v\d+[^\s#]*)\s*$/mu,
   );
-  if (pinCatalog)
-    assert.doesNotMatch(workflows, /uses:\s+[^\s@]+@v\d/mu);
+  if (pinCatalog) assert.doesNotMatch(workflows, /uses:\s+[^\s@]+@v\d/mu);
   for (const command of workflows.matchAll(
     /^\s*- run:\s+cargo install\s+([^\n]+)$/gmu,
   ))
