@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { collectSharedStore } from '../src/index.js';
 import { holdSharedStore, openCollection } from '../src/shared-store-lease.js';
 import { leaseDirectory, openLease } from '../src/store-lease.js';
+import { LeaseReader } from '../src/store-lease-reader.js';
 import { cleanupWorlds, storeWithEntry } from './gc-race-fixture.js';
 import { childEnv, source, tsNodeArgs } from './ts-child.js';
 
@@ -64,6 +65,29 @@ async function kill(child: ChildProcess): Promise<void> {
   await exited;
 }
 
+async function waitFor(
+  label: string,
+  ok: () => Promise<boolean>,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (await ok()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
+
+async function installHolds(store: string, key: string): Promise<void> {
+  const reader = new LeaseReader(leaseDirectory(store), 'install', false);
+  await waitFor(`install holds ${key}`, () => reader.holds(key));
+}
+
+async function gcAnnounced(store: string, key: string): Promise<void> {
+  const reader = new LeaseReader(leaseDirectory(store), 'gc', false);
+  await waitFor(`gc announced ${key}`, () => reader.holds(key));
+}
+
 describe('a lease', () => {
   it('is gone, files and directory, once its holder releases it', async () => {
     const { store } = await storeWithEntry();
@@ -79,6 +103,7 @@ describe('a lease', () => {
   it("keeps another process's entry from a collection, and stops when that process is killed", async () => {
     const { env, store, key } = await storeWithEntry();
     const install = await holder(store, 'install', key);
+    await installHolds(store, key);
 
     const held = await collectSharedStore({ env, minimumAgeMs: 0 });
     expect(held).toMatchObject({ removed: [], held: 1 });
@@ -96,6 +121,7 @@ describe('a lease', () => {
   it('lets an install go on once a collection that was settling its entry is killed', async () => {
     const { store, key } = await storeWithEntry();
     const collection = await holder(store, 'gc', `+${key}`);
+    await gcAnnounced(store, key);
     let pauses = 0;
     const hold = await holdSharedStore(store, {
       pause: async () => {
