@@ -41,7 +41,7 @@
     "@microsoft/mxc-sdk": "0.7.0"
   },
   "devDependencies": {
-    "@types/node": "24.2.1"
+    "@types/node": "26.6.6"
   },
   "repository": {
     "type": "git",

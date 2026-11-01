@@ -30,7 +30,7 @@
     "@openpacker/sandbox": "0.0.1-alpha.1"
   },
   "devDependencies": {
-    "@types/node": "24.2.1"
+    "@types/node": "26.6.6"
   },
   "repository": {
     "type": "git",

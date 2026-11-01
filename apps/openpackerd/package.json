@@ -46,7 +46,7 @@
     "fastify": "5.11.2"
   },
   "devDependencies": {
-    "@types/node": "24.2.1"
+    "@types/node": "26.6.6"
   },
   "repository": {
     "type": "git",
