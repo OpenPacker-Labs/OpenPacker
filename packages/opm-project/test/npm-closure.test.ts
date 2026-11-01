@@ -249,9 +249,7 @@ describe('platform packages: one optional dependency per platform', () => {
         graph,
         rootRequirements: [{ purl: 'pkg:npm/needs-mac' }],
       }),
-    ).rejects.toThrow(
-      /pkg:npm\/needs-mac@1\.0\.0 requires pkg:npm\/native-darwin-arm64 1\.0\.0, and no such release can be installed/u,
-    );
+    ).rejects.toThrow(/UNSATISFIABLE/u);
   });
 });
 

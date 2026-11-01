@@ -65,16 +65,16 @@ export function parseLockfile(text: string): OpmLockfile {
   }
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const record = value as Record<string, unknown>;
-  if (record.schemaVersion !== 1) {
+  if (typeof record.schemaVersion !== 'number' || record.schemaVersion !== 1) {
     throw new OpmError(
       'INVALID_LOCK',
-      `Unsupported lock schemaVersion: ${String(record.schemaVersion)}`,
+      `Unsupported lock schemaVersion: ${typeof record.schemaVersion === 'string' || typeof record.schemaVersion === 'number' || typeof record.schemaVersion === 'boolean' ? String(record.schemaVersion) : JSON.stringify(record.schemaVersion)}`,
     );
   }
-  if (record.generatedBy !== 'opm') {
+  if (typeof record.generatedBy !== 'string' || record.generatedBy !== 'opm') {
     throw new OpmError(
       'INVALID_LOCK',
-      `Unexpected generatedBy: ${String(record.generatedBy)}`,
+      `Unexpected generatedBy: ${typeof record.generatedBy === 'string' ? record.generatedBy : JSON.stringify(record.generatedBy)}`,
     );
   }
   if (

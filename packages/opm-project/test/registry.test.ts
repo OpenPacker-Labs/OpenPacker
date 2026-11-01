@@ -890,14 +890,29 @@ describe('ephemeral tool cache (first-party)', () => {
     const requests: string[] = [];
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const registryFetch = (async (input: URL | Request | string) => {
-      const url = String(input);
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof Request
+            ? input.url
+            : input instanceof URL
+              ? input.href
+              : String(input);
       requests.push(url);
-      if (url === PACKUMENT_URL)
+      if (url === PACKUMENT_URL || url.endsWith('/demo-tool'))
         return new Response(JSON.stringify(packument), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
-      if (url === TARBALL_URL)
+      if (url.endsWith('/demo-tool/1.1.0'))
+        return new Response(
+          JSON.stringify(packument.versions['1.1.0']),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      if (url === TARBALL_URL || url.endsWith('demo-tool-1.1.0.tgz'))
         return new Response(tgz, {
           status: 200,
           headers: { 'content-type': 'application/octet-stream' },
@@ -908,12 +923,14 @@ describe('ephemeral tool cache (first-party)', () => {
     const tarballs = () =>
       requests.filter((url) => url.endsWith('.tgz')).length;
     const packuments = () =>
-      requests.filter((url) => url === PACKUMENT_URL).length;
+      requests.filter(
+        (url) => url === PACKUMENT_URL || url.endsWith('/demo-tool'),
+      ).length;
     try {
       const first = await fetchTool({
         purl: 'pkg:npm/demo-tool@1.1.0',
         cacheRoot,
-        fetch: registryFetch,
+        registryOptions: { fetch: registryFetch },
       });
       expect(first.cached).toBe(false);
       expect(first.bins.map((bin) => bin.name)).toEqual(['demo-tool']);
@@ -923,7 +940,7 @@ describe('ephemeral tool cache (first-party)', () => {
       const second = await fetchTool({
         purl: 'pkg:npm/demo-tool@1.1.0',
         cacheRoot,
-        fetch: registryFetch,
+        registryOptions: { fetch: registryFetch },
       });
       expect(second.cached).toBe(true);
       expect(second.storePath).toBe(first.storePath);
