@@ -154,9 +154,12 @@ test(
 
 test('production package-run paths go through @openpacker/sandbox', async () => {
   const { readFileSync: read } = await import('node:fs');
+  // opmx resolves what to run (opmx.ts) and runs it (opmx-spawn.ts).
   const opmx = read(join(root, 'apps/opm/src/opmx.ts'), 'utf8');
-  assert.match(opmx, /runSandboxedPackageProcess/);
+  const spawning = read(join(root, 'apps/opm/src/opmx-spawn.ts'), 'utf8');
+  assert.match(spawning, /runSandboxedPackageProcess/);
   assert.doesNotMatch(opmx, /from 'node:child_process'/);
+  assert.doesNotMatch(spawning, /from 'node:child_process'/);
 
   const lifecycle = read(
     join(root, 'packages/opm-project/src/lifecycle.ts'),

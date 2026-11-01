@@ -88,6 +88,11 @@ export interface RunInSandboxInput {
   /** Additional env merged after scrub; grants.env may inherit parent keys. */
   env?: Readonly<Record<string, string>>;
   /**
+   * Directories put first on the process's PATH, such as the `node_modules/.bin`
+   * of a tool's layout. They must lie under a bound path to be found.
+   */
+  pathPrefix?: readonly string[];
+  /**
    * Bounded bytes written to the child's standard input; absent means the
    * child inherits no input (stdin is /dev/null). Callers bound the bytes
    * before handing them over — this is a transport, not a limit.

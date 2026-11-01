@@ -1,14 +1,6 @@
 import { constants } from 'node:fs';
-import {
-  chmod,
-  mkdtemp,
-  open,
-  readFile,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
+import { chmod, open, readFile, writeFile } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
@@ -43,21 +35,18 @@ import {
   sensitiveMaskFiles,
   type SandboxBackend,
 } from './index.js';
+import { scratch } from './test-scratch.js';
 
 describe('@openpacker/sandbox', () => {
   it('does not trust a package-manager executable from project PATH', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'opm-host-path-'));
+    const directory = scratch('opm-host-path-');
     const name = `opm-project-manager-${process.pid}`;
-    try {
-      const executable = join(directory, name);
-      await writeFile(executable, '#!/bin/sh\n');
-      await chmod(executable, 0o755);
-      await expect(
-        findHostExecutable(name, { PATH: directory }),
-      ).resolves.toBeUndefined();
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
+    const executable = join(directory, name);
+    await writeFile(executable, '#!/bin/sh\n');
+    await chmod(executable, 0o755);
+    await expect(
+      findHostExecutable(name, { PATH: directory }),
+    ).resolves.toBeUndefined();
   });
 
   it('defaults to fail-closed and auto prefer', () => {
@@ -151,7 +140,7 @@ describe('@openpacker/sandbox', () => {
   });
 
   it('fail-closed refuses when no backend is available', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-'));
+    const cwd = scratch('op-sandbox-');
     const outcome = await runInSandbox({
       argv: [process.execPath, '-e', 'console.log("hi")'],
       cwd,
@@ -169,7 +158,7 @@ describe('@openpacker/sandbox', () => {
   });
 
   it('degrade-warn refuses ambient execution without owned tree containment', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-'));
+    const cwd = scratch('op-sandbox-');
     await expect(
       runInSandbox({
         argv: [process.execPath, '-e', 'process.stdout.write("never")'],
@@ -188,7 +177,7 @@ describe('@openpacker/sandbox', () => {
   it('degrade-warn refuses ambient execution when MXC cannot consume directory authorities', async () => {
     // macOS/Windows outcome: the only probed backend is MXC, which fails
     // closed because every run requires stable directory-handle binds.
-    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-'));
+    const cwd = scratch('op-sandbox-');
     const mxc: SandboxBackend = {
       id: 'mxc',
       async run() {
@@ -214,7 +203,7 @@ describe('@openpacker/sandbox', () => {
   });
 
   it('mock backend executes argv with scrubbed env', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-'));
+    const cwd = scratch('op-sandbox-');
     const script = join(cwd, 'probe.mjs');
     await writeFile(
       script,
@@ -244,7 +233,7 @@ describe('@openpacker/sandbox', () => {
 
   it('keeps a directory authority accessible after exec', async () => {
     if (process.platform !== 'linux' && process.platform !== 'darwin') return;
-    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-fd-'));
+    const cwd = scratch('op-sandbox-fd-');
     await writeFile(join(cwd, 'proof'), 'stable');
     const authority = await open(
       cwd,
@@ -275,7 +264,7 @@ describe('@openpacker/sandbox', () => {
   });
 
   it('mode off still refuses execution without owned tree containment', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-'));
+    const cwd = scratch('op-sandbox-');
     await expect(
       runInSandbox({
         argv: [process.execPath, '-e', 'process.stdout.write("never")'],
@@ -291,7 +280,7 @@ describe('@openpacker/sandbox', () => {
   });
 
   it('rejects writable native sandbox helpers', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'op-sandbox-helper-'));
+    const directory = scratch('op-sandbox-helper-');
     const helper = join(directory, 'bwrap');
     await writeFile(helper, '#!/bin/sh\nexit 0\n');
     await chmod(helper, 0o777);
@@ -299,7 +288,7 @@ describe('@openpacker/sandbox', () => {
   });
 
   it('bounds backend output', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-output-'));
+    const cwd = scratch('op-sandbox-output-');
     const outcome = await runInSandbox({
       argv: [process.execPath, '-e', 'process.stdout.write("x".repeat(4096))'],
       cwd,
@@ -319,7 +308,7 @@ describe('@openpacker/sandbox', () => {
   });
 
   it('kills the process tree when output exceeds policy', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-tree-'));
+    const cwd = scratch('op-sandbox-tree-');
     const marker = join(cwd, 'escaped');
     const descendant = `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'escaped'), 300)`;
     const parent = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' }); process.stdout.write('x'.repeat(4096)); setInterval(() => {}, 1000)`;
@@ -395,7 +384,7 @@ describe('@openpacker/sandbox', () => {
     await expect(
       runInSandbox({
         argv: [process.execPath, '-e', 'process.exit(0)'],
-        cwd: await mkdtemp(join(tmpdir(), 'op-sandbox-ro-')),
+        cwd: scratch('op-sandbox-ro-'),
         policy: { mode: 'fail-closed' },
         profile: 'package-exec',
         readwritePaths: [],
@@ -420,7 +409,7 @@ describe('@openpacker/sandbox', () => {
   });
 
   it('kills descendants after a contained timeout', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-timeout-'));
+    const cwd = scratch('op-sandbox-timeout-');
     const marker = join(cwd, 'escaped');
     const descendant = `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'escaped'), 300)`;
     const parent = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' }); setInterval(() => {}, 1000)`;
@@ -443,7 +432,7 @@ describe('@openpacker/sandbox', () => {
   });
 
   it('kills descendants after an external abort', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-abort-'));
+    const cwd = scratch('op-sandbox-abort-');
     const marker = join(cwd, 'escaped');
     const descendant = `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'escaped'), 300)`;
     const parent = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' }); setInterval(() => {}, 1000)`;
@@ -494,7 +483,7 @@ describe('@openpacker/sandbox', () => {
   );
 
   it('mock package-exec is not enforced (honesty)', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'op-sandbox-'));
+    const cwd = scratch('op-sandbox-');
     const outcome = await runInSandbox({
       argv: [process.execPath, '-e', 'process.exit(0)'],
       cwd,

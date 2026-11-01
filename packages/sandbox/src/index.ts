@@ -64,14 +64,17 @@ export {
 
 export {
   buildBwrapArgv,
-  buildSeatbeltProfile,
   createBwrapBackend,
   createNativeBackend,
-  createSeatbeltBackend,
   findTrustedSandboxHelper,
   probeNativeBackends,
   reopenExecutableAuthority,
 } from './backends/native.js';
+
+export {
+  buildSeatbeltProfile,
+  createSeatbeltBackend,
+} from './backends/seatbelt.js';
 
 export {
   createMxcBackend,
@@ -81,6 +84,12 @@ export {
 } from './backends/mxc.js';
 
 export { probeBackends, resolveBackend, runInSandbox } from './run.js';
+
+export {
+  boundPaths,
+  inheritedHandleCount,
+  MAX_INHERITED_HANDLES,
+} from './handles.js';
 
 export {
   HostInstallerSandboxError,

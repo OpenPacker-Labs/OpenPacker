@@ -1310,6 +1310,18 @@ different thing tomorrow — but artifact bytes are content-addressed: a repeat
 run whose resolved digest already names a tool-cache entry skips the download
 and rebuilds from the digest-verified store archive, reported as `(cached)`.
 
+An npm tool runs from a `node_modules` of its closure's release, written for the
+run under `<tool cache>/.opm/runs/` and bound read-only with its `.bin` first on
+PATH, so `opmx pkg:npm/cowsay hi` finds `yargs` and a tool can run a dependency
+by name. Store entries are bound one by one while the sandbox's 16 handles
+allow, and past that through one view of their store (ADR 0036). Both are
+removed when the run ends, Ctrl-C and SIGTERM included (a second signal ends
+`opmx` at once). After a SIGKILL or a crash, the next run in the same place, or
+`opm gc` for a project's views, removes them once the process that made them has
+ended, judged by the same owner rule as a step's lock (`.owner`, ADR 0056); what
+another host, container or earlier boot left there and cannot be placed stays,
+and a left-behind view makes `opm gc --shared` keep its entries.
+
 ### Delegated adapter plugins
 
 Third-party ecosystems arrive as delegated adapter plugins (ADR 0039): a
@@ -1503,7 +1515,8 @@ Missing artifacts fail closed with a clear error (no silent network when
 - Package execution (approved lifecycle scripts, `opmx`, host installers) goes
   through `@openpacker/sandbox` — native Bubblewrap jail on Linux,
   **fail-closed** when a jail cannot be enforced
-  ([ADR 0036](../adr/0036-sandboxed-installs-and-execution.md)).
+  ([ADR 0036](../adr/0036-sandboxed-installs-and-execution.md)). The jail leaves
+  root no capabilities: as root it cannot read another user's 0600 file.
 
 ### Sandbox configuration
 
