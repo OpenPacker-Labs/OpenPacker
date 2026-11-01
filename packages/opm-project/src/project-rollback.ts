@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  chmod,
   copyFile,
   link,
   lstat,
@@ -190,9 +191,13 @@ async function keepTree(
   if (info === undefined) return false;
   if (info.isSymbolicLink()) await symlink(await readlink(source), target);
   else if (info.isDirectory()) {
-    await mkdir(target, { mode: info.mode & 0o7777 });
+    // Made private and given its mode last: `mkdir`'s mode goes through the
+    // umask (a 1777 volume root came back 1755, a setgid directory lost its
+    // bit), and a directory that is not writable could not be filled.
+    await mkdir(target, { mode: 0o700 });
     for (const name of await readdir(source))
       await keepTree(join(source, name), join(target, name), copy);
+    await chmod(target, info.mode & 0o7777);
   } else if (copy) await copyFile(source, target);
   else
     await link(source, target).catch(async (error: unknown) => {

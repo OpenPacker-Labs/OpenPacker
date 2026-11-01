@@ -59,6 +59,7 @@ export {
   makeCurrentOwner,
   ownerKey,
   ownerPlace,
+  parseMachineId,
   parseProcessOwner,
   placeDigest,
   systemProbe,
