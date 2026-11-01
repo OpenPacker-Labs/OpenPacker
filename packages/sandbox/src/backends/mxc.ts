@@ -1,6 +1,9 @@
+import { stopMessage } from '../stop.js';
 import type { BackendProbe, OutputSink, SandboxBackend } from '../types.js';
 import {
   BoundedOutput,
+  handOn,
+  letGoOfHeld,
   SandboxBackendError,
   type OutputLimitKind,
 } from './mock.js';
@@ -115,7 +118,11 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
         network: {
           allowOutbound: input.network,
         },
-        timeoutMs: input.timeoutMs ?? 600_000,
+        // Omitted, MXC sets no limit of its own; the sandbox's own signal
+        // carries the policy's.
+        ...(!(input.timeoutMs === undefined) && {
+          timeoutMs: input.timeoutMs,
+        }),
       });
 
       // commandLine as joined argv — MXC expects a command line string on
@@ -206,17 +213,17 @@ export async function collectMxcChild(
         5_000,
       );
     };
+    // What ended the run, as the abort's reason says.
+    let stoppedBy: unknown;
     const onAbort = () => {
       aborted = true;
+      stoppedBy = signal?.reason;
+      letGoOfHeld(child.stdout, child.stderr);
       terminate();
     };
     signal?.addEventListener('abort', onAbort, { once: true });
-    child.stdout?.on('data', (d: unknown) => {
-      if (!output.push('stdout', d)) terminate();
-    });
-    child.stderr?.on('data', (d: unknown) => {
-      if (!output.push('stderr', d)) terminate();
-    });
+    handOn(child.stdout, 'stdout', output, terminate);
+    handOn(child.stderr, 'stderr', output, terminate);
     child.on('error', (err: unknown) => {
       signal?.removeEventListener('abort', onAbort);
       if (terminationTimer) clearTimeout(terminationTimer);
@@ -225,8 +232,13 @@ export async function collectMxcChild(
     child.on('close', (code: unknown) => {
       signal?.removeEventListener('abort', onAbort);
       if (terminationTimer) clearTimeout(terminationTimer);
+      const result = output.result(
+        aborted ? 124 : typeof code === 'number' ? code : 1,
+      );
       resolve(
-        output.result(aborted ? 124 : typeof code === 'number' ? code : 1),
+        aborted
+          ? { ...result, stderr: `${result.stderr}\n${stopMessage(stoppedBy)}` }
+          : result,
       );
     });
     if (signal?.aborted) onAbort();

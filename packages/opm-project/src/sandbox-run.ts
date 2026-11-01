@@ -9,6 +9,7 @@ import {
 } from '@openpacker/sandbox';
 import type { PolicyInput } from '@openpacker/contracts';
 import { platformNote, sandboxPolicyFromProject } from './lifecycle.js';
+import { parseRunTimeout } from './run-timeout.js';
 import { storeViews } from './store-view.js';
 import { OpmError } from './types.js';
 
@@ -17,6 +18,14 @@ import { OpmError } from './types.js';
  *
  * Default: project + store RO, jail temp RW, network deny, fail-closed.
  * Set policy.projectWrite / sandbox.project_write to allow project mutation.
+ * Network is the host's when `network` is set (`opmx --allow-network`) or the
+ * project grants it to the package (`[sandbox.packages."<purl>"] network`);
+ * otherwise the tool has a network of its own, which nothing else reaches.
+ *
+ * The caller says how long the tool may run (`timeoutMs`), since only it
+ * knows whether a person started it and stops it (opmx: `opmxRunTimeout`,
+ * none unless asked for) or nobody watches it; the project policy's
+ * `timeout_ms` is not applied behind its back.
  */
 export async function runSandboxedPackageProcess(input: {
   argv: readonly string[];
@@ -32,6 +41,16 @@ export async function runSandboxedPackageProcess(input: {
   /** Directories put first on the process's PATH (a layout's `.bin`). */
   pathPrefix?: readonly string[];
   /**
+   * Wall-clock limit in whole milliseconds, 0 for none; required, so that no
+   * caller gets a limit, or none, without choosing it (`opmxRunTimeout`).
+   */
+  timeoutMs: number;
+  /**
+   * Told the port the tool listens on while it has no network, where nothing
+   * outside its sandbox reaches it (`RunInSandboxInput.onIsolatedListen`).
+   */
+  onIsolatedListen?: (port: number) => void;
+  /**
    * Hand the output on as the process writes it, rather than return it in the
    * outcome (`@openpacker/sandbox`'s `RunInSandboxInput.output`).
    */
@@ -42,7 +61,10 @@ export async function runSandboxedPackageProcess(input: {
   if (input.argv.length === 0) {
     throw new OpmError('USAGE', 'runSandboxedPackageProcess requires argv');
   }
-  const policy: SandboxPolicy = sandboxPolicyFromProject(input.policy);
+  const policy: SandboxPolicy = {
+    ...sandboxPolicyFromProject(input.policy),
+    timeoutMs: parseRunTimeout(String(input.timeoutMs), 'The run timeout'),
+  };
   const projectWrite = policy.projectWrite === true;
 
   const projectRoot = input.projectRoot;
@@ -82,6 +104,9 @@ export async function runSandboxedPackageProcess(input: {
         pathPrefix: input.pathPrefix,
       }),
       ...(!(input.output === undefined) && { output: input.output }),
+      ...(!(input.onIsolatedListen === undefined) && {
+        onIsolatedListen: input.onIsolatedListen,
+      }),
       ...(!(input.backend === undefined) && { backend: input.backend }),
     });
   } finally {

@@ -65,6 +65,7 @@ describe.runIf(canSandbox)('a store as a sandboxed tool sees it', () => {
     await mkdir(work);
 
     const outcome = await runSandboxedPackageProcess({
+      timeoutMs: 0,
       argv: [process.execPath, '-e', probe(store, entry(0))],
       cwd: work,
       storePaths: closure,

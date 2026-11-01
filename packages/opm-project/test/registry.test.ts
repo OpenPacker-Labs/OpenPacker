@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -712,6 +712,7 @@ describe('OCI image materialisation', () => {
     expect(artifact.digest).not.toBe(artifact.version);
 
     const root = await mkdtemp(join(tmpdir(), 'opm-oci-'));
+    onTestFinished(() => rm(root, { recursive: true, force: true }));
     const storeKey = storeKeyFromDigest(artifact.digest);
     const pkg = {
       alias: 'demo',

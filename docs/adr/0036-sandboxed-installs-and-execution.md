@@ -352,21 +352,28 @@ sandbox binds besides the project, and its `node_modules/.bin` is first on PATH
 - Python, .NET and native bins, and a file in `.opm/bin` no package owns, run as
   before, the project's store entries bound alone or through a view.
 - Where this user may not write `.opm/runs` (a read-only mount, a tree another
-  user owns), the layout is made in `openpacker-runs` under the temporary
-  directory instead, with the same owner record and sweep; that directory must
-  be this user's and private (mode 700), or the run is refused. Its files are
-  copies where it is on another filesystem than the store. A tool from the tool
-  cache is laid out the same way. This makes the layout no reason a project must
-  be writable; opmx still is one, since `activateGeneration` rewrites the
-  project's bin shims and state on every run.
+  user owns), the layout is made in `openpacker-runs-<uid>` under the temporary
+  directory instead, one per user as the jail root is, with the same owner
+  record and sweep. That directory must be this user's and others may not write
+  it, or the run is refused; one of this user's its group may read or write is
+  made 0700 through its handle. What this user's ended runs left in the
+  `openpacker-runs` all users shared before is still removed, where that is this
+  user's; one another user made there stops nothing. Its files are copies where
+  it is on another filesystem than the store. A tool from the tool cache is laid
+  out the same way. The layout is then no reason a project must be writable, and
+  nor is activation (the amendment of 2026-10-31).
 
 `opmx-installed-deps.test.ts` (apps/opm) runs an installed bin that requires
 `helper@^1` in a project that also holds `helper@2.0.0` and gets version 1;
 `installed-closure.test.ts` (opm-project) pins the closure and the by-name
 cases; `opmx-run-signals.test.ts` stops an installed declared bin by SIGHUP and
 finds its layout removed; `tool-layout-readonly.test.ts` lays a tool out from a
-store bwrap binds read-only, and is refused a temporary directory that is not
-private.
+store bwrap binds read-only, and is refused a temporary directory others may
+write; `temporary-runs.test.ts` names that directory by the uid, makes one of
+this user's at 0755 or 0775 0700, refuses 0777, removes a dead entry from the
+old shared name, is not stopped by another user's there, and has a second user's
+run, as uid 65534 on a shared temporary directory where root's runs made theirs,
+make its own.
 
 ## Amendment (2026-10-24) — a tool's output reaches the terminal as it is written
 
@@ -405,3 +412,320 @@ limits above still end a tool that runs or writes past them, a server included.
 runs, by the mock backend and by bwrap, and the limits ending a tree whose
 output is handed on; `opmx-stream.test.ts` (apps/opm) shows the same through
 `opmx`'s spawn, and a split character written whole.
+
+## Amendment (2026-10-24) — a tool someone runs: how long, how much, which network, what it leaves, and what stopped it
+
+`opmx` runs a tool a person started, as `npx` does: a server, a watcher, a REPL.
+Since the amendment above its output reaches the terminal as it is written, and
+two limits made for what runs unattended still ended it:
+
+- The policy's `timeout_ms`, ten minutes unless the project set one, and always
+  ten minutes for `opmx pkg:...`, which has no project. MXC set ten minutes of
+  its own when it was given none.
+- The byte limits, 1 MiB a stream and 2 MiB in all, which bound the output the
+  sandbox keeps in memory. Handed on as it is written, the output is not kept,
+  and a server was ended by its own log.
+
+Decision:
+
+1. **A tool `opmx` runs has no wall-clock limit unless one is asked for.** The
+   limit is, in this order: `opmx --timeout <ms>` for the run; else
+   `[sandbox] opmx_timeout_ms` in `opm.toml`; else a `[sandbox] timeout_ms` the
+   project sets, so that a project that bounds its sandboxed runs (in CI, say)
+   keeps that bound for `opmx` too; else none (`opmxRunTimeout`). Only the
+   default of `timeout_ms`, ten minutes, which is for what runs unattended (an
+   install's lifecycle scripts), no longer applies to `opmx`. All take whole
+   milliseconds, 0 for none, up to 2^31 - 1, what a timer can wait
+   (`parseRunTimeout`); anything else is refused, a key by `INVALID_MANIFEST`
+   when `opm.toml` is read. That holds for `timeout_ms` too, which also bounds
+   lifecycle scripts: a timer asked for more than 2^31 - 1 ms fires at once. The
+   library leaves the choice to its caller: `runSandboxedPackageProcess`
+   requires the limit it applies (`timeoutMs`) and reads none from the project
+   on its own. `opmx pkg:...` reads no project, so only `--timeout` applies to
+   it. MXC is given no limit of its own (its SDK sets none when it is omitted);
+   the sandbox's own signal carries the policy's.
+2. **Output handed to a sink has no byte limit** (`BoundedOutput`): nothing of
+   it is kept. Output kept in the outcome, which is what a caller with no sink
+   gets (lifecycle scripts, host installers), keeps the limits, and the process
+   tree is still ended past them, exit 125. Nor does it pile up anywhere: a sink
+   that cannot take more returns a promise, and the sandbox reads no more of
+   that stream of the process until it settles (`handOn`), so the process waits
+   on its own writes as it would writing to the terminal itself. `opmx`'s sink
+   returns one when its stdout or stderr `write` returns false, settled when
+   that stream drains, closes or fails (`whenTaken`, `passedOn`).
+
+What a run is still bounded by: the person who started it (Ctrl-C, SIGTERM,
+SIGHUP, as the amendment of 2026-10-17 says), and the limit they ask for.
+
+`opmx-long-run.test.ts` (apps/opm) runs, through bwrap, an installed tool that
+writes 3 MiB to stdout and 1.5 MiB to stderr, and finds all of it written and
+exit 0; and a tool that never ends, ended by `opmx_timeout_ms = 500`, by
+`timeout_ms = 400` where the project sets no `opmx_timeout_ms`, and by
+`--timeout 400` over the project's. `opmx-timeout.test.ts` (opm-project) pins
+the order, that the library applies the limit its caller gives and refuses a run
+given none, and the key's round trip and refusals; `output-sink.test.ts`
+(sandbox) hands 4.5 MiB to a sink through the mock backend and bwrap, and still
+cuts kept output at its limit.
+
+### Which network
+
+`opmx http-server` printed its address, and `curl` to it got no answer. A run
+without network is given bwrap's `--unshare-net`: a network namespace of its
+own, with a loopback interface and nothing else. The tool reaches nothing
+outside, which is the point, and nothing outside reaches it, a server included.
+`opmx` could not be told to share the host's network for a run; a project could
+grant it to a package (`[sandbox.packages."<purl>"] network = true`), and
+neither was documented for `opmx`, nor was what happens without it.
+
+Decision:
+
+1. **Network is granted, never assumed, and fails closed.** A tool `opmx` runs
+   has no network unless the run is granted it. `opmx --allow-network`, the
+   spelling `opm pack` uses for the same grant, shares the host's network with
+   that run; a project grants it to a package it installed for every run with
+   `[sandbox.packages."<purl>"] network = true`, as it does for that package's
+   lifecycle scripts (decision 5). `opmx pkg:...` reads no project, so only the
+   flag grants it there. Either one leaves out `--unshare-net`, and the masks
+   over network tools (`networkToolMaskFiles`) with it. Nothing else grants it:
+   not a tool's own request, not the absence of a policy.
+2. **A tool that listens without network is told so** (`listen-watch.ts`). While
+   a run has no network, the bwrap backend reads, every 200 ms, the TCP sockets
+   of the run's namespace in `/proc/<pid>/net/tcp` and `tcp6`, from the first
+   process bwrap started there; only a namespace other than the caller's is
+   read, so a run that shares the host's is never reported. That process's
+   parent, namespace and table are read through one handle of its `/proc/<pid>`,
+   and only while its parent is still bwrap: a pid that ended and was given to
+   another process is not read. The first port in the LISTEN state is handed to
+   the caller (`onIsolatedListen`), once, and `opmx` writes one line to stderr:
+   the port, that nothing outside the sandbox can reach it, and, if it was meant
+   to be reached from this host, that `--allow-network` shares this host's
+   network, which also gives the tool outbound network and the host's loopback
+   services: the hint names the grant and what it costs, rather than urging it.
+   Run by a user who is not root, bwrap makes the run's namespaces inside a user
+   namespace of its own; the processes there still answer to that user, and
+   `/proc/<pid>/net/tcp` of the first of them is readable by the process that
+   started bwrap (measured with a child of uid 65534 on Linux 6.18;
+   `/proc/<pid>/root/proc/net/tcp`, the other way in, is not needed). Where it
+   cannot be read (a `/proc` mounted with `hidepid`, a kernel without
+   `/proc/<pid>/task/<pid>/children`, MXC, the mock backend) nothing is said;
+   `opmx --help` and the opm guide say the same in words.
+
+`opmx-network.test.ts` (apps/opm) runs an installed server through bwrap: with
+no grant a request to its port is refused and `opmx` says so, once, with the
+port; with `--allow-network`, and with the project's grant to its package, the
+request is answered and nothing is said. `listen-watch.test.ts` (sandbox) has a
+process listen in a run without network and is told its port, does not read a
+server in a namespace of its own listed as the child of a process it is not the
+child of, and finds nothing told of a process listening in the caller's own
+namespace; `listen-watch.user.test.ts` does the first as uid 65534, through
+`runInSandbox` and an unprivileged bwrap, where the test runs as root.
+
+### What a run killed outright leaves
+
+Every run gives its process a home of its own (`$HOME`, with `$TMPDIR` in it)
+under `$TMPDIR/openpacker-sandbox-<uid>` and removes it when the run ends, a
+signal included. A run killed outright (SIGKILL, a crash, a second signal while
+`opmx` removes what it made) left it there, with whatever the tool wrote, and
+nothing ever removed it: seven of them were in this machine's `/tmp` from one
+day's test runs.
+
+Decision (`jail-home.ts`):
+
+1. **A home names its owner, out of the tool's reach.** A run's directory is
+   `home-<uuid>`, holding `.owner`, the record every holder opm keeps (ADR
+   0056's `writeOwnerFile`, written before anything else), and `home`, the one
+   thing the sandbox binds of it, so a tool never writes its owner. It does not
+   see it either in the package-exec profile with `$TMPDIR` under `/tmp` or
+   `/var/tmp`, which bwrap mounts empty. Where the whole file system is bound
+   read-only (`legacy_fat_root`, host installers), or `$TMPDIR` is somewhere the
+   run binds (inside its project, say), the jail root is visible read-only, and
+   with it every home's `.owner`: a pid, a host name and digests, as visible as
+   the homes themselves were before. Closing that would take a mask over the
+   jail root between the binds above it and the home's own, which the bwrap
+   command line does not order that way today. The owner rule
+   (`process-owner.ts`, `owner-file.ts` and the system reads behind them) moved
+   from opm-project to `@openpacker/project-io`, which the sandbox and
+   opm-project both build on; opm-project re-exports it as before, and the
+   judgement a run's scratch made of its directories is the same function for
+   both (`abandonedByOwner`).
+2. **Every run first removes the homes whose owner has ended, by that rule**
+   (`sweepJailHomes`): an owner of this place whose pid is gone, a zombie, or
+   now another process, or one of an earlier boot of this machine. A home whose
+   owner may still be running, runs on another host, machine, boot or PID
+   namespace, or whose `.owner` cannot be read, is never touched.
+3. **A home with no `.owner` is removed only once it has not changed for a
+   week** (`UNOWNED_JAIL_HOME_MS`). An opm from before this made the home the
+   run's directory itself and recorded no owner, so nothing says whether its run
+   is over; a tool such a run keeps up (a server) writes there, and a week is
+   longer than it is likely to go without. A run cut short between making its
+   directory and writing `.owner` is judged the same way. An old opm's run that
+   lasts longer than a week without writing to its home directly would lose it.
+4. **A home is removed by renaming it to a tombstone first**
+   (`.home-<uuid>.sweep-<uuid>`) and removing that, as the shared store
+   unpublishes an entry it collects (`shared-store-gc.ts`). Of two runs that
+   judge one home at once, one renames it and the other finds it gone; a run's
+   own home has a live owner from before it is used, so no sweep takes it; a
+   tombstone a run was killed before removing is removed by the next run. The
+   jail root is listed, and its homes renamed and removed, through a handle of
+   it opened without following a link (`openStablePath`, `renameChild`,
+   `removeChild`), and a home's `.owner` is read without following one.
+
+5. **The jail root is this user's, and no one else may write it**
+   (`openJailRoot`). It sits in the temporary directory, which every user can
+   write, and its ownership was never checked: a root another user made, or left
+   writable, would let that user put a home there whose owner a run then judges,
+   or a link where a home goes. The root is one per user,
+   `openpacker-sandbox-<uid>`, so users who share `/tmp` each have theirs. A run
+   opens it once, without following a link, and refuses it unless that handle is
+   a directory owned by its effective uid that others may not write; one of this
+   user's that its group may read or write (an older opm made it under umask 002
+   or 022) is made 0700 through the handle, and one made new is 0700. Every home
+   is made, judged and removed through that handle, the run's own included
+   (`removeChild`), never by the root's path again; a home's `.owner`, `home`
+   and `home/tmp` are made through a handle of the home's directory
+   (`writeOwnerFileAt`, `mkdirChild`). Runs make nothing in the root all users
+   shared before (`openpacker-sandbox`), and every run still removes from it
+   what ended runs of this user left, where it is this user's own, so nothing an
+   earlier opm left is stranded; one another user made there is left alone.
+
+`jail-home-sweep.test.ts` (sandbox) leaves homes in a jail root and runs through
+`runInSandbox`: a home whose owner is a pid that has ended is removed; one whose
+owner is alive, on another host, or unreadable is kept beside it; a home with no
+owner is kept while young and removed once older than the bound; a tombstone is
+removed; six runs at once, beside a seventh that holds its home throughout, each
+use their own home and remove the one that ended; two sweeps of the same dead
+homes remove each once. Through bwrap, a run's `.owner` names this process and
+the tool cannot read it. A home whose owner is a running `sleep`, and one a
+second process holds through `runInSandbox`, are kept. A home swapped for a link
+after it is listed is judged as what is opened. A root made 0777, and one owned
+by uid 65534, are refused; one of this user's at 0775 or 0755 is made 0700 and
+used; the root is named by the uid, and a shared `openpacker-sandbox` and an
+`openpacker-sandbox-65534` another user made beside it do not stop a run, which
+still removes a dead home this user left in the shared root; a tool that moves
+the root away and leaves a link to a decoy in its place does not make the run
+remove the decoy's directory of its home's name.
+
+### What stopped it
+
+`opmx http-server` stopped by Ctrl-C said "openpacker sandbox: process aborted
+or timed out". The sandbox ended the process tree on an abort of the signal it
+was given, and the policy's timeout aborted the same signal, so it could not
+tell the two apart, nor say which signal it was.
+
+Decision: what ended a run is the reason of the AbortSignal that ended it
+(`RunStop`, `stop.ts`). `opmx` aborts with the signal it holds
+(`stoppedBySignal`, `opmx-signals.ts`), the sandbox aborts its own signal with
+the timeout (`stoppedByTimeout`), and the backends (bwrap, MXC and the mock) say
+which on a line of their own: `process stopped by SIGINT`,
+`process timed out after 600000 ms`, or `process aborted` for any other reason.
+The exit status is 124 for all three, as before; `opmx` then ends by the signal
+itself, so a shell sees 130 for SIGINT.
+
+When the reader of opmx's stdout or stderr goes away (`opmx tool | head -1`,
+once `head` has its line), the next write fails with EPIPE, or the stream is
+destroyed. opmx then writes nothing more and aborts the run with
+`stoppedBySignal('SIGPIPE')`. The backend sends the tool's process group
+SIGPIPE, as a shell pipeline ends a writer, and kills what is left of it 200 ms
+later, as it ends any run. opmx says nothing and exits 141, as a writer SIGPIPE
+ends does. A run that is stopped lets go of its output streams that are held for
+a sink (`letGoOfHeld`): what they hold is dropped and they close, so a reader
+that never drains cannot keep the run from ending until a second signal. A wait
+on a stream that is behind settles on the first of drain, close, error or
+finish, and removes the listeners for the other three. `opmx-pipe.test.ts`
+(apps/opm) runs `opmx yes | head -1` in bash: one line, exit 141, and no process
+of the tool left; `opmx-drain.test.ts` waits fifty times on a stream and finds
+no listener left on it.
+
+`stop.test.ts` (sandbox) ends a run by each of the three signals, by the
+timeout, and by a bare abort, through the mock backend and bwrap, and an MXC run
+by a signal; `opmx-run-signals.test.ts` (apps/opm) finds the signal named when
+`opmx` is sent SIGHUP, SIGINT and SIGTERM.
+
+## Amendment (2026-10-31) — activation writes nothing when the project is up to date
+
+opmx activates the project's current generation before every run of an installed
+tool (`activateGeneration`), and activation removed and rewrote every bin shim,
+every link in `.opm/links` and `.opm/project.json` each time. In a project this
+user may not write (a read-only mount, a CI cache, another user's checkout) opmx
+failed with `EACCES … unlink '/proc/self/fd/N/<bin>'` before it ran anything.
+
+Decision:
+
+- Activation first works out what it would write: each package's record, the
+  script of each shim (`planBinShims`, the same text `writeBinShims` writes),
+  and each link. When the project already holds all of it, activation writes
+  nothing and returns the project state as it is (`outOfDate`,
+  `activation-current.ts`). A record matches on what activation derives from the
+  generation (alias, PURL, digest, store path and bins); when it was installed,
+  and what an install noted besides, do not make it out of date. A shim matches
+  when it is a regular file, executable, holding exactly the script.
+- A shim names the absolute `opmx` that wrote it. Where this user may write the
+  project, a shim that starts another opmx is rewritten to start this one, as
+  before. Where they may not (asked with `access(W_OK)` on `.opm`, `.opm/bin`
+  and `.opm/links`, before anything is written), such a shim is up to date when
+  it is the planned script but for the opmx it names, and that opmx can be
+  started: an absolute path named as `resolveOpmxPath` finds an opmx (`opmx`,
+  `opmx-main.js`, `opmx.js`, `opmx.mjs`, or `opmx.cjs`), whose final target,
+  links followed (`realpath`), is named so too and is a regular file this user
+  may execute, or read where the shim starts it with Node (a name ending `.js`,
+  `.mjs` or `.cjs`). A shim naming `/usr/bin/env`, or a program of another name,
+  is refused: it would run, and it is no opmx. A global npm install's `bin/opmx`
+  is a link to the package's `opmx-main.js`, so the link is followed for this
+  one question. It grants nothing: the shim already runs whatever is at that
+  path, and no write follows a link. A project built where opm was installed
+  elsewhere then runs read-only, in CI or a later image stage, as it is. If that
+  opmx is missing, a dangling link, or not a file this user may start, the run
+  is refused, naming the shim and the opmx.
+- Where something else is out of date, activation writes as before. If this user
+  may not write there (EACCES, EPERM, EROFS), the run is refused in one line
+  that names the first thing out of date and what to do (code
+  `PROJECT_READ_ONLY`, exit 8, as for `PROJECT_BUSY`):
+
+  ```text
+  opmx: .opm/bin/<bin> is out of date for the active generation, and this user may not write <root>: run `opm install` there as its owner
+  opmx: .opm/bin/<bin> starts /path/to/opmx, which is missing or not a program, and this user may not write <root>: run `opm install` there as its owner
+  opmx: .opm/bin/<bin> starts /usr/bin/env, which is not an opmx, and this user may not write <root>: run `opm install` there as its owner
+  ```
+
+- A store view (more store entries than a sandbox's handles bind one by one, for
+  a Python, .NET or native bin or a program in `.opm/bin` no package owns) is
+  made in the store, as before, where this user may write it. Where they may
+  not, it is made in the same private `openpacker-runs-<uid>` under the
+  temporary directory as a layout is (`makeTemporaryScratch`), with the owner
+  record and sweep, and its files are copies where that is another file system.
+  A run over an unwritable store with one entry more than the handles was
+  refused before; it now runs.
+- `PROJECT_READ_ONLY` is said only when `access(W_OK)` said this user may not
+  write the project. Where it said they may and a write still fails (a file made
+  immutable, a full disk, a mount made read-only meanwhile), the failure is
+  reported as itself, its code with the file it was writing:
+  `<root>/.opm/project.json: opm may not change it`.
+- A Python console script's launcher lists the generation's Python store roots
+  in path order, so activation writes the same launcher the install did.
+
+A shim this opm writes starts `opmx -- <name>`, so that no bin name is read as
+one of opmx's options (a bin named like an option gets no shim at all). An opmx
+from before that reads `--` as the end of its own options with no tool named,
+and stops: `opmx: opmx requires a package or bin name`, exit 2. That is seen
+only where a shim starts an older opmx than the opm that wrote it, as `OPM_OPMX`
+can name, or an opm downgraded in place; `opm install` with the current opm,
+whose opmx the shims then start, fixes it.
+
+`activation-current.test.ts` (opm-project) activates an installed project and
+finds every file under `.opm` with the inode, size, mode and modification time
+it had; rewrites a shim out of date, or one that starts another opmx, in a
+project it may write; and, in a child that bwrap gives the project read-only,
+activates with no write, with the shims this opm writes and with shims that
+start another opmx that is there, a file or a global npm link to one, and is
+refused naming a shim or the project state out of date, or a shim whose opmx is
+missing or not executable, or a link that dangles, leads to a directory or to a
+file this user may not run, or that names `/usr/bin/env`, a program named `foo`,
+or a link named `opmx` to `foo`. `store-view-budget.test.ts` binds one entry
+more than the handles from a store it may not write through a view under the
+temporary directory, and finds nothing left there. `opmx-readonly.test.ts`
+(apps/opm) runs the built opmx where it may write, which activates the project,
+then again with the project read-only: the tool runs and every entry of the
+project is as it was, also when its shim starts another opmx, or a global npm
+link to one, and when a program binds twenty store entries through a view; with
+a shim changed, or the other opmx removed, opmx exits 8 with the one line; where
+it may write, a shim that starts another opmx is rewritten to start this one.

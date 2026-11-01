@@ -7,7 +7,7 @@ import {
   UNKNOWN,
   type LeaseOwner,
 } from '../src/lease-owner.js';
-import type { OwnerReads } from '../src/owner-system.js';
+import type { OwnerReads } from '../src/process-owner.js';
 import { describeNamespaced, stalePidNamespace } from './namespaces.js';
 import { childEnv, source, tsNodeArgs } from './ts-child.js';
 

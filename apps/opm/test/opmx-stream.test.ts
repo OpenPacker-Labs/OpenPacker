@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { afterEach, describe, expect, it } from 'vitest';
+import { stoppedBySignal } from '@openpacker/opm-project';
 import { spawnTool } from '../src/opmx-spawn.js';
 import { canSandbox } from './signal-fixture.js';
 
@@ -55,14 +56,15 @@ describe.runIf(canSandbox)('opmx runs a tool that keeps running', () => {
       await sleep(25);
     }
     const whileRunning = { ...seen };
-    stop.abort();
+    // As opmx aborts the run when it is sent SIGINT (opmx-signals.ts).
+    stop.abort(stoppedBySignal('SIGINT'));
     const exit = await run;
     expect(whileRunning).toEqual({ out: 'listening\n', err: 'ready\n' });
     // Stopped by the signal opmx holds; the sandbox says so, once, after it.
     expect(exit).toBe(124);
     expect(seen).toEqual({
       out: 'listening\n',
-      err: 'ready\n\nopenpacker sandbox: process aborted or timed out\n',
+      err: 'ready\n\nopenpacker sandbox: process stopped by SIGINT\n',
     });
   }, 60_000);
 

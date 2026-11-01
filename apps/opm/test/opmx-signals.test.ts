@@ -10,7 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { EphemeralTool } from '@openpacker/opm-project';
+import { stoppedBySignal, type EphemeralTool } from '@openpacker/opm-project';
 import { holdingSignals } from '../src/opmx-signals.js';
 import { setTimeout as sleep } from 'node:timers/promises';
 import {
@@ -43,10 +43,12 @@ describe('holdingSignals', () => {
       const before = process.listenerCount(name);
       const raised: string[] = [];
       let aborted = false;
+      let reason: unknown;
       const result = await holdingSignals(
         async (signal) => {
           process.emit(name, name);
           aborted = signal.aborted;
+          reason = signal.reason;
           // Still held: the run is not over until what it made is removed.
           expect(raised).toEqual([]);
           return 'removed';
@@ -54,6 +56,8 @@ describe('holdingSignals', () => {
         (signal) => raised.push(signal),
       );
       expect([aborted, result, raised]).toEqual([true, 'removed', [name]]);
+      // The abort names the signal, so the sandbox can say what ended the run.
+      expect(reason).toEqual(stoppedBySignal(name));
       expect(process.listenerCount(name)).toBe(before);
     },
   );
@@ -135,7 +139,7 @@ async function signalledRun(
      ${PLAIN_NODE}
      const tool = ${JSON.stringify(tool)};
      process.exitCode = await holdingSignals((signal) =>
-       runTool(tool, tool.bins[0], [${JSON.stringify(marker)}], process, ${JSON.stringify(work)}, signal),
+       runTool(tool, tool.bins[0], [${JSON.stringify(marker)}], process, ${JSON.stringify(work)}, { signal }),
      );
     `,
   });

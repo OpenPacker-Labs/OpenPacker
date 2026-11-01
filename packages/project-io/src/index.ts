@@ -385,3 +385,42 @@ export {
 export { packTar, packTarGzip, packZip, type ArchiveEntry } from './archive.js';
 
 export { openStablePath, type StablePathOptions } from './stable-path.js';
+
+// Who holds a directory, and whether that process has ended: the one rule
+// every holder opm records is judged by (`process-owner.ts`).
+export { placeDigest, placeHex, type PlaceKind } from './owner-digest.js';
+export {
+  currentOwner,
+  makeCurrentOwner,
+  ownStartTime,
+  parseMachineId,
+  parseStat,
+  systemProbe,
+  type OwnerReads,
+} from './owner-system.js';
+export {
+  describeProcessOwner,
+  isOwnerAlive,
+  ownerKey,
+  ownerPlace,
+  parseProcessOwner,
+  type OwnerPlace,
+  type OwnerProbe,
+  type PlaceOptions,
+  type ProcessOwner,
+} from './process-owner.js';
+export {
+  OWNER_FILE,
+  ownerFileProblem,
+  readOwnerFile,
+  readOwnerFileAt,
+  writeOwnerFile,
+  writeOwnerFileAt,
+  type OwnerFileProblem,
+  type OwnerFileRead,
+} from './owner-file.js';
+export {
+  abandonedByOwner,
+  abandonedByOwnerAt,
+  type AbandonJudge,
+} from './owner-abandoned.js';

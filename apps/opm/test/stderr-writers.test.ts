@@ -163,6 +163,18 @@ const EXEMPT: ReadonlyArray<{
   },
   {
     file: 'opmx-spawn.ts',
+    starts: 'const watching = [watchReader(io.stdout, lose)',
+    reason:
+      'listens for the reader of stdout and stderr going away (EPIPE, a close), and writes nothing',
+  },
+  {
+    file: 'opmx-spawn.ts',
+    starts: 'const toErr = (written: string) =>',
+    reason:
+      'whether stderr asks the tool to wait until it drains (`whenTaken`), beside the write named above',
+  },
+  {
+    file: 'opmx-spawn.ts',
     starts: 'passing.err(outcome.stderr)',
     reason: 'what the sandbox says after the tool, through the same writer',
   },

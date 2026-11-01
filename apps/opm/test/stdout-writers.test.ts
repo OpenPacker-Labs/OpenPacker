@@ -128,8 +128,15 @@ const EXEMPT: ReadonlyArray<{
   },
   {
     file: 'opmx-spawn.ts',
-    starts: 'outRaw',
-    reason: "the tool's own stdout, passed through as it writes it",
+    starts: 'const watching = [watchReader(io.stdout, lose)',
+    reason:
+      'listens for the reader of stdout and stderr going away (EPIPE, a close), and writes nothing',
+  },
+  {
+    file: 'opmx-spawn.ts',
+    starts: 'const toOut = (written: string) =>',
+    reason:
+      "the tool's own stdout, passed through as it writes it, and whether stdout asks the tool to wait until it drains (`whenTaken`)",
   },
 ];
 

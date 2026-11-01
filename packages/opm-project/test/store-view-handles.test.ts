@@ -66,6 +66,7 @@ const heldBy = async (run: Parameters<typeof runSandboxedPackageProcess>[0]) =>
   Number(
     (
       await runSandboxedPackageProcess({
+        timeoutMs: 0,
         ...run,
         argv: [process.execPath, '-e', countDirectories],
         backend,

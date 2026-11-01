@@ -57,6 +57,7 @@ export function opmErrorExit(code: string): number {
     case 'UNAVAILABLE':
     case 'STORE_ENTRY_VANISHED':
     case 'PROJECT_BUSY':
+    case 'PROJECT_READ_ONLY':
     case 'STEP_ALIVE':
     case 'PLUGIN_ERROR':
     case 'PLUGIN_FAILED':

@@ -1,4 +1,4 @@
-import { OpmError } from '@openpacker/opm-project';
+import { OpmError, parseRunTimeout } from '@openpacker/opm-project';
 
 /** opmx's command line: its arguments, its granted environment and its help. */
 
@@ -31,11 +31,28 @@ export function parse(argv: string[]) {
   const plugins: string[] = [];
   const allowEnv: string[] = [];
   let offline = false;
+  let timeoutMs: number | undefined;
+  let allowNetwork = false;
   let i = 0;
   let seenSelector = false;
   while (i < argv.length) {
     const arg = argv[i] ?? '';
     if (arg === '--') {
+      // Nothing has named the tool yet: the name follows, then its arguments
+      // (`opmx -- <name> [args...]`, as a bin shim runs it, so that a name is
+      // never read as one of opmx's options). Otherwise all of it is the tool's.
+      const next = argv[i + 1];
+      if (
+        !seenSelector &&
+        packageAlias === undefined &&
+        binName === undefined &&
+        next !== undefined
+      ) {
+        positionals.push(next);
+        seenSelector = true;
+        passthrough.push(...argv.slice(i + 2));
+        break;
+      }
       passthrough.push(...argv.slice(i + 1));
       break;
     }
@@ -87,6 +104,27 @@ export function parse(argv: string[]) {
       i += 1;
       continue;
     }
+    if (arg === '--timeout') {
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith('--'))
+        throw new OpmError(
+          'USAGE',
+          'opmx --timeout requires a number of milliseconds (0 for none)',
+        );
+      timeoutMs = parseRunTimeout(value, '--timeout');
+      i += 2;
+      continue;
+    }
+    if (arg.startsWith('--timeout=')) {
+      timeoutMs = parseRunTimeout(arg.slice('--timeout='.length), '--timeout');
+      i += 1;
+      continue;
+    }
+    if (arg === '--allow-network') {
+      allowNetwork = true;
+      i += 1;
+      continue;
+    }
     if (arg === '--offline') {
       offline = true;
       i += 1;
@@ -130,6 +168,8 @@ export function parse(argv: string[]) {
     plugins,
     allowEnv,
     offline,
+    ...(timeoutMs !== undefined && { timeoutMs }),
+    allowNetwork,
   };
 }
 
@@ -138,6 +178,7 @@ export function help(): string {
 
 From this project's install (needs opm.toml and a prior opm install/sync):
   opmx <package-or-bin> [args...]
+  opmx -- <package-or-bin> [args...]    # a name that starts with "-" too
   opmx --package <alias> [--bin <name>] -- [args...]
   opmx -p demo-tool -c demo-tool -- --version
 
@@ -156,6 +197,24 @@ The plugin answers metadata only; the host downloads the tool bytes from the
 location the plugin publishes and digest-verifies them before anything runs.
 A plugin's declared environment stays unforwarded unless each name is granted
 with --allow-env NAME (repeatable). --offline refuses an ephemeral resolve.
+
+opmx's own options (--timeout, --allow-network, --plugin, --allow-env,
+--offline, --package, --bin) go before the tool's name; everything after the
+name is the tool's own.
+
+A tool runs until it ends or is stopped (Ctrl-C), as with npx, and all it
+writes reaches the terminal. --timeout <ms> ends it after that many
+milliseconds (0: never). Without it, a tool the project installed gets the
+project's [sandbox] opmx_timeout_ms, else a [sandbox] timeout_ms it sets, else
+no limit. opmx pkg:... reads no project: only these options apply to it.
+
+A tool has no network unless it is granted one: it reaches nothing outside
+its sandbox, and nothing outside reaches it, a server included.
+--allow-network shares this host's network with the run, which also gives
+the tool outbound network and this host's loopback services; a project grants
+a package it installed network for every run with
+[sandbox.packages."<purl>"] network = true. opmx says on stderr when a tool
+listens without it, and on which port.
 
 Tool files are kept once per machine in the shared package store
 (OPM_STORE_HOME, default ~/.cache/openpacker/store; OPM_STORE_HOME=off opts out).

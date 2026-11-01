@@ -1,12 +1,16 @@
 import { mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { NativeLockEntry } from '@openpacker/adapter-core';
 import { tarballWrapper } from '@openpacker/project-io';
 import { requireAdapterRegistry } from './adapters.js';
 import { removeStableTree } from './paths.js';
-import { makeScratch, sweepAbandoned, type Scratch } from './run-scratch.js';
-import { ensurePrivateRoot } from './shared-store-root.js';
+import {
+  cannotMake,
+  makeScratch,
+  makeTemporaryScratch,
+  sweepAbandoned,
+  type Scratch,
+} from './run-scratch.js';
 import {
   ecosystemFromPurl,
   purlPackageName,
@@ -17,19 +21,13 @@ import { OpmError } from './types.js';
 
 const RUN_PREFIX = 'run-';
 
-/** The directory of this user's under the temporary directory for runs a project cannot hold. */
-const TEMPORARY_RUNS = 'openpacker-runs';
-
-/** Why a layout cannot be made beside its store: this user may not write there. */
-const UNWRITABLE = new Set(['EACCES', 'EPERM', 'EROFS']);
-
 /**
  * The scratch directory a run's layout is made in: beside the store it links
  * from (`<cacheRoot>/.opm/runs`), so its files are hard links. Where this user
  * may not write there, a checkout they may read and not write, it is made in
- * `openpacker-runs` under the temporary directory, which must be theirs and
- * private, and its files are copies where that is another filesystem. Either
- * way the next run made there removes what runs that ended left.
+ * `openpacker-runs` under the temporary directory (`makeTemporaryScratch`),
+ * and its files are copies where that is another filesystem. Either way the
+ * next run made there removes what runs that ended left.
  */
 async function runScratch(cacheRoot: string): Promise<Scratch> {
   const opm = join(cacheRoot, '.opm');
@@ -43,14 +41,9 @@ async function runScratch(cacheRoot: string): Promise<Scratch> {
     });
     return await makeScratch(beside, RUN_PREFIX);
   } catch (error) {
-    // SAFETY: Node's file system errors carry their errno name in `code`.
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === undefined || !UNWRITABLE.has(code)) throw error;
+    if (!(error instanceof Error) || !cannotMake(error)) throw error;
   }
-  const own = join(tmpdir(), TEMPORARY_RUNS);
-  await ensurePrivateRoot(own, false, true, 'The temporary runs directory');
-  await sweepAbandoned(own, RUN_PREFIX);
-  return await makeScratch(own, RUN_PREFIX);
+  return await makeTemporaryScratch(RUN_PREFIX);
 }
 
 /** One package of a tool's closure, as the tool cache holds it. */

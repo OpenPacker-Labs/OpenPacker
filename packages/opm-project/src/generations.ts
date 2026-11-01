@@ -1,8 +1,8 @@
 import { echoed } from '@openpacker/adapter-core';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, type FileHandle } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { access, lstat, type FileHandle } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import {
   OpmError,
   type BinDeclaration,
@@ -12,6 +12,8 @@ import {
 import {
   assertSafeSegment,
   O_DIRECTORY,
+  OPM_DIR,
+  PROJECT_STATE,
   ensureStableDirectory,
   openChild,
   openStableDirectory,
@@ -27,7 +29,14 @@ import {
   storePathForDigest,
   writeStableFile,
 } from './paths.js';
-import { discoverBins, removeBinShims, writeBinShims } from './bins.js';
+import {
+  outOfDate,
+  plannedLink,
+  type OutOfDate,
+  type PlannedPackage,
+} from './activation-current.js';
+import { discoverBins, planBinShims, removeBinShims } from './bins.js';
+import { isRefusal, plainReason } from './fs-reason.js';
 import { readProjectState, writeProjectState } from './install.js';
 import { isStoreView, sweepAbandonedViews } from './store-view.js';
 import { projectStep, type StepOptions } from './project-step.js';
@@ -907,51 +916,166 @@ export async function activateGeneration(input: {
     }
 
     await revalidatePreparedTrees(prepared);
-    await ensureStableDirectory(paths.bin);
-    await ensureStableDirectory(paths.links);
-    const previous = await readProjectState(paths.projectState);
-    for (const record of Object.values(previous?.packages ?? {}))
-      await removeBinShims(
-        paths.bin,
-        record.bins.map((bin) => bin.name),
-      );
-
-    const state: ProjectState = { schemaVersion: 1, packages: {} };
-    for (const { member, alias, bins } of prepared) {
-      const shims = await writeBinShims({
-        binDir: paths.bin,
-        storeRoot: member.storePath,
-        bins,
-      });
-      await writeStableFile(
-        resolveContained(paths.links, alias),
-        `${JSON.stringify(
-          {
+    // A Python console script's launcher puts every Python package of the
+    // generation on PYTHONPATH, as the install that wrote it did.
+    const pythonPath = prepared
+      .filter(({ member }) => member.purl.startsWith('pkg:pypi/'))
+      .map(({ member }) => member.storePath);
+    const planned: PlannedPackage[] = prepared.map(
+      ({ member, alias, bins }) => {
+        const shims = planBinShims({
+          binDir: paths.bin,
+          storeRoot: member.storePath,
+          bins,
+          ...(member.purl.startsWith('pkg:pypi/') && { pythonPath }),
+          // The install that wrote the shims said which bin got none.
+          notice: () => undefined,
+        });
+        return {
+          record: {
             alias,
             purl: member.purl,
-            storePath: member.storePath,
             digest: member.digest,
+            storePath: member.storePath,
+            bins: shims.map(({ shim }) => shim),
+            installedAt: input.generation.createdAt,
           },
-          null,
-          2,
-        )}\n`,
-      );
-      state.packages[alias] = {
-        alias,
-        purl: member.purl,
-        digest: member.digest,
-        storePath: member.storePath,
-        bins: shims,
-        installedAt: input.generation.createdAt,
-      };
+          shims,
+          link: plannedLink(paths.links, { ...member, alias }),
+        };
+      },
+    );
+    const previous = await readProjectState(paths.projectState);
+    const compared = (elsewhere: boolean) =>
+      outOfDate({
+        root: input.root,
+        statePath: paths.projectState,
+        held: previous,
+        planned,
+        elsewhere,
+      });
+    // What the project holds is what activation would write: it writes
+    // nothing, so a project this user may only read runs as it is.
+    const stale = await compared(false);
+    if (stale === undefined && previous !== undefined) {
+      await revalidatePreparedTrees(prepared);
+      return previous;
     }
-    await revalidatePreparedTrees(prepared);
-    await writeProjectState(paths.projectState, state);
+    // Where it may not write, shims that start another opm's opmx, which is
+    // there to start, are as good: a project built where opm was installed
+    // elsewhere runs read-only as it is. Anything else is refused.
+    if (
+      !(await mayWrite([dirname(paths.projectState), paths.bin, paths.links]))
+    ) {
+      const readOnly = await compared(true);
+      if (readOnly === undefined && previous !== undefined) {
+        await revalidatePreparedTrees(prepared);
+        return previous;
+      }
+      throw readOnlyRefusal(
+        readOnly ?? { path: PROJECT_STATE_SHOWN, why: 'differs' },
+        input.root,
+      );
+    }
+    const state: ProjectState = {
+      schemaVersion: 1,
+      packages: Object.fromEntries(
+        planned.map(({ record }) => [record.alias, record]),
+      ),
+    };
+    // What is being written, to name it should it fail: the project said it
+    // may be written, so a refusal here is that file's, and says so as itself.
+    let writing = paths.bin;
+    try {
+      await ensureStableDirectory(paths.bin);
+      writing = paths.links;
+      await ensureStableDirectory(paths.links);
+      for (const record of Object.values(previous?.packages ?? {}))
+        for (const bin of record.bins) {
+          writing = bin.shim;
+          await removeBinShims(paths.bin, [bin.name]);
+        }
+      for (const { shims, link } of planned) {
+        for (const { shim, script } of shims) {
+          writing = shim.shim;
+          await writeStableFile(shim.shim, script, 0o755);
+        }
+        writing = link.path;
+        await writeStableFile(link.path, link.text);
+      }
+      await revalidatePreparedTrees(prepared);
+      writing = paths.projectState;
+      await writeProjectState(paths.projectState, state);
+    } catch (error) {
+      throw failedAt(writing, error);
+    }
     return state;
   } finally {
     await Promise.all(prepared.map(({ handle }) => handle.close()));
     await store.close();
   }
+}
+
+/**
+ * A system call's failure while activation wrote `path`, as itself (its code)
+ * with the path it was writing: the call's own message names a descriptor
+ * (`/proc/self/fd/N/...`), not the file. Anything else is as it was thrown.
+ */
+function failedAt(path: string, error: unknown): Error {
+  if (!(error instanceof Error)) return new Error(String(error));
+  if (!isRefusal(error)) return error;
+  return new OpmError(String(error.code), `${path}: ${plainReason(error)}`, {
+    cause: error,
+  });
+}
+
+/** The project state's path from its root, as a refusal names it. */
+const PROJECT_STATE_SHOWN = `${OPM_DIR}/${PROJECT_STATE}`;
+
+/** Why a write fails that this user may not make: the project is not theirs to write. */
+const UNWRITABLE = new Set(['EACCES', 'EPERM', 'EROFS']);
+
+/** Whether this user may write in each of `dirs`, asked without writing. */
+async function mayWrite(dirs: readonly string[]): Promise<boolean> {
+  for (const dir of dirs) {
+    const refused = await access(dir, constants.W_OK).then(
+      () => false,
+      (error: unknown) => cannotWrite(error),
+    );
+    if (refused) return false;
+  }
+  return true;
+}
+
+/** Why opmx cannot run in a project out of date that this user may not write, in one line. */
+function readOnlyRefusal(
+  stale: OutOfDate,
+  root: string,
+  cause?: unknown,
+): OpmError {
+  const what =
+    stale.why === 'opmx'
+      ? `${stale.path} starts ${stale.opmx}, which ${
+          stale.problem === 'missing'
+            ? 'is missing or not a program'
+            : 'is not an opmx'
+        }`
+      : `${stale.path} is out of date for the active generation`;
+  return new OpmError(
+    'PROJECT_READ_ONLY',
+    `${what}, and this user may not write ${root}: run \`opm install\` there as its owner`,
+    cause === undefined ? undefined : { cause },
+  );
+}
+
+/** Whether `error`, or what caused it, says this user may not write where it was writing. */
+function cannotWrite(error: unknown): boolean {
+  let at = error;
+  while (at instanceof Error) {
+    if ('code' in at && UNWRITABLE.has(String(at.code))) return true;
+    at = at.cause;
+  }
+  return false;
 }
 
 async function revalidatePreparedTrees(

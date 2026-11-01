@@ -6,6 +6,7 @@ import {
   OpmError,
   ephemeralNodeRun,
   runSandboxedPackageProcess,
+  stoppedBySignal,
   type BinDeclaration,
   type EphemeralTool,
   type NodeRun,
@@ -24,6 +25,9 @@ export const EXIT_CODES = {
   internal: 9,
 } as const;
 
+/** How opmx ends when the reader of its output went away: as SIGPIPE ends a writer, 128 + 13. */
+export const BROKEN_PIPE_EXIT = 141;
+
 export interface CliIo {
   stdout: Pick<NodeJS.WriteStream, 'write'>;
   stderr: Pick<NodeJS.WriteStream, 'write'>;
@@ -39,6 +43,13 @@ export interface SandboxContext {
   signal?: AbortSignal;
   /** Directories put first on the tool's PATH (its layout's `.bin`). */
   pathPrefix?: readonly string[];
+  /**
+   * Wall-clock milliseconds, 0 or absent for none: what `opmxRunTimeout` says
+   * for a project's tool, `--timeout` for one straight from a registry.
+   */
+  timeoutMs?: number;
+  /** `--allow-network`: the run shares the host's network. */
+  network?: boolean;
 }
 
 /**
@@ -52,7 +63,7 @@ export async function runTool(
   args: readonly string[],
   io: CliIo,
   cwd: string,
-  signal?: AbortSignal,
+  context: Pick<SandboxContext, 'signal' | 'timeoutMs' | 'network'> = {},
 ): Promise<number> {
   return runLaidOut(
     await ephemeralNodeRun(tool, bin),
@@ -60,10 +71,7 @@ export async function runTool(
     args,
     io,
     cwd,
-    {
-      packageId: tool.exactPurl,
-      ...(!(signal === undefined) && { signal }),
-    },
+    { ...context, packageId: tool.exactPurl },
   );
 }
 
@@ -211,33 +219,109 @@ export async function spawnTool(
  * text: a character a chunk splits is written whole with the next chunk, and
  * `end` writes what a last chunk left. `out` and `err` write text there too:
  * what the sandbox itself says, after the tool.
+ *
+ * When the reader of either stream goes away (it fails, EPIPE once `head -1`
+ * has its line, or is destroyed), nothing more is written to either, and
+ * `gone` is called once: the caller ends the tool as a shell pipeline would.
+ * `release` removes what is listened for on the streams.
  */
-function passedOn(io: CliIo): {
-  sink: { stdout(chunk: Uint8Array): void; stderr(chunk: Uint8Array): void };
+export function passedOn(
+  io: CliIo,
+  gone: () => void = () => undefined,
+): {
+  sink: {
+    stdout(chunk: Uint8Array): Promise<void> | undefined;
+    stderr(chunk: Uint8Array): Promise<void> | undefined;
+  };
   end(): void;
   out(text: string): void;
   err(text: string): void;
+  /** Whether a reader went away. */
+  lost(): boolean;
+  release(): void;
 } {
   const out = new StringDecoder('utf8');
   const err = new StringDecoder('utf8');
-  const toOut = (written: string) => {
-    if (written !== '') outRaw(io, written);
+  let lost = false;
+  const lose = () => {
+    if (lost) return;
+    lost = true;
+    gone();
   };
-  const toErr = (written: string) => {
-    if (written !== '') io.stderr.write(written);
+  const watching = [watchReader(io.stdout, lose), watchReader(io.stderr, lose)];
+  /** Whether nothing more is to be written: a reader went away, or `stream` is destroyed. */
+  const closed = (stream: unknown) => {
+    // SAFETY: only `destroyed` is read, a boolean on every Node stream.
+    if ((stream as { destroyed?: unknown }).destroyed === true) lose();
+    return lost;
   };
+  const toOut = (written: string) =>
+    written === '' || closed(io.stdout)
+      ? undefined
+      : whenTaken(io.stdout, outRaw(io, written));
+  const toErr = (written: string) =>
+    written === '' || closed(io.stderr)
+      ? undefined
+      : whenTaken(io.stderr, io.stderr.write(written));
   return {
     sink: {
       stdout: (chunk) => toOut(out.write(chunk)),
       stderr: (chunk) => toErr(err.write(chunk)),
     },
     end: () => {
-      toOut(out.end());
-      toErr(err.end());
+      void toOut(out.end());
+      void toErr(err.end());
     },
-    out: toOut,
-    err: toErr,
+    out: (text) => void toOut(text),
+    err: (text) => void toErr(text),
+    lost: () => lost,
+    release: () => {
+      for (const stop of watching) stop();
+    },
   };
+}
+
+/**
+ * Calls `lose` once `stream` fails or closes, which is how a pipe says its
+ * reader went away; returns what stops listening. A stream that is not an
+ * event emitter (a test's) is not listened to.
+ */
+function watchReader(stream: unknown, lose: () => void): () => void {
+  // SAFETY: only `on` and `off` are used, and only where the stream has both.
+  const { on, off } = stream as { on?: unknown; off?: unknown };
+  if (typeof on !== 'function' || typeof off !== 'function')
+    return () => undefined;
+  on.call(stream, 'error', lose);
+  on.call(stream, 'close', lose);
+  return () => {
+    off.call(stream, 'error', lose);
+    off.call(stream, 'close', lose);
+  };
+}
+
+/** What ends a wait on a stream that asked to be waited for. */
+const TAKEN = ['drain', 'close', 'error', 'finish'] as const;
+
+/**
+ * Nothing when `stream` took what was written (`wrote`); when it asked to wait,
+ * a promise that settles once it drains, or once it closes or fails, after
+ * which nothing more will wait on it. The first of those removes the
+ * listeners for the others: a pipe that is behind asks again and again, and a
+ * wait must leave nothing on it. A stream that is not an event emitter (a
+ * test's) is never waited on.
+ */
+function whenTaken(stream: unknown, wrote: boolean): Promise<void> | undefined {
+  if (wrote !== false) return undefined;
+  // SAFETY: only `once` and `off` are used, and only where the stream has both.
+  const { once, off } = stream as { once?: unknown; off?: unknown };
+  if (typeof once !== 'function' || typeof off !== 'function') return undefined;
+  return new Promise<void>((resolve) => {
+    const settle = () => {
+      for (const event of TAKEN) off.call(stream, event, settle);
+      resolve();
+    };
+    for (const event of TAKEN) once.call(stream, event, settle);
+  });
 }
 
 async function spawnProcess(
@@ -248,7 +332,14 @@ async function spawnProcess(
   sandbox?: SandboxContext,
   missingHint?: string,
 ): Promise<number> {
-  const passing = passedOn(io);
+  // The reader of opmx's output going away ends the tool as a shell pipeline
+  // ends a writer: by SIGPIPE, and then as any run is ended.
+  const broken = new AbortController();
+  const passing = passedOn(io, () => broken.abort(stoppedBySignal('SIGPIPE')));
+  const signal =
+    sandbox?.signal === undefined
+      ? broken.signal
+      : AbortSignal.any([sandbox.signal, broken.signal]);
   try {
     const outcome = await runSandboxedPackageProcess({
       argv: [command, ...argv],
@@ -263,14 +354,27 @@ async function spawnProcess(
         packageId: sandbox.packageId,
       }),
       ...(!(sandbox?.policy === undefined) && { policy: sandbox.policy }),
-      ...(!(sandbox?.signal === undefined) && { signal: sandbox.signal }),
+      signal,
       ...(!(sandbox?.pathPrefix === undefined) && {
         pathPrefix: sandbox.pathPrefix,
       }),
+      timeoutMs: sandbox?.timeoutMs ?? 0,
+      ...(sandbox?.network === true && { network: true }),
+      // Without network the tool has a namespace of its own: a server it
+      // starts is reached by nothing outside, and says nothing of it.
+      onIsolatedListen: (port) =>
+        io.stderr.write(
+          report(
+            'opmx: ',
+            `the tool listens on port ${port}; nothing outside its sandbox can reach it. If you meant to reach it from this host, --allow-network shares this host's network, which also gives the tool outbound network and this host's loopback services.`,
+          ),
+        ),
       // The tool's output reaches the terminal as the tool writes it: a
       // server prints that it listens and then serves until it is stopped.
       output: passing.sink,
     }).finally(passing.end);
+    // Silent, as a pipeline is: whoever reads opmx has gone.
+    if (passing.lost()) return BROKEN_PIPE_EXIT;
     // What the sandbox itself says: a limit reached, a run stopped.
     passing.out(outcome.stdout);
     passing.err(outcome.stderr);
@@ -301,5 +405,7 @@ async function spawnProcess(
     return missing && missingHint
       ? EXIT_CODES.unavailable
       : EXIT_CODES.internal;
+  } finally {
+    passing.release();
   }
 }

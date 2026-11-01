@@ -58,6 +58,7 @@ describe('the store view of a run', () => {
   it('is removed when the process exits', async () => {
     const { root, entries, work } = await store();
     const outcome = await runSandboxedPackageProcess({
+      timeoutMs: 0,
       argv: [process.execPath, '-e', listViews(root)],
       cwd: work,
       storePaths: entries,
@@ -79,6 +80,7 @@ describe('the store view of a run', () => {
     };
     await expect(
       runSandboxedPackageProcess({
+        timeoutMs: 0,
         argv: ['/bin/true'],
         cwd: work,
         storePaths: entries,
@@ -93,6 +95,7 @@ describe('the store view of a run', () => {
     const abort = new AbortController();
     const idle = 'setInterval(() => {}, 1000)';
     const running = runSandboxedPackageProcess({
+      timeoutMs: 0,
       argv: [process.execPath, '-e', idle],
       cwd: work,
       storePaths: entries,

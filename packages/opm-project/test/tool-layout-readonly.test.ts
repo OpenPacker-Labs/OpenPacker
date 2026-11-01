@@ -18,7 +18,7 @@ import { afterEach, describe, expect, it } from 'vitest';
  * A run's layout was made beside the store it links from, in
  * `<root>/.opm/runs`, and nowhere else: in a checkout this user may read and
  * not write (a read-only mount, another user's tree) it could not be made,
- * and the bin did not run. It is made in `openpacker-runs` under the
+ * and the bin did not run. It is made in `openpacker-runs-<uid>` under the
  * temporary directory then, which must be this user's and no one else's.
  *
  * The project is read-only here as on a read-only mount: bwrap binds it so for
@@ -129,7 +129,7 @@ describe.runIf(process.platform === 'linux' && bwrap !== undefined)(
         root: string;
         whole: boolean;
       };
-      const runs = join(where.own, 'openpacker-runs');
+      const runs = join(where.own, `openpacker-runs-${process.geteuid?.()}`);
       expect([whole, root.startsWith(join(runs, 'run-'))]).toEqual([
         true,
         true,
@@ -139,15 +139,15 @@ describe.runIf(process.platform === 'linux' && bwrap !== undefined)(
       expect(existsSync(join(where.cacheRoot, '.opm', 'runs'))).toBe(false);
     });
 
-    it('is refused when that directory is not private', async () => {
+    it('is refused when others may write that directory', async () => {
       const where = await places();
-      const runs = join(where.own, 'openpacker-runs');
+      const runs = join(where.own, `openpacker-runs-${process.geteuid?.()}`);
       await mkdir(runs);
       await chmod(runs, 0o777);
       const ran = await layOut(where);
       expect(ran.status).not.toBe(0);
       expect(ran.err).toContain(
-        `The temporary runs directory ${runs} is accessible to other users (mode 777)`,
+        `The temporary runs directory ${runs} can be written by others (mode 777)`,
       );
       expect(await readdir(runs)).toEqual([]);
     });

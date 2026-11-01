@@ -256,7 +256,6 @@ describe('opm + opmx CLI', () => {
         { purl: string; storePath: string; bins: { target?: string }[] }
       >;
     };
-    // The lock's one spelling of the scope, though the add typed `@`.
     expect(repairedState.packages['demo-tool']?.purl).toBe(
       'pkg:npm/%40openpacker/demo-tool@1.1.0',
     );

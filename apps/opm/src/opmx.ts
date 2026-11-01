@@ -14,6 +14,7 @@ import {
   resolveExecutable,
   fetchTool,
   installedNodeRun,
+  opmxRunTimeout,
   selectToolBin,
   readManifestFile,
   parsePackageSpec,
@@ -128,7 +129,13 @@ export async function runOpmx(
       );
       // An npm script runs from a node_modules of its closure, bound whole.
       return await holdingSignals((signal) =>
-        runTool(tool, bin, passthrough, io, cwd, signal),
+        runTool(tool, bin, passthrough, io, cwd, {
+          signal,
+          ...(!(flags.timeoutMs === undefined) && {
+            timeoutMs: flags.timeoutMs,
+          }),
+          ...(flags.allowNetwork && { network: true }),
+        }),
       );
     }
 
@@ -191,6 +198,10 @@ export async function runOpmx(
       projectRoot: root,
       ...(!(pkgId === undefined) && { packageId: pkgId }),
       ...(!(projectPolicy === undefined) && { policy: projectPolicy }),
+      // --timeout, else the project's opmx_timeout_ms, else a timeout_ms it
+      // sets, else none (`opmxRunTimeout`).
+      timeoutMs: opmxRunTimeout(projectPolicy, flags.timeoutMs),
+      ...(flags.allowNetwork && { network: true }),
     };
     const storePaths = Object.values(state.packages).map(
       (pkg) => pkg.storePath,
@@ -267,6 +278,8 @@ export function exitForError(error: unknown): number {
     case 'PLUGIN_ERROR':
     case 'PLUGIN_FAILED':
     case 'UPSTREAM_UNAVAILABLE':
+    // A project out of date that this user may not write: its owner can fix it.
+    case 'PROJECT_READ_ONLY':
       return EXIT_CODES.unavailable;
     case 'DIGEST_MISMATCH':
     case 'SIZE_MISMATCH':

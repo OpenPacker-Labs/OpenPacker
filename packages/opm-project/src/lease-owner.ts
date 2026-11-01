@@ -29,12 +29,12 @@
 import { createHash } from 'node:crypto';
 import { readFile, readlink } from 'node:fs/promises';
 import { hostname } from 'node:os';
-import { placeHex } from './owner-digest.js';
 import {
   ownStartTime,
   parseMachineId,
+  placeHex,
   type OwnerReads,
-} from './owner-system.js';
+} from '@openpacker/project-io';
 import {
   isOwnerAlive as aliveBy,
   ownerPlace as placeOf,
@@ -52,8 +52,8 @@ export interface LeaseOwner {
   pid: number;
   /**
    * Clock ticks after boot when the process started (Linux), read only from a
-   * `/proc` of its own pid namespace (`ownStartTime` of `owner-system.ts`);
-   * `0` elsewhere.
+   * `/proc` of its own pid namespace (`ownStartTime` of project-io's
+   * `owner-system.ts`); `0` elsewhere.
    */
   start: string;
   /** The pid namespace's inode (Linux); `0` elsewhere. */
@@ -72,8 +72,8 @@ export interface LeaseOwner {
 
 /**
  * The machine a lease names for the machine id `id`: its keyed digest, the one
- * an owner record holds (`placeDigest` of `owner-digest.ts`) without its `d1-`,
- * so that it is 32 hex digits as the id was.
+ * an owner record holds (`placeDigest` of project-io's `owner-digest.ts`)
+ * without its `d1-`, so that it is 32 hex digits as the id was.
  */
 export function leaseMachine(id: string): string {
   return placeHex('machine', id);
@@ -81,9 +81,9 @@ export function leaseMachine(id: string): string {
 
 /**
  * What this process reads to name itself, on every platform (where a file is
- * not there, its field is `0`): the reads of `owner-system.ts`, whose files
- * are read only on Linux, would change the machine of a lease made on a BSD
- * with a dbus machine id.
+ * not there, its field is `0`): the reads of project-io's `owner-system.ts`,
+ * whose files are read only on Linux, would change the machine of a lease made
+ * on a BSD with a dbus machine id.
  */
 const systemReads: OwnerReads = {
   pid: process.pid,

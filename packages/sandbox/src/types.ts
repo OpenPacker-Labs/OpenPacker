@@ -72,24 +72,37 @@ export interface SandboxPolicy {
    * Package id / purl / glob → grants.
    */
   packages?: Readonly<Record<string, PackageGrants>>;
-  /** Max wall-clock ms for a sandboxed process (default 600_000). 0 = none. */
+  /**
+   * Max wall-clock ms for a sandboxed process (default 600_000). 0 = none.
+   * A caller that runs a tool someone started (opmx) sets its own: none
+   * unless one was asked for.
+   */
   timeoutMs?: number;
-  /** Raw stdout byte limit (default 1 MiB). */
+  /**
+   * Raw stdout byte limit (default 1 MiB). The byte limits bound output kept
+   * in the outcome; output handed to an `output` sink is not kept, and has
+   * none.
+   */
   maximumStdoutBytes?: number;
-  /** Raw stderr byte limit (default 1 MiB). */
+  /** Raw stderr byte limit (default 1 MiB), for output kept. */
   maximumStderrBytes?: number;
-  /** Combined raw output byte limit (default 2 MiB). */
+  /** Combined raw output byte limit (default 2 MiB), for output kept. */
   maximumOutputBytes?: number;
 }
 
 /**
  * Where a process's output goes as it is written, instead of into the
  * outcome: a caller that shows a tool to a person (opmx) passes its own
- * streams. Each chunk is the bytes as read, within the policy's byte limits.
+ * streams. Each chunk is the bytes as read; none is kept, and the policy's
+ * byte limits, which bound what is kept, do not apply. A sink that cannot take
+ * more yet (a terminal or pipe that is behind) returns a promise: that stream
+ * of the process is not read again until it settles, so the process waits on
+ * its own writes, as it would writing to the terminal itself, and nothing piles
+ * up in memory meanwhile.
  */
 export interface OutputSink {
-  stdout(chunk: Uint8Array): void;
-  stderr(chunk: Uint8Array): void;
+  stdout(chunk: Uint8Array): void | Promise<void>;
+  stderr(chunk: Uint8Array): void | Promise<void>;
 }
 
 export interface RunInSandboxInput {
@@ -110,10 +123,11 @@ export interface RunInSandboxInput {
   stdin?: Uint8Array;
   /**
    * Hand the process's output on as it is written. The outcome's `stdout` and
-   * `stderr` then hold only what the sandbox itself says (a limit reached, a
-   * run stopped), and nothing of the output is kept. The policy's byte limits
-   * still end the process tree when the output passes them. Absent, the output
-   * is kept, within those limits, and returned when the process ends.
+   * `stderr` then hold only what the sandbox itself says (a run stopped), and
+   * nothing of the output is kept, so the policy's byte limits, which bound
+   * what is kept, do not apply. Absent, the output is kept, within those
+   * limits, and returned when the process ends; past them the process tree is
+   * ended.
    */
   output?: OutputSink;
   policy: SandboxPolicy;
@@ -124,6 +138,13 @@ export interface RunInSandboxInput {
   readonlyPaths: readonly string[];
   /** Allow network even without package grant (opmx flag / host install). */
   network?: boolean;
+  /**
+   * Told, once, the first port the process listens on while it runs without
+   * network (neither `network` nor a package grant): in a network namespace of
+   * its own, nothing outside the sandbox can reach it. Only the bwrap backend
+   * can tell; elsewhere it is never called.
+   */
+  onIsolatedListen?: (port: number) => void;
   /** Defaults to package-exec. */
   profile?: SandboxProfile;
   /**
@@ -177,6 +198,8 @@ export interface SandboxBackend {
     readwritePaths: readonly string[];
     readonlyPaths: readonly string[];
     network: boolean;
+    /** `RunInSandboxInput.onIsolatedListen`, given only when `network` is false. */
+    onIsolatedListen?: (port: number) => void;
     /** package-exec uses minimal binds; host-install uses broader. */
     profile: SandboxProfile;
     legacyFatRoot?: boolean;

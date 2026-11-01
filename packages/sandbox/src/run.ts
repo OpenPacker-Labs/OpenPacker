@@ -1,5 +1,4 @@
-import { mkdir, mkdtemp, rm, type FileHandle } from 'node:fs/promises';
-import { join } from 'node:path';
+import { type FileHandle } from 'node:fs/promises';
 import { createMxcBackend, probeMxc } from './backends/mxc.js';
 import {
   createMockBackend,
@@ -7,8 +6,21 @@ import {
   SandboxBackendError,
 } from './backends/mock.js';
 import { createNativeBackend, probeNativeBackends } from './backends/native.js';
-import { defaultJailHomeRoot, scrubEnvironment } from './env.js';
+import {
+  defaultJailHomeRoot,
+  scrubEnvironment,
+  sharedJailHomeRoot,
+} from './env.js';
 import { boundPaths, pathsToOpen } from './handles.js';
+import {
+  makeJailHome,
+  openJailRoot,
+  removeJailHome,
+  sweepJailHomes,
+  sweepJailHomesIn,
+  type JailHome,
+} from './jail-home.js';
+import { stoppedByTimeout } from './stop.js';
 import { containmentWithdrawnNote } from './platform.js';
 import {
   assertSafeJailPath,
@@ -167,12 +179,22 @@ export async function runInSandbox(
     );
   }
 
-  const jailRoot = defaultJailHomeRoot();
-  await mkdir(jailRoot, { recursive: true });
-  const jailHome = await mkdtemp(join(jailRoot, 'home-'));
+  // A root of this user's that no one else may write, or none (jail-home.ts).
+  const jailRoot = await openJailRoot(defaultJailHomeRoot());
+  let jail: JailHome;
+  try {
+    // What runs killed outright left here, judged by their owners, and in
+    // the root all users' runs shared before there was one per user.
+    await sweepJailHomesIn(jailRoot);
+    await sweepJailHomes(sharedJailHomeRoot());
+    jail = await makeJailHome(jailRoot);
+  } catch (error) {
+    await jailRoot.handle.close().catch(() => undefined);
+    throw error;
+  }
+  const jailHome = jail.home;
   const ownedAuthorities: FileHandle[] = [];
   try {
-    await mkdir(join(jailHome, 'tmp'), { recursive: true });
     const interpreter = input.argv[0];
     const env = scrubEnvironment({
       ...(!(input.env === undefined) && { extra: input.env }),
@@ -205,7 +227,10 @@ export async function runInSandbox(
       let timer: ReturnType<typeof setTimeout> | undefined;
       const ac = new AbortController();
       if (timeoutMs > 0) {
-        timer = setTimeout(() => ac.abort(), timeoutMs);
+        timer = setTimeout(
+          () => ac.abort(stoppedByTimeout(timeoutMs)),
+          timeoutMs,
+        );
         signal =
           input.signal === undefined
             ? ac.signal
@@ -220,6 +245,10 @@ export async function runInSandbox(
           readwritePaths: readwrite,
           readonlyPaths: readonly,
           network,
+          ...(!network &&
+            !(input.onIsolatedListen === undefined) && {
+              onIsolatedListen: input.onIsolatedListen,
+            }),
           profile,
           legacyFatRoot: resolved.legacyFatRoot,
           maximumStdoutBytes: resolved.maximumStdoutBytes,
@@ -324,7 +353,8 @@ export async function runInSandbox(
     await Promise.all(
       ownedAuthorities.map(async (handle) => await handle.close()),
     );
-    await rm(jailHome, { recursive: true, force: true }).catch(() => undefined);
+    await removeJailHome(jailRoot, jail);
+    await jailRoot.handle.close().catch(() => undefined);
   }
 }
 

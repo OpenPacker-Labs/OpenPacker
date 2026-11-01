@@ -31,7 +31,7 @@ export const canSandbox =
   ['/usr/bin/bwrap', '/bin/bwrap'].some((path) => existsSync(path));
 
 /** Every running process with `marker` among its arguments. */
-function withMarker(marker: string): string[][] {
+export function withMarker(marker: string): string[][] {
   const found: string[][] = [];
   for (const pid of readdirSync('/proc')) {
     if (!/^\d+$/u.test(pid)) continue;
