@@ -57,17 +57,14 @@ import {
   type AdapterRegistry,
 } from '@openpacker/opm-project';
 import { asksForHelp } from './commands/run-args.js';
+import { cliStep, runRecoverCommand } from './commands/recover.js';
 import { COMMANDS } from './commands/command-names.js';
 import { routeRun, unknownCommandHint } from './commands/run-route.js';
 import { RunError } from './commands/run-error.js';
 import { helpText } from './commands/help-text.js';
 import { formatFailure, parseFailure, report } from './error-report.js';
-import {
-  runGcCommand,
-  runRollbackCommand,
-  runSharedGcCommand,
-} from './commands/generations.js';
-import { cliStep, runRecoverCommand } from './commands/recover.js';
+import { isBooleanFlag, shortToLong } from './cli-flags.js';
+import { runRollbackCommand } from './commands/generations.js';
 import { importHeading, importLine, listLine } from './stdout-lines.js';
 
 export const EXIT_CODES = {
@@ -671,6 +668,8 @@ export async function runOpm(
         const { runAuthCommand } = await import('./commands/auth.js');
         return await runAuthCommand(args, io);
       }
+      case 'recover':
+        return await runRecoverCommand(args, io, cwd, step);
       case 'generations': {
         const root = await requireOpmRoot(cwd);
         const state = await readEnvironmentState(root);
@@ -689,8 +688,6 @@ export async function runOpm(
         }
         return EXIT_CODES.success;
       }
-      case 'recover':
-        return await runRecoverCommand(args, io, cwd, step);
       case 'rollback': {
         return await runRollbackCommand(
           args,
@@ -700,6 +697,9 @@ export async function runOpm(
         );
       }
       case 'gc': {
+        const { runGcCommand, runSharedGcCommand } = await import(
+          './commands/generations.js'
+        );
         // The shared store belongs to the user, not to a project, so this
         // needs no project and never runs as part of a project's own gc.
         if (args.options.has('shared'))
@@ -928,44 +928,6 @@ function parseArgs(argv: string[]): Parsed {
     head: commandIndex === -1 ? [...argv] : argv.slice(0, commandIndex),
     rest: commandIndex === -1 ? [] : argv.slice(commandIndex + 1),
   };
-}
-
-function shortToLong(short: string): string {
-  switch (short) {
-    case 'e':
-      return 'ecosystem';
-    case 'h':
-      return 'help';
-    case 'w':
-      return 'workspace';
-    default:
-      return short;
-  }
-}
-
-function isBooleanFlag(key: string): boolean {
-  return (
-    key === 'help' ||
-    key === 'force' ||
-    key === 'offline' ||
-    key === 'online' ||
-    key === 'json' ||
-    key === 'dry-run' ||
-    key === 'delegate' ||
-    key === 'allow-build' ||
-    key === 'allow-network' ||
-    key === 'allow-elevation' ||
-    key === 'latest' ||
-    key === 'if-present' ||
-    key === 'native' ||
-    key === 'shared' ||
-    key === 'production' ||
-    key === 'frozen' ||
-    key === 'workspaces' ||
-    key === 'no-workspaces' ||
-    key === 'include-workspace-root' ||
-    key === 'write'
-  );
 }
 
 /**

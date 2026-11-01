@@ -15,7 +15,8 @@
  * whether a source is allowed, and it never contacts one.
  */
 
-import { PnpmLockError } from './errors.js';
+import { quote } from '@openpacker/adapter-core';
+import { PnpmLockError, shown } from './errors.js';
 import { checkLimit } from './limits.js';
 import {
   asList,
@@ -45,7 +46,7 @@ function integrityAt(value: YamlValue | undefined, where: string): string {
   if (problem !== undefined)
     throw new PnpmLockError(
       'integrity',
-      `${problem}: ${JSON.stringify(integrity)}`,
+      `${problem}: ${quote(integrity)}`,
       where,
     );
   return integrity;
@@ -231,7 +232,7 @@ export function readResolution(
   }
   throw new PnpmLockError(
     'shape',
-    `has the resolution type ${JSON.stringify(type)}, which pnpm 9 and 10 do not write for a package`,
+    `has the resolution type ${shown(type)}, which pnpm 9 and 10 do not write for a package`,
     where,
   );
 }

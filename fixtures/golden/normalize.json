@@ -25,18 +25,18 @@
       "warnings": []
     },
     {
-      "canonical": ">=1.0.0 <2.0.0",
+      "canonical": ">=1.0.0 <2.0.0-0",
       "ecosystem": "npm",
       "original": "^1.0.0",
       "parsed": {
         "ast": {
           "items": [
             { "operator": ">=", "type": "comparison", "version": "1.0.0" },
-            { "operator": "<", "type": "comparison", "version": "2.0.0" }
+            { "operator": "<", "type": "comparison", "version": "2.0.0-0" }
           ],
           "type": "and"
         },
-        "normalized": ">=1.0.0 <2.0.0",
+        "normalized": ">=1.0.0 <2.0.0-0",
         "original": "^1.0.0",
         "reversible": false,
         "scheme": "npm",
