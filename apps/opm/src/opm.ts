@@ -16,8 +16,6 @@ import {
 import {
   OpmError,
   addPackage,
-  collectGarbage,
-  collectSharedStore,
   configurePackProviders,
   enableDefaultSharedStore,
   ecosystemFromPurl,
@@ -49,16 +47,12 @@ import {
   resolveGraph,
   resolveRegistryArtifact,
   solveGraph,
-  rollbackTarget,
-  searchRegistry,
-  switchGeneration,
   syncProject,
   uninstallProject,
   updateProject,
   whyPackage,
   type AdapterModule,
   type AdapterRegistry,
-  type Generation,
 } from '@openpacker/opm-project';
 import { asksForHelp } from './commands/run-args.js';
 import { COMMANDS } from './commands/command-names.js';
@@ -66,6 +60,12 @@ import { routeRun, unknownCommandHint } from './commands/run-route.js';
 import { RunError } from './commands/run-error.js';
 import { RUN_HELP } from './commands/run-help.js';
 import { formatFailure, parseFailure, report } from './error-report.js';
+import {
+  runGcCommand,
+  runRollbackCommand,
+  runSharedGcCommand,
+} from './commands/generations.js';
+import { cliStep, runRecoverCommand } from './commands/recover.js';
 import { importHeading, importLine, listLine } from './stdout-lines.js';
 
 export const EXIT_CODES = {
@@ -669,50 +669,15 @@ export async function runOpm(
       }
       case 'rollback': {
         const root = await requireOpmRoot(cwd);
-        const to = option(args, 'to');
-        const target = to
-          ? await switchGeneration({ root, target: Number(to) })
-          : await rollbackToPrevious(root);
-        out(io, `Rolled back to generation ${target.sequence}\n`);
-        return EXIT_CODES.success;
+        return runRollbackCommand(args, io, root, cliStep(io, args.options));
+      }
+      case 'recover': {
+        return runRecoverCommand(args, io, cwd, cliStep(io, args.options));
       }
       case 'gc': {
-        // The shared store belongs to the user, not to a project, so this
-        // needs no project and never runs as part of a project's own gc.
-        if (args.options.has('shared')) {
-          const result = await collectSharedStore({
-            dryRun: args.options.has('dry-run'),
-          });
-          if (result.root === undefined) {
-            out(
-              io,
-              'No shared store is in use (OPM_STORE_HOME is off or this host has none)\n',
-            );
-            return EXIT_CODES.success;
-          }
-          const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
-          out(
-            io,
-            `${verb} ${result.removed.length} unreferenced entr${result.removed.length === 1 ? 'y' : 'ies'} from ${plainLine(result.root)}; ` +
-              `${result.referenced} still used by a project, ${result.held} in use by an install in progress, ${result.tooNew} too new to judge\n`,
-          );
-          for (const path of result.removed) out(io, `  ${plainLine(path)}\n`);
-          return EXIT_CODES.success;
-        }
+        if (args.options.has('shared')) return runSharedGcCommand(args, io);
         const root = await requireOpmRoot(cwd);
-        const keepValue = option(args, 'keep');
-        const result = await collectGarbage({
-          root,
-          ...(!(keepValue === undefined) && { keep: Number(keepValue) }),
-          dryRun: args.options.has('dry-run'),
-        });
-        const verb = args.options.has('dry-run') ? 'Would remove' : 'Removed';
-        out(
-          io,
-          `${verb} ${result.removed.length} store path(s); retained ${result.retained.length} generation(s)\n`,
-        );
-        for (const path of result.removed) out(io, `  ${path}\n`);
-        return EXIT_CODES.success;
+        return runGcCommand(args, io, root, cliStep(io, args.options));
       }
       case 'shell': {
         const root = await requireOpmRoot(cwd);
