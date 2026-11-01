@@ -7,7 +7,7 @@
   "license": "MIT",
   "packageManager": "npm@11.17.0",
   "engines": {
-    "node": "^22.19.0 || >=24"
+    "node": "^22.22.2 || >=24"
   },
   "workspaces": [
     "apps/*",
@@ -44,6 +44,7 @@
     "check:licenses": "node scripts/check-licenses.mjs",
     "check:contracts": "node scripts/turbo-run.mjs check:contracts",
     "check:generated": "node scripts/turbo-run.mjs check:generated && node --test tests/golden/freshness.test.mjs",
+    "check:tsconfig-cjs": "node scripts/check-tsconfig-cjs.mjs",
     "golden:generate": "node scripts/generate-goldens.mjs",
     "golden:check": "node scripts/generate-goldens.mjs --check",
     "check:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-features",
@@ -55,22 +56,27 @@
     "agent:check": "node scripts/agent-check.mjs",
     "agent:check:staged": "node scripts/agent-check.mjs --staged",
     "hooks:install": "node scripts/install-hooks.mjs",
-    "verify": "npm run format:check && npm run check:contracts && npm run check:generated && npm run check:test-inventory && npm run test:docs && npm run check:licenses && npm run typecheck && npm run build && npm test && npm run coverage && npm run test:conformance && npm run test:security && npm run security:codex:test && npm run test:integration && npm run test:e2e && npm run test:behavior && npm run test:compat && npm run test:browser && npm run test:pack-parity && npm run check:rust && npm run demo && npm run demo:lock-import && npm run benchmark && npm run golden:check && npm run test:fuzz",
+    "verify": "npm run format:check && npm run check:contracts && npm run check:generated && npm run check:tsconfig-cjs && npm run check:test-inventory && npm run test:docs && npm run check:licenses && npm run typecheck && npm run build && npm test && npm run coverage && npm run test:conformance && npm run test:security && npm run security:codex:test && npm run test:integration && npm run test:e2e && npm run test:behavior && npm run test:compat && npm run test:browser && npm run test:pack-parity && npm run check:rust && npm run demo && npm run demo:lock-import && npm run benchmark && npm run golden:check && npm run test:fuzz",
     "dev:shell": "node scripts/dev-shell.mjs"
+  },
+  "overrides": {
+    "glob": "14.0.3",
+    "minimatch": "11.0.3"
   },
   "devDependencies": {
     "@oxlint/plugins": "^1.79.0",
     "@playwright/test": "1.62.1",
     "@types/ahocorasick": "^1.0.0",
+    "@types/node": "26.6.6",
     "@types/shell-quote": "^1.7.5",
     "canonicalize": "^3.0.0",
     "fast-check": "4.9.0",
     "oxlint": "^1.79.0",
     "packageurl-js": "^2.0.1",
     "prettier": "3.6.2",
-    "testcontainers": "^10.28.0",
+    "testcontainers": "^12.2.1",
     "turbo": "2.10.8",
     "typescript": "5.9.2",
-    "vitest": "3.2.7"
+    "vitest": "5.0.5"
   }
 }

@@ -40,7 +40,7 @@
     "@openpacker/sdk": "0.0.1-alpha.1"
   },
   "devDependencies": {
-    "@types/node": "24.2.1",
+    "@types/node": "26.6.6",
     "esbuild": "0.28.1"
   },
   "engines": {

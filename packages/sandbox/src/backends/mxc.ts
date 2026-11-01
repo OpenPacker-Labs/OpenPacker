@@ -15,7 +15,7 @@ import {
  */
 export async function probeMxc(): Promise<BackendProbe> {
   try {
-    const mod = await import('@microsoft/mxc-sdk').catch(() => null);
+    const mod = await import('@microsoft/mxc-sdk/v1').catch(() => null);
     if (!mod) {
       return {
         id: 'mxc',
@@ -65,7 +65,7 @@ export async function createMxcBackend(): Promise<SandboxBackend> {
       probe.reason ?? 'MXC unavailable',
     );
   }
-  const mod = await import('@microsoft/mxc-sdk');
+  const mod = await import('@microsoft/mxc-sdk/v1');
   return {
     id: 'mxc',
     async run(input) {

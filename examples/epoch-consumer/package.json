@@ -32,7 +32,7 @@
   "devDependencies": {
     "@openpacker/openpackerd": "0.0.1-alpha.1",
     "@pact-foundation/pact": "17.0.1",
-    "@types/node": "24.2.1",
+    "@types/node": "26.6.6",
     "playwright": "1.62.1"
   }
 }

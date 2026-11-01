@@ -341,6 +341,22 @@ export function decodeStat(buffer: Buffer, layout: StatLayout): DecodedStat {
 
 const NS_PER_MS = 1_000_000n;
 
+const instantFromNs = (ns: bigint): BigIntStats['atimeInstant'] => {
+  interface TemporalGlobal {
+    Instant: {
+      fromEpochNanoseconds(value: bigint): BigIntStats['atimeInstant'];
+    };
+  }
+  const Instant = (globalThis as { Temporal?: TemporalGlobal }).Temporal
+    ?.Instant;
+  if (!Instant) {
+    throw new Error(
+      'Temporal is required to synthesize fs.BigIntStats timestamps',
+    );
+  }
+  return Instant.fromEpochNanoseconds(ns);
+};
+
 /** `fs.BigIntStats` from a decoded `struct stat`. */
 export function bigIntStatsFrom(decoded: DecodedStat): BigIntStats {
   const kind = decoded.mode & BigInt(constants.S_IFMT);
@@ -370,6 +386,10 @@ export function bigIntStatsFrom(decoded: DecodedStat): BigIntStats {
     mtime: date(decoded.mtimeNs),
     ctime: date(decoded.ctimeNs),
     birthtime: date(decoded.birthtimeNs),
+    atimeInstant: instantFromNs(decoded.atimeNs),
+    mtimeInstant: instantFromNs(decoded.mtimeNs),
+    ctimeInstant: instantFromNs(decoded.ctimeNs),
+    birthtimeInstant: instantFromNs(decoded.birthtimeNs),
     isFile: () => is(constants.S_IFREG),
     isDirectory: () => is(constants.S_IFDIR),
     isSymbolicLink: () => is(constants.S_IFLNK),
