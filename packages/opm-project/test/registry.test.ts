@@ -905,13 +905,10 @@ describe('ephemeral tool cache (first-party)', () => {
           headers: { 'content-type': 'application/json' },
         });
       if (url.endsWith('/demo-tool/1.1.0'))
-        return new Response(
-          JSON.stringify(packument.versions['1.1.0']),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          },
-        );
+        return new Response(JSON.stringify(packument.versions['1.1.0']), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
       if (url === TARBALL_URL || url.endsWith('demo-tool-1.1.0.tgz'))
         return new Response(tgz, {
           status: 200,
