@@ -1,9 +1,11 @@
 # Trunk-based release pipeline
 
 `@openpacker/cli` is the only package published to npm. The manual alpha
-commands stay in the repository root [RELEASING.md](../RELEASING.md). This
-document is the trunk and promotion pipeline: merge queue on `main`, a scheduled
-nightly, then fast-forward promotion to `integration` and `prod`.
+commands stay in the repository root [RELEASING.md](../RELEASING.md). Tagged
+GitHub prereleases are dispatched with
+[release-cli.yml](../.github/workflows/release-cli.yml). This document is the
+trunk and promotion pipeline: merge queue on `main`, a scheduled nightly, then
+fast-forward promotion to `integration` and `prod`.
 
 The legacy [cd.yml](../.github/workflows/cd.yml) workflow is deprecated. Do not
 add triggers to it. New releases use the `promote-*.yml` workflows below.
@@ -44,6 +46,8 @@ flowchart LR
 `main` moves only through the merge queue. `nightly`, `integration`, and `prod`
 move by fast-forward to a commit that is already on the previous stage.
 Promotion workflows do not force-push.
+[release-cli.yml](../.github/workflows/release-cli.yml) publishes from `main`
+and pushes a tag only. It does not fast-forward those branches.
 
 ## Merge queue
 
@@ -91,20 +95,41 @@ It checks out `main` with full history and skips when `HEAD` has no commits
 after the newest tag matching `cli-v*-nightly.*`. Otherwise it runs
 `npm run verify` and `npm run test:integration`, then publishes.
 
-The npm version is `${base}-nightly.${YYYYMMDD}` in UTC. `base` is the
-`apps/openpacker-cli/package.json` version with the prerelease and build
-metadata removed. `0.0.1-alpha.1` on 2026-10-31 becomes
+The npm version is planned by
+`node scripts/release/plan-cli-release.mjs --mode nightly`. The workflow passes
+`--sha` as the 7-character checkout SHA and `RELEASE_STAMP` as UTC `YYYYMMDD`.
+The stable triplet is the `apps/openpacker-cli/package.json` version with the
+prerelease removed. `0.0.1-alpha.1` on 2026-10-31 becomes
 `0.0.1-nightly.20261031`. The bundle reads that string from
-`OPENPACKER_RELEASE_VERSION`.
+`OPENPACKER_RELEASE_VERSION`. The npm version has no `+build` metadata.
 
-Publish uses npm trusted publishing from `apps/openpacker-cli/release`:
+Publish uses
+[publish-openpacker-cli](../.github/actions/publish-openpacker-cli/action.yml)
+from `apps/openpacker-cli/release`. The action installs npm 11.21.1 because Node
+22.19.0's bundled npm cannot move dist-tags with OIDC.
+
+When `NPM_TOKEN` is set, that token is `NODE_AUTH_TOKEN` for the publish command
+only:
 
 ```sh
 npm publish --provenance --access public --tag nightly
 ```
 
-The workflow then creates the git tag `cli-v${VERSION}`, pushes that tag, and
-fast-forwards `nightly` with `git push origin SHA:refs/heads/nightly`.
+An empty `NPM_TOKEN` writes an `.npmrc` with no `_authToken` line, leaves
+`NODE_AUTH_TOKEN` unset, and publishes without `--provenance`. npm then attaches
+provenance through OIDC trusted publishing, which runs while provenance is still
+the default. Before `npm dist-tag add`, the workflow runs the same action with
+`publish: false`. That step installs npm 11.21.1 and exports
+`NPM_CONFIG_USERCONFIG` through `GITHUB_ENV`. The dist-tag step uses that
+userconfig and does not rewrite it.
+
+The workflow packs the tarball, publishes, points the `nightly` dist-tag at that
+version, creates the git tag from the plan (`cli-v${VERSION}`), pushes that tag,
+fast-forwards `nightly` with `git push origin SHA:refs/heads/nightly`, and opens
+a GitHub prerelease with `gh release create --target` set to that commit. It
+then mirrors the same directory to GitHub Packages. The release title records
+the short SHA as `(+SHORT_SHA)`. See
+[GitHub Releases and npm auth](#github-releases-and-npm-auth).
 
 Leave the `nightly` environment without required reviewers so the schedule can
 finish. Restrict deployment branches to `main` if you set a branch policy. The
@@ -129,17 +154,21 @@ the `integration` tip.
   release bundle's external dependencies
 
 The publish job uses the GitHub Environment `integration`. It bundles the same
-nightly version, publishes it with `--tag next` when that version is not already
-on the registry, then runs:
+nightly version and does not run `npm publish`. Nightly already published that
+version. The job calls
+[publish-openpacker-cli](../.github/actions/publish-openpacker-cli/action.yml)
+with `publish: false` so the runner has npm 11.21.1 and an OIDC-safe npmjs
+userconfig, requires the version to exist on the registry, then runs:
 
 ```sh
 npm dist-tag add @openpacker/cli@${VERSION} next
 npm dist-tag add @openpacker/cli@${VERSION} alpha
 ```
 
+If the version is missing, the job fails and asks for the nightly publish first.
 `next` and `alpha` point at the nightly version that just passed the matrix. The
 job then fast-forwards `integration` to `nightly_sha` and refuses a
-non-fast-forward.
+non-fast-forward. It does not publish to GitHub Packages.
 
 ## Production
 
@@ -182,6 +211,7 @@ blocks the job.
 | [changelog-entry-check.mjs](../scripts/release/changelog-entry-check.mjs) | Fails when `CHANGELOG.md` has no `##` heading for the current CLI version                        |
 | [semver-gate.mjs](../scripts/release/semver-gate.mjs)                     | Validates semver. `--prod` rejects a prerelease. `--no-prerelease-deps` reads a release manifest |
 | [npm-pack-gate.mjs](../scripts/release/npm-pack-gate.mjs)                 | Bundles, packs, and requires `files` to be `["dist"]` with no `@openpacker` dependencies         |
+| [plan-cli-release.mjs](../scripts/release/plan-cli-release.mjs)           | Plans the npm version, git tag, and GitHub Release title. The npm version has no `+build`        |
 | [apply-trunk-ruleset.mjs](../scripts/github/apply-trunk-ruleset.mjs)      | Creates or updates the repository rulesets below                                                 |
 
 ```sh
@@ -267,23 +297,135 @@ push those branches until a dedicated App bypasses the rulesets.
 `actions/create-github-app-token` with those secrets immediately before the
 fast-forward `git push`.
 
+## GitHub Releases and npm auth
+
+npm versions from these workflows are semver without `+build`. npm strips build
+metadata, so `0.0.1-alpha.1+abc1234` would be stored as `0.0.1-alpha.1`. The
+short git SHA (7 hex characters) is build metadata in the GitHub Release title
+and notes: `cli 0.0.1-alpha.1 (+abc1234)`.
+`node scripts/release/plan-cli-release.mjs` prints `version`, `tag`,
+`release_title`, `short_sha`, `npm_dist_tag`, and `also_github_packages`.
+
+### Release CLI
+
+[release-cli.yml](../.github/workflows/release-cli.yml) is `workflow_dispatch`
+only. The input `skip_verify` defaults to false. The job uses the `integration`
+environment, checks out `main`, and does not fast-forward `nightly`,
+`integration`, or `prod`.
+
+It plans an alpha release from `apps/openpacker-cli/package.json` (the version
+must be a prerelease), runs `npm run verify` unless `skip_verify` is true,
+bundles with `OPENPACKER_RELEASE_VERSION`, packs the tarball, and publishes on
+the `alpha` dist-tag. A non-empty `NPM_TOKEN` passes `--provenance`. An empty
+token leaves provenance at the default so OIDC can attach it. It then points
+`alpha` and `next` at that version. It does not set `latest`. It creates the git
+tag from the plan (`cli-v${version}`), pushes that tag, and opens a GitHub
+prerelease with `gh release create --target` set to the planned commit. The
+title comes from the plan. The pack tarball is attached. If the release already
+exists, the tarball is uploaded with `--clobber`. It then mirrors the same
+directory to GitHub Packages. If the version is already on a registry, publish
+is skipped and that step still succeeds.
+
+### NPM_TOKEN (one-time, Tyler)
+
+OIDC trusted publishing is the path when the `NPM_TOKEN` repository secret is
+absent. Until the trusted publishers below exist, create that secret:
+
+1. On npm, as a publisher of `@openpacker/cli`, create either an **Automation**
+   token or a **granular** access token that can publish `@openpacker/cli`.
+2. Add it at
+   `https://github.com/OpenPacker-Labs/OpenPacker/settings/secrets/actions` as
+   `NPM_TOKEN`.
+3. [publish-openpacker-cli](../.github/actions/publish-openpacker-cli/action.yml)
+   writes `NPM_CONFIG_USERCONFIG` under `RUNNER_TEMP`. A non-empty token stores
+   the placeholder `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`. The
+   publish step exports `NODE_AUTH_TOKEN` for that command only and runs
+   `npm publish --provenance`. The token is never printed and is never written
+   to `GITHUB_ENV`.
+4. An empty token stores only `registry=https://registry.npmjs.org/`, unsets
+   `NODE_AUTH_TOKEN`, and publishes without `--provenance` so OIDC can attach
+   provenance. These jobs do not pass `registry-url` to `actions/setup-node`.
+   That input writes an `_authToken` line and exports a placeholder
+   `NODE_AUTH_TOKEN`, and npm then skips the OIDC exchange. Each
+   `npm dist-tag add` step is preceded by another call to the action with
+   `publish: false`, which rewrites `NPM_CONFIG_USERCONFIG` for that command.
+   The dist-tag step sets `NODE_AUTH_TOKEN` from `NPM_TOKEN` for that step only,
+   so a non-empty token fills the placeholder and an empty token leaves OIDC in
+   charge.
+
+`release-cli` and nightly pass `secrets.NPM_TOKEN` into that action and publish.
+Integration passes the same secret only so `npm dist-tag add` can authenticate.
+Production does not read `NPM_TOKEN`. Jobs that publish or move dist-tags set
+`id-token: write`. The action installs npm 11.21.1 so dist-tag commands can use
+OIDC (npm 11.21.0 or newer).
+
+### Trusted publishing later
+
+When a trusted publisher exists for each workflow in the tables below, delete
+the `NPM_TOKEN` secret. An empty secret keeps the OIDC path. Allow direct
+`npm publish` on `release-cli`, nightly, and production. Allow dist-tag changes
+on `release-cli`, nightly, and integration. npm documents dist-tag OIDC from npm
+11.21.0. Add `release-cli.yml` with environment `integration` alongside the
+promotion workflows.
+
+### GitHub Packages
+
+`release-cli` and nightly promotion mirror the same release directory to GitHub
+Packages (`https://npm.pkg.github.com`) with `GITHUB_TOKEN` after the git tag
+and GitHub Release exist. Those jobs set `packages: write`. The package is
+listed on the repository **Packages** page. A package linked by the `repository`
+field inherits that repository's access; adjust visibility on the package page
+if the first publish is private. The manifest name stays `@openpacker/cli`.
+GitHub expects the npm scope to match the repository owner (`@openpacker-labs`).
+The workflow still publishes this manifest to that registry. A version already
+on a registry is skipped. Integration promotion does not publish to GitHub
+Packages.
+
+### Dist-tags
+
+| Dist-tag  | Who moves it                                                                                                  | Left unchanged by             |
+| --------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `alpha`   | `release-cli` (the package prerelease) and `promote-integration` (the nightly version that passed the matrix) | production                    |
+| `next`    | same publishers as `alpha`                                                                                    | production                    |
+| `nightly` | `promote-nightly`                                                                                             | `release-cli` and integration |
+| `latest`  | `promote-prod` only                                                                                           | every prerelease workflow     |
+
+`release-cli` publishes the package prerelease and moves `alpha` and `next`.
+Integration moves `alpha` and `next` onto the nightly version and does not
+publish. The last successful dist-tag update wins. Neither workflow sets
+`latest`.
+
 ## npm trusted publishing
 
-Add one trusted publisher per promotion workflow on
+Add one trusted publisher per workflow on
 `https://www.npmjs.com/package/@openpacker/cli/access` under **Trusted
 Publisher**. Choose **GitHub Actions**. Enter only the workflow filename, not
-`.github/workflows/`. npm does not check the values when you save them. Do not
-create an npm automation token for these workflows, and do not set
-`NODE_AUTH_TOKEN` or an npm token secret in GitHub. `actions/setup-node` is
-called with `registry-url: https://registry.npmjs.org`, and each publish job has
-`id-token: write`.
+`.github/workflows/`. npm does not check the values when you save them. This is
+the long-term auth path. Until it is saved, the `NPM_TOKEN` fallback in
+[GitHub Releases and npm auth](#github-releases-and-npm-auth) publishes
+`release-cli` and nightly, and authenticates integration dist-tag moves. Do not
+put `NPM_TOKEN` in the production workflow. `release-cli`, nightly, and
+integration configure the npmjs registry in
+[publish-openpacker-cli](../.github/actions/publish-openpacker-cli/action.yml)
+and do not pass `registry-url` to `actions/setup-node`. Production still calls
+`actions/setup-node` with `registry-url: https://registry.npmjs.org` and passes
+`--provenance` on `npm publish`. Each of these jobs has `id-token: write`.
 
 Provenance stays on public repositories. This repository is
 `OpenPacker-Labs/OpenPacker`.
 
-Allow **direct `npm publish`** on every publisher below. npm stage publish is
-not used. The integration publisher must also be allowed to manage dist-tags,
-because that workflow runs `npm dist-tag add`.
+Allow **direct `npm publish`** on `release-cli`, nightly, and production. npm
+stage publish is not used. `release-cli`, nightly, and integration run
+`npm dist-tag add`, so those publishers must be allowed to manage dist-tags.
+
+### release-cli.yml
+
+| Field                | Value             |
+| -------------------- | ----------------- |
+| Organization or user | `OpenPacker-Labs` |
+| Repository           | `OpenPacker`      |
+| Workflow filename    | `release-cli.yml` |
+| Environment name     | `integration`     |
 
 ### promote-nightly.yml
 
