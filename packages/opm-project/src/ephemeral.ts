@@ -90,10 +90,16 @@ export async function fetchTool(input: {
   purl: string;
   offline?: boolean;
   cacheRoot?: string;
+  /**
+   * Network used for registry metadata and artifact bytes. Production leaves
+   * it unset and dials the pinned, classified address of each registry; a
+   * caller that hands one in (a test serving a fixture registry) is
+   * responsible for what it reaches, so no address is resolved or pinned.
+   * Merged into `registryOptions` as the host-fetch byte transport.
+   */
+  fetch?: typeof fetch;
   /** Transport / endpoint overrides for hosts and tests. */
   registryOptions?: RegistryOptions;
-  /** Host-fetch byte transport; merged into `registryOptions`. */
-  fetch?: typeof fetch;
 }): Promise<EphemeralTool> {
   const ecosystem = ecosystemFromPurl(input.purl);
   const options: RegistryOptions = {

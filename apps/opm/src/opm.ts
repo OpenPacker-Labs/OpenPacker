@@ -191,7 +191,7 @@ export async function runOpm(
       args.options.has('help') ||
       args.command === ''
     ) {
-      out(io, help());
+      out(io, helpText());
       return EXIT_CODES.success;
     }
     if (!COMMANDS.has(args.command)) {
@@ -313,14 +313,17 @@ export async function runOpm(
         const offline = offlineOverride(args);
         // remove rewrites the manifest and lock; bound plugins are verified
         // after what a killed step left is put back.
-        await inStep(root, () =>
+        const removed = await inStep(root, () =>
           removePackage({
             root,
             alias,
             ...(!(offline === undefined) && { offline }),
           }),
         );
-        out(io, `Removed ${alias} from manifest, lock, and install\n`);
+        out(
+          io,
+          `Removed ${plainLine(removed.alias)} from manifest, lock, and install\n`,
+        );
         return EXIT_CODES.success;
       }
       case 'ci': {
@@ -457,8 +460,8 @@ export async function runOpm(
           out(io, '(no published versions)\n');
           return EXIT_CODES.success;
         }
-        // Newest last, matching the order the registry reports and the one
-        // `opm add` picks from when no version is given.
+        // Newest last, the order the registry reports. Prereleases are listed;
+        // `opm add` with no version takes `latest` (`default-release.ts`).
         for (const version of versions) out(io, `${plainLine(version)}\n`);
         return EXIT_CODES.success;
       }
@@ -724,7 +727,7 @@ export async function runOpm(
 export function handleError(error: unknown, io: CliIo): number {
   if (error instanceof UsageError) {
     io.stderr.write(report('', error.message));
-    io.stderr.write(`\n${help()}\n`);
+    io.stderr.write(`\n${helpText()}\n`);
     return EXIT_CODES.usage;
   }
   if (error instanceof RunError) {
@@ -753,14 +756,14 @@ export function handleError(error: unknown, io: CliIo): number {
       case 'INVALID_MANIFEST':
       case 'INVALID_LOCK':
       case 'UNSUPPORTED_LOCK':
+      case 'INVALID_ROLLBACK':
+      case 'ROLLBACK_CONFLICT':
       case 'INVALID_CATALOG':
       case 'INVALID_PLUGIN_SPEC':
       case 'INVALID_PLUGIN_MANIFEST':
       case 'INVALID_PLUGIN_ARTIFACT':
       case 'PLUGIN_ALREADY_INSTALLED':
       case 'PLUGIN_ID_CONFLICT':
-      case 'INVALID_ROLLBACK':
-      case 'ROLLBACK_CONFLICT':
         return EXIT_CODES.invalidInput;
       case 'UNRESOLVABLE':
         return EXIT_CODES.unsatisfiable;
@@ -1250,10 +1253,6 @@ function registryEcosystem(args: Parsed, target: string): string {
     `Cannot tell which registry "${target}" belongs to. ` +
       `Pass a PURL (pkg:npm/${target}) or --ecosystem <${ecosystems}>.`,
   );
-}
-
-function help(): string {
-  return helpText();
 }
 
 /**
