@@ -224,11 +224,13 @@ async function execute(
       const response = await client.materialize(input as never, requestOptions);
       const destination = option(args, 'install-prefix');
       if (!destination) return response;
+      const source = locationSource(
+        response.data.descriptor,
+        args.options.has('offline'),
+      );
+      await source.stat(response.data.descriptor);
       const installation = await materialize({
-        source: locationSource(
-          response.data.descriptor,
-          args.options.has('offline'),
-        ),
+        source,
         descriptor: response.data.descriptor,
         destination,
         format: archiveFormat(response.data.descriptor),
@@ -786,7 +788,11 @@ function locationSource(
   if (!location)
     throw new InputError('No artifact location is permitted by offline policy');
   return {
-    stat: async () => ({ descriptor, rangeSupported: location.rangeSupported }),
+    stat: async () => {
+      if (location.transport === 'file' || location.transport === 'https')
+        providerLocation(location.uri);
+      return { descriptor, rangeSupported: location.rangeSupported };
+    },
     open: async (_descriptor, _range, signal) => {
       signal?.throwIfAborted();
       if (location.transport === 'file') {

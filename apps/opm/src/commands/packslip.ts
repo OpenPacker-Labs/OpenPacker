@@ -1,3 +1,4 @@
+import { out } from '@openpacker/canonical';
 import {
   OpmError,
   exactPurl,
@@ -173,7 +174,8 @@ async function verify(
     io.stderr.write(`opm: ${warning.code}: ${warning.message}\n`);
 
   if (args.options.has('json')) {
-    io.stdout.write(
+    out(
+      io,
       `${JSON.stringify(
         {
           purl: release.purl,
@@ -217,10 +219,10 @@ async function verify(
     ['trust tier', attestation.trustTier],
     ['executables', executables.join(', ') || '(none declared)'],
   ];
-  io.stdout.write(`${release.purl}\n`);
+  out(io, `${release.purl}\n`);
   for (const [label, value] of lines)
     if (value !== undefined && value !== '')
-      io.stdout.write(`  ${label.padEnd(12)}${value}\n`);
+      out(io, `  ${label.padEnd(12)}${value}\n`);
   return 0;
 }
 
@@ -247,7 +249,7 @@ async function pin(
     );
   const stanza = `[adapters.packslip.trust."${release.project}"]\npin = ["${fingerprint}"]\n`;
   if (write !== true) {
-    io.stdout.write(stanza);
+    out(io, stanza);
     io.stderr.write(
       'opm: this fingerprint is what the release showed just now. Confirm it with the vendor ' +
         'before relying on it; pass --write to record it in opm.toml.\n',
@@ -308,7 +310,7 @@ async function pinIn(
       packslip: { ...settings, trust },
     },
   });
-  io.stdout.write(`Pinned ${project} to ${fingerprint}\n`);
+  out(io, `Pinned ${project} to ${fingerprint}\n`);
   return 0;
 }
 
@@ -342,7 +344,7 @@ async function approveIn(
       ? [settings.approvals]
       : [];
   if (held.includes(id)) {
-    io.stdout.write(`Proposal ${id} is already approved\n`);
+    out(io, `Proposal ${id} is already approved\n`);
     return 0;
   }
   await writeManifestFile(projectPaths(root).manifest, {
@@ -352,7 +354,8 @@ async function approveIn(
       packslip: { ...settings, approvals: [...held, id].sort() },
     },
   });
-  io.stdout.write(
+  out(
+    io,
     `Approved proposal ${id}. The next opm sync or opm update accepts exactly that change and nothing else.\n`,
   );
   return 0;

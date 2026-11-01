@@ -850,6 +850,30 @@ export class NpmRegistryProvider implements CatalogProvider {
       return json<{ time?: Record<string, string> }>(response).time;
     } catch (error) {
       if (signal?.aborted) throw error;
+      const code =
+        typeof error === 'object' && error !== null && 'code' in error
+          ? (error as { code: unknown }).code
+          : undefined;
+      if (
+        code === 'UPSTREAM_RESPONSE_TOO_LARGE' ||
+        code === 'INVALID_PROVIDER_METADATA'
+      ) {
+        const subject = `The full packument of ${npmName(parsed.namespace, parsed.name)}`;
+        if (
+          typeof error === 'object' &&
+          error !== null &&
+          'about' in error &&
+          typeof (error as { about: (label: string) => unknown }).about ===
+            'function'
+        )
+          throw (error as { about: (label: string) => unknown }).about(subject);
+        if (code === 'INVALID_PROVIDER_METADATA' && error instanceof Error)
+          throw new ProviderError(
+            'INVALID_PROVIDER_METADATA',
+            `${subject} is not usable: ${error.message}`,
+          );
+        throw error;
+      }
       return undefined;
     }
   }

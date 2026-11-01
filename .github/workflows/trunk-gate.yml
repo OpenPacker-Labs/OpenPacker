@@ -8,6 +8,8 @@ name: Trunk gate
 on:
   merge_group:
     types: [checks_requested]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -15,6 +17,9 @@ permissions:
 env:
   OPENPACKER_OFFLINE: '1'
   SOURCE_DATE_EPOCH: '1785628800'
+  TURBO_CONCURRENCY: '1'
+  FORCE_COLOR: '0'
+  NO_COLOR: '1'
 
 jobs:
   gate:

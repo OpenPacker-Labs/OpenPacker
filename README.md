@@ -1,7 +1,7 @@
 # OpenPacker
 
-[![Build](https://github.com/Tyler-R-Kendrick/OpenPacker/actions/workflows/ci-build.yml/badge.svg)](https://github.com/Tyler-R-Kendrick/OpenPacker/actions/workflows/ci-build.yml)
-[![Pages](https://github.com/Tyler-R-Kendrick/OpenPacker/actions/workflows/pages.yml/badge.svg)](https://github.com/Tyler-R-Kendrick/OpenPacker/actions/workflows/pages.yml)
+[![Build](https://github.com/OpenPacker-Labs/OpenPacker/actions/workflows/ci-build.yml/badge.svg)](https://github.com/OpenPacker-Labs/OpenPacker/actions/workflows/ci-build.yml)
+[![Pages](https://github.com/OpenPacker-Labs/OpenPacker/actions/workflows/pages.yml/badge.svg)](https://github.com/OpenPacker-Labs/OpenPacker/actions/workflows/pages.yml)
 
 **Open Package Manager (`opm` / `opmx`)** plus a **PREX control plane** for
 multi-ecosystem package identity, locks, proofs, and digests.
@@ -14,7 +14,7 @@ review. See [CONTRIBUTING.md](CONTRIBUTING.md#ai-assisted-contributions).
 
 |                                  |                                                                                               |
 | -------------------------------- | --------------------------------------------------------------------------------------------- |
-| **Project site / releases**      | [OpenPacker Pages](https://tyler-r-kendrick.github.io/OpenPacker/)                            |
+| **Project site / releases**      | [OpenPacker Pages](https://openpacker-labs.github.io/OpenPacker/)                             |
 | **Package manager (start here)** | **[docs/guides/opm.md](docs/guides/opm.md)**                                                  |
 | **Example project**              | [examples/opm-project/](examples/opm-project/)                                                |
 | **PREX / advanced CLI**          | [docs/guides/cli.md](docs/guides/cli.md)                                                      |
