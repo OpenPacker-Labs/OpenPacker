@@ -27,7 +27,7 @@
     "@openpacker/canonical": "0.0.1-alpha.1",
     "@openpacker/contracts": "0.0.1-alpha.1",
     "@openpacker/project-io": "0.0.1-alpha.1",
-    "fast-xml-parser": "^5.10.1",
+    "fast-xml-parser": "^5.11.2",
     "smol-toml": "^1.7.1"
   },
   "devDependencies": {
