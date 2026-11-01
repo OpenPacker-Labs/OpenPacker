@@ -1,4 +1,4 @@
-import { out } from '@openpacker/canonical';
+import { out, outJson, plainLine } from '@openpacker/canonical';
 import {
   OpmError,
   exactPurl,
@@ -18,6 +18,7 @@ import {
   type RegistryOptions,
   type StepOptions,
 } from '@openpacker/opm-project';
+import { report } from '../error-report.js';
 import { cliStep } from './recover.js';
 
 export interface CommandArgs {
@@ -171,12 +172,17 @@ async function verify(
   const signer = signerOf(release);
   const executables = (inspection.executables ?? []).map((bin) => bin.name);
   for (const warning of inspection.warnings)
-    io.stderr.write(`opm: ${warning.code}: ${warning.message}\n`);
+    io.stderr.write(
+      report(
+        'opm: ',
+        `${plainLine(warning.code)}: ${plainLine(warning.message)}`,
+      ),
+    );
 
   if (args.options.has('json')) {
-    out(
+    outJson(
       io,
-      `${JSON.stringify(
+      JSON.stringify(
         {
           purl: release.purl,
           signer: attestation.signerIdentity,
@@ -192,7 +198,7 @@ async function verify(
         },
         null,
         2,
-      )}\n`,
+      ),
     );
     return 0;
   }
@@ -219,10 +225,10 @@ async function verify(
     ['trust tier', attestation.trustTier],
     ['executables', executables.join(', ') || '(none declared)'],
   ];
-  out(io, `${release.purl}\n`);
+  out(io, `${plainLine(release.purl)}\n`);
   for (const [label, value] of lines)
     if (value !== undefined && value !== '')
-      out(io, `  ${label.padEnd(12)}${value}\n`);
+      out(io, `  ${plainLine(label.padEnd(12))}${plainLine(value)}\n`);
   return 0;
 }
 
@@ -251,8 +257,11 @@ async function pin(
   if (write !== true) {
     out(io, stanza);
     io.stderr.write(
-      'opm: this fingerprint is what the release showed just now. Confirm it with the vendor ' +
-        'before relying on it; pass --write to record it in opm.toml.\n',
+      report(
+        'opm: ',
+        'this fingerprint is what the release showed just now. Confirm it with the vendor ' +
+          'before relying on it; pass --write to record it in opm.toml.',
+      ),
     );
     return 0;
   }
@@ -310,7 +319,7 @@ async function pinIn(
       packslip: { ...settings, trust },
     },
   });
-  out(io, `Pinned ${project} to ${fingerprint}\n`);
+  out(io, `Pinned ${plainLine(project)} to ${plainLine(fingerprint)}\n`);
   return 0;
 }
 
@@ -344,7 +353,7 @@ async function approveIn(
       ? [settings.approvals]
       : [];
   if (held.includes(id)) {
-    out(io, `Proposal ${id} is already approved\n`);
+    out(io, `Proposal ${plainLine(id)} is already approved\n`);
     return 0;
   }
   await writeManifestFile(projectPaths(root).manifest, {
@@ -356,7 +365,7 @@ async function approveIn(
   });
   out(
     io,
-    `Approved proposal ${id}. The next opm sync or opm update accepts exactly that change and nothing else.\n`,
+    `Approved proposal ${plainLine(id)}. The next opm sync or opm update accepts exactly that change and nothing else.\n`,
   );
   return 0;
 }

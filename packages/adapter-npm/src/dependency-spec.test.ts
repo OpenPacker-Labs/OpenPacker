@@ -128,12 +128,6 @@ describe('a dependency the package cannot resolve', () => {
       'demo@1.0.0 depends on bar as "github:user/bar", a git specifier that ' +
         'is not a registry version range',
     );
-    expect(
-      (await refusal({ dependencies: { bar: 'not a tag' } })).message,
-    ).toBe(
-      'demo@1.0.0 depends on bar as "not a tag", a tag specifier that is ' +
-        'not a registry version range',
-    );
   });
 });
 

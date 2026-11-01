@@ -18,6 +18,7 @@ import {
   canonicalDigest,
   compareCanonicalStrings,
   formatDigest,
+  OverlongHostError,
   parseCanonicalJson,
   out,
   outJson,
@@ -770,7 +771,8 @@ function parseTarget(value: string): JsonValue {
 function providerLocation(uri: string): URL {
   try {
     return parseUntrustedUrl(uri);
-  } catch {
+  } catch (error) {
+    if (error instanceof OverlongHostError) throw error;
     throw new InputError('Provider artifact location is not a URL');
   }
 }
@@ -787,6 +789,7 @@ function locationSource(
     );
   if (!location)
     throw new InputError('No artifact location is permitted by offline policy');
+  providerLocation(location.uri);
   return {
     stat: async () => {
       if (location.transport === 'file' || location.transport === 'https')
@@ -961,6 +964,7 @@ function exitCode(error: unknown): number {
   if (error instanceof UsageError) return EXIT_CODES.usage;
   if (
     error instanceof InputError ||
+    error instanceof OverlongHostError ||
     error instanceof SyntaxError ||
     error instanceof TypeError ||
     error instanceof RangeError

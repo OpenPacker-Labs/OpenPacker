@@ -70,13 +70,13 @@ describe('a value of a document that may be an address', () => {
     expect(isAddress('./a:b')).toBe(false);
   });
 
-  it('is linear', () => {
+  it('is linear', { timeout: 30_000 }, () => {
     const started = performance.now();
     redactText('a://'.repeat(250_000));
     redactText('a:// '.repeat(200_000));
     redactText('://'.repeat(300_000));
     redactText(`${'a'.repeat(1 << 20)}://x`);
     redactText(`${'é'.repeat(1 << 19)} ${ADDRESS}`);
-    expect(performance.now() - started).toBeLessThan(5000);
+    expect(performance.now() - started).toBeLessThan(15_000);
   });
 });

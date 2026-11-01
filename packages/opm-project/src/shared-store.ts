@@ -239,15 +239,41 @@ async function recordTreeDigest(
   treeDigest: string,
 ): Promise<void> {
   const record = `${treeDigest}\n`;
+  const path = `${sharedPath}.tree`;
   try {
-    await writeStableFile(`${sharedPath}.tree`, record);
+    await writeStableFile(path, record);
   } catch (error) {
     if (
       !(error instanceof OpmError && error.code === 'INPUT_CHANGED') ||
-      (await readStableFile(`${sharedPath}.tree`).catch(() => '')) !== record
+      !(await identicalStableRecord(path, record))
     )
       throw error;
   }
+}
+
+/**
+ * Whether `path` holds `record` once a read finishes.
+ *
+ * Several installs write this file at once. A read that overlaps the next
+ * rename reports INPUT_CHANGED even when every writer stored `record`, and
+ * that is not a conflict. A read that settles on different bytes is.
+ */
+async function identicalStableRecord(
+  path: string,
+  record: string,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    try {
+      return (await readStableFile(path)) === record;
+    } catch (error) {
+      const code =
+        error instanceof OpmError
+          ? error.code
+          : ((error as NodeJS.ErrnoException).code ?? '');
+      if (code !== 'INPUT_CHANGED' && code !== 'ENOENT') return false;
+    }
+  }
+  return false;
 }
 
 /** The recorded tree digest of an entry that is there and intact, else undefined. */

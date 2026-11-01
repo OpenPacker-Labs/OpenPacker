@@ -50,6 +50,13 @@ export const CLOSURE_OBJECTIVES = [
  * newest-satisfying walk. An unsatisfiable graph therefore produces an
  * explanation instead of a silently wrong tree.
  */
+/** Message from a solver refusal, including wasm-bindgen string throws. */
+function solverFailureMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return String(error);
+}
+
 export async function solveGraph(input: {
   graph: ResolvedGraph;
   rootRequirements: readonly { purl: string; vers?: string }[];
@@ -159,8 +166,7 @@ export async function solveGraph(input: {
       // The engine's refusal is a JSON document naming the project's own
       // requirement ids; what a person needs is which edge nothing satisfies.
       // wasm-bindgen can throw a string rather than an Error; treat both the same.
-      const message = error instanceof Error ? error.message : String(error);
-      if (!/^UNSATISFIABLE\b/u.test(message)) throw error;
+      if (!/^UNSATISFIABLE\b/u.test(solverFailureMessage(error))) throw error;
       const causes = explainUnsatisfiable({
         dropped: viable.dropped,
         kept: viable.kept,

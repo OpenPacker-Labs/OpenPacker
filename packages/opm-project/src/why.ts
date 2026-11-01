@@ -1,6 +1,8 @@
+import { plainLine } from '@openpacker/canonical';
 import { canonicalPurlOrSelf } from './catalog.js';
 import { lockEdges } from './lock-edges.js';
 import { LOCK_NAME, MANIFEST_NAME } from './paths.js';
+import { shownSource } from './shown-source.js';
 import { purlPackageName, stripPurlVersion } from './spec.js';
 import type { LockPackage, OpmLockfile, OpmManifest } from './types.js';
 import { OpmError } from './types.js';
@@ -118,7 +120,14 @@ export function entriesNamed(
     .sort();
 }
 
-/** One entry's explanation, in the words `opm why` has always used. */
+/**
+ * One entry's explanation, in the words `opm why` has always used.
+ *
+ * `opm why` writes this straight to stdout. Every value came from the
+ * repository's files, so each is one line here (`plainLine`); the line breaks
+ * between them are opm's. A value that kept its own line feed would be another
+ * line of the command's output.
+ */
 export function explainEntry(
   manifest: OpmManifest,
   lock: OpmLockfile | undefined,
@@ -129,33 +138,34 @@ export function explainEntry(
   const lines: string[] = [];
   if (requirement !== undefined) {
     lines.push(
-      `"${key}" is a direct dependency in ${MANIFEST_NAME}`,
-      `  purl: ${requirement.purl}`,
+      `"${plainLine(key)}" is a direct dependency in ${MANIFEST_NAME}`,
+      `  purl: ${plainLine(requirement.purl)}`,
     );
     if (requirement.installName !== undefined)
-      lines.push(`  installed as: ${requirement.installName}`);
+      lines.push(`  installed as: ${plainLine(requirement.installName)}`);
     if (requirement.version)
-      lines.push(`  version constraint: ${requirement.version}`);
-    if (requirement.source) lines.push(`  source: ${requirement.source}`);
+      lines.push(`  version constraint: ${plainLine(requirement.version)}`);
+    if (requirement.source)
+      lines.push(`  source: ${plainLine(shownSource(requirement.source))}`);
     lines.push(
       locked
-        ? `  locked: ${locked.purl} (${locked.digest})`
+        ? `  locked: ${plainLine(locked.purl)} (${plainLine(locked.digest)})`
         : '  locked: (none)',
     );
   } else if (locked !== undefined) {
     lines.push(
-      `"${key}" is in ${LOCK_NAME} as ${locked.reason} dependency`,
-      `  ${locked.purl}`,
+      `"${plainLine(key)}" is in ${LOCK_NAME} as ${plainLine(locked.reason)} dependency`,
+      `  ${plainLine(locked.purl)}`,
     );
   }
   if (lock !== undefined && locked !== undefined) {
     for (const requirer of requirersOf(lock, key)) {
       const by = lock.packages[requirer.key];
       lines.push(
-        `  required by ${requirer.key}${by === undefined ? '' : ` (${by.purl})`}` +
+        `  required by ${plainLine(requirer.key)}${by === undefined ? '' : ` (${plainLine(by.purl)})`}` +
           (requirer.installName === undefined
             ? ''
-            : ` as ${requirer.installName}`),
+            : ` as ${plainLine(requirer.installName)}`),
       );
     }
   }

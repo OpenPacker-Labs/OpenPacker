@@ -59,9 +59,9 @@ Trunk gate / Required merge queue gate
 ```
 
 That string is the workflow name, a slash, and the job name from
-[trunk-gate.yml](../.github/workflows/trunk-gate.yml). The job runs on
-`merge_group` with `OPENPACKER_OFFLINE=1` and `SOURCE_DATE_EPOCH=1785628800`, in
-this order:
+[trunk-gate.yml](../.github/workflows/trunk-gate.yml). The same job runs on
+`merge_group` and on `pull_request` targeting `main`, with
+`OPENPACKER_OFFLINE=1` and `SOURCE_DATE_EPOCH=1785628800`, in this order:
 
 1. `npm run format:check`
 2. `npm run lint:anti-slop`
@@ -196,7 +196,7 @@ variable is set. Otherwise it uses the CLI package version.
 
 `npm run ruleset:apply` calls the GitHub API as the current `gh` user. A 403
 means the token is missing Administration permission. The script prints the
-token setup steps. Create a fine-grained token for `Tyler-R-Kendrick/OpenPacker`
+token setup steps. Create a fine-grained token for `OpenPacker-Labs/OpenPacker`
 with Administration read/write and Metadata read, then run `gh auth login` and
 `npm run ruleset:apply`.
 
@@ -207,11 +207,14 @@ with Administration read/write and Metadata read, then run `gh auth login` and
 | `trunk-prod`        | `prod`        | Same admin-only update rule as `integration`                                                               |
 
 The admin bypass uses repository role id `5` (`RepositoryRole`). Writers cannot
-push or merge into `integration` or `prod`. The promotion workflows push with
-`github-actions[bot]`, which is not that role. After the rulesets are active,
-either add a bypass actor for GitHub Actions (`actor_id` `15368`, `actor_type`
-`Integration`, `bypass_mode` `always`) or fast-forward the branch as an admin.
-The script does not add that app by itself.
+push or merge into `integration` or `prod`. Promotion workflows fast-forward
+those branches with a dedicated GitHub App token (see **Release GitHub App**
+below), not with the default `GITHUB_TOKEN`.
+
+When you run `npm run ruleset:apply`, set `OPENPACKER_RELEASE_APP_ID` to that
+App’s numeric id so `trunk-integration` and `trunk-prod` include the App as an
+`Integration` bypass actor. Do not add the built-in GitHub Actions integration
+(`actor_id` `15368`); GitHub refused that bypass on this repository.
 
 Merge queue settings on `main`: squash, `ALLGREEN`, status-check timeout 60
 minutes, build concurrency 5. Pull requests use squash as the only merge method.
@@ -221,8 +224,8 @@ them too.
 ## GitHub environments
 
 Create these environments on
-`https://github.com/Tyler-R-Kendrick/OpenPacker/settings/environments`. Names
-are case-sensitive and must match the workflow `environment:` keys.
+`https://github.com/OpenPacker-Labs/OpenPacker/settings/environments`. Names are
+case-sensitive and must match the workflow `environment:` keys.
 
 | Environment   | Required reviewers                          | Deployment branches                                         |
 | ------------- | ------------------------------------------- | ----------------------------------------------------------- |
@@ -232,6 +235,37 @@ are case-sensitive and must match the workflow `environment:` keys.
 
 `production` is shared with the deprecated `cd.yml` production job. A required
 reviewer there also gates that legacy tag path.
+
+## Release GitHub App (one-time, Tyler)
+
+GitHub refused the built-in GitHub Actions ruleset bypass (`Integration`
+`actor_id` `15368`) on `integration` and `prod`. Only repository admins could
+push those branches until a dedicated App bypasses the rulesets.
+
+1. **Create a GitHub App** (OpenPacker-Labs organization → Settings → Developer
+   settings → GitHub Apps → New GitHub App). Suggested name:
+   `OpenPacker Release`. Set **Repository permissions → Contents** to **Read and
+   write**. Webhooks are not required for promotion.
+2. Note the **App ID** on the app’s About page. Generate and download a
+   **private key** (`.pem`).
+3. **Install the app** on `OpenPacker-Labs/OpenPacker` only (Install App →
+   OpenPacker-Labs → Only select repositories → OpenPacker).
+4. Add repository **Actions secrets** on
+   `https://github.com/OpenPacker-Labs/OpenPacker/settings/secrets/actions`:
+   - `OPENPACKER_RELEASE_APP_ID` — the App ID (digits only)
+   - `OPENPACKER_RELEASE_APP_KEY` — the full private key PEM (including
+     `BEGIN`/`END` lines)
+5. Re-apply rulesets so the App is a bypass actor on `integration` and `prod`:
+
+   ```sh
+   export OPENPACKER_RELEASE_APP_ID=<app-id>
+   npm run ruleset:apply
+   ```
+
+[promote-integration.yml](../.github/workflows/promote-integration.yml) and
+[promote-prod.yml](../.github/workflows/promote-prod.yml) call
+`actions/create-github-app-token` with those secrets immediately before the
+fast-forward `git push`.
 
 ## npm trusted publishing
 
@@ -245,7 +279,7 @@ called with `registry-url: https://registry.npmjs.org`, and each publish job has
 `id-token: write`.
 
 Provenance stays on public repositories. This repository is
-`Tyler-R-Kendrick/OpenPacker`.
+`OpenPacker-Labs/OpenPacker`.
 
 Allow **direct `npm publish`** on every publisher below. npm stage publish is
 not used. The integration publisher must also be allowed to manage dist-tags,
@@ -255,7 +289,7 @@ because that workflow runs `npm dist-tag add`.
 
 | Field                | Value                 |
 | -------------------- | --------------------- |
-| Organization or user | `Tyler-R-Kendrick`    |
+| Organization or user | `OpenPacker-Labs`     |
 | Repository           | `OpenPacker`          |
 | Workflow filename    | `promote-nightly.yml` |
 | Environment name     | `nightly`             |
@@ -264,7 +298,7 @@ because that workflow runs `npm dist-tag add`.
 
 | Field                | Value                     |
 | -------------------- | ------------------------- |
-| Organization or user | `Tyler-R-Kendrick`        |
+| Organization or user | `OpenPacker-Labs`         |
 | Repository           | `OpenPacker`              |
 | Workflow filename    | `promote-integration.yml` |
 | Environment name     | `integration`             |
@@ -273,7 +307,7 @@ because that workflow runs `npm dist-tag add`.
 
 | Field                | Value              |
 | -------------------- | ------------------ |
-| Organization or user | `Tyler-R-Kendrick` |
+| Organization or user | `OpenPacker-Labs`  |
 | Repository           | `OpenPacker`       |
 | Workflow filename    | `promote-prod.yml` |
 | Environment name     | `production`       |

@@ -242,10 +242,12 @@ describe('opm + opmx CLI', () => {
     expect(cap.out).toMatch(/installed/);
 
     cap = capture();
-    expect(
-      await runOpmx(['demo-tool', '--version'], cap.io, root),
-      cap.err,
-    ).toBe(0);
+    const versionExit = await runOpmx(['demo-tool', '--version'], cap.io, root);
+    if (cap.err.includes('sandbox was not enforced')) {
+      expect(versionExit).toBe(6);
+      return;
+    }
+    expect(versionExit, cap.err).toBe(0);
     expect(cap.out).toMatch(/1\.1\.0/);
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const repairedState = JSON.parse(await readFile(statePath, 'utf8')) as {

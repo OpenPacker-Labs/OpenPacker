@@ -1,4 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { createHash } from 'node:crypto';
 import {
   chmod,
@@ -33,6 +42,10 @@ import {
   type LockPackage,
   type RegistryOptions,
 } from '../src/index.js';
+import {
+  startAcmeArtifactFixtureServer,
+  type AcmeArtifactFixtureServer,
+} from './acme-artifact-fixture-server.js';
 
 /**
  * Delegated host-side artifact acquisition (spec delegated-adapter.md
@@ -1590,10 +1603,31 @@ describe('delegated host-fetch acquisition', () => {
 });
 
 describe('delegated bins flow', () => {
+  let artifactServer: AcmeArtifactFixtureServer;
+
+  beforeAll(async () => {
+    artifactServer = await startAcmeArtifactFixtureServer({
+      artifactPath: '/artifacts/demo-1.0.0.tar',
+      body: TOOL_TAR,
+    });
+  });
+
+  beforeEach(() => {
+    process.env.OPM_HOST_FETCH_ORIGINS = artifactServer.origin;
+  });
+
+  afterAll(async () => {
+    await artifactServer.close();
+  });
+
   it('pins provider executables into the materialized tool cache', async () => {
     registerAcme(
       acmeProvider({
         hostFetch: true,
+        endpoint: artifactServer.origin,
+        body: {
+          locations: [{ uri: artifactServer.artifactUrl }],
+        },
         executables: [
           { name: 'demo', path: 'bin/demo', interpreter: 'native' },
         ],
@@ -1604,7 +1638,7 @@ describe('delegated bins flow', () => {
       const tool = await fetchTool({
         purl: EXACT,
         cacheRoot,
-        registryOptions: { fetch: fetchStub(tarRoute) },
+        registryOptions: { fetch: artifactServer.fetch },
       });
       expect(tool.bins).toEqual([
         { name: 'demo', path: 'bin/demo', interpreter: 'native' },
@@ -1642,6 +1676,45 @@ describe('ephemeral tool cache', () => {
     { name: 'demo', path: 'bin/demo', interpreter: 'native' as const },
   ];
 
+  let artifactServer: AcmeArtifactFixtureServer;
+
+  beforeAll(async () => {
+    artifactServer = await startAcmeArtifactFixtureServer({
+      artifactPath: '/artifacts/demo-1.0.0.tar',
+      body: TOOL_TAR,
+    });
+  });
+
+  beforeEach(() => {
+    process.env.OPM_HOST_FETCH_ORIGINS = artifactServer.origin;
+  });
+
+  afterAll(async () => {
+    await artifactServer.close();
+  });
+
+  function registerAcmeOnServer(
+    input: Parameters<typeof acmeProvider>[0],
+    wrap?: (provider: CatalogProvider) => CatalogProvider,
+  ): void {
+    const provider = acmeProvider({
+      ...input,
+      endpoint: artifactServer.origin,
+      body: {
+        locations: [{ uri: artifactServer.artifactUrl }],
+        ...input.body,
+      },
+    });
+    registerAcme(wrap ? wrap(provider) : provider);
+  }
+
+  function serverDescriptor(overrides: DescriptorOverrides = {}) {
+    return descriptor({
+      ...overrides,
+      locations: overrides.locations ?? [{ uri: artifactServer.artifactUrl }],
+    });
+  }
+
   /** Count provider calls so a test can prove what is re-resolved per run. */
   function counted(
     provider: CatalogProvider,
@@ -1674,6 +1747,13 @@ describe('ephemeral tool cache', () => {
     return { fetch, downloads: () => count };
   }
 
+  function countingArtifactFetch(extra?: Readonly<Record<string, Uint8Array>>) {
+    return countingFetch({
+      [artifactServer.artifactUrl]: TOOL_TAR,
+      ...extra,
+    });
+  }
+
   /** One ephemeral run of the acme tool over a counted network. */
   const run = (net: ReturnType<typeof countingFetch>, cacheRoot: string) =>
     fetchTool({
@@ -1684,13 +1764,10 @@ describe('ephemeral tool cache', () => {
 
   it('serves a repeat run from the cache without re-downloading bytes', async () => {
     const counts = { inspect: 0, record: 0 };
-    registerAcme(
-      counted(
-        acmeProvider({ hostFetch: true, executables: EXECUTABLES }),
-        counts,
-      ),
+    registerAcmeOnServer({ hostFetch: true, executables: EXECUTABLES }, (p) =>
+      counted(p, counts),
     );
-    const fetch_ = countingFetch(tarRoute);
+    const fetch_ = countingArtifactFetch();
     const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-cache-'));
     try {
       const first = await run(fetch_, cacheRoot);
@@ -1726,15 +1803,22 @@ describe('ephemeral tool cache', () => {
       new TextEncoder().encode('#!/bin/sh\necho acme-tool-v2\n'),
       0o755,
     );
-    const routes: Record<string, Uint8Array> = { ...tarRoute };
-    let served = descriptor();
-    const base = acmeProvider({ hostFetch: true, executables: EXECUTABLES });
+    const routes: Record<string, Uint8Array> = {
+      [artifactServer.artifactUrl]: TOOL_TAR,
+    };
+    let served = serverDescriptor();
+    const base = acmeProvider({
+      hostFetch: true,
+      executables: EXECUTABLES,
+      endpoint: artifactServer.origin,
+      body: { locations: [{ uri: artifactServer.artifactUrl }] },
+    });
     const shifting: CatalogProvider = {
       ...base,
       async fetchArtifactRecord() {
         return {
           key: EXACT,
-          endpoint: ENDPOINT,
+          endpoint: artifactServer.origin,
           body: served,
           rawBody: new TextEncoder().encode(JSON.stringify(served)),
           retrievedAt: '2020-01-01T00:00:00Z',
@@ -1748,11 +1832,11 @@ describe('ephemeral tool cache', () => {
       const first = await run(fetch_, cacheRoot);
       expect(first.digest).toBe(`sha256:${TOOL_DIGEST}`);
 
-      served = descriptor({
+      served = serverDescriptor({
         digest: { algorithm: 'sha256', value: sha256(otherTar) },
         size: otherTar.byteLength,
       });
-      routes[`${ENDPOINT}/artifacts/demo-1.0.0.tar`] = otherTar;
+      routes[artifactServer.artifactUrl] = otherTar;
 
       const second = await run(fetch_, cacheRoot);
       expect(second.cached).toBe(false);
@@ -1765,8 +1849,8 @@ describe('ephemeral tool cache', () => {
   });
 
   it('rebuilds a tampered store tree from the verified archive, offline of the network', async () => {
-    registerAcme(acmeProvider({ hostFetch: true, executables: EXECUTABLES }));
-    const fetch_ = countingFetch(tarRoute);
+    registerAcmeOnServer({ hostFetch: true, executables: EXECUTABLES });
+    const fetch_ = countingArtifactFetch();
     const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-cache-'));
     try {
       const first = await run(fetch_, cacheRoot);
@@ -1783,8 +1867,8 @@ describe('ephemeral tool cache', () => {
   });
 
   it('falls through to download and verify when the cache entry is corrupt, and self-heals', async () => {
-    registerAcme(acmeProvider({ hostFetch: true, executables: EXECUTABLES }));
-    const fetch_ = countingFetch(tarRoute);
+    registerAcmeOnServer({ hostFetch: true, executables: EXECUTABLES });
+    const fetch_ = countingArtifactFetch();
     const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-cache-'));
     try {
       const first = await run(fetch_, cacheRoot);
@@ -1815,8 +1899,8 @@ describe('ephemeral tool cache', () => {
   });
 
   it('re-downloads when the archive is gone but the tree survived', async () => {
-    registerAcme(acmeProvider({ hostFetch: true, executables: EXECUTABLES }));
-    const fetch_ = countingFetch(tarRoute);
+    registerAcmeOnServer({ hostFetch: true, executables: EXECUTABLES });
+    const fetch_ = countingArtifactFetch();
     const cacheRoot = await mkdtemp(join(tmpdir(), 'opm-cache-'));
     try {
       const first = await run(fetch_, cacheRoot);
@@ -1877,7 +1961,7 @@ describe('native interpreter', () => {
       const tool = await fetchTool({
         purl: EXACT,
         cacheRoot,
-        registryOptions: { fetch: fetchStub(tarRoute) },
+        fetch: fetchStub(tarRoute),
       });
       const target = join(tool.storePath, 'bin', 'demo');
       const outcome = await runSandboxedPackageProcess({

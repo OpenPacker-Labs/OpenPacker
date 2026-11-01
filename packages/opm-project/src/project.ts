@@ -1,5 +1,6 @@
 import { access, mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { plainLine } from '@openpacker/canonical';
 import type {
   LockPackage,
   OpmLockfile,
@@ -718,7 +719,9 @@ async function resolveRequirement(input: {
   if (input.req.source) {
     const resolved = resolveSource(input.req.source, input.root);
     const offlineBytes = input.offline
-      ? await fetchArtifactBytes(resolved, true)
+      ? await fetchArtifactBytes(resolved, true, {
+          written: input.req.source,
+        })
       : undefined;
     const sourceUri =
       resolved.startsWith('/') || /^[A-Za-z]:/.test(resolved)
@@ -731,7 +734,10 @@ async function resolveRequirement(input: {
     });
     await assertSupplyChainAllowed(policy, facts);
     const bytes =
-      offlineBytes ?? (await fetchArtifactBytes(resolved, input.offline));
+      offlineBytes ??
+      (await fetchArtifactBytes(resolved, input.offline, {
+        written: input.req.source,
+      }));
     const version =
       versionHint &&
       !versionHint.startsWith('^') &&
@@ -939,7 +945,7 @@ async function resolveRequirement(input: {
         if (!newest)
           throw new OpmError(
             'UNRESOLVABLE',
-            `The ${ecosystem} registry published no versions of ${input.req.purl}.`,
+            `The ${plainLine(ecosystem)} registry published no versions of ${plainLine(input.req.purl)}.`,
           );
         return newest;
       })());
@@ -1061,7 +1067,7 @@ async function resolveRequirement(input: {
 
   throw new OpmError(
     'UNRESOLVABLE',
-    `Cannot resolve "${input.alias}" (${input.req.purl}${versionHint ? `@${versionHint}` : ''}). ` +
+    `Cannot resolve "${plainLine(input.alias)}" (${plainLine(input.req.purl)}${versionHint ? `@${plainLine(versionHint)}` : ''}). ` +
       `Provide source = "file:..." in ${MANIFEST_NAME}, pass --source, or add a catalog entry ` +
       `(${CATALOG_NAME} / OPM_CATALOG). Offline catalogs are required when offline.`,
   );

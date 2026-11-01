@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { out } from '@openpacker/canonical';
+import { out, plainLine } from '@openpacker/canonical';
 import {
   DEFAULT_STEP_WAIT_MS,
   OpmError,
@@ -12,6 +12,7 @@ import {
   requireOpmRoot,
   type StepOptions,
 } from '@openpacker/opm-project';
+import { report } from '../error-report.js';
 import type { CommandArgs, CommandIo } from './yank.js';
 
 /**
@@ -48,10 +49,13 @@ export function cliStep(
     get waitMs() {
       return wait();
     },
-    onRecovered: (step) => io.stderr.write(`${describeRecovery(step)}\n`),
+    onRecovered: (step) => io.stderr.write(report('', describeRecovery(step))),
     onWait: (holder) =>
       io.stderr.write(
-        `opm: waiting for ${holder.owner === undefined ? 'a lock opm cannot read' : describeProcessOwner(holder.owner)}, which is changing this project (${holder.file})\n`,
+        report(
+          'opm: ',
+          `waiting for ${holder.owner === undefined ? 'a lock opm cannot read' : plainLine(describeProcessOwner(holder.owner))}, which is changing this project (${plainLine(holder.file)})`,
+        ),
       ),
   };
 }
@@ -126,21 +130,21 @@ export async function runRecoverCommand(
   if (foreign !== undefined) {
     out(
       io,
-      `Removed ${foreign.copy}, made for the project at ${printable(foreign.foreign!)}; this project was not changed\n`,
+      `Removed ${plainLine(foreign.copy)}, made for the project at ${plainLine(printable(foreign.foreign!))}; this project was not changed\n`,
     );
     return 0;
   }
   if (result.owner !== undefined)
     out(
       io,
-      `Took the step of ${describeProcessOwner(result.owner)} to be dead; if it is running on another host it still writes this project\n`,
+      `Took the step of ${plainLine(describeProcessOwner(result.owner))} to be dead; if it is running on another host it still writes this project\n`,
     );
   for (const lock of result.removedLocks)
     out(
       io,
       lock.owner === undefined
-        ? `Removed ${lock.file}, which does not say who held it\n`
-        : `Removed ${lock.file}, held by ${describeProcessOwner(lock.owner)}\n`,
+        ? `Removed ${plainLine(lock.file)}, which does not say who held it\n`
+        : `Removed ${plainLine(lock.file)}, held by ${plainLine(describeProcessOwner(lock.owner))}\n`,
     );
   out(
     io,

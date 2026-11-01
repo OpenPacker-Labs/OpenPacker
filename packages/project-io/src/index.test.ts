@@ -34,6 +34,7 @@ import {
   windowsNtHandlePathForm,
   writeFileAtomic,
 } from './index.js';
+import { isChildBackendUnderTest } from './handle-path.js';
 
 describe('stable tree collection', () => {
   it('keeps reading the authorized tree after its pathname is replaced', async () => {
@@ -532,64 +533,77 @@ describe('materialiseTree', () => {
     });
   });
 
-  it('rechecks staging after removing the previous destination', async () => {
-    await withTemp(async (dir) => {
-      const { materialiseTree } = await import('./layout.js');
-      const source = join(dir, 'source');
-      const root = join(dir, 'out');
-      const destination = join(root, 'pkg');
-      const old = join(destination, 'old');
-      await mkdir(source);
-      await mkdir(old, { recursive: true });
-      await writeFile(
-        join(source, 'large.bin'),
-        new Uint8Array(4 * 1024 * 1024),
-      );
-      const oldCount = 2_000;
-      await Promise.all(
-        Array.from({ length: oldCount }, async (_, index) =>
-          writeFile(join(old, String(index)), 'old'),
-        ),
-      );
-
-      let settled = false;
-      const materialising = materialiseTree(source, destination, root);
-      void materialising.then(
-        () => {
-          settled = true;
-        },
-        () => {
-          settled = true;
-        },
-      );
-      let mutated = false;
-      while (!settled && !mutated) {
-        // SAFETY: The surrounding boundary establishes the asserted domain contract.
-        const staging = (await readdir(root).catch(() => [] as string[])).find(
-          (entry) => entry.startsWith('.pkg.openpacker-'),
+  it.skipIf(isChildBackendUnderTest())(
+    'rechecks staging after removing the previous destination',
+    { timeout: 120_000 },
+    async () => {
+      await withTemp(async (dir) => {
+        const { materialiseTree } = await import('./layout.js');
+        const source = join(dir, 'source');
+        const root = join(dir, 'out');
+        const destination = join(root, 'pkg');
+        const old = join(destination, 'old');
+        await mkdir(source);
+        await mkdir(old, { recursive: true });
+        await writeFile(
+          join(source, 'large.bin'),
+          new Uint8Array(4 * 1024 * 1024),
         );
-        if (staging) {
+        const oldCount = 2_000;
+        await Promise.all(
+          Array.from({ length: oldCount }, async (_, index) =>
+            writeFile(join(old, String(index)), 'old'),
+          ),
+        );
+
+        let settled = false;
+        const materialising = materialiseTree(source, destination, root);
+        void materialising.then(
+          () => {
+            settled = true;
+          },
+          () => {
+            settled = true;
+          },
+        );
+        let mutated = false;
+        while (!mutated) {
+          if (settled) break;
           // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          const remaining = await readdir(old).catch(() => [] as string[]);
-          if (remaining.length < oldCount) {
-            try {
-              await writeFile(join(root, staging, 'attacker'), 'late mutation');
-              mutated = true;
-            } catch (error) {
-              const code = (error as NodeJS.ErrnoException).code;
-              if (code !== 'ENOENT') throw error;
+          const staging = (
+            await readdir(root).catch(() => [] as string[])
+          ).find((entry) => entry.startsWith('.pkg.openpacker-'));
+          if (staging) {
+            const stagedReady = await lstat(
+              join(root, staging, 'large.bin'),
+            ).catch(() => undefined);
+            // SAFETY: The surrounding boundary establishes the asserted domain contract.
+            const remaining = await readdir(old).catch(() => [] as string[]);
+            if (
+              stagedReady &&
+              (remaining.length < oldCount || remaining.length === 0)
+            ) {
+              const attacker = join(root, staging, 'attacker');
+              try {
+                await mkdir(join(root, staging), { recursive: true });
+                await writeFile(attacker, 'late mutation');
+                mutated = true;
+              } catch (error) {
+                const code = (error as NodeJS.ErrnoException).code;
+                if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
+              }
             }
           }
+          if (!mutated)
+            await new Promise<void>((resolve) => setImmediate(resolve));
         }
-        if (!mutated)
-          await new Promise<void>((resolve) => setImmediate(resolve));
-      }
-      expect(mutated).toBe(true);
-      await expect(materialising).rejects.toMatchObject({
-        code: 'UNSAFE_PATH',
+        expect(mutated).toBe(true);
+        await expect(materialising).rejects.toMatchObject({
+          code: 'UNSAFE_PATH',
+        });
       });
-    });
-  });
+    },
+  );
 
   it('refuses a substituted staging directory before publication', async () => {
     await withTemp(async (dir) => {
