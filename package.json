@@ -1,6 +1,6 @@
 {
   "name": "openpacker",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
   "private": true,
   "type": "module",
   "description": "OpenPacker reference implementation of Package Resolution Exchange (PREX)",
@@ -17,6 +17,7 @@
   "scripts": {
     "prepare": "node scripts/install-hooks.mjs",
     "build": "turbo run build",
+    "bundle:cli": "npm run bundle --workspace @openpacker/cli",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint:anti-slop": "oxlint . --deny-warnings",
@@ -47,6 +48,8 @@
     "golden:check": "node scripts/generate-goldens.mjs --check",
     "check:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-features",
     "release:sbom:rust": "node scripts/generate-rust-sbom.mjs",
+    "ruleset:apply": "node scripts/github/apply-trunk-ruleset.mjs",
+    "workflows:lint": "actionlint .github/workflows/*.yml",
     "demo": "node scripts/demo.mjs",
     "demo:lock-import": "node scripts/demo-lock-import.mjs",
     "skills:mirror-check": "node scripts/check-skill-mirrors.mjs",

@@ -58,6 +58,7 @@ import {
 } from '@openpacker/opm-project';
 import { asksForHelp } from './commands/run-args.js';
 import { cliStep, runRecoverCommand } from './commands/recover.js';
+import { runRollbackCommand } from './commands/generations.js';
 import { COMMANDS } from './commands/command-names.js';
 import { routeRun, unknownCommandHint } from './commands/run-route.js';
 import { RunError } from './commands/run-error.js';
@@ -144,7 +145,7 @@ export async function runOpm(
   }
   try {
     // Process entry registers adapters; core never imports ecosystems by name.
-    const adapterRegistry = configureDefaultAdapters(options.adapters);
+    const adapterRegistry = configureDefaultAdapters(options.adapters ?? []);
     // Delegated adapter plugins (ADR 0039) register after the first-party
     // set: a plugin never displaces a bundled adapter (conflicts are
     // refused), and a tampered or broken plugin is reported and skipped —
@@ -189,14 +190,16 @@ export async function runOpm(
     }
 
     const step = cliStep(io, args.options);
-    // A command's work on its project is one step (`project-step.ts`): bound
-    // plugins are verified once what a killed step left is put back, and the
+    // A command's work on its project is one step (`project-step.ts`): the
+    // lock is taken, and what a killed step left is put back, before the
+    // manifest is read. Bound plugins are verified inside that step. The
     // library calls inside it neither lock nor recover again.
     const inStep = <T>(root: string, work: () => Promise<T>) =>
       projectStep(root, step, async () => {
         await registerBoundPlugins(root, adapterRegistry);
         return work();
       });
+
     switch (args.command) {
       case 'init': {
         const root = option(args, 'path') ?? cwd;
@@ -262,7 +265,7 @@ export async function runOpm(
         const root = (await findOpmRoot(cwd)) ?? (await requireOpmRoot(cwd));
         const offline = offlineOverride(args);
         // A project that binds plugins resolves through them; the binding is
-        // verified before any registry read it could influence.
+        // verified after recovery, before any registry read it could influence.
         const result = await inStep(root, () =>
           addPackage({
             allowElevation: args.options.has('allow-elevation'),
@@ -299,7 +302,8 @@ export async function runOpm(
         const alias = args.positionals[0];
         if (!alias) throw usage('opm remove requires a package alias');
         const offline = offlineOverride(args);
-        // remove rewrites the manifest and lock; bound plugins are verified first.
+        // remove rewrites the manifest and lock; bound plugins are verified
+        // after what a killed step left is put back.
         const removed = await inStep(root, () =>
           removePackage({
             root,
@@ -307,7 +311,10 @@ export async function runOpm(
             ...(!(offline === undefined) && { offline }),
           }),
         );
-        out(io, `Removed ${removed.alias} from manifest, lock, and install\n`);
+        out(
+          io,
+          `Removed ${plainLine(removed.alias)} from manifest, lock, and install\n`,
+        );
         return EXIT_CODES.success;
       }
       case 'ci': {
@@ -673,9 +680,6 @@ export async function runOpm(
         return EXIT_CODES.success;
       }
       case 'rollback': {
-        const { runRollbackCommand } = await import(
-          './commands/generations.js'
-        );
         return await runRollbackCommand(
           args,
           io,
