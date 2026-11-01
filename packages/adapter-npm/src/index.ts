@@ -43,6 +43,7 @@ import {
   semanticLoss,
   sourceRef,
   verifyNativeDigest,
+  isDocumentRefusal,
   type CatalogProvider,
   type Clock,
   type EcosystemCodec,
@@ -135,7 +136,15 @@ export {
   type NpmDependencySpecKind,
 } from './dependency-spec.js';
 import { classifyDependencySpec } from './dependency-spec.js';
+import * as dependencyText from './dependency-spec.js';
 import { nonRangeRequirement } from './spec-requirement.js';
+import {
+  FULL_PACKUMENT_LIMITS,
+  MAXIMUM_FULL_PACKUMENT_BYTES,
+  MAXIMUM_PACKUMENT_BYTES,
+  PACKUMENT_LIMITS,
+  aboutPackument,
+} from './packument-limits.js';
 
 function npmPackagePurl(name: string): string {
   const coordinate = new NpmCodec().parseNativeCoordinate(name);
@@ -250,7 +259,7 @@ export class NpmCodec
     if (!match)
       throw new ProviderError(
         'INVALID_NATIVE_COORDINATE',
-        `Invalid npm coordinate: ${value}`,
+        `Invalid npm coordinate: ${dependencyText.echoedName(value)}`,
       );
     const result: NativeCoordinate = {
       ecosystem: 'npm',
@@ -394,7 +403,12 @@ export class NpmCodec
               'npm',
               'NPM_DEPENDENCY_NOT_REPRESENTABLE',
               `/${field}/${name}`,
-              `The ${field} entry "${name}": "${range}" cannot be represented: ${error instanceof Error ? error.message : String(error)}`,
+              dependencyText.entryNotRepresentable(
+                field,
+                name,
+                range,
+                error instanceof Error ? error.message : String(error),
+              ),
               undefined,
               'info',
             ),
@@ -659,8 +673,8 @@ export interface PublishTimeEvidence {
   source: 'packument-time' | 'packument-modified' | 'full-packument';
 }
 
-/** A response this big is a mirror misbehaving; the largest real one is 39 MB. */
-const FULL_PACKUMENT_LIMIT = 96 * 1024 * 1024;
+/** @deprecated use {@link MAXIMUM_FULL_PACKUMENT_BYTES} */
+const FULL_PACKUMENT_LIMIT = MAXIMUM_FULL_PACKUMENT_BYTES;
 
 export class NpmRegistryProvider implements CatalogProvider {
   readonly providerId = 'npm-registry';
@@ -803,7 +817,9 @@ export class NpmRegistryProvider implements CatalogProvider {
    * request at all. Otherwise the full packument's `time` for this version,
    * which is the only exact source the registry offers and the expensive one,
    * paid only for a package that changed recently. A package whose time cannot
-   * be had yields `undefined`, and the policy then says it was not provided.
+   * be had yields `undefined`, and the policy then says it was not provided. A
+   * full packument the client refuses (too large, too many values, not JSON)
+   * throws that refusal instead, so the caller can say why the time is missing.
    */
   async publishTime(
     exactPurl: string,
@@ -840,16 +856,22 @@ export class NpmRegistryProvider implements CatalogProvider {
     parsed: ReturnType<typeof parsePurl>,
     signal?: AbortSignal,
   ): Promise<Record<string, string> | undefined> {
+    const name = npmName(parsed.namespace, parsed.name);
     try {
       const response = await this.transport.request({
-        url: `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(npmName(parsed.namespace, parsed.name))}`,
+        url: `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(name)}`,
         signal,
-        maximumBytes: FULL_PACKUMENT_LIMIT,
+        maximumBytes: MAXIMUM_FULL_PACKUMENT_BYTES,
         headers: { accept: 'application/json' },
       });
-      return json<{ time?: Record<string, string> }>(response).time;
+      return json<{ time?: Record<string, string> }>(
+        response,
+        FULL_PACKUMENT_LIMITS,
+      ).time;
     } catch (error) {
       if (signal?.aborted) throw error;
+      if (isDocumentRefusal(error))
+        throw aboutPackument(name, error, 'full packument');
       return undefined;
     }
   }
@@ -1077,17 +1099,24 @@ export class NpmRegistryProvider implements CatalogProvider {
     const existing = this.#records.get(key);
     const name = npmName(parsed.namespace, parsed.name);
     const url = `${this.endpoint.replace(/\/$/, '')}/${encodeURIComponent(name)}`;
-    const response = await this.transport.request({
-      url,
-      signal,
-      maximumBytes: 8 * 1024 * 1024,
-      headers: {
-        accept: 'application/vnd.npm.install-v1+json',
-        ...(!(existing?.etag === undefined) && {
-          'if-none-match': existing.etag,
-        }),
-      },
-    });
+    let response;
+    try {
+      response = await this.transport.request({
+        url,
+        signal,
+        maximumBytes: MAXIMUM_PACKUMENT_BYTES,
+        headers: {
+          accept: 'application/vnd.npm.install-v1+json',
+          ...(!(existing?.etag === undefined) && {
+            'if-none-match': existing.etag,
+          }),
+        },
+      });
+    } catch (error) {
+      throw error instanceof ProviderError
+        ? aboutPackument(name, error)
+        : error;
+    }
     if (response.status === 304) {
       if (!existing)
         throw new ProviderError(
@@ -1099,13 +1128,21 @@ export class NpmRegistryProvider implements CatalogProvider {
       this.#records.set(key, revalidated);
       return revalidated;
     }
+    let body: NpmPackument;
+    try {
+      body = json<NpmPackument>(response, PACKUMENT_LIMITS);
+    } catch (error) {
+      throw error instanceof ProviderError
+        ? aboutPackument(name, error)
+        : error;
+    }
     const record: ProviderRecord<NpmPackument> = {
       key,
       endpoint: response.url,
       ...(!(header(response, 'etag') === undefined) && {
         etag: header(response, 'etag'),
       }),
-      body: json<NpmPackument>(response),
+      body,
       rawBody: response.body,
       retrievedAt: this.clock.now(),
     };
