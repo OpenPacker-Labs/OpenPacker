@@ -1,0 +1,14 @@
+{
+  "name": "OpenPacker",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "extensions": ["rust-lang.rust-analyzer", "dbaeumer.vscode-eslint"]
+    }
+  },
+  "postCreateCommand": "npm ci --ignore-scripts",
+  "forwardPorts": []
+}

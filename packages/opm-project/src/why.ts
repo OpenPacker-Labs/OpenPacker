@@ -120,7 +120,14 @@ export function entriesNamed(
     .sort();
 }
 
-/** One entry's explanation, in the words `opm why` has always used. */
+/**
+ * One entry's explanation, in the words `opm why` has always used.
+ *
+ * `opm why` writes this straight to stdout. Every value came from the
+ * repository's files, so each is one line here (`plainLine`); the line breaks
+ * between them are opm's. A value that kept its own line feed would be another
+ * line of the command's output.
+ */
 export function explainEntry(
   manifest: OpmManifest,
   lock: OpmLockfile | undefined,
@@ -139,7 +146,7 @@ export function explainEntry(
     if (requirement.version)
       lines.push(`  version constraint: ${plainLine(requirement.version)}`);
     if (requirement.source)
-      lines.push(`  source: ${shownSource(requirement.source)}`);
+      lines.push(`  source: ${plainLine(shownSource(requirement.source))}`);
     lines.push(
       locked
         ? `  locked: ${plainLine(locked.purl)} (${plainLine(locked.digest)})`

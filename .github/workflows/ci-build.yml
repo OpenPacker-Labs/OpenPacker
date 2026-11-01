@@ -1,20 +1,31 @@
 name: CI build
 
-# The automatic PR/push lane, kept minimal on purpose: build matrix + smoke +
-# artifacts. Scheduled security checks are separate in security.yml and
-# codeql.yml. The full offline gauntlet stays manual-dispatch in ci.yml, and
-# promotion is separate and sparse in cd.yml. Minutes are budgeted:
-# concurrency cancels superseded runs, npm/cargo caches are warm after the
-# first run, and artifacts expire after 7 days.
+# Post-merge artifact matrix on main. Automatic runs are Ubuntu 24.04 only
+# (Node 22.19.0 and 24). Windows and macOS legs are opt-in on workflow_dispatch
+# (they multiply Actions minutes and often queue behind billing limits). Pull
+# requests use ci-advisory.yml for fast, non-required feedback. The merge queue
+# uses trunk-gate.yml, which is the only required CI for merging. Scheduled
+# security checks are separate in security.yml and codeql.yml. The full offline
+# gauntlet stays manual-dispatch in ci.yml. Promotion is promote-nightly.yml,
+# promote-integration.yml, and promote-prod.yml (cd.yml is deprecated). Minutes
+# are budgeted: concurrency cancels superseded runs, npm/cargo caches are warm
+# after the first run, and artifacts expire after 7 days.
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      include_windows_macos:
+        description:
+          Also run Windows and macOS matrix legs (uses substantially more
+          Actions minutes)
+        type: boolean
+        default: false
 
 concurrency:
-  group: ci-build-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress:
+    ${{ github.event_name != 'merge_group' && github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -24,16 +35,44 @@ env:
   SOURCE_DATE_EPOCH: '1785628800'
 
 jobs:
+  matrix-prep:
+    name: Resolve build matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        env:
+          EVENT: ${{ github.event_name }}
+          INCLUDE_EXTRA: ${{ inputs.include_windows_macos }}
+        run: |
+          set -euo pipefail
+          BASE='[{"os":"ubuntu-24.04","node":"22.19.0"},{"os":"ubuntu-24.04","node":"24"}]'
+          EXTRA='[{"os":"windows-latest","node":"22.19.0"},{"os":"windows-latest","node":"24"},{"os":"macos-latest","node":"22.19.0"},{"os":"macos-latest","node":"24"}]'
+          if [ "$EVENT" = 'workflow_dispatch' ] && [ "$INCLUDE_EXTRA" = 'true' ]; then
+            JSON="$(BASE="$BASE" EXTRA="$EXTRA" node -e 'const b=JSON.parse(process.env.BASE); const e=JSON.parse(process.env.EXTRA); console.log(JSON.stringify({include:[...b,...e]}))')"
+          else
+            JSON="$(BASE="$BASE" node -e 'console.log(JSON.stringify({include:JSON.parse(process.env.BASE)}))')"
+          fi
+          {
+            echo 'matrix<<MATRIX_EOF'
+            echo "$JSON"
+            echo MATRIX_EOF
+          } >> "$GITHUB_OUTPUT"
+
   build:
     name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    needs: matrix-prep
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        node: [22.19.0, 24]
+      matrix: ${{ fromJSON(needs.matrix-prep.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/openpacker-turbo-cache
+        with:
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
       - uses: actions/setup-node@v6.4.0
         with:
           node-version: ${{ matrix.node }}
@@ -82,6 +121,8 @@ jobs:
           src/handle-link.remove.test.ts src/member-link.test.ts
           src/member-link.prefix.test.ts src/member-link.tree.test.ts
       - run: npm run build
+      - name: Test the publishable CLI bundle
+        run: npm test --workspace @openpacker/cli -- test/release-bundle.test.ts
       - name: Smoke the CLI
         run: node apps/openpacker-cli/dist/index.js --help
       - name: Smoke opm project mutation (no-follow handle-relative I/O)
@@ -132,9 +173,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-artifacts
-          npm pack --workspace @openpacker/contracts --workspace @openpacker/sdk \
-            --workspace @openpacker/embedded --workspace @openpacker/cli \
-            --pack-destination dist-artifacts
+          npm run bundle --workspace @openpacker/cli
+          npm pack --pack-destination dist-artifacts --prefix apps/openpacker-cli/release
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7.0.1
         with:

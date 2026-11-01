@@ -116,6 +116,7 @@ export function createOpenPackerDaemon(
   );
   const app = Fastify({
     logger: options.logger ?? false,
+    ignoreTrailingSlash: true,
     bodyLimit,
     requestTimeout: maximumTimeout,
   });

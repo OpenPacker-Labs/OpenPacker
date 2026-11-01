@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Runs vitest once with scripts/vitest.coverage.config.mjs (single worker,
+// serial files) so V8 precise-coverage snapshots merge deterministically.
 import {
   existsSync,
   mkdirSync,

@@ -126,6 +126,8 @@ const BOUNDS = {
     hookTimeout: '15_000',
   },
   'scripts/vitest.coverage.config.mjs': { testTimeout: '30_000' },
+  // #231: the vitest-worker RPC window under turbo, not a test's clock.
+  'apps/opm': { hookTimeout: '120_000' },
 };
 
 /** The time bounds a config states, as `{ testTimeout: '15_000' }`. */
@@ -172,6 +174,8 @@ test('every package and root vitest run extends the one shared config, and no bo
     assert.match(text, /'\.\.\/vitest\.shared\.ts'/u, config);
     assert.deepEqual(statedBounds(text), BOUNDS[config], config);
     assert.match(text, /store-guard\.setup\.ts/u, config);
+    if (config === 'scripts/vitest.coverage.config.mjs')
+      assert.match(text, /maxWorkers:\s*1/u, config);
   }
 });
 

@@ -1,11 +1,14 @@
 name: CI
 
-# The full offline gauntlet — manual dispatch only. The automatic PR/push lane
-# is the minimal build matrix in ci-build.yml; scheduled security checks are in
-# security.yml and codeql.yml; promotion is cd.yml. Quality gates are still
-# enforced locally: .githooks/pre-commit (agent:check --staged),
-# .githooks/pre-push (agent:check --base=origin/main), and `npm run verify`
-# before merge. Do not add automatic triggers to this workflow.
+# The full offline gauntlet — manual dispatch only. Pull requests use
+# ci-advisory.yml. The merge queue requires trunk-gate.yml. ci-build.yml is the
+# post-merge artifact matrix on main. Scheduled security checks are in
+# security.yml and codeql.yml. Promotion is promote-nightly.yml,
+# promote-integration.yml, and promote-prod.yml (cd.yml is deprecated).
+# Quality gates are still enforced locally: .githooks/pre-commit
+# (agent:check --staged), .githooks/pre-push (agent:check --base=origin/main),
+# and `npm run verify` before merge. Do not add automatic triggers to this
+# workflow.
 on:
   workflow_dispatch:
 
