@@ -171,21 +171,15 @@ snapshots:
     );
   });
 
-  it('refuses a patch, whole, naming each, with what else the lock says by itself and nothing of its packages', async () => {
+  it('refuses what the lock says by itself, a patch it holds to its snapshots not among it, and nothing of its packages', async () => {
     const world = await worldOf(fixtureBytes('exotic.pnpm-lock.yaml'));
     const refused = (await world.read()).refused;
-    const patches = refused.filter((item) =>
-      item.path.startsWith('patchedDependencies['),
-    );
-    expect(patches.length).toBeGreaterThan(0);
-    for (const patch of patches)
-      expect(patch.reason).toMatch(
-        /is a patch, and opm does not apply patches/u,
-      );
-    // The rest is the importers' own settings: nothing about a package is
-    // said until the lock can be installed as written.
-    for (const other of refused.filter((item) => !patches.includes(item)))
-      expect(other.path).toMatch(
+    expect(refused.length).toBeGreaterThan(0);
+    // The importers' own settings: nothing about a package is said until the
+    // lock can be installed as written, and its two patches (braces and
+    // node-forge, each carried by its snapshot) are not refused (ADR 0057).
+    for (const item of refused)
+      expect(item.path).toMatch(
         /^(?:importers\[".*"\]\.(?:dependenciesMeta|publishDirectory)|ignoredOptionalDependencies)$/u,
       );
   });
@@ -252,9 +246,7 @@ snapshots: {}
   });
 
   it('refuses nothing outside the importers being installed', async () => {
-    // The exotic lock's odd packages are reachable from importers that a
-    // selection leaves out; the lock-level refusal is the only thing it says
-    // while it has patches. A lock without them is judged on what it installs.
+    // A lock whose importers set nothing odd is judged on what it installs.
     const text = new TextDecoder().decode(
       fixtureBytes('ai-bdd.pnpm-lock.yaml'),
     );

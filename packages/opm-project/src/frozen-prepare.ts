@@ -21,6 +21,7 @@ import {
 } from '@openpacker/adapter-core';
 import { requireAdapterRegistry } from './adapters.js';
 import { type FrozenFetchOptions } from './frozen-fetch.js';
+import { assertPatchesFit } from './frozen-patch-fit.js';
 import {
   assertFrozenAllowed,
   frozenPolicyDocument,
@@ -163,8 +164,12 @@ export function adapterFailure(error: unknown): Error {
     INVALID_MANIFEST: 'INVALID_MANIFEST',
     NOT_FOUND: 'NOT_FOUND',
     UNSAFE_PATH: 'UNSAFE_PATH',
+    CASE_COLLISION: 'UNSAFE_PATH',
     LAYOUT_PATHS_INVALID: 'INVALID_LOCK',
     LAYOUT_TOO_LARGE: 'SIZE_LIMIT',
+    PATCH_FAILED: 'PATCH_FAILED',
+    INVALID_PATCH: 'INVALID_PATCH',
+    SIZE_LIMIT: 'SIZE_LIMIT',
   };
   // SAFETY: provider errors carry an optional string `code`.
   const code = (error as { code?: unknown }).code;
@@ -236,6 +241,7 @@ export async function prepareFrozen(
       'UNSUPPORTED_LOCK',
       `opm ci installs from archives with a pinned digest, and cannot install ${unfetchable.length} package${unfetchable.length === 1 ? '' : 's'} from a git or path source yet:\n${listLines(unfetchable.map((pkg) => `${labelOf(pkg)}: ${echoed(redactSource(pkg.source))}`))}`,
     );
+  await assertPatchesFit(lock.packages, format, root, env);
   const claims = new Map<string, IntegrityClaim[]>(
     lock.packages.map((pkg) => [
       pkg.path,

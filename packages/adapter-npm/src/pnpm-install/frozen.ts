@@ -45,6 +45,8 @@ import {
   sourceOfInstance,
   type InstanceSource,
 } from './refuse.js';
+import { lockPatches } from './patches.js';
+import { readProjectPatches } from './patch-files.js';
 import { selectTops } from './scope.js';
 import { platformsOf } from './targets.js';
 import { selectInstances, type Selection } from './select.js';
@@ -92,7 +94,8 @@ export async function readFrozenPnpmLock(
   });
 
   // 1. What the lock says by itself.
-  const wholeLock = lockRefusals(model);
+  const patching = lockPatches(model);
+  const wholeLock = [...lockRefusals(model), ...patching.refused];
   if (wholeLock.length > 0) return refuse(wholeLock);
   if (options.omit.has('peer'))
     throw new ProviderError(
@@ -135,18 +138,15 @@ export async function readFrozenPnpmLock(
       'INVALID_LOCKFILE',
       `pnpm-lock.yaml does not list every member of the project's workspace (opm ci installs what the lock lists, and a member with dependencies has to be in it; pnpm install writes it there): ${members.join('; ')}`,
     );
-  const { stale, own } = freshnessProblems({
-    root,
-    model,
-    present,
-    disk,
-  });
-  if (own.length > 0)
-    throw new ProviderError(
-      'INVALID_LOCKFILE',
-      `opm ci does not install this project as it is: ${own.join('; ')}`,
-    );
-  if (stale.length > 0) refuseStale(stale);
+  // The patch files first, as pnpm hashes them before it compares anything.
+  const declared = await readProjectPatches(
+    project.root,
+    root.config,
+    model.lock,
+  );
+  const { stale } = freshnessProblems({ root, model, present, disk });
+  if (stale.length + declared.stale.length > 0)
+    refuseStale([...stale, ...declared.stale]);
 
   // 3. What needs the machine.
   if (selection.refused.length > 0) return refuse([...selection.refused]);
@@ -168,6 +168,7 @@ export async function readFrozenPnpmLock(
   const packages = placement.placed.map((place): FrozenLockPackage => {
     const instance = model.instances.get(place.key)!;
     const source = sources.get(place.key)!;
+    const patch = patching.byInstance.get(place.key);
     return {
       path: placePath(place.chain, place.base),
       name: place.chain.at(-1)!,
@@ -187,6 +188,8 @@ export async function readFrozenPnpmLock(
       ...(instance.pkg.deprecated !== undefined && {
         deprecated: instance.pkg.deprecated,
       }),
+      // Every key of the lock is the project's once the lock is fresh.
+      ...(patch !== undefined && { patch: declared.patches.get(patch)! }),
     };
   });
   const direct = directPlaces(input, placement);

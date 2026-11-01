@@ -31,6 +31,8 @@ export interface FrozenPlan {
   places: number;
   /** Archives to fetch or find in the store: places and instances can share one. */
   archives: number;
+  /** Packages the lock patches (one per archive and patch), and the patches. */
+  patched: { packages: number; patches: number };
   /** For a workspace lock: the members, the ones installed and the links made. */
   workspace?: { members: number; installed: number; linked: number };
   skipped: readonly FrozenLockSkip[];
@@ -50,6 +52,7 @@ export async function planFrozen(
   const archives = new Set(
     lock.packages.map((pkg) => integrityKey(claims.get(pkg.path)!)),
   );
+  const patched = lock.packages.filter((pkg) => pkg.patch !== undefined);
   return {
     ecosystem,
     lockPath: lock.lockPath,
@@ -57,6 +60,15 @@ export async function planFrozen(
     instances: instances.size,
     places: lock.packages.length,
     archives: archives.size,
+    patched: {
+      packages: new Set(
+        patched.map(
+          (pkg) =>
+            `${integrityKey(claims.get(pkg.path)!)}\0${pkg.patch!.digest}`,
+        ),
+      ).size,
+      patches: new Set(patched.map((pkg) => pkg.patch!.key)).size,
+    },
     ...(lock.workspace !== undefined && {
       workspace: {
         members: lock.workspace.memberDirs.length,

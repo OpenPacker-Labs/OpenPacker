@@ -210,6 +210,18 @@ function leftOut(result: Pick<FrozenPlan, 'skipped'>): string | undefined {
     .join(', ');
 }
 
+/** The packages a lock patches, when it patches any (ADR 0057). */
+function writePatched(
+  patched: { packages: number; patches: number },
+  io: CommandIo,
+): void {
+  if (patched.packages === 0) return;
+  out(
+    io,
+    `  patched: ${patched.packages} package${patched.packages === 1 ? '' : 's'} by ${patched.patches} patch${patched.patches === 1 ? '' : 'es'} from patchedDependencies, each a store entry of its own\n`,
+  );
+}
+
 /**
  * What `opm ci --plan` says: the install up to the first byte fetched, and
  * nothing done. The same plan is the same text, so it carries no wall time.
@@ -222,6 +234,7 @@ function printPlan(plan: FrozenPlan, io: CommandIo, root: string): void {
   );
   const clause = leftOut(plan);
   if (clause !== undefined) out(io, `  left out: ${clause}\n`);
+  writePatched(plan.patched, io);
   if (plan.targets !== undefined)
     out(io, `  platforms: ${describeTargets(plan.targets)}\n`);
   if (plan.workspace !== undefined)
@@ -282,6 +295,7 @@ export async function runCiCommand(
   );
   const clause = leftOut(result);
   if (clause !== undefined) out(io, `  left out: ${clause}\n`);
+  writePatched(result.patched, io);
   if (result.targets !== undefined)
     out(io, `  platforms: ${describeTargets(result.targets)}\n`);
   if (result.workspace !== undefined)

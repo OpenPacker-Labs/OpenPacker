@@ -54,10 +54,12 @@ export {
 } from './host-target.js';
 export * from './workspace/index.js';
 export { quote, terminalSafe } from './terminal-text.js';
+export * from './package-tree-limits.js';
 import { createNpmRangeEngine, type RangeEngine } from './workspace/ranges.js';
 import { npmAst } from './npm-semver-range.js';
 export { npmVersion, npmVersionsEqual } from './npm-semver-range.js';
 import type { FrozenLock, FrozenLockOptions } from './frozen-lock.js';
+import type { FrozenPatchFormat } from './frozen-patch.js';
 import type { NativeLayoutWorkspace } from './layout-workspace.js';
 import type { WorkspaceTool } from './workspace/members.js';
 export type * from './frozen-lock.js';
@@ -450,7 +452,7 @@ export interface InstallOutcome extends InstallPlan {
  * an absent level means the projection does not happen, not that it silently
  * half-happens.
  */
-export interface ProjectFormat {
+export interface ProjectFormat extends FrozenPatchFormat {
   readonly providerId: string;
   /** PURL type whose requirements this format carries. */
   readonly purlType: Ecosystem;

@@ -58,6 +58,7 @@ Accepted decisions:
 54. [Aliases and several versions of one package in the closure](0054-aliases-and-several-versions-in-the-closure.md)
 55. [`opm ci` installs a pnpm lock](0055-opm-ci-installs-a-pnpm-lock.md)
 56. [A step finishes or leaves the project as it was](0056-a-step-finishes-or-leaves-the-project-as-it-was.md)
+57. [`opm ci` applies a pnpm lock's patches](0057-opm-ci-applies-pnpm-patches.md)
 
 ADRs document stable boundaries. Normative protocol behavior remains in
 `spec/prex/v1`; an ADR cannot override a schema or conformance vector.

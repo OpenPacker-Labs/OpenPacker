@@ -242,7 +242,7 @@ export function storePathForDigest(root: string, digest: string): string {
  * symlinked target itself is still refused, and the dev/ino identity
  * re-checks against the lexical path still detect a later swap of the prefix.
  */
-async function canonicalizeStableTarget(path: string): Promise<string> {
+export async function canonicalizeStableTarget(path: string): Promise<string> {
   const absolute = resolve(path);
   const tail: string[] = [basename(absolute)];
   let candidate = dirname(absolute);

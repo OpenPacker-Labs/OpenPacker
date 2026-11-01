@@ -491,13 +491,57 @@ naming the importer and the dependency:
   replacing `pnpm-workspace.yaml`'s), a `publishConfig.directory` or
   `ignoredOptionalDependencies` the lock does not record: these are the checks
   `pnpm install --frozen-lockfile` makes, and the error says so;
-- by opm's own rules: `patchedDependencies` or a declared patch (`opm` applies
-  no patches), a lock written with `ignoredOptionalDependencies`, a package from
-  a git repository, a directory, a `file:` archive or a runtime, a package with
-  no sha512, sha384 or sha256 integrity, an injected workspace package, a member
-  with dependencies the lock does not list, a link to an importer the project no
-  longer has, and a non-optional package that does not run on the target. Every
-  range, an override's included, is read as node-semver reads it.
+- by opm's own rules: a lock written with `ignoredOptionalDependencies`, a
+  package from a git repository, a directory, a `file:` archive or a runtime, a
+  package with no sha512, sha384 or sha256 integrity, an injected workspace
+  package, a member with dependencies the lock does not list, a link to an
+  importer the project no longer has, and a non-optional package that does not
+  run on the target. Every range, an override's included, is read as node-semver
+  reads it.
+
+**Patches** (`patchedDependencies`,
+[ADR 0057](../adr/0057-opm-ci-applies-pnpm-patches.md)) are applied as pnpm
+10.28 applies them, after each archive is proved to be the package the lock
+names and before anything is linked. The project's patches are read from
+`package.json`'s `pnpm.patchedDependencies` (or, when it has none,
+`pnpm-workspace.yaml`'s) and must be what the lock records: the same keys and
+paths, and each file's hash, pnpm 10's sha256 or pnpm 9's md5 in base32,
+whichever the lock has (a CRLF checkout hashes as LF). A hunk may sit up to 20
+lines from its header, trailing whitespace and `\r` do not stop it, and a patch
+the package already has counts as applied, as with pnpm; a patch is applied
+whole or not at all. The patched files are a store entry of their own
+(`sha256-<archive>-patch-<sha256 of the patch file's bytes>`, so an LF and a
+CRLF checkout of one patch, which pnpm hashes alike and applies differently, are
+two), a project that installs the same version unpatched shares none of them,
+and `opm gc --shared` keeps each while a project links it. `--plan` reports
+`patched: N packages by M patches` and refuses, before anything is fetched: a
+patch file that is missing (exit 4), edited since the lock was written (stale,
+exit 3), outside the project or reached through a link (exit 7), one that names
+a path outside its package or past an archive's bounds (127 segments and 4,088
+bytes below the package, an archive's 128 and 4,096 less `package/`; a name an
+archive refuses such as `CON`, `aux.js`, `a:b` or `name.`; a name over 255
+bytes; a path that, with the directory the store makes the package in, comes to
+4,096 bytes or more, the store's path counted as written or through its
+symlinks, whichever is longer; and the paths with the directories above them
+past 100,000 files; exit 7), one with a `diff --git ` or `index ` line over
+8,300 characters, the two pnpm reads with a regex that backtracks (exit 7; other
+long header lines and a long commit-message line before the diff are taken), or
+that pnpm cannot read (exit 3), and a patch file over 16 MiB or patch files over
+64 MiB together (exit 7). A patch that does not apply stops the install with
+nothing written (`PATCH_FAILED`, exit 3), where pnpm warns for a bare-name key
+and installs the package unpatched; so does one too costly to apply, past 256
+MiB of characters read, compared and written, and of the paths looked up (a file
+patched again in section after section, a path a hundred directories deep made
+again and again), which pnpm would run for as long as it takes. At install,
+which needs the package's files, a patch that would leave two files an archive
+refuses as a case collision (`lib/X.js` beside `lib/x.js`, or, on a file system
+that folds case, a file created over a twin it finds by another name) stops it
+with exit 7, and so does one that takes the package past 100,000 files, or a
+package that already holds a path too long for the directory its patched copy is
+made in (about 120 bytes deeper than its store entry). A patched entry whose
+installing process was killed before it wrote its record is made again by the
+next install, which records it only if the files in place are the tree the patch
+gives.
 
 `pnpm-workspace.yaml` is read as strictly as the lock: at most 1 MiB, not
 through a link, and without anchors or tags. Every value from these files
@@ -895,17 +939,21 @@ opm gc --shared
 A project's store entry and its `node_modules` are hard links to an entry's
 files, so an entry in which every file has a link count of one is linked by no
 project and is removed. Entries any project still uses are left alone, and so
-are entries an install in progress is using: `opm ci`, `install`, `add` and
-`update` claim each entry before they look it up and keep the claim until their
-links hold it, so a collection that runs at the same time never takes an entry
-from under them. A claim stops counting when the process that made it ends,
-where that can be told: a claim from another machine sharing the store, or from
-another container, counts until it is removed from `<store>/.leases/` (ADR 0048,
-amendment 2026-10-17). An install waits for a collection that is deciding on an
-entry it wants, for 45 seconds at most; it then warns, naming the collection's
-lease, and goes on. Entries younger than ten minutes are left alone too, for an
-older opm that does not claim; an entry's age is that of the newer of its
-`.tree` record and the entry directory itself.
+are the archive entry a kept patched copy was made from (`opm ci` checks the
+archive before it adopts the copy, offline too) and entries an install in
+progress is using: `opm ci`, `install`, `add` and `update` claim each entry
+before they look it up and keep the claim until their links hold it, so a
+collection that runs at the same time never takes an entry from under them. A
+claim stops counting when the process that made it ends, where that can be told:
+a claim from another machine sharing the store, or from another container,
+counts until it is removed from `<store>/.leases/` (ADR 0048, amendment
+2026-10-17). An install waits for a collection that is deciding on an entry it
+wants, for 45 seconds at most; it then warns, naming the collection's lease, and
+goes on. Entries younger than ten minutes are left alone too, for an older opm
+that does not claim; an entry's age is that of the newer of its `.tree` record
+and the entry directory itself. A `.tree` record whose entry is gone, which an
+install or a collection that stopped half way leaves, is removed once it is ten
+minutes old.
 
 An install that has to make its claim in a store with no room left fails with
 the disk error (`ENOSPC`, `EDQUOT`); a store it may only read is adopted from

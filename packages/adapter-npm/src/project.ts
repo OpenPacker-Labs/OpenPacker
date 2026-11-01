@@ -31,6 +31,7 @@ import { planLayout, toLayoutEntries } from './layout-plan.js';
 import { writeNodeModules } from './layout-write.js';
 import { chooseProjectLock } from './lock-choice.js';
 import { readFrozenPnpmLock } from './pnpm-install/frozen.js';
+import { applyPnpmPatch, patchPathBytes } from './pnpm-patch/index.js';
 import { integrityLoss, scopeLoss } from './project-losses.js';
 import { packNpmProject } from './project-pack.js';
 import { purlForName } from './purl.js';
@@ -71,6 +72,9 @@ export class NpmProjectFormat implements ProjectFormat {
   readonly purlType = 'npm' as const;
   /** `package.json` `workspaces` is npm's: a frozen install reads members the way npm does. */
   readonly workspaceTool = 'npm' as const;
+  /** A pnpm lock's `patchedDependencies`, applied as pnpm 10.28 applies them. */
+  readonly applyFrozenPatch = applyPnpmPatch;
+  readonly frozenPatchPathBytes = patchPathBytes;
 
   async detect(root: string): Promise<DetectedProject | undefined> {
     const manifestPath = join(root, 'package.json');

@@ -2,7 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-10-12; amended 2026-10-17 after the independent review of #179 (§1,
-  §7, §11, §15, §18, §19, §20, §23 and Costs)
+  §7, §11, §15, §18, §19, §20, §23 and Costs); amended 2026-10-17 by
+  [ADR 0057](0057-opm-ci-applies-pnpm-patches.md): a lock's patches are applied
 - Amends [ADR 0052](0052-pnpm-lockfile-model.md): "Not done: the mapping" and
   the plan in §15 to §18 are built, with the changes listed under each point
   below. [ADR 0051](0051-opm-ci-installs-workspace-locks.md): "pnpm or yarn
@@ -431,9 +432,10 @@ design:
     touched** (ADR 0046 §6: what looks only at the lock comes first, then what
     needs the project's files, then what needs the target, then the places):
     1. The lock itself: refusals of the reader (ADR 0052), a source this does
-       not install (§20), `patchedDependencies` (§20), an
-       `excludeLinksFromLockfile` lock, an importer with `dependenciesMeta` or
-       `publishDirectory`, a lock written with `ignoredOptionalDependencies`.
+       not install (§20), what is wrong with its `patchedDependencies` (ADR 0057
+       §13), an `excludeLinksFromLockfile` lock, an importer with
+       `dependenciesMeta` or `publishDirectory`, a lock written with
+       `ignoredOptionalDependencies`.
     2. The importers against the members on disk (§15).
     3. **Each importer's specifiers against its `package.json`**, as
        `pnpm install --frozen-lockfile` does (`satisfiesPackageManifest`): the
@@ -553,10 +555,9 @@ design:
 
 ### What is refused
 
-20. By name, whole, with nothing installed or removed:
-    - `patchedDependencies`: `opm` does not apply patches. This is a stated
-      boundary of the install, not of the model. HoBo and ai-bdd have none;
-      OpenSesame has four.
+20. By name, whole, with nothing installed or removed (a lock's
+    `patchedDependencies` are applied as pnpm applies them, and what of them is
+    refused is ADR 0057 §13's):
     - A package from a git repository, a directory, a `file:` archive or a
       runtime; and an `http(s)` tarball without an integrity. A tarball with one
       is installed from its URL, as a `tarball` source.
@@ -585,8 +586,8 @@ design:
     Only the refusals of a stale lock (§18.3, §18.4's overrides, §18.5's
     project-side `ignoredOptionalDependencies`, §18.6, and
     `publishConfig.directory`) say that `pnpm install --frozen-lockfile` would
-    refuse too: the review of #179 saw real pnpm refuse each. Every other
-    refusal here, a patch the project declares among them, is opm's own rule and
+    refuse too: the review of #179 saw real pnpm refuse each (ADR 0057 adds a
+    patch file that changed). Every other refusal here is opm's own rule and
     says so.
 
 21. **Lifecycle scripts are not run** (ADR 0046 §9, unchanged; this slice adds
@@ -632,23 +633,23 @@ check it: a Python reading of each lock with PyYAML (`model-oracle.py` for the
 selection, `dump-edges.py` for the edges) and Node's own lookup paths over the
 tree on disk (`require.resolve.paths`, `package.json` read at the place found).
 
-| Measured                                                       | Result                                                                                                                                                                                                                                                                             |
-| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| the model, against PyYAML                                      | ai-bdd (393 instances, 749 edges), the HoBo cut (436, 801), the OpenSesame cut (348, 510), the hand-written exotic lock (22, 13): the counts and a digest of every edge agree                                                                                                      |
-| the selection, against a plain walk                            | four locks, linux x64, x64 and arm64, `--omit dev`, every machine: installed, platform-skipped and orphaned counts and a digest of the installed keys agree                                                                                                                        |
-| HoBo's whole lock, planned (`opm ci --plan`)                   | 792 importers, 1,851 packages in 2,564 places from 1,818 archives, 335 optional and 7 needed-only-by-those left out, 0 refusals, 1.6 s (the 792 `package.json` read and held to the lock included)                                                                                 |
-| HoBo against pnpm 10.33.4 itself                               | with `--supported-architectures project` the plan is 1,880 packages in 2,603 places from 1,847 archives; pnpm's own `node_modules/.pnpm` on this machine holds 1,880 snapshot directories of 1,847 `name@version`: **0 differences** in either direction                           |
-| every edge of HoBo's plan, resolved the way Node does          | 7,397 edges (each importer's, each installed package's; 648 more lead to platform packages this machine does not install), the lookup walking the real ancestor directories of the planned tree: **0 mismatches**                                                                  |
-| ai-bdd, `opm ci` (pnpm 10.28 lock, 9 importers, 393 snapshots) | 362 places of 353 packages; 229 from the store, 124 fetched (41.9 MB); 22.7 s; 40 optional left out; 8 members linked. `node_modules` 253,832 KB (`du -sk`, hard links counted once); the store grew by 123,120 KB                                                                 |
-| that tree, resolved by Node                                    | 780 edges over every importer and every installed package, `require.resolve.paths` and `package.json` at the place found: **0 mismatches**, 0 entries the plan does not name, 362 of 362 places hold the name and version the plan says; the same 780 on the plan alone agree      |
-| ai-bdd, run through `opm run`                                  | `typecheck` (`tsc -p tsconfig.json --noEmit` over all packages and their links) passes, 26.7 s; `test:unit` 4,908 tests pass, 1 fails: Playwright's ffmpeg is not in `/opt/pw-browsers` here (the same test fails without opm)                                                     |
-| a package in two places                                        | ai-bdd places 8 packages twice (9 extra places, `vitest@5.0.3`, `playwright-core@1.64.0`, `zod@4.6.5` among them): the second place of all of them adds **384 KB** to 26,804 KB (directories and link counts; a file of the first place has 4 links)                               |
-| HoBo, three members (`opm ci --filter`)                        | `provider-config` and `adapter-better-auth` (two `vitest@4.1.9` with different `@types/node` peers; the second links `@hobo/core`) and `ts-autocode-grounding`: 248 packages in 261 places, 53 fetched (16.8 MB), 18.2 s; `node_modules` 191,864 KB, the store grew by 68,876 KB   |
-| that tree, resolved by Node                                    | 579 edges, **0 mismatches**; the two vitest variants load the `@types/node` of their own member                                                                                                                                                                                    |
-| HoBo's scripts through `opm`                                   | `typecheck` of `provider-config` and of `adapter-better-auth` (after `opm run build` of `@hobo/core`, so through the link), 95 + 3 tests with `opm exec vitest run`. The `test` script runs `pnpm exec turbo` in its `pretest`, so it needs pnpm and is not run                    |
-| ts-autocode and gitlang, npm locks                             | 438 and 758 packages, the figures of ADRs 0051 and 0054; `build:grounding`, `tsc --noEmit` and 50 tests, `build:libs` and the 312 node tests pass through `opm`. (Run with the shell's `GITHUB_TOKEN` set, 7 gitlang tests fail with or without opm: they assume no ambient token) |
-| OpenSesame                                                     | refused by name for its 4 `patchedDependencies` (exit 3); its `.deepsec` lock plans (287 packages, 288 places)                                                                                                                                                                     |
-| a stale lock                                                   | `zod` edited in `packages/sdk/package.json`: `packages/sdk: zod is "^9.9.9" in package.json and "^4.6.5" in pnpm-lock.yaml`, exit 3, the previous `node_modules` as it was                                                                                                         |
+| Measured                                                       | Result                                                                                                                                                                                                                                                                                                      |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the model, against PyYAML                                      | ai-bdd (393 instances, 749 edges), the HoBo cut (436, 801), the OpenSesame cut (348, 510), the hand-written exotic lock (22, 13): the counts and a digest of every edge agree                                                                                                                               |
+| the selection, against a plain walk                            | four locks, linux x64, x64 and arm64, `--omit dev`, every machine: installed, platform-skipped and orphaned counts and a digest of the installed keys agree                                                                                                                                                 |
+| HoBo's whole lock, planned (`opm ci --plan`)                   | 792 importers, 1,851 packages in 2,564 places from 1,818 archives, 335 optional and 7 needed-only-by-those left out, 0 refusals, 1.6 s (the 792 `package.json` read and held to the lock included)                                                                                                          |
+| HoBo against pnpm 10.33.4 itself                               | with `--supported-architectures project` the plan is 1,880 packages in 2,603 places from 1,847 archives; pnpm's own `node_modules/.pnpm` on this machine holds 1,880 snapshot directories of 1,847 `name@version`: **0 differences** in either direction                                                    |
+| every edge of HoBo's plan, resolved the way Node does          | 7,397 edges (each importer's, each installed package's; 648 more lead to platform packages this machine does not install), the lookup walking the real ancestor directories of the planned tree: **0 mismatches**                                                                                           |
+| ai-bdd, `opm ci` (pnpm 10.28 lock, 9 importers, 393 snapshots) | 362 places of 353 packages; 229 from the store, 124 fetched (41.9 MB); 22.7 s; 40 optional left out; 8 members linked. `node_modules` 253,832 KB (`du -sk`, hard links counted once); the store grew by 123,120 KB                                                                                          |
+| that tree, resolved by Node                                    | 780 edges over every importer and every installed package, `require.resolve.paths` and `package.json` at the place found: **0 mismatches**, 0 entries the plan does not name, 362 of 362 places hold the name and version the plan says; the same 780 on the plan alone agree                               |
+| ai-bdd, run through `opm run`                                  | `typecheck` (`tsc -p tsconfig.json --noEmit` over all packages and their links) passes, 26.7 s; `test:unit` 4,908 tests pass, 1 fails: Playwright's ffmpeg is not in `/opt/pw-browsers` here (the same test fails without opm)                                                                              |
+| a package in two places                                        | ai-bdd places 8 packages twice (9 extra places, `vitest@5.0.3`, `playwright-core@1.64.0`, `zod@4.6.5` among them): the second place of all of them adds **384 KB** to 26,804 KB (directories and link counts; a file of the first place has 4 links)                                                        |
+| HoBo, three members (`opm ci --filter`)                        | `provider-config` and `adapter-better-auth` (two `vitest@4.1.9` with different `@types/node` peers; the second links `@hobo/core`) and `ts-autocode-grounding`: 248 packages in 261 places, 53 fetched (16.8 MB), 18.2 s; `node_modules` 191,864 KB, the store grew by 68,876 KB                            |
+| that tree, resolved by Node                                    | 579 edges, **0 mismatches**; the two vitest variants load the `@types/node` of their own member                                                                                                                                                                                                             |
+| HoBo's scripts through `opm`                                   | `typecheck` of `provider-config` and of `adapter-better-auth` (after `opm run build` of `@hobo/core`, so through the link), 95 + 3 tests with `opm exec vitest run`. The `test` script runs `pnpm exec turbo` in its `pretest`, so it needs pnpm and is not run                                             |
+| ts-autocode and gitlang, npm locks                             | 438 and 758 packages, the figures of ADRs 0051 and 0054; `build:grounding`, `tsc --noEmit` and 50 tests, `build:libs` and the 312 node tests pass through `opm`. (Run with the shell's `GITHUB_TOKEN` set, 7 gitlang tests fail with or without opm: they assume no ambient token)                          |
+| OpenSesame                                                     | was refused by name for its 4 `patchedDependencies` (exit 3); with ADR 0057 it plans with them (1,758 packages, 4 patched), and installs except one member, whose `sylvester@0.0.21` archive the materializer cannot extract (ADR 0057, Consequences); its `.deepsec` lock plans (287 packages, 288 places) |
+| a stale lock                                                   | `zod` edited in `packages/sdk/package.json`: `packages/sdk: zod is "^9.9.9" in package.json and "^4.6.5" in pnpm-lock.yaml`, exit 3, the previous `node_modules` as it was                                                                                                                                  |
 
 **After §9's amendment (2026-10-17)**, the same runs give one real path per
 instance wherever versions agree. ai-bdd (`git archive` of ea16857):
@@ -756,10 +757,10 @@ Costs and limits, stated so nobody finds them by surprise.
 - **Not pnpm's layout.** A tool that expects `node_modules/.pnpm` finds none; a
   package that reaches a dependency it does not declare may find it (hoisting)
   or not (pnpm's own isolation). Node resolves every declared edge.
-- **No patches, no scripts, no `.npmrc`.** A lock that depends on a patch is
-  refused; a package whose install script is needed is installed as it is and
-  says so; a registry or auth in `.npmrc` is not read (`opm auth` and
-  `OPM_REGISTRY_NPM` are how opm is told).
+- **No scripts, no `.npmrc`.** A lock's patches are applied (ADR 0057); a
+  package whose install script is needed is installed as it is and says so; a
+  registry or auth in `.npmrc` is not read (`opm auth` and `OPM_REGISTRY_NPM`
+  are how opm is told).
 - **A link lives in the project's `node_modules`**, under the name the lock
   gives it (the member's own, or an alias). Two importers that link different
   members under one name are refused.

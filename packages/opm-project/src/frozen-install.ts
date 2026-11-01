@@ -15,7 +15,8 @@
  *  2. judge every package against the project's policy, before any fetch;
  *  3. take each archive from the shared store when it is there (found by the
  *     digest the lock pins) and otherwise fetch it from the lock's own URL,
- *     check it against that digest, and keep it;
+ *     check it against that digest, and keep it; a package the lock patches
+ *     is a patched copy of its archive, kept as an entry of its own;
  *  4. replace `node_modules` with the lock's layout, hard-linked from the store;
  *     in a workspace, each member is linked from its name rather than fetched,
  *     and has a `node_modules` of its own for the versions only it wants.
@@ -41,6 +42,7 @@ import {
   type FrozenInstallInput,
 } from './frozen-prepare.js';
 import { checkArchiveIdentities } from './frozen-identity.js';
+import { patchArchives } from './frozen-patch.js';
 import { installScriptFlags, scriptedPackages } from './frozen-scripts.js';
 import { layOutFromStore, type FrozenInstallSeams } from './frozen-layout.js';
 import { projectStep } from './project-step.js';
@@ -71,6 +73,8 @@ export interface FrozenInstallResult {
   skipped: readonly FrozenLockSkip[];
   /** The machines the install was for, when that is more than this one. */
   targets?: readonly NativeTarget[];
+  /** Packages patched (store entries made or found), and the patches that did it. */
+  patched: { packages: number; patches: number };
   /** Installed packages that declare an install script. None was run. */
   installScripts: readonly { name: string; version: string; path: string }[];
   /** For a workspace lock: the members the lock holds, and the ones linked here. */
@@ -137,10 +141,24 @@ async function installFrozenInStep(
     };
     const stored = await storeArchives({ lock, ...from });
     const fetched = now();
-    const declares = await installScriptFlags(lock.packages, stored.byPath);
+    // The archives are proved to be the lock's packages before any is patched,
+    // and what declares a script is read from what is installed: the patched
+    // files, where there is a patch (ADR 0057).
     await checkArchiveIdentities(lock.packages, stored.byPath);
+    const patching = {
+      storeRoot: store.root,
+      shared: store.shared,
+      format,
+      ...(hold !== undefined && { hold }),
+    };
+    const { byPath, patched } = await patchArchives({
+      lock,
+      byPath: stored.byPath,
+      ...patching,
+    });
+    const declares = await installScriptFlags(lock.packages, byPath);
     const entries = lock.packages.map((pkg): NativeLockEntry => {
-      const archive = stored.byPath.get(pkg.path)!;
+      const archive = byPath.get(pkg.path)!;
       return {
         purl: pkg.purl,
         // The package's own name, as a resolved closure's entry has; the
@@ -181,8 +199,8 @@ async function installFrozenInStep(
         throw adapterFailure(error);
       }
     };
-    const pathOf = (pkg: FrozenLockPackage) =>
-      stored.byPath.get(pkg.path)!.path;
+    // What node_modules links from: the patched copy, where there is a patch.
+    const pathOf = (pkg: FrozenLockPackage) => byPath.get(pkg.path)!.path;
     const layout = !store.shared
       ? await write()
       : await layOutFromStore({
@@ -192,15 +210,22 @@ async function installFrozenInStep(
           })),
           write,
           restore: async (gone) => {
+            const packages = lock.packages.filter((pkg) =>
+              gone.has(pathOf(pkg)),
+            );
             const again = await storeArchives({
-              lock: {
-                ...lock,
-                packages: lock.packages.filter((pkg) => gone.has(pathOf(pkg))),
-              },
+              lock: { ...lock, packages },
               ...from,
             });
             stored.fetched += again.fetched;
             stored.fetchedBytes += again.fetchedBytes;
+            // A patched copy is made again, at its own key, from the archive
+            // put back (ADR 0057).
+            await patchArchives({
+              lock: { packages },
+              byPath: again.byPath,
+              ...patching,
+            });
           },
         });
     const done = now();
@@ -216,7 +241,8 @@ async function installFrozenInStep(
       skipped: lock.skipped,
       ...(lock.targets !== undefined && { targets: lock.targets }),
       ...(lock.peers !== undefined && { peers: lock.peers }),
-      installScripts: scriptedPackages(lock.packages, declares, stored.byPath),
+      installScripts: scriptedPackages(lock.packages, declares, byPath),
+      patched,
       layout,
       ...(lock.workspace !== undefined && {
         workspace: {

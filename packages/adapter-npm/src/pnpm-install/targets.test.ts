@@ -15,7 +15,8 @@ const config = (
   overrides: new Map(),
   catalogs: new Map(),
   supportedArchitectures,
-  patches: [],
+  patches: new Map(),
+  patchesFrom: 'pnpm-workspace.yaml patchedDependencies',
   project: {},
   ignoredOptionalDependencies: [],
 });

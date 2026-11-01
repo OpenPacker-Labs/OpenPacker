@@ -32,6 +32,8 @@ export function opmErrorExit(code: string): number {
     case 'UNSUPPORTED_LOCK':
     case 'INVALID_ROLLBACK':
     case 'ROLLBACK_CONFLICT':
+    case 'PATCH_FAILED':
+    case 'INVALID_PATCH':
     case 'INVALID_CATALOG':
     case 'INVALID_PLUGIN_SPEC':
     case 'INVALID_PLUGIN_MANIFEST':
