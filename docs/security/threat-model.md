@@ -123,5 +123,6 @@ production.
 
 The vulnerability-reporting channel and compromised metadata, artifact, key,
 lifecycle-authority, and provider-credential procedure are defined in
-[SECURITY.md](../../SECURITY.md). Backup, restore, and air-gap recovery are
-defined in the [operations guide](../operations/backup-airgap-recovery.md).
+[SECURITY.md](https://github.com/OpenPacker-Labs/.github/blob/main/SECURITY.md).
+Backup, restore, and air-gap recovery are defined in the
+[operations guide](../operations/backup-airgap-recovery.md).

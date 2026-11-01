@@ -3,8 +3,6 @@ import { defineConfig } from 'oxlint';
 export default defineConfig({
   ignorePatterns: [
     '.agent/**',
-    '.agents/**',
-    '.claude/**',
     '.codex/**',
     '.serena/**',
     'tools/oxlint/anti-slop/**',

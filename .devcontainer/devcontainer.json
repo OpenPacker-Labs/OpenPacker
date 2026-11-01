@@ -9,6 +9,12 @@
       "extensions": ["rust-lang.rust-analyzer", "dbaeumer.vscode-eslint"]
     }
   },
-  "postCreateCommand": "npm ci --ignore-scripts",
+  "features": {
+    "ghcr.io/devcontainers/features/dotfiles:1": {
+      "repository": "OpenPacker-Labs/dotfiles",
+      "targetPath": "/home/vscode/dotfiles"
+    }
+  },
+  "postCreateCommand": "bash /home/vscode/dotfiles/install.sh && npm ci --ignore-scripts",
   "forwardPorts": []
 }

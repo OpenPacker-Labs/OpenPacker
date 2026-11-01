@@ -148,15 +148,10 @@ if (secretLike.length) {
 const workspaces = [...new Set(files.map(workspaceFor).filter(Boolean))];
 
 const touch = {
-  skills: files.some(
-    (f) => f.startsWith('.agents/skills/') || f.startsWith('.claude/skills/'),
-  ),
   docs: files.some(
     (f) =>
       f.startsWith('docs/') ||
       f === 'README.md' ||
-      f === 'CONTRIBUTING.md' ||
-      f === 'SECURITY.md' ||
       f.startsWith('examples/README'),
   ),
   contracts: files.some(
@@ -190,12 +185,8 @@ if (
   !skip.has('prettier') &&
   files.some((f) => /\.(md|json|ya?ml|ts|mjs|js|css)$/u.test(f))
 ) {
-  const pretty = files.filter(
-    (f) =>
-      /\.(md|json|ya?ml|ts|mjs|js|css)$/u.test(f) &&
-      !f.startsWith('.agents/skills/') &&
-      !f.startsWith('.claude/skills/') &&
-      !f.startsWith('.claude/agents/'),
+  const pretty = files.filter((f) =>
+    /\.(md|json|ya?ml|ts|mjs|js|css)$/u.test(f),
   );
   if (pretty.length)
     checks.push({
@@ -203,14 +194,6 @@ if (
       cmd: 'npx',
       args: ['prettier', '--check', ...pretty],
     });
-}
-
-if (touch.skills && !skip.has('skills')) {
-  checks.push({
-    label: 'skills:mirror-check',
-    cmd: 'npm',
-    args: ['run', 'skills:mirror-check'],
-  });
 }
 
 if (touch.docs && !skip.has('docs')) {
@@ -273,15 +256,6 @@ for (const ws of workspaces) {
       args: ['run', 'typecheck', `--workspace`, name],
     });
   }
-}
-
-// Root tooling changes: skill mirrors + docs smoke as a minimum
-if (touch.root && !skip.has('root')) {
-  checks.push({
-    label: 'skills:mirror-check (root)',
-    cmd: 'npm',
-    args: ['run', 'skills:mirror-check'],
-  });
 }
 
 if (checks.length === 0) {

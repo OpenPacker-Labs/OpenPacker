@@ -10,17 +10,18 @@ multi-ecosystem package identity, locks, proofs, and digests.
 production package registry.
 
 **AI usage:** Maintainers and contributors may use AI coding tools under human
-review. See [CONTRIBUTING.md](CONTRIBUTING.md#ai-assisted-contributions).
+review. See
+[CONTRIBUTING.md](https://github.com/OpenPacker-Labs/.github/blob/main/CONTRIBUTING.md#ai-assisted-contributions).
 
-|                                  |                                                                                               |
-| -------------------------------- | --------------------------------------------------------------------------------------------- |
-| **Project site / releases**      | [OpenPacker Pages](https://openpacker-labs.github.io/OpenPacker/)                             |
-| **Package manager (start here)** | **[docs/guides/opm.md](docs/guides/opm.md)**                                                  |
-| **Example project**              | [examples/opm-project/](examples/opm-project/)                                                |
-| **PREX / advanced CLI**          | [docs/guides/cli.md](docs/guides/cli.md)                                                      |
-| **Protocol**                     | [spec/prex/v1/](spec/prex/v1/)                                                                |
-| **License**                      | [MIT](LICENSE)                                                                                |
-| **Community**                    | [Code of Conduct](CODE_OF_CONDUCT.md) · [Governance](GOVERNANCE.md) · [Security](SECURITY.md) |
+|                                  |                                                                                                                                                                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Project site / releases**      | [OpenPacker Pages](https://openpacker-labs.github.io/OpenPacker/)                                                                                                                                       |
+| **Package manager (start here)** | **[docs/guides/opm.md](docs/guides/opm.md)**                                                                                                                                                            |
+| **Example project**              | [examples/opm-project/](examples/opm-project/)                                                                                                                                                          |
+| **PREX / advanced CLI**          | [docs/guides/cli.md](docs/guides/cli.md)                                                                                                                                                                |
+| **Protocol**                     | [spec/prex/v1/](spec/prex/v1/)                                                                                                                                                                          |
+| **License**                      | [MIT](LICENSE)                                                                                                                                                                                          |
+| **Community**                    | [Code of Conduct](https://github.com/OpenPacker-Labs/.github/blob/main/CODE_OF_CONDUCT.md) · [Governance](GOVERNANCE.md) · [Security](https://github.com/OpenPacker-Labs/.github/blob/main/SECURITY.md) |
 
 ---
 
@@ -143,8 +144,8 @@ npm ci
 npm run build
 npm test --workspace @openpacker/opm-project
 npm test --workspace @openpacker/opm
-npm run agent:check   # local hooks / gates (see CONTRIBUTING)
+npm run agent:check   # local hooks / gates (see org CONTRIBUTING)
 ```
 
 Architecture and ADRs: [docs/](docs/) · Contributing:
-[CONTRIBUTING.md](CONTRIBUTING.md)
+[CONTRIBUTING.md](https://github.com/OpenPacker-Labs/.github/blob/main/CONTRIBUTING.md)
