@@ -174,6 +174,8 @@ test('every package and root vitest run extends the one shared config, and no bo
     assert.match(text, /'\.\.\/vitest\.shared\.ts'/u, config);
     assert.deepEqual(statedBounds(text), BOUNDS[config], config);
     assert.match(text, /store-guard\.setup\.ts/u, config);
+    if (config === 'scripts/vitest.coverage.config.mjs')
+      assert.match(text, /maxWorkers:\s*1/u, config);
   }
 });
 
