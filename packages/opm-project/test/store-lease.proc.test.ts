@@ -11,8 +11,9 @@
  */
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { chmod, readFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { chmod, mkdtemp, readFile, realpath, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { leaseHeld } from '../src/store-lease-liveness.js';
@@ -103,12 +104,40 @@ process.stdout.write(JSON.stringify({ uid: process.getuid(), listing, held }));
 
 const NOBODY = 65534;
 
+/** Whether a user other than the owner may pass through every directory down to `path`. */
+async function traversable(path: string): Promise<boolean> {
+  let dir = await realpath(path).catch(() => undefined);
+  if (dir === undefined) return false;
+  for (;;) {
+    if (((await stat(dir)).mode & 0o001) === 0) return false;
+    const parent = dirname(dir);
+    if (parent === dir) return true;
+    dir = parent;
+  }
+}
+
+/**
+ * A fresh directory the child, run as another user, can reach: under the
+ * temporary directory when others may pass through every directory above it,
+ * else under /tmp. A TMPDIR inside a private directory (an agent's scratch
+ * under a 0700 one) hides the store from the child, which then cannot look at
+ * a lease at all and judges every one held; that says nothing of the rule.
+ */
+async function reachableScratch(prefix: string): Promise<string | undefined> {
+  for (const base of [tmpdir(), '/tmp'])
+    if (await traversable(base)) return mkdtemp(join(base, prefix));
+  return undefined;
+}
+
 describe.runIf(LINUX && process.getuid?.() === 0)(
   'a lease whose pid is now a process of another user',
   () => {
     const children: ChildProcess[] = [];
-    afterEach(() => {
+    const made: string[] = [];
+    afterEach(async () => {
       for (const child of children.splice(0)) child.kill('SIGKILL');
+      for (const dir of made.splice(0))
+        await rm(dir, { recursive: true, force: true });
     });
 
     it('is abandoned when that process started after the holder, and held while it started when the holder did, whichever lock the lease uses', async (context) => {
@@ -118,7 +147,12 @@ describe.runIf(LINUX && process.getuid?.() === 0)(
       const pid = sleeper.pid!;
       const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
       const started = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]!;
-      const store = await scratch('opm-lease-proc-user-');
+      const store = await reachableScratch('opm-lease-proc-user-');
+      if (store === undefined)
+        return context.skip(
+          `neither the temporary directory nor /tmp can be reached by uid ${NOBODY}`,
+        );
+      made.push(store);
       const ids: Record<string, string> = {};
       for (const how of ['proc', 'pid']) {
         const owner = { ...(await me()), pid };

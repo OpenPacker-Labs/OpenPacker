@@ -38,14 +38,13 @@ import {
 } from '@openpacker/materializer';
 import { stableStoreTreeDigest } from './generations.js';
 import { holdSharedStore } from './shared-store-lease.js';
+import { readTreeRecord, recordTreeDigest } from './shared-store-record.js';
 import { OpmError } from './types.js';
 import {
   assertDigest,
   ensureStableDirectory,
-  readStableFile,
   removeStableTree,
   storeKeyFromDigest,
-  writeStableFile,
 } from './paths.js';
 import {
   assertNoFollowTree,
@@ -227,55 +226,6 @@ export async function adoptSharedEntry(
   return treeDigest === undefined ? undefined : { path, treeDigest };
 }
 
-/**
- * Write the digest an entry's tree must hash to.
- *
- * Two installs publishing the same package write the same bytes here, and the
- * second one's atomic replace finds a different inode than it wrote. Same
- * content is not a conflict; different content is.
- */
-async function recordTreeDigest(
-  sharedPath: string,
-  treeDigest: string,
-): Promise<void> {
-  const record = `${treeDigest}\n`;
-  const path = `${sharedPath}.tree`;
-  try {
-    await writeStableFile(path, record);
-  } catch (error) {
-    if (
-      !(error instanceof OpmError && error.code === 'INPUT_CHANGED') ||
-      !(await identicalStableRecord(path, record))
-    )
-      throw error;
-  }
-}
-
-/**
- * Whether `path` holds `record` once a read finishes.
- *
- * Several installs write this file at once. A read that overlaps the next
- * rename reports INPUT_CHANGED even when every writer stored `record`, and
- * that is not a conflict. A read that settles on different bytes is.
- */
-async function identicalStableRecord(
-  path: string,
-  record: string,
-): Promise<boolean> {
-  for (let attempt = 0; attempt < 32; attempt += 1) {
-    try {
-      return (await readStableFile(path)) === record;
-    } catch (error) {
-      const code =
-        error instanceof OpmError
-          ? error.code
-          : ((error as NodeJS.ErrnoException).code ?? '');
-      if (code !== 'INPUT_CHANGED' && code !== 'ENOENT') return false;
-    }
-  }
-  return false;
-}
-
 /** The recorded tree digest of an entry that is there and intact, else undefined. */
 async function adoptExistingEntry(
   sharedPath: string,
@@ -308,7 +258,7 @@ async function adoptExistingEntry(
 async function readRecordedTreeDigest(sharedPath: string): Promise<string> {
   let text: string;
   try {
-    text = await readStableFile(`${sharedPath}.tree`);
+    text = await readTreeRecord(`${sharedPath}.tree`);
   } catch (error) {
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')

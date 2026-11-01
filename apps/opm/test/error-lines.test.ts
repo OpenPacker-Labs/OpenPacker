@@ -9,6 +9,16 @@ import { EXIT_CODES, handleError, runOpm } from '../src/opm.js';
 import { capture } from './capture.js';
 
 /**
+ * Milliseconds of CPU this process has spent, user and system: what the work
+ * under test costs. A busy machine stretches the wall clock by every time slice
+ * it takes away; it does not add to this.
+ */
+function cpuMs(): number {
+  const { user, system } = process.cpuUsage();
+  return (user + system) / 1000;
+}
+
+/**
  * Some of what opm writes is a list: one entry to a line, the first line saying
  * what the entries are. The writer makes a message plain without flattening
  * it: a line feed the message carries stays, and nothing else that could move
@@ -259,7 +269,7 @@ describe('the lists of opm ci, from a lock', () => {
   ])(
     'refuses %s, whose host no DNS name could be, without reading it',
     async (_, before, after) => {
-      const started = performance.now();
+      const started = cpuMs();
       const { dir, err, code } = await ci(
         { dependencies: { a: '1.0.0', b: '1.0.0' } },
         {
@@ -278,7 +288,7 @@ describe('the lists of opm ci, from a lock', () => {
       );
       // Node's URL parser takes about 4 seconds for a host of this size, and
       // reads it more than once on the way to an error.
-      expect(performance.now() - started).toBeLessThan(2000);
+      expect(cpuMs() - started).toBeLessThan(2000);
     },
     120_000,
   );

@@ -126,8 +126,33 @@ before it.
 
 7. **A closure that cannot be computed is an error.** Failures no longer fall
    back to the direct set. Only what came from a registry is walked through that
-   registry. The policy, digest and size refusals propagated before and still
-   do.
+   registry, and only where the ecosystem's adapter exports a codec: choosing
+   among releases and reading what they require takes the ecosystem's own
+   version grammar, so a package served by a delegated adapter plugin, which
+   exports none, is locked as the direct entry it is and its dependencies are
+   not walked. Without a codec nothing can tell a range or a dist-tag from a
+   version either, so the host resolves no hint for such a package: whatever the
+   manifest wrote after `@`, a `^` or `~` range or a tag included, is sent to
+   the plugin as written (`targetAsWritten`), as the PURL's version. The hint is
+   text, not PURL syntax: the request is built from the manifest's parsed `purl`
+   (its type, namespace, name and qualifiers, no subpath) with the hint as its
+   version (`purlAtVersion`; `^1.0.0` is asked for as `@%5E1.0.0`) and read
+   back, and the version read back must be the hint. The hint is the only text
+   in it the manifest's version line supplies, so an `@`, `/`, `?` or `#` of it
+   that escaped the version would change the version read back: it cannot name
+   another package, a qualifier or a subpath, and a hint no PURL can carry is
+   refused before the plugin is asked. A lock written for a package from an
+   explicit `source` spells its version the same way, so a `+` in it is locked
+   as `%2B` (`1.2.3+build.5` as `@1.2.3%2Bbuild.5`, where it was once written
+   bare): both spellings read as the same version, a lock with either matches
+   the manifest, and re-locking such a project changes that one line. The
+   identity the plugin answers with must carry that same package and version, so
+   a plugin cannot turn a range into another release: it accepts the hint as the
+   version it names, or the resolve fails. A version line for an ecosystem with
+   a codec that reads it as a version (Maven's reads any text without a space)
+   is built the same way. Only a requirement with no hint lists the plugin's
+   releases and takes the newest the policy's minimum release age allows. The
+   policy, digest and size refusals propagated before and still do.
 
 8. **One provider per ecosystem per resolve**, over a transport that answers a
    repeated read of the same document from memory (never an artifact download),
