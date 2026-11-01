@@ -42,7 +42,7 @@
     "@openpacker/sandbox": "0.0.1-alpha.1",
     "@openpacker/sdk": "0.0.1-alpha.1",
     "shell-quote": "1.10.0",
-    "yaml": "^2.8.3"
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@openpacker/adapters-default": "0.0.1-alpha.1",
