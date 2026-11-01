@@ -180,19 +180,26 @@ async function verify(
     );
 
   if (args.options.has('json')) {
-    outJson(io, {
-      purl: release.purl,
-      signer: attestation.signerIdentity,
-      scheme: text(signer.scheme),
-      issuer: attestation.issuer,
-      fingerprint: text(signer.fingerprint),
-      repositoryId: text(signer.repository_id),
-      logged: attestation.signedAtVerified,
-      signedAt: attestation.signedAt,
-      trustTier: attestation.trustTier,
-      evidence: attestation.evidence,
-      executables,
-    });
+    outJson(
+      io,
+      JSON.stringify(
+        {
+          purl: release.purl,
+          signer: attestation.signerIdentity,
+          scheme: text(signer.scheme),
+          issuer: attestation.issuer,
+          fingerprint: text(signer.fingerprint),
+          repositoryId: text(signer.repository_id),
+          logged: attestation.signedAtVerified,
+          signedAt: attestation.signedAt,
+          trustTier: attestation.trustTier,
+          evidence: attestation.evidence,
+          executables,
+        },
+        null,
+        2,
+      ),
+    );
     return 0;
   }
   const lines: [string, string | undefined][] = [
