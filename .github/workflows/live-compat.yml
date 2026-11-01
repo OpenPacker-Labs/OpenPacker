@@ -43,7 +43,6 @@ jobs:
       OPENPACKER_OCM_IMAGE: ${{ inputs.ocm_image }}
       OPENPACKER_OCM_VERSION: ${{ inputs.ocm_version }}
       OPENPACKER_OCM_VALIDATE_ARGS: ${{ inputs.ocm_validate_args }}
-      OPENPACKER_LIVE_REGISTRY: http://127.0.0.1:5000
       OPENPACKER_LIVE_REPOSITORY: openpacker/live
     steps:
       - uses: actions/checkout@v6.0.2
@@ -53,15 +52,6 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run build -- --filter='!@openpacker/embedded'
-      - name: Start the digest-pinned Zot registry
-        run: |
-          docker pull "$OPENPACKER_ZOT_IMAGE"
-          docker run --detach --name openpacker-zot --publish 5000:5000 "$OPENPACKER_ZOT_IMAGE"
-          for attempt in {1..30}; do
-            curl --fail --silent http://127.0.0.1:5000/v2/ && exit 0
-            sleep 1
-          done
-          exit 1
       - name: Create digest-pinned ORAS and OCM wrappers
         run: |
           docker pull "$OPENPACKER_ORAS_IMAGE"
@@ -77,7 +67,8 @@ jobs:
           EOF
           chmod +x "$RUNNER_TEMP/openpacker-live-bin/oras" "$RUNNER_TEMP/openpacker-live-bin/ocm"
       - name: Run pinned OCI, ORAS, and OCM interoperability
-        run: npm run test:live
+        run: node scripts/live-compat/run-with-zot.mjs
         env:
+          OPENPACKER_ZOT_IMAGE: ${{ inputs.zot_image }}
           OPENPACKER_ORAS: ${{ runner.temp }}/openpacker-live-bin/oras
           OPENPACKER_OCM: ${{ runner.temp }}/openpacker-live-bin/ocm
