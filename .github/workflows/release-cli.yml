@@ -109,11 +109,13 @@ jobs:
       - name: Install Playwright Chromium
         if: inputs.skip_verify == false || inputs.skip_verify == 'false'
         run: npm exec playwright install --with-deps chromium
+      # opm contract tests execute the built CLI bins.
+      - name: Build workspace packages
+        if: inputs.skip_verify == false || inputs.skip_verify == 'false'
+        run: npm run build
       - name: Full offline verification
         if: inputs.skip_verify == false || inputs.skip_verify == 'false'
         run: npm run verify
-      - name: Build workspace packages
-        run: npm run build
       - name: Bundle the alpha version
         env:
           OPENPACKER_RELEASE_VERSION: ${{ steps.plan.outputs.version }}
