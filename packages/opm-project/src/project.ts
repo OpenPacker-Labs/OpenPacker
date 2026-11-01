@@ -719,7 +719,9 @@ async function resolveRequirement(input: {
   if (input.req.source) {
     const resolved = resolveSource(input.req.source, input.root);
     const offlineBytes = input.offline
-      ? await fetchArtifactBytes(resolved, true)
+      ? await fetchArtifactBytes(resolved, true, {
+          written: input.req.source,
+        })
       : undefined;
     const sourceUri =
       resolved.startsWith('/') || /^[A-Za-z]:/.test(resolved)
@@ -732,7 +734,10 @@ async function resolveRequirement(input: {
     });
     await assertSupplyChainAllowed(policy, facts);
     const bytes =
-      offlineBytes ?? (await fetchArtifactBytes(resolved, input.offline));
+      offlineBytes ??
+      (await fetchArtifactBytes(resolved, input.offline, {
+        written: input.req.source,
+      }));
     const version =
       versionHint &&
       !versionHint.startsWith('^') &&

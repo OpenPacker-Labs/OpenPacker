@@ -2,6 +2,7 @@ import { plainLine } from '@openpacker/canonical';
 import { canonicalPurlOrSelf } from './catalog.js';
 import { lockEdges } from './lock-edges.js';
 import { LOCK_NAME, MANIFEST_NAME } from './paths.js';
+import { shownSource } from './shown-source.js';
 import { purlPackageName, stripPurlVersion } from './spec.js';
 import type { LockPackage, OpmLockfile, OpmManifest } from './types.js';
 import { OpmError } from './types.js';
@@ -145,7 +146,7 @@ export function explainEntry(
     if (requirement.version)
       lines.push(`  version constraint: ${plainLine(requirement.version)}`);
     if (requirement.source)
-      lines.push(`  source: ${plainLine(requirement.source)}`);
+      lines.push(`  source: ${plainLine(shownSource(requirement.source))}`);
     lines.push(
       locked
         ? `  locked: ${plainLine(locked.purl)} (${plainLine(locked.digest)})`
