@@ -49,8 +49,7 @@ export function cliStep(
     get waitMs() {
       return wait();
     },
-    onRecovered: (step) =>
-      io.stderr.write(report('', describeRecovery(step))),
+    onRecovered: (step) => io.stderr.write(report('', describeRecovery(step))),
     onWait: (holder) =>
       io.stderr.write(
         report(
