@@ -27,6 +27,8 @@ env:
   OPENPACKER_OFFLINE: '1'
   SOURCE_DATE_EPOCH: '1785628800'
   OPENPACKER_MISE: mise
+  # Same as trunk-gate: parallel turbo tasks starve long @openpacker/opm vitest runs.
+  TURBO_CONCURRENCY: '1'
 
 jobs:
   release:
