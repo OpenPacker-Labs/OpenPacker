@@ -211,6 +211,7 @@ describe('what opm writes to stderr', () => {
         'commands/run-members.ts',
         'commands/run-output.ts',
         'commands/run.ts',
+        'commands/shell.ts',
         'openpacker-cli/index.ts',
         'openpackerd/cli.ts',
       ]),

@@ -6,17 +6,25 @@ export type SandboxMode = 'fail-closed' | 'degrade-warn' | 'off';
 /** Preferred containment ladder entry. */
 export type SandboxPrefer = 'auto' | 'mxc' | 'native';
 
+/** Backend preference for `opm shell --isolate` (ADR 0061). */
+export type ShellIsolatePrefer = 'auto' | 'mxc' | 'lxc';
+
 /**
  * What kind of work is running. Determines bind profile and honesty flags.
  * - package-exec: opmx / lifecycle / ephemeral (minimal FS)
  * - host-install: apt/winget/… (limited user-capability jail)
  * - ambient: intentionally unsandboxed
  */
-export type SandboxProfile = 'package-exec' | 'host-install' | 'ambient';
+export type SandboxProfile =
+  | 'package-exec'
+  | 'host-install'
+  | 'ambient'
+  | 'dev-shell';
 
 /** Backend that actually ran (or was selected). */
 export type SandboxBackendId =
   | 'mxc'
+  | 'lxc'
   | 'native-bwrap'
   | 'native-seatbelt'
   | 'native-process'
@@ -263,6 +271,7 @@ export const DEFAULT_SANDBOX_POLICY: Readonly<
 export const SANDBOX_LOSS = {
   ENFORCED: 'SANDBOX_ENFORCED',
   BACKEND_MXC: 'SANDBOX_BACKEND_MXC',
+  BACKEND_LXC: 'SANDBOX_BACKEND_LXC',
   BACKEND_NATIVE: 'SANDBOX_BACKEND_NATIVE',
   UNAVAILABLE: 'SANDBOX_UNAVAILABLE',
   DEGRADED: 'SANDBOX_DEGRADED',
