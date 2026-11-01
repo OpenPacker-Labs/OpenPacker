@@ -99,7 +99,9 @@ async function waitForGcAnnouncement(
   while (Date.now() < deadline) {
     for (const name of await readdir(directory).catch(() => [])) {
       if (!name.endsWith('.keys')) continue;
-      const text = await readFile(join(directory, name), 'utf8').catch(() => '');
+      const text = await readFile(join(directory, name), 'utf8').catch(
+        () => '',
+      );
       if (text.includes(`+${key}`)) return;
     }
     await new Promise((wait) => setTimeout(wait, 20));
