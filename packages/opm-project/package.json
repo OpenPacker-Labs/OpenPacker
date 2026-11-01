@@ -41,7 +41,7 @@
     "@openpacker/project-io": "0.0.1-alpha.1",
     "@openpacker/sandbox": "0.0.1-alpha.1",
     "@openpacker/sdk": "0.0.1-alpha.1",
-    "shell-quote": "1.10.0",
+    "shell-quote": "1.12.0",
     "yaml": "^2.8.3"
   },
   "devDependencies": {
