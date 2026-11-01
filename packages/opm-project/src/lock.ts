@@ -131,7 +131,10 @@ function parseLockfileBody(text: string): OpmLockfile {
 
 function parseLockPackage(alias: string, raw: unknown): LockPackage {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    throw new OpmError('INVALID_LOCK', `Invalid lock package entry: ${lockAlias(alias)}`);
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Invalid lock package entry: ${lockAlias(alias)}`,
+    );
   }
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const pkg = raw as Record<string, unknown>;
@@ -147,7 +150,10 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   };
   const size = pkg.size;
   if (typeof size !== 'number' || !Number.isInteger(size) || size < 0) {
-    throw new OpmError('INVALID_LOCK', `Package "${lockAlias(alias)}" has invalid size`);
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${lockAlias(alias)}" has invalid size`,
+    );
   }
   const format = requiredString('format');
   if (format !== 'tar' && format !== 'tar+gzip' && format !== 'zip') {
@@ -210,7 +216,10 @@ function parseLockPackage(alias: string, raw: unknown): LockPackage {
   });
   const reason = pkg.reason;
   if (reason !== 'direct' && reason !== 'transitive') {
-    throw new OpmError('INVALID_LOCK', `Package "${lockAlias(alias)}" has invalid reason`);
+    throw new OpmError(
+      'INVALID_LOCK',
+      `Package "${lockAlias(alias)}" has invalid reason`,
+    );
   }
   if (pkg.trustLevel !== undefined && !isTrustTier(pkg.trustLevel)) {
     throw new OpmError(
