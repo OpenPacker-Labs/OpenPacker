@@ -28,10 +28,10 @@ import {
 import { projectPaths, sharedStoreHome } from '../src/paths.js';
 import {
   isolateProjectStoreFromSharedLinks,
-  materializeThroughSharedStore,
   sharedStoreRoot,
 } from '../src/shared-store.js';
 import { OpmError } from '../src/types.js';
+import { materializeThroughSharedStore } from './shared-store-limits.js';
 
 const temps: string[] = [];
 

@@ -180,6 +180,12 @@ export interface FrozenExtraction {
    * carry both spellings.
    */
   acceptRedundantEntries: boolean;
+  /**
+   * npm's node-tar and pnpm's `parseTarball` are this ecosystem's tar readers:
+   * an archive they would read differently is refused, not extracted one way
+   * (ADR 0058 §8).
+   */
+  requireNpmReaderAgreement?: boolean;
 }
 
 /** The workspace part of what a frozen install does. */

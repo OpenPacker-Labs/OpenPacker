@@ -75,8 +75,8 @@ export async function materializeThroughSharedStore(input: {
   /** Already resolved by the caller; skips resolving it again. */
   sharedRoot?: string;
   linkFile?: (existingPath: string, newPath: string) => Promise<void>;
-  /** Bounds the archive is extracted under; the materializer's by default. */
-  limits?: MaterializationLimits;
+  /** Required: it carries `requireNpmReaderAgreement` (ADR 0058 §8). */
+  limits: MaterializationLimits;
 }): Promise<{ path: string; shared: boolean; treeDigest?: string }> {
   const digest = assertDigest(input.digest);
   const projectStorePath = input.projectStorePath;
@@ -109,7 +109,7 @@ export async function materializeThroughSharedStore(input: {
         digest,
         format,
         bytes: input.bytes,
-        ...(input.limits !== undefined && { limits: input.limits }),
+        limits: input.limits,
       });
       try {
         await linkTree(published.path, projectStorePath, linkFile);
@@ -161,8 +161,8 @@ export async function publishSharedEntry(input: {
   format: ArchiveFormat;
   bytes: Uint8Array | (() => Promise<Uint8Array>);
   seal?: boolean;
-  /** Bounds the archive is extracted under; the materializer's by default. */
-  limits?: MaterializationLimits;
+  /** Required, as for `materializeThroughSharedStore`. */
+  limits: MaterializationLimits;
 }): Promise<{ path: string; treeDigest: string }> {
   const storeKey = storeKeyFromDigest(input.digest);
   const sharedPath = join(input.sharedRoot, storeKey);
@@ -297,7 +297,7 @@ async function materializeArchive(
   format: ArchiveFormat,
   digest: string,
   destination: string,
-  limits?: MaterializationLimits,
+  limits: MaterializationLimits,
 ): Promise<void> {
   await ensureStableDirectory(dirname(destination));
   const descriptor = await descriptorForBytes({
@@ -312,7 +312,7 @@ async function materializeArchive(
     descriptor,
     destination,
     format,
-    ...(limits !== undefined && { limits }),
+    limits,
   });
 }
 

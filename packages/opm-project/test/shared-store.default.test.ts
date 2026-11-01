@@ -25,7 +25,6 @@ import {
   initProject,
   lockPackageFromSource,
   materializeLockPackage,
-  materializeThroughSharedStore,
   sharedStoreRoot,
   storeKeyFromDigest,
   usableSharedRoot,
@@ -36,6 +35,7 @@ import {
 } from '../src/install.js';
 import { sharedStoreHome } from '../src/paths.js';
 import { uniqueBytes } from './disk-usage.js';
+import { materializeThroughSharedStore } from './shared-store-limits.js';
 
 const temps: string[] = [];
 afterEach(async () => {

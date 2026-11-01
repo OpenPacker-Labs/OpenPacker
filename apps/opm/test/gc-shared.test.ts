@@ -10,6 +10,17 @@ import {
 } from '@openpacker/opm-project';
 import { runOpm } from '../src/opm.js';
 
+/** The materializer's defaults, written out: apps/opm does not depend on it. */
+const LIMITS = {
+  maximumFiles: 10_000,
+  maximumExpandedBytes: 64 * 1024 * 1024,
+  maximumCompressedBytes: 64 * 1024 * 1024,
+  maximumCompressionRatio: 32,
+  maximumMemoryBytes: 192 * 1024 * 1024,
+  maximumPathBytes: 4096,
+  maximumDepth: 128,
+};
+
 const temps: string[] = [];
 let previous: string | undefined;
 
@@ -55,6 +66,7 @@ async function sharedEntry(shared: string): Promise<string> {
   temps.push(project);
   const key = storeKeyFromDigest(digest);
   await materializeThroughSharedStore({
+    limits: LIMITS,
     digest,
     projectStorePath: join(project, key),
     bytes,

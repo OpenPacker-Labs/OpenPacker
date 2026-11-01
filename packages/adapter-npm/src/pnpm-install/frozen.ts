@@ -83,8 +83,12 @@ export async function readFrozenPnpmLock(
     lockPath,
     lockDigest: createHash('sha256').update(bytes).digest('hex'),
     lockfileVersion: 9,
-    // pnpm extracts with the same tolerance npm does.
-    extraction: { acceptRedundantEntries: true },
+    // pnpm extracts with the same tolerance npm does, and an archive the two
+    // would read differently is refused.
+    extraction: {
+      acceptRedundantEntries: true,
+      requireNpmReaderAgreement: true,
+    },
   };
   const refuse = (refused: FrozenLockRefusal[]): FrozenLock => ({
     ...common,
