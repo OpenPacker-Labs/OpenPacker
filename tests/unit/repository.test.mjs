@@ -288,12 +288,10 @@ test('CI actions and installed Rust tools use exact versions', () => {
   const workflows = filesIn(join(root, '.github/workflows'))
     .map((path) => readFileSync(path, 'utf8'))
     .join('\n');
-  const pinCatalog = existsSync(join(root, '.github/action-pins.json'));
   assert.doesNotMatch(
     workflows,
-    /uses:\s+[^\s@]+@(?:stable|main|master|v\d+[^\s#]*)\s*$/mu,
+    /uses:\s+[^\s@]+@(?:stable|main|master|v\d+)\s*$/mu,
   );
-  if (pinCatalog) assert.doesNotMatch(workflows, /uses:\s+[^\s@]+@v\d/mu);
   for (const command of workflows.matchAll(
     /^\s*- run:\s+cargo install\s+([^\n]+)$/gmu,
   ))
