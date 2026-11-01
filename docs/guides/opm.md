@@ -981,6 +981,27 @@ eval "$(opm shell)"
 opm shell --json   # for tooling
 ```
 
+**Isolated dev shell** ([ADR 0061](../adr/0061-isolated-dev-shells.md)): enter a
+container or MXC sandbox with the same generation env, project tree writable,
+and store/generation metadata read-only:
+
+```sh
+opm shell --isolate              # interactive; backend from [environment] or auto
+opm shell --isolate=lxc          # prefer Incus/LXC on Linux
+opm shell --isolate -- node -v   # non-interactive command
+```
+
+Configure defaults in `opm.toml`:
+
+```toml
+[environment]
+shell_isolate = "auto"   # off | auto | mxc | lxc
+network = false          # outbound network inside the isolated shell
+```
+
+When no LXC/Incus or MXC backend is available, `--isolate` exits `78` with probe
+details; use `eval "$(opm shell)"` on the host instead.
+
 ### Running scripts and executables (`opm run`, `opm exec`)
 
 With `native_projection = "layout"` (above) `node_modules/.bin` holds the

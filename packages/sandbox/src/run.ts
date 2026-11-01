@@ -1,5 +1,6 @@
 import { type FileHandle } from 'node:fs/promises';
 import { createMxcBackend, probeMxc } from './backends/mxc.js';
+import { probeLxc } from './backends/lxc.js';
 import {
   createMockBackend,
   assertSnapshot,
@@ -48,7 +49,8 @@ import {
 
 export async function probeBackends(): Promise<BackendProbe[]> {
   const mxc = await probeMxc();
-  return [mxc, ...probeNativeBackends()];
+  const lxc = await probeLxc();
+  return [mxc, lxc, ...probeNativeBackends()];
 }
 
 export async function resolveBackend(

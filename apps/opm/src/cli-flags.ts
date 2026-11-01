@@ -42,6 +42,7 @@ export function isBooleanFlag(key: string): boolean {
     key === 'no-workspaces' ||
     key === 'include-workspace-root' ||
     key === 'plan' ||
-    key === 'write'
+    key === 'write' ||
+    key === 'isolate'
   );
 }

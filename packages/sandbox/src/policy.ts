@@ -244,6 +244,15 @@ export function backendLosses(
         'MXC is early preview; not a finished security boundary',
       ),
     );
+  } else if (backend === 'lxc') {
+    losses.push(
+      loss(
+        SANDBOX_LOSS.BACKEND_LXC,
+        'info',
+        'containment used LXC/Incus',
+        'container isolation; image and profile must be trusted',
+      ),
+    );
   } else if (backend.startsWith('native-') || backend === 'mock') {
     losses.push(
       loss(

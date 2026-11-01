@@ -203,6 +203,23 @@ export function serializeManifest(manifest: OpmManifest): string {
     lines.push('');
   }
 
+  if (
+    manifest.environment?.shellIsolate !== undefined ||
+    manifest.environment?.network !== undefined
+  ) {
+    lines.push('# Isolated dev shell defaults (ADR 0061)');
+    lines.push('[environment]');
+    if (manifest.environment.shellIsolate !== undefined)
+      lines.push(
+        `shell_isolate = ${tomlString(manifest.environment.shellIsolate)}`,
+      );
+    if (manifest.environment.network !== undefined)
+      lines.push(
+        `network = ${manifest.environment.network ? 'true' : 'false'}`,
+      );
+    lines.push('');
+  }
+
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const pePreview = manifest.policy as
     | (PolicyInput & {
@@ -346,6 +363,8 @@ export function parseManifest(text: string): OpmManifest {
   const sandboxScratch: Record<string, string | boolean | number | string[]> =
     {};
   let hasSandbox = false;
+  let hasEnvironment = false;
+  const environmentScratch: Record<string, string | boolean> = {};
   let sandboxPackageId: string | undefined;
   const sandboxPackageScratch = new Map<
     string,
@@ -376,6 +395,11 @@ export function parseManifest(text: string): OpmManifest {
         packageAlias = undefined;
         sandboxPackageId = undefined;
         hasSandbox = true;
+      } else if (name === 'environment') {
+        section = 'environment';
+        packageAlias = undefined;
+        sandboxPackageId = undefined;
+        hasEnvironment = true;
       } else if (name.startsWith('sandbox.packages.')) {
         section = 'sandbox-packages';
         packageAlias = undefined;
@@ -606,6 +630,23 @@ export function parseManifest(text: string): OpmManifest {
         );
       // SAFETY: The surrounding boundary establishes the asserted domain contract.
       sandboxScratch[key] = value as string | boolean | number | string[];
+    } else if (section === 'environment') {
+      if (key !== 'shell_isolate' && key !== 'network')
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          `Unknown environment field "${key}" at line ${i + 1}. Known: shell_isolate, network`,
+        );
+      if (key === 'network' && typeof value !== 'boolean')
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          'environment.network must be a boolean',
+        );
+      if (key === 'shell_isolate' && typeof value !== 'string')
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          'environment.shell_isolate must be a string',
+        );
+      environmentScratch[key] = value as string | boolean;
     } else if (section === 'sandbox-packages') {
       if (sandboxPackageId === undefined)
         throw new OpmError(
@@ -797,6 +838,30 @@ export function parseManifest(text: string): OpmManifest {
         requiredEvidence: [],
       }),
       ...sandboxPolicy,
+    };
+  }
+
+  if (hasEnvironment) {
+    const shellIsolate = environmentScratch.shell_isolate;
+    if (typeof shellIsolate === 'string') {
+      if (
+        shellIsolate !== 'off' &&
+        shellIsolate !== 'auto' &&
+        shellIsolate !== 'mxc' &&
+        shellIsolate !== 'lxc'
+      )
+        throw new OpmError(
+          'INVALID_MANIFEST',
+          'environment.shell_isolate must be off|auto|mxc|lxc',
+        );
+    }
+    manifest.environment = {
+      ...(typeof shellIsolate === 'string' && {
+        shellIsolate: shellIsolate as 'off' | 'auto' | 'mxc' | 'lxc',
+      }),
+      ...(typeof environmentScratch.network === 'boolean' && {
+        network: environmentScratch.network,
+      }),
     };
   }
 

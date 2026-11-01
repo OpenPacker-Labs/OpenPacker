@@ -19,8 +19,6 @@ import {
   configurePackProviders,
   enableDefaultSharedStore,
   ecosystemFromPurl,
-  environmentScript,
-  environmentVariables,
   findOpmRoot,
   importNativeProject,
   initProject,
@@ -698,16 +696,8 @@ export async function runOpm(
         return await runGcCommand(args, io, await requireOpmRoot(cwd), step);
       }
       case 'shell': {
-        const root = await requireOpmRoot(cwd);
-        if (args.options.has('json')) {
-          const environment = await environmentVariables({ root });
-          outJson(io, JSON.stringify(environment, null, 2));
-          return EXIT_CODES.success;
-        }
-        // Printing assignments keeps this composable: `eval "$(opm shell)"`
-        // works without opm needing to spawn or manage a shell.
-        out(io, await environmentScript({ root }));
-        return EXIT_CODES.success;
+        const { runShellCommand } = await import('./commands/shell.js');
+        return await runShellCommand(args, io, cwd);
       }
       default:
         throw usage(`Unhandled command ${args.command}`);
