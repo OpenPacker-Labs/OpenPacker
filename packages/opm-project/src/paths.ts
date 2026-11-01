@@ -482,6 +482,34 @@ export async function readStableFileBytesAt(
   }
 }
 
+function stableFileBytes(contents: string | Uint8Array): Buffer {
+  return typeof contents === 'string'
+    ? Buffer.from(contents)
+    : Buffer.from(contents);
+}
+
+async function stableMetadataMatchesAt(
+  parent: FileHandle,
+  name: string,
+  contents: string | Uint8Array,
+  displayPath: string,
+): Promise<boolean> {
+  const expected = stableFileBytes(contents);
+  try {
+    const actual = await readStableFileBytesAt(
+      parent,
+      name,
+      64 * 1024 * 1024,
+      displayPath,
+    );
+    return actual.equals(expected);
+  } catch (error) {
+    if (error instanceof OpmError && error.code === 'INPUT_CHANGED')
+      return false;
+    throw error;
+  }
+}
+
 export async function writeStableFile(
   path: string,
   contents: string | Uint8Array,
@@ -529,12 +557,18 @@ export async function writeStableFileAt(
         `Metadata staging file changed before publication: ${displayPath}`,
       );
     await renameChild(parent, temporary, name);
-    const publishedInfo = await lstatChild(parent, name);
-    if (opened.dev !== publishedInfo.dev || opened.ino !== publishedInfo.ino)
-      throw new OpmError(
-        'INPUT_CHANGED',
-        `Metadata file changed during publication: ${displayPath}`,
-      );
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      const publishedInfo = await lstatChild(parent, name);
+      if (opened.dev === publishedInfo.dev && opened.ino === publishedInfo.ino)
+        return;
+      if (await stableMetadataMatchesAt(parent, name, contents, displayPath))
+        return;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    throw new OpmError(
+      'INPUT_CHANGED',
+      `Metadata file changed during publication: ${displayPath}`,
+    );
   } finally {
     await file?.close().catch(() => undefined);
     await removeChild(parent, temporary, { force: true }).catch(
