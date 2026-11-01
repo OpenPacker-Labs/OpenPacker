@@ -89,3 +89,16 @@ Integration tests that need an OCI distribution registry use
 unavailable so offline `npm run verify` still passes on hosts without Docker.
 Manual live-compat (`live-compat.yml`) starts Zot through
 `scripts/live-compat/run-with-zot.mjs` instead of ad-hoc `docker run`.
+
+## SHA-pinned GitHub Actions
+
+Third-party `uses:` references resolve to full commit SHAs recorded in
+`.github/action-pins.json`. Regenerate workflow pins after bumping an action
+tag:
+
+```sh
+node scripts/ci/apply-action-pins.mjs
+node scripts/ci/apply-action-pins.mjs --check
+```
+
+Release-cli and promotion workflows share the same pin catalog as trunk CI.

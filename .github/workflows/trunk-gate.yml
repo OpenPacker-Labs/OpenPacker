@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2 # v6.0.2
         with:
           fetch-depth: 0
       - name: Fetch PR base for affected Turbo scope
@@ -47,16 +47,16 @@ jobs:
           read-only:
             ${{ github.event_name == 'pull_request' &&
             github.event.pull_request.head.repo.fork && 'true' || 'false' }}
-      - uses: actions/setup-node@v6.4.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0 # v6.4.0
         with:
           node-version: 22.19.0
           cache: npm
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@360a4e93673de6630fac2478bc9e35244b01a759 # 1.88.0 # 1.88.0
         with:
           targets: wasm32-unknown-unknown
       - name: Cache the wasm toolchain output
         id: cache-wasm
-        uses: actions/cache@v5.0.5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5 # v5.0.5
         with:
           path: |
             ~/.cargo/bin/wasm-bindgen

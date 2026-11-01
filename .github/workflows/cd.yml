@@ -62,7 +62,7 @@ jobs:
       version: ${{ steps.resolve.outputs.version }}
       run-id: ${{ steps.ci.outputs.run-id }}
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2 # v6.0.2
         with:
           fetch-depth: 0
       - name: Resolve target sha and version
@@ -122,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2 # v6.0.2
         with:
           ref: ${{ needs.gate.outputs.sha }}
       - name: Download the CI build artifacts for the gated run
@@ -172,7 +172,7 @@ jobs:
               --notes "Staging candidate from CI build run $RUN_ID. Production promotes on tag push only; see cd.yml for the delete-and-repush step after dispatch staging." \
               release/*
           fi
-      - uses: actions/attest-build-provenance@v4.1.0
+      - uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0 # v4.1.0
         with:
           subject-path: release/
 
