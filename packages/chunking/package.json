@@ -1,6 +1,6 @@
 {
   "name": "@openpacker/chunking",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -18,9 +18,9 @@
     "test:integration": "vitest run"
   },
   "dependencies": {
-    "@openpacker/artifact-model": "0.1.0",
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/contracts": "0.1.0"
+    "@openpacker/artifact-model": "0.0.1-alpha.1",
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1"
   },
   "devDependencies": {
     "@types/node": "24.2.1"

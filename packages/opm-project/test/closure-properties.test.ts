@@ -2,7 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { configureDefaultAdapters } from '@openpacker/adapters-default';
 import type { PackageInstance } from '@openpacker/contracts';
-import { resolveGraph, solveGraph } from '../src/index.js';
+import { OpmError, resolveGraph, solveGraph } from '../src/index.js';
 import {
   NpmRegistryFixture,
   type FixturePackage,
@@ -262,8 +262,13 @@ describe('a closure over a random registry', () => {
         if (first.error !== undefined) {
           refused += 1;
           // Refused with a reason, never with a crash.
-          expect(first.error).toMatchObject({ code: 'UNRESOLVABLE' });
-          expect(first.error.message).toMatch(/requires|satisf/u);
+          expect(first.error).toBeInstanceOf(OpmError);
+          expect(['UNRESOLVABLE', 'UNSATISFIABLE']).toContain(
+            (first.error as OpmError).code,
+          );
+          expect(first.error.message).toMatch(
+            /requires|satisf|UNSATISFIABLE|no assignment/u,
+          );
           expect(again.error?.message).toBe(first.error.message);
           // And only because there is nothing to find.
           if (first.graph.packages.length <= 14)

@@ -1,10 +1,10 @@
 {
   "name": "@openpacker/openpackerd",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "Fastify reference service for PREX",
   "license": "MIT",
   "type": "module",
-  "private": true,
   "bin": {
     "openpackerd": "./dist/cli.js"
   },
@@ -28,24 +28,29 @@
     "check:generated": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-core": "0.1.0",
-    "@openpacker/adapter-host": "0.1.0",
-    "@openpacker/adapters-default": "0.1.0",
-    "@openpacker/artifact-model": "0.1.0",
-    "@openpacker/artifact-store": "0.1.0",
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/conformance": "0.1.0",
-    "@openpacker/contracts": "0.1.0",
-    "@openpacker/embedded": "0.1.0",
-    "@openpacker/events": "0.1.0",
-    "@openpacker/lifecycle": "0.1.0",
-    "@openpacker/lock-import": "0.1.0",
-    "@openpacker/policy": "0.1.0",
-    "@openpacker/receipts": "0.1.0",
-    "@openpacker/trust": "0.1.0",
+    "@openpacker/adapter-core": "0.0.1-alpha.1",
+    "@openpacker/adapter-host": "0.0.1-alpha.1",
+    "@openpacker/adapters-default": "0.0.1-alpha.1",
+    "@openpacker/artifact-model": "0.0.1-alpha.1",
+    "@openpacker/artifact-store": "0.0.1-alpha.1",
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/conformance": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
+    "@openpacker/embedded": "0.0.1-alpha.1",
+    "@openpacker/events": "0.0.1-alpha.1",
+    "@openpacker/lifecycle": "0.0.1-alpha.1",
+    "@openpacker/lock-import": "0.0.1-alpha.1",
+    "@openpacker/policy": "0.0.1-alpha.1",
+    "@openpacker/receipts": "0.0.1-alpha.1",
+    "@openpacker/trust": "0.0.1-alpha.1",
     "fastify": "5.11.2"
   },
   "devDependencies": {
     "@types/node": "24.2.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenPacker-Labs/OpenPacker.git",
+    "directory": "apps/openpackerd"
   }
 }

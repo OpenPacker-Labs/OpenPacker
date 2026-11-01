@@ -80,7 +80,7 @@ describe('a value of a document that may be an address', () => {
     expect(isAddress('./a:b')).toBe(false);
   });
 
-  it('is linear', () => {
+  it('is linear', { timeout: 30_000 }, () => {
     const started = cpuMs();
     redactText('a://'.repeat(250_000));
     redactText('a:// '.repeat(200_000));

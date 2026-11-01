@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/adapter-golang",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "type": "module",
   "license": "MIT",
   "main": "./dist/cjs/index.js",
@@ -22,12 +23,17 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-core": "0.1.0",
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/contracts": "0.1.0",
-    "@openpacker/project-io": "0.1.0"
+    "@openpacker/adapter-core": "0.0.1-alpha.1",
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1",
+    "@openpacker/project-io": "0.0.1-alpha.1"
   },
   "devDependencies": {
     "@types/node": "24.2.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenPacker-Labs/OpenPacker.git",
+    "directory": "packages/adapter-golang"
   }
 }

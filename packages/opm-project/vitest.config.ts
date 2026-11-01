@@ -3,6 +3,7 @@ import shared from '../../vitest.shared.js';
 
 // The library resolves the shared store, tool cache and plugin store; a test
 // that would reach the caller's fails (tests/support/store-guard.setup.ts).
+// Fresh directories for every file come from the shared config.
 export default mergeConfig(
   shared,
   defineConfig({

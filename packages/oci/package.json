@@ -1,6 +1,7 @@
 {
   "name": "@openpacker/oci",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.1",
+  "private": true,
   "description": "OCI 1.1 image-layout and distribution mappings for native PREX artifacts",
   "license": "MIT",
   "type": "module",
@@ -27,12 +28,17 @@
     "test:integration": "vitest run"
   },
   "dependencies": {
-    "@openpacker/adapter-core": "0.1.0",
-    "@openpacker/artifact-model": "0.1.0",
-    "@openpacker/canonical": "0.1.0",
-    "@openpacker/contracts": "0.1.0"
+    "@openpacker/adapter-core": "0.0.1-alpha.1",
+    "@openpacker/artifact-model": "0.0.1-alpha.1",
+    "@openpacker/canonical": "0.0.1-alpha.1",
+    "@openpacker/contracts": "0.0.1-alpha.1"
   },
   "devDependencies": {
     "@types/node": "24.2.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenPacker-Labs/OpenPacker.git",
+    "directory": "packages/oci"
   }
 }

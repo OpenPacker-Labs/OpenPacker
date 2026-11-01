@@ -1,0 +1,172 @@
+name: Publish @openpacker/cli
+description: >-
+  Publish the release directory to npm. A non-empty npm-token is passed only as
+  NODE_AUTH_TOKEN for that command, and publish uses --provenance. An empty
+  token writes an .npmrc with no _authToken and leaves NODE_AUTH_TOKEN unset so
+  npm can use OIDC trusted publishing, which attaches provenance only when
+  --provenance is left at its default. Callers must set id-token: write.
+  Upgrades npm to 11.21.1 (Node 22.19.0's bundled npm cannot do dist-tag OIDC).
+  Optionally mirrors the same directory to GitHub Packages. Skips a registry
+  that already has this version. Never prints tokens.
+
+inputs:
+  working-directory:
+    description: Directory that contains the packed @openpacker/cli manifest.
+    required: false
+    default: apps/openpacker-cli/release
+  npm-dist-tag:
+    description:
+      npm dist-tag for this publish. Do not pass latest. Ignored when publish is
+      false.
+    required: false
+    default: ''
+  publish:
+    description: >-
+      When false, only install an OIDC-capable npm and write the npmjs
+      userconfig. Do not publish. Integration uses this so it can move dist-tags
+      without a first publish on next.
+    required: false
+    default: 'true'
+  publish-github-packages:
+    description: Also publish the same directory to GitHub Packages.
+    required: false
+    default: 'false'
+  npm-token:
+    description: >-
+      Optional npm Automation or granular publish token. Leave empty for OIDC
+      trusted publishing. The value is never printed.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install npm 11.21.1 and configure the npmjs registry
+      shell: bash
+      env:
+        NPM_TOKEN_INPUT: ${{ inputs.npm-token }}
+        PUBLISH: ${{ inputs.publish }}
+      run: |
+        set -euo pipefail
+        case "$PUBLISH" in
+          true|false) ;;
+          *)
+            echo "publish must be true or false." >&2
+            exit 1
+            ;;
+        esac
+        # Node 22.19.0 ships npm 10. Trusted publishing needs npm 11.5.1.
+        # dist-tag OIDC needs npm 11.21.0. Do not log registry credentials.
+        npm install -g npm@11.21.1 --no-fund --no-audit
+        hash -r
+        test "$(npm --version)" = "11.21.1"
+        npmrc="${RUNNER_TEMP}/openpacker-npmjs.npmrc"
+        if [ -n "${NPM_TOKEN_INPUT:-}" ]; then
+          # Placeholder only. The secret stays in the publish step's env
+          # and is never written to GITHUB_ENV.
+          printf '%s\n' \
+            'registry=https://registry.npmjs.org/' \
+            '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}' \
+            > "$npmrc"
+        else
+          # An _authToken line, even with NODE_AUTH_TOKEN unset, makes npm
+          # skip the OIDC exchange. setup-node registry-url writes that line
+          # and exports NODE_AUTH_TOKEN=XXXXX-XXXXX-XXXXX-XXXXX into later steps.
+          printf '%s\n' 'registry=https://registry.npmjs.org/' > "$npmrc"
+        fi
+        unset NPM_TOKEN_INPUT
+        echo "NPM_CONFIG_USERCONFIG=${npmrc}" >> "$GITHUB_ENV"
+
+    - name: Publish to npm
+      if: inputs.publish != 'false'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        NPM_TOKEN_INPUT: ${{ inputs.npm-token }}
+        NPM_DIST_TAG: ${{ inputs.npm-dist-tag }}
+      run: |
+        set -euo pipefail
+        test -n "$NPM_DIST_TAG"
+        if [ "$NPM_DIST_TAG" = "latest" ]; then
+          echo "Refusing to publish with the latest dist-tag." >&2
+          exit 1
+        fi
+        version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).version")"
+        test -n "$version"
+        # Token publishes do not get automatic provenance: the OIDC exchange
+        # fails closed and the sigstore statement is only generated for an
+        # explicit --provenance. Trusted publishing (no token) attaches
+        # provenance only when that flag is still the default.
+        publish_cmd=(npm publish --access public --tag "$NPM_DIST_TAG")
+        if [ -n "${NPM_TOKEN_INPUT:-}" ]; then
+          export NODE_AUTH_TOKEN="$NPM_TOKEN_INPUT"
+          publish_cmd+=(--provenance)
+        else
+          unset NODE_AUTH_TOKEN
+        fi
+        unset NPM_TOKEN_INPUT
+        if npm view "@openpacker/cli@${version}" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
+          echo "${version} is already on the registry."
+        else
+          "${publish_cmd[@]}"
+        fi
+        # The registry can set latest on the first publish even when --tag is
+        # not latest. A retry skips publish, so heal that here too. Leave
+        # latest alone when the package has no stable version yet.
+        if [[ "$version" == *-* ]]; then
+          current_latest="$(npm view @openpacker/cli dist-tags.latest --registry https://registry.npmjs.org 2>/dev/null || true)"
+          if [ "$current_latest" = "$version" ]; then
+            stable="$(npm view @openpacker/cli versions --json --registry https://registry.npmjs.org | node -e '
+              let raw = "";
+              process.stdin.on("data", (chunk) => { raw += chunk; });
+              process.stdin.on("end", () => {
+                const parsed = raw.trim() ? JSON.parse(raw) : [];
+                const versions = (Array.isArray(parsed) ? parsed : [parsed]).filter((item) =>
+                  /^[0-9]+\.[0-9]+\.[0-9]+$/.test(item),
+                );
+                versions.sort((left, right) => {
+                  const a = left.split(".").map(Number);
+                  const b = right.split(".").map(Number);
+                  for (let i = 0; i < 3; i += 1) {
+                    if (a[i] !== b[i]) return a[i] - b[i];
+                  }
+                  return 0;
+                });
+                process.stdout.write(versions.length ? versions[versions.length - 1] : "");
+              });
+            ')"
+            if [ -n "$stable" ]; then
+              echo "Restoring latest to ${stable}."
+              npm dist-tag add "@openpacker/cli@${stable}" latest --registry https://registry.npmjs.org
+            fi
+          fi
+        fi
+
+    - name: Publish to GitHub Packages
+      if: inputs.publish-github-packages == 'true' && inputs.publish != 'false'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        NODE_AUTH_TOKEN: ${{ github.token }}
+        NPM_DIST_TAG: ${{ inputs.npm-dist-tag }}
+      run: |
+        set -euo pipefail
+        test -n "$NPM_DIST_TAG"
+        test "$NPM_DIST_TAG" != "latest"
+        version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).version")"
+        test -n "$version"
+        # Isolated userconfig so this token is not left on the npmjs registry
+        # file and is not exported to GITHUB_ENV. The file stores the
+        # placeholder, not the token.
+        gh_npmrc="$(mktemp)"
+        owner="$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+        printf '%s\n' \
+          'registry=https://npm.pkg.github.com/' \
+          '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' \
+          > "$gh_npmrc"
+        printf '@%s:registry=https://npm.pkg.github.com/\n' "$owner" >> "$gh_npmrc"
+        if NPM_CONFIG_USERCONFIG="$gh_npmrc" npm view "@openpacker/cli@${version}" version --registry https://npm.pkg.github.com >/dev/null 2>&1; then
+          echo "${version} is already on GitHub Packages."
+        else
+          NPM_CONFIG_USERCONFIG="$gh_npmrc" npm publish --registry https://npm.pkg.github.com --access public --tag "$NPM_DIST_TAG"
+        fi

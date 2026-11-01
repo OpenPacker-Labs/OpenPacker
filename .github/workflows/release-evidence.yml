@@ -27,10 +27,9 @@ jobs:
       - run: npm run build
       - run: cargo build --workspace --all-features --release --locked
       - run: mkdir release
-      - run:
-          npm pack --workspace @openpacker/contracts --workspace @openpacker/sdk
-          --workspace @openpacker/embedded --workspace @openpacker/cli
-          --pack-destination release
+      - run: |
+          npm run bundle --workspace @openpacker/cli
+          npm pack --pack-destination release --prefix apps/openpacker-cli/release
       - run: npm sbom --sbom-format cyclonedx > openpacker-node.cdx.json
       - run: npm run release:sbom:rust -- openpacker-rust.cdx.json
       - run: sha256sum release/* > release/SHA256SUMS
