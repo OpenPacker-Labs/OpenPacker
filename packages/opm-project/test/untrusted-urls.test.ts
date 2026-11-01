@@ -43,7 +43,7 @@ import {
  * an ordinary address, so that a recorder that sees nothing cannot pass a test.
  * What `node:url` parses with its own parser (`fileURLToPath(text)` and the
  * rest), out of the global's sight, is held to the same rule where it is
- * written: `apps/opm/test/untrusted-url-sites.test.ts` fails on any that is
+ * written: `apps/openpacker-cli/test/untrusted-url-sites.test.ts` fails on any that is
  * not handed a URL `parseUntrustedUrl` made.
  */
 const HOST = 'ß.é.'.repeat(16384);

@@ -24,7 +24,7 @@ openpacker_ensure_build() {
     # Unquoted glob on purpose: every workspace source tree that can affect the
     # CLI. -print -quit stops at the first newer file rather than walking all.
     # shellcheck disable=SC2086
-    if [ -n "$(find "$openpacker_root/apps/opm/src" \
+    if [ -n "$(find "$openpacker_root/apps/openpacker-cli/src" \
       $openpacker_root/packages/*/src \
       -type f -newer "$openpacker_target" -print -quit 2>/dev/null)" ]; then
       openpacker_stale=1
@@ -34,7 +34,7 @@ openpacker_ensure_build() {
   if [ "$openpacker_stale" = "1" ]; then
     printf 'opm: sources changed since the last build, rebuilding...\n' >&2
     if ! (cd "$openpacker_root" &&
-      npx turbo run build --filter=@openpacker/opm... >/dev/null 2>&1); then
+      npx turbo run build --filter=@openpacker/cli... >/dev/null 2>&1); then
       printf 'opm: build failed, refusing to run a stale binary.\n' >&2
       printf 'opm: run `npm run build` in %s to see the error.\n' \
         "$openpacker_root" >&2

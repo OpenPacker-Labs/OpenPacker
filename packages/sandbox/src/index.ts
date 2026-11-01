@@ -107,6 +107,27 @@ export {
 export { probeBackends, resolveBackend, runInSandbox } from './run.js';
 
 export {
+  planLxcBindDevices,
+  probeLxc,
+  createLxcBackend,
+  resolveLxcCli,
+  type LxcBindDevice,
+  type LxcCli,
+} from './backends/lxc.js';
+
+export {
+  type DevShellPlan,
+  type DevShellProbe,
+  type RunDevShellInput,
+  probeDevShellBackends,
+  resolveDevShellBackend,
+  runDevShell,
+  runHostDevShell,
+  runInteractiveDevShell,
+  type ShellIsolatePrefer,
+} from './dev-shell.js';
+
+export {
   boundPaths,
   inheritedHandleCount,
   MAX_INHERITED_HANDLES,

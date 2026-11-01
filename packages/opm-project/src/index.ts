@@ -161,6 +161,15 @@ export {
 
 export { runSandboxedPackageProcess } from './sandbox-run.js';
 export {
+  loadDevShellContext,
+  parseShellIsolatePrefer,
+  planDevShell,
+  shellIsolatePreferFromManifest,
+  devShellNetworkFromManifest,
+  type DevShellPlan,
+  type ShellIsolatePrefer,
+} from './dev-shell-plan.js';
+export {
   MAX_RUN_TIMEOUT_MS,
   opmxRunTimeout,
   parseRunTimeout,

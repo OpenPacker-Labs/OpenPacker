@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 
 const [root, kind = 'members'] = process.argv.slice(2);
 const load = (path) => import(pathToFileURL(`${root}/${path}`).href);
-const { handleError } = await load('apps/opm/dist/opm.js');
+const { handleError } = await load('apps/openpacker-cli/dist/opm.js');
 const { resolveManifestToLock, defaultSupplyChainPolicyInput } = await load(
   'packages/opm-project/dist/esm/index.js',
 );

@@ -127,7 +127,7 @@ const BOUNDS = {
   },
   'scripts/vitest.coverage.config.mjs': { testTimeout: '30_000' },
   // #231: the vitest-worker RPC window under turbo, not a test's clock.
-  'apps/opm': { hookTimeout: '120_000' },
+  'apps/openpacker-cli': { hookTimeout: '120_000' },
 };
 
 /** The time bounds a config states, as `{ testTimeout: '15_000' }`. */

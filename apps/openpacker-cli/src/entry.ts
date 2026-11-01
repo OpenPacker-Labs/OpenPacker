@@ -12,6 +12,7 @@
  * for a value at load time; `run-load.test.ts` holds that.
  */
 import { routeRun } from './commands/run-route.js';
+import { PREX_ROUTED_COMMANDS } from './prex-commands.js';
 
 export interface EntryIo {
   stdout: Pick<NodeJS.WriteStream, 'write'>;
@@ -41,6 +42,11 @@ export async function main(
   } catch (error) {
     const { handleError } = await import('./opm.js');
     return handleError(error, io);
+  }
+  const command = argv[0];
+  if (typeof command === 'string' && PREX_ROUTED_COMMANDS.has(command)) {
+    const { runCli } = await import('./index.js');
+    return await runCli([...argv], io as import('./index.js').CliIo);
   }
   return await otherCommands();
 }

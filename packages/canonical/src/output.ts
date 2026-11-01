@@ -7,7 +7,7 @@ import { plainText } from './echo.js';
  * stream, so that a value a registry, a lock or a cloned repository chose cannot
  * retitle the window, move the cursor or hide text. The three streams a command
  * writes are three writers, and a repository test (`untrusted-url-sites`'s
- * neighbour, `stdout-writers.test.ts` in `apps/opm`) fails on any other
+ * neighbour, `stdout-writers.test.ts` in `apps/openpacker-cli`) fails on any other
  * reference to either stream in the command lines' sources:
  *
  * - `report` for an error, to standard error: the prefix is the command's, the

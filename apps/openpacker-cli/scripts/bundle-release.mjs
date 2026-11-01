@@ -44,25 +44,40 @@ const optionalDependencies = {
   '@microsoft/mxc-sdk': '1.0.1',
 };
 
-await esbuild.build({
-  entryPoints: [join(root, 'dist/index.js')],
-  outfile: join(releaseDir, 'dist/index.js'),
+const requireBanner =
+  "import{createRequire as __cr}from'module';const require=__cr(import.meta.url);";
+
+const esbuildCommon = {
   bundle: true,
   platform: 'node',
   format: 'esm',
   target: 'node22',
-  banner: {
-    js: "import{createRequire as __cr}from'module';const require=__cr(import.meta.url);",
-  },
   alias: {
     '@openpacker/embedded/wasm-node': join(root, 'scripts/wasm-node-stub.mjs'),
   },
-  external: [
-    ...Object.keys(dependencies),
-    ...Object.keys(optionalDependencies),
-  ],
+  external: [...Object.keys(dependencies), ...Object.keys(optionalDependencies)],
   loader: { '.node': 'copy' },
   logLevel: 'info',
+  banner: { js: requireBanner },
+};
+
+await esbuild.build({
+  ...esbuildCommon,
+  entryPoints: [join(root, 'src/main.ts')],
+  outfile: join(releaseDir, 'dist/main.js'),
+});
+
+await esbuild.build({
+  ...esbuildCommon,
+  entryPoints: [join(root, 'src/opmx-main.ts')],
+  outfile: join(releaseDir, 'dist/opmx-main.js'),
+});
+
+// PREX-only workflows and tests import `@openpacker/cli` / `dist/index.js`.
+await esbuild.build({
+  ...esbuildCommon,
+  entryPoints: [join(root, 'src/index.ts')],
+  outfile: join(releaseDir, 'dist/index.js'),
 });
 
 writeFileSync(
@@ -71,27 +86,21 @@ writeFileSync(
     {
       name: '@openpacker/cli',
       version: releaseVersion,
-      description: 'OpenPacker command-line client',
+      description: sourcePackage.description,
       license: 'MIT',
       type: 'module',
       bin: {
-        openpacker: './dist/index.js',
+        opm: './dist/main.js',
+        opmx: './dist/opmx-main.js',
+        opkg: './dist/main.js',
+        opkgm: './dist/main.js',
       },
       files: ['dist'],
-      engines: {
-        node: '^22.22.2 || >=24',
-      },
-      publishConfig: {
-        access: 'public',
-        tag: 'alpha',
-      },
+      engines: sourcePackage.engines,
+      publishConfig: sourcePackage.publishConfig,
       dependencies,
       optionalDependencies,
-      repository: {
-        type: 'git',
-        url: 'git+https://github.com/OpenPacker-Labs/OpenPacker.git',
-        directory: 'apps/openpacker-cli',
-      },
+      repository: sourcePackage.repository,
     },
     null,
     2,

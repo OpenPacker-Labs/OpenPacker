@@ -179,6 +179,16 @@ export interface OpmManifest {
    * It is part of the manifest digest, so changing it makes the lock stale.
    */
   adapterSettings?: Record<string, { readonly [key: string]: JsonValue }>;
+  /**
+   * Environment / dev-shell settings (ADR 0061). Distinct from PREX
+   * `SolveRequest.environment`.
+   */
+  environment?: {
+    /** Default for `opm shell --isolate` when the flag is given without `=value`. */
+    shellIsolate?: 'off' | 'auto' | 'mxc' | 'lxc';
+    /** Allow outbound network inside an isolated dev shell. Default false. */
+    network?: boolean;
+  };
 }
 
 /**

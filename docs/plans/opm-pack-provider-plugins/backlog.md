@@ -46,7 +46,7 @@ Acceptance:
 Why: users need project configuration to select any local provider, and the
 distribution must stop hard-coding native package managers.
 
-Scope: `packages/opm-project` TOML/types/discovery, `apps/opm`,
+Scope: `packages/opm-project` TOML/types/discovery, `apps/openpacker-cli`,
 `packages/adapters-default`, guide/examples and integration tests.
 
 Acceptance:

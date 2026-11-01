@@ -104,9 +104,9 @@ and [`tests/compat/wasm-node.test.mjs`](../../tests/compat/wasm-node.test.mjs).
 ## CLI
 
 **Cookbook with full package-management recipes:**
-**[docs/guides/cli.md](../guides/cli.md)** (normalize, identify, enumerate,
-import-lock, solve, export, verify, materialize). Sample inputs:
-[`examples/cli/`](../../examples/cli/).
+**[docs/guides/opm.md](../guides/opm.md#prex-control-plane)** (normalize,
+identify, enumerate, import-lock, solve, export, verify, materialize). Sample
+inputs: [`examples/cli/`](../../examples/cli/).
 
 The CLI accepts JSON from `--input <file|->`, emits canonical JSON with
 `--json`, writes exact output bytes with `--output`, and supports `--target`,

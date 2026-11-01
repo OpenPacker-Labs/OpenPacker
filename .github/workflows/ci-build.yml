@@ -124,12 +124,12 @@ jobs:
       - name: Test the publishable CLI bundle
         run: npm test --workspace @openpacker/cli -- test/release-bundle.test.ts
       - name: Smoke the CLI
-        run: node apps/openpacker-cli/dist/index.js --help
+        run: node apps/openpacker-cli/dist/main.js --help
       - name: Smoke opm project mutation (no-follow handle-relative I/O)
         shell: bash
         working-directory: ${{ runner.temp }}
         env:
-          OPM: ${{ github.workspace }}/apps/opm/dist/opm.js
+          OPM: ${{ github.workspace }}/apps/openpacker-cli/dist/main.js
         run: |
           set -euo pipefail
           mkdir smoke-init

@@ -153,15 +153,15 @@ root):
 - Green: `packages/packslip` (389 + 5 skipped oracle),
   `packages/packslip-testkit`, `packages/adapter-packslip` (137),
   `packages/adapters-default`, `packages/adapter-host`, `packages/adapter-core`,
-  `apps/opm/test/packslip` (42), `packages/opm-project` (430 of 431; the one
-  failure is the root-ignores-read-only test), `packages/plugin-host`,
+  `apps/openpacker-cli/test/packslip` (42), `packages/opm-project` (430 of 431;
+  the one failure is the root-ignores-read-only test), `packages/plugin-host`,
   `test:docs`, `check:test-inventory`, `format:check`, `lint:anti-slop`,
   `check:licenses`, per-workspace coverage thresholds.
 - Not runnable here, and not caused by this change: `@openpacker/embedded`
   (needs `wasm32-unknown-unknown`), so transitive-solver tests in `opm-project`,
   `examples/*`, `apps/openpackerd` and `check:test-inventory` for those
-  examples; the sandbox-enforcement test in `apps/opm` (no jail backend); the
-  shared-store read-only test (root ignores read-only).
+  examples; the sandbox-enforcement test in `apps/openpacker-cli` (no jail
+  backend); the shared-store read-only test (root ignores read-only).
 - Oracle tests need `PACKSLIP_ORACLE_BIN`; they were run against `packslip`
   1.5.1 and skip otherwise.
 

@@ -22,7 +22,7 @@ independent review), nits repaired mid-stack, squash-merged bottom-up, and
   canonical bytes of the JSON descriptor body
   (packages/plugin-host/src/protocol.ts `wireRecordToRecord`), so
   `bindVerifiedArtifactBytes` fails closed at digest verification. Fixture
-  documentation of the gap: apps/opm/test/plugin-fixture.ts
+  documentation of the gap: apps/openpacker-cli/test/plugin-fixture.ts
   (`ACME_ARTIFACT_BODY` comment).
 - `discoverBins` (packages/opm-project/src/bins.ts:256) returns `[]` for plugin
   purl types; a materialized plugin tool then cannot run.

@@ -9,7 +9,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const { runOpm } = await import('@openpacker/opm');
+const { runOpm } = await import('@openpacker/cli/opm');
 
 function capture() {
   let out = '';

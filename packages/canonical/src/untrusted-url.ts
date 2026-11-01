@@ -8,7 +8,7 @@ import { hasOverlongHost, LONGEST_HOST_LENGTH } from './url-host.js';
  * 0.7 s, 131,000 take several), and no such host can be a DNS name. Every place
  * that parses a URL from text someone else chose therefore goes through
  * `parseUntrustedUrl`, which asks `hasOverlongHost` first. A repository test
- * (`apps/opm/test/untrusted-url-sites.test.ts`) fails on a `new URL(` anywhere
+ * (`apps/openpacker-cli/test/untrusted-url-sites.test.ts`) fails on a `new URL(` anywhere
  * in `packages/*` or `apps/*` that is not routed through it or named, with its
  * reason, as one that reads a constant.
  */

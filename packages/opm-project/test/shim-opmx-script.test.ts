@@ -7,7 +7,7 @@ import { resolveOpmxPath, writeBinShims } from '../src/bins.js';
 
 /**
  * A shim re-enters through `opmx`. From a source build (`node
- * apps/opm/dist/main.js`) the `opmx` beside the entry is a module tsc wrote,
+ * apps/openpacker-cli/dist/main.js`) the `opmx` beside the entry is a module tsc wrote,
  * with no execute bit, and the shim spawned it as a program: `spawn …
  * EACCES`, exit 78, for every `.opm/bin/<tool>`. A shim starts a JavaScript
  * `opmx` with Node, and finds the file the `opmx` bin names.

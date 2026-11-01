@@ -423,26 +423,26 @@ independent review got the same two figures.
   `2020-01-01 (<escape>)` is a time). The sites that were found now use
   `safeEcho` (the dependency's name, range and owner in the three messages of
   `dependency-spec.ts`, `Invalid npm coordinate`, and the policy's bound). The
-  writer, `report` in `apps/opm/src/error-report.ts`, is a second layer under
-  them, and passes every message through `plainText` (`@openpacker/canonical`,
-  the same reading as `safeEcho` without the cut): escape sequences and control,
-  format and bidirectional characters are removed, a tab and the other layout
-  (vertical tab, form feed, U+2028, U+2029) is one space, a carriage return,
-  alone or before a line feed, is a line feed, and NEL is removed. A tab, or any
-  other layout, at the start of a line is removed and not spaced, so a child's
-  stderr that is indented with tabs (the delegated provider's, which
-  `PACK_FAILED` carries) loses its indentation. The line feeds a message carries
-  are kept, because several of opm's own errors are lists, one entry to a line:
-  the closure `opm add` could not lock ("What the walk could not use:" and an
-  entry to a line) and the four lists of `opm ci` (entries it cannot install,
-  packages the policy refuses, packages from a git source, packages missing from
-  the store offline). A first version of the writer made every message one line,
-  which ran those lists together after their colons and made "a message with
-  nothing to remove is written as before" true of one-line messages only.
-  `apps/opm/test/error-lines.test.ts` pins the text of each: the four `opm ci`
-  lists through `runOpm` against lock files, and the closure message as the real
-  walk builds it, which `packages/opm-project/test/closure-refusal.test.ts` pins
-  against the walk.
+  writer, `report` in `apps/openpacker-cli/src/error-report.ts`, is a second
+  layer under them, and passes every message through `plainText`
+  (`@openpacker/canonical`, the same reading as `safeEcho` without the cut):
+  escape sequences and control, format and bidirectional characters are removed,
+  a tab and the other layout (vertical tab, form feed, U+2028, U+2029) is one
+  space, a carriage return, alone or before a line feed, is a line feed, and NEL
+  is removed. A tab, or any other layout, at the start of a line is removed and
+  not spaced, so a child's stderr that is indented with tabs (the delegated
+  provider's, which `PACK_FAILED` carries) loses its indentation. The line feeds
+  a message carries are kept, because several of opm's own errors are lists, one
+  entry to a line: the closure `opm add` could not lock ("What the walk could
+  not use:" and an entry to a line) and the four lists of `opm ci` (entries it
+  cannot install, packages the policy refuses, packages from a git source,
+  packages missing from the store offline). A first version of the writer made
+  every message one line, which ran those lists together after their colons and
+  made "a message with nothing to remove is written as before" true of one-line
+  messages only. `apps/openpacker-cli/test/error-lines.test.ts` pins the text of
+  each: the four `opm ci` lists through `runOpm` against lock files, and the
+  closure message as the real walk builds it, which
+  `packages/opm-project/test/closure-refusal.test.ts` pins against the walk.
 - **The writer cannot flatten what it cannot tell apart, so the sources do.** It
   does not know an entry opm wrote from a line a registry added, so a line feed
   that reaches it from a registry starts a line of its own, in plain text. A
@@ -470,22 +470,23 @@ independent review got the same two figures.
   names itself with a line feed, `opm plugin add foo@1.0.0` wrote 3 lines, two
   of them forged; it writes 1. Each package has a unit test of its messages that
   failed on the sources before the change, and
-  `apps/opm/test/error-sources.test.ts` reads a hostile document with the real
-  adapter and writes the error with the real handler: it failed first for PyPI
-  (4 of 6), NuGet, Maven and OCI, and `apps/opm/test/error-plugin.test.ts`
-  drives `opm plugin add`. The Cargo and Go cases of `error-sources.test.ts`
-  also fail on the sources of round 5 (`8713e6d`): their own sites cannot be
-  reached by a document (a Cargo coordinate and a Go module path come from the
-  caller; a Cargo target and a Go build constraint are recorded as meaning lost
-  and are not errors), but a hostile version reaches the shared parser, which
-  was not flat either. An earlier version of this ADR called them controls; they
-  are not. The host-manager adapters have unit tests only (they failed first:
-  apt 4 of 5, Chocolatey 3 of 4, winget 4 of 5, Nix 6 of 7); I found no road to
-  those messages through the binary, because `opm resolve` and `opm install` of
-  those types stop at "does not advertise prex.registry.package-metadata/1".
-  `echoed` says a value that is not text as a template literal does
-  (`undefined`, `null`, `x` for an array), so a field a registry left out or
-  typed oddly is still the coded error it was and not an uncoded `TypeError`.
+  `apps/openpacker-cli/test/error-sources.test.ts` reads a hostile document with
+  the real adapter and writes the error with the real handler: it failed first
+  for PyPI (4 of 6), NuGet, Maven and OCI, and
+  `apps/openpacker-cli/test/error-plugin.test.ts` drives `opm plugin add`. The
+  Cargo and Go cases of `error-sources.test.ts` also fail on the sources of
+  round 5 (`8713e6d`): their own sites cannot be reached by a document (a Cargo
+  coordinate and a Go module path come from the caller; a Cargo target and a Go
+  build constraint are recorded as meaning lost and are not errors), but a
+  hostile version reaches the shared parser, which was not flat either. An
+  earlier version of this ADR called them controls; they are not. The
+  host-manager adapters have unit tests only (they failed first: apt 4 of 5,
+  Chocolatey 3 of 4, winget 4 of 5, Nix 6 of 7); I found no road to those
+  messages through the binary, because `opm resolve` and `opm install` of those
+  types stop at "does not advertise prex.registry.package-metadata/1". `echoed`
+  says a value that is not text as a template literal does (`undefined`, `null`,
+  `x` for an array), so a field a registry left out or typed oddly is still the
+  coded error it was and not an uncoded `TypeError`.
 - **A cloned repository's files reach the terminal, and these sites flatten
   them.** The commands a person runs after `git clone` read `package.json`,
   `package-lock.json`, `opm.toml` and `opm.lock.json`, and their values are
@@ -513,8 +514,8 @@ independent review got the same two figures.
   (the PURL `echoed`, the reason `plainLine`d). The stdout of `opm list`,
   `opm why` and `opm import --native` printed the same values with nothing
   between them and the stream, and a raw escape sequence; they go through
-  `plainLine`, which cuts nothing (`apps/opm/src/stdout-lines.ts`,
-  `whyPackage`). `apps/opm/test/error-repo-npm.test.ts`,
+  `plainLine`, which cuts nothing (`apps/openpacker-cli/src/stdout-lines.ts`,
+  `whyPackage`). `apps/openpacker-cli/test/error-repo-npm.test.ts`,
   `error-repo-opm.test.ts` and `stdout-repo.test.ts` run the commands through
   `runOpm` with the payload and with `x` in a field and compare the lines
   written: 14 of 15, 12 of 12 and 12 of 13 failed on `3bf90c5` (the others are
@@ -549,23 +550,23 @@ independent review got the same two figures.
   it. `oneLine` still shows a line feed in a command as the two characters `\n`,
   and now also removes what a terminal acts on; a tab in a script's name or
   command is shown as a space, which is the one change to text with nothing
-  hostile in it. `apps/opm/test/plain-output.test.ts` runs the commands through
-  `runOpm` with the payload and with `x` in a field and holds both streams to
-  the same number of lines, none of which starts like one of opm's, and to no
-  escape, C1, bidirectional, carriage-return or other control character. Of its
-  14 tests, 13 fail on `a3891a9` (12 forge a line or write a raw escape
-  sequence; one is the tab shown as a space) and all pass now; the 14th, a
-  command with a line feed, is a control that passes on both. The review's fuzz
-  of the successful `opm ci` flagged 6 runs of 828 on `a3891a9` and 0 now; its
-  five real-binary reproductions print a forged line or an escape sequence on
-  `a3891a9` and none now; and its broad sweep (19 commands, five layouts,
-  payload in every string, key and type, and the files corrupted as text;
-  102,058 runs) flagged 49 runs on `a3891a9` and 11 now, which are the script's
-  own output (8 runs of `opm run build` under the escape payload) and the JSON
-  document `opm manifest` prints on stdout (3); the first is a known limit below
-  and the second is closed by `outJson` (below). Outputs for text with nothing
-  hostile in it (`x` in each field, 2,975 outputs of 13 commands, timestamps
-  masked) are identical on both trees.
+  hostile in it. `apps/openpacker-cli/test/plain-output.test.ts` runs the
+  commands through `runOpm` with the payload and with `x` in a field and holds
+  both streams to the same number of lines, none of which starts like one of
+  opm's, and to no escape, C1, bidirectional, carriage-return or other control
+  character. Of its 14 tests, 13 fail on `a3891a9` (12 forge a line or write a
+  raw escape sequence; one is the tab shown as a space) and all pass now; the
+  14th, a command with a line feed, is a control that passes on both. The
+  review's fuzz of the successful `opm ci` flagged 6 runs of 828 on `a3891a9`
+  and 0 now; its five real-binary reproductions print a forged line or an escape
+  sequence on `a3891a9` and none now; and its broad sweep (19 commands, five
+  layouts, payload in every string, key and type, and the files corrupted as
+  text; 102,058 runs) flagged 49 runs on `a3891a9` and 11 now, which are the
+  script's own output (8 runs of `opm run build` under the escape payload) and
+  the JSON document `opm manifest` prints on stdout (3); the first is a known
+  limit below and the second is closed by `outJson` (below). Outputs for text
+  with nothing hostile in it (`x` in each field, 2,975 outputs of 13 commands,
+  timestamps masked) are identical on both trees.
 - **What `echoed` costs.** It cuts a message's text at 256 characters (the OCI
   error body at 1,024), saying how long it was, so a loss record's text and a
   long PURL or URL in a message are cut: a uv.lock dependency marker of 431
@@ -585,21 +586,21 @@ independent review got the same two figures.
   it writes an archive, the file names and parser messages of the standard
   packers (`adapters-default`) and of delegated pack providers
   (`pack-provider`), a host installer's, a tool's and a script's own stderr,
-  passed through as it wrote it, the messages `apps/opm` builds from the
-  person's own arguments (usage errors), and the interpolations in opm-project
-  that the commands above did not reach (339 interpolations in opm-project, 338
-  raw, are untriaged: counts, line numbers, configured endpoints, environment
-  names, project paths, the state under `.opm`, and values read from `opm.toml`
-  and `opm.lock.json`, as in `noProjectLoss`, whose text repeats the lock's
-  ecosystem; the commands above reach some of them and I did not trace each).
-  `receipts` repeats a receipt's text and is depended on by `openpackerd`, not
-  by `opm`; `lock-import`, which `openpackerd` and `openpacker-cli` depend on
-  and `opm` does not, now repeats a lock's text through `echoedValue` (the
-  bullet on the SDK and `lock-import` below); no package depends on `closure` or
-  `ocm`. **Not covered at all:** anything outside the command lines of `opm`,
-  `openpacker` and the daemon's start. (`apps/openpacker-cli` and
-  `apps/openpackerd` were here; they write through the same writers and are held
-  by the same scanners now, below.)
+  passed through as it wrote it, the messages `apps/openpacker-cli` builds from
+  the person's own arguments (usage errors), and the interpolations in
+  opm-project that the commands above did not reach (339 interpolations in
+  opm-project, 338 raw, are untriaged: counts, line numbers, configured
+  endpoints, environment names, project paths, the state under `.opm`, and
+  values read from `opm.toml` and `opm.lock.json`, as in `noProjectLoss`, whose
+  text repeats the lock's ecosystem; the commands above reach some of them and I
+  did not trace each). `receipts` repeats a receipt's text and is depended on by
+  `openpackerd`, not by `opm`; `lock-import`, which `openpackerd` and
+  `openpacker-cli` depend on and `opm` does not, now repeats a lock's text
+  through `echoedValue` (the bullet on the SDK and `lock-import` below); no
+  package depends on `closure` or `ocm`. **Not covered at all:** anything
+  outside the command lines of `opm`, `openpacker` and the daemon's start.
+  (`apps/openpacker-cli` and `apps/openpackerd` were here; they write through
+  the same writers and are held by the same scanners now, below.)
 - **Known limits of what is claimed above.**
   - The gates hold the writers, not the values. `stderr-writers.test.ts` and
     `stdout-writers.test.ts` fail on a write that does not go through `report`,
@@ -626,9 +627,9 @@ independent review got the same two figures.
   - The values `opm search`, `versions` and `info` print are made plain at the
     line, and `opm resolve` lists only canonical PURLs (below). They are driven
     by an adapter that words one value at a time
-    (`apps/opm/test/hostile-adapter.ts`), not by a registry over a network, and
-    the bundled adapters validate much of what they return, so which of these
-    values each of them lets through was not enumerated.
+    (`apps/openpacker-cli/test/hostile-adapter.ts`), not by a registry over a
+    network, and the bundled adapters validate much of what they return, so
+    which of these values each of them lets through was not enumerated.
   - What the fuzz did not reach: online resolution and the closure message,
     `opm pack` of a real project beyond the environment-file case (the fuzz ran
     `--dry-run`), `opmx`, `publish` and `yank`, `auth.json`, an installed
@@ -694,9 +695,9 @@ independent review got the same two figures.
   the review's runs. Nothing opm builds is that long: the adapters cut what they
   quote and a document's size is bounded by the limits above.
 - **Withholding is linear, and a host no DNS name could be is not handed to the
-  URL parser.** `scrub` (`apps/opm/src/scrub.ts`) began a scan again at every
-  word boundary of a long run: `a-` repeated to 80,000 characters took 12.3 s
-  (13.2 s through `formatFailure`), `a.` 4.6 s, and a mebibyte of `a.` 18
+  URL parser.** `scrub` (`apps/openpacker-cli/src/scrub.ts`) began a scan again
+  at every word boundary of a long run: `a-` repeated to 80,000 characters took
+  12.3 s (13.2 s through `formatFailure`), `a.` 4.6 s, and a mebibyte of `a.` 18
   minutes and of `a-` 40. It finds each `://` and reads its scheme backwards,
   and starts the credential match at the name, and gives the same text byte for
   byte (`scrub-differential.test.ts`, against the first version, frozen). A
@@ -833,11 +834,11 @@ independent review got the same two figures.
   262,251 characters. `adapter-npm`'s `classifyResolved` asked `hasOverlongHost`
   already; it now parses with the same call, and has no test of its own.
 
-  `apps/opm/test/untrusted-url-sites.test.ts` holds this against the sources
-  (`untrusted-url-scan.ts`, the TypeScript parser, as the stderr scanner does).
-  It forbids the reference and does not recognise spellings: `new URL` and
-  `new x.URL`, `URL.canParse`, `URL.parse`, the name `URL` used as a value (an
-  alias, `Reflect.construct`, an array), `import { URL }` under any name,
+  `apps/openpacker-cli/test/untrusted-url-sites.test.ts` holds this against the
+  sources (`untrusted-url-scan.ts`, the TypeScript parser, as the stderr scanner
+  does). It forbids the reference and does not recognise spellings: `new URL`
+  and `new x.URL`, `URL.canParse`, `URL.parse`, the name `URL` used as a value
+  (an alias, `Reflect.construct`, an array), `import { URL }` under any name,
   `fileURLToPath` of anything but `import.meta.url` or a call of a guarded
   function, a call of `fetch`, and `new Request`. It reads the production
   sources of every package and app (294 files here) and fails on any use that is
@@ -1045,8 +1046,8 @@ independent review got the same two figures.
   the plugin store that could not be used, the paths and reasons skipped and the
   meaning lost in `add`, a host install, `manifest`, `pack` and `opm ci`, and
   `opmx`'s line naming the version it ran and the reason a run could not start
-  all use `report`. `apps/opm/test/stderr-writers.test.ts` holds this against
-  the sources with the TypeScript parser (`stderr-scan.ts`). It does not
+  all use `report`. `apps/openpacker-cli/test/stderr-writers.test.ts` holds this
+  against the sources with the TypeScript parser (`stderr-scan.ts`). It does not
   recognise write calls one spelling at a time, which an independent review beat
   22 times in 26 (a stream handed to a helper, `new Console(process.stderr)`,
   `Reflect.apply`, `import { stderr as e }`, `fs.writeFileSync(2, …)`,
@@ -1066,54 +1067,54 @@ independent review got the same two figures.
   that name a script of the person's own `package.json` or the bin the person
   typed (the run path loads no workspace package, `run-load.test.ts`). The
   scanner is held by 24 fixtures that must be caught, the review's 26 (25
-  caught, the 26th is the allowed form) and four more. It scans `apps/opm/src`,
-  `apps/openpacker-cli/src` and `apps/openpackerd/src`; every other package is
-  outside it. Eleven writers were not routed before this; the plugin-store one
-  is also driven for real (a hostile `OPM_PLUGIN_HOME`), and the rest are held
-  by the list, because they need a registry or a module mock, which the
-  repository's lint rejects.
+  caught, the 26th is the allowed form) and four more. It scans
+  `apps/openpacker-cli/src`, `apps/openpacker-cli/src` and
+  `apps/openpackerd/src`; every other package is outside it. Eleven writers were
+  not routed before this; the plugin-store one is also driven for real (a
+  hostile `OPM_PLUGIN_HOME`), and the rest are held by the list, because they
+  need a registry or a module mock, which the repository's lint rejects.
 - **A rejection that skipped the writer.** `case 'system'` in `runOpm`, the
   host-install branch of `add`, and `runSystemCommand` returned another async
   function's promise inside the `try` without `await`, so a rejected
   `opm system <subcommand>` or `opm add pkg:apt/...` that a host installer
   refused went past `handleError`: Node printed the message with its escape
   sequences and exited 1. `return await` fixes the three, and
-  `apps/opm/test/error-reach.test.ts` drives them through `runOpm` (and, by
-  hand, the built binary under `cat -v`: exit 2 and 3, no escape sequence). The
-  other `return <call>(` sites in `apps/opm/src` are in functions with no `try`
-  of their own, whose callers await them (`rollbackToPrevious`, `spawnDeclared`,
-  `spawnTool`), or are synchronous. A `message` that is not a string is written
-  as `String` writes it (`opm: undefined`), where an earlier version of the
-  writer threw.
+  `apps/openpacker-cli/test/error-reach.test.ts` drives them through `runOpm`
+  (and, by hand, the built binary under `cat -v`: exit 2 and 3, no escape
+  sequence). The other `return <call>(` sites in `apps/openpacker-cli/src` are
+  in functions with no `try` of their own, whose callers await them
+  (`rollbackToPrevious`, `spawnDeclared`, `spawnTool`), or are synchronous. A
+  `message` that is not a string is written as `String` writes it
+  (`opm: undefined`), where an earlier version of the writer threw.
 - **A message with nothing to remove is written byte for byte as before**
-  (`apps/opm/test/error-text.test.ts` pins six real single-line ones, and
-  `error-lines.test.ts` the lists).
+  (`apps/openpacker-cli/test/error-text.test.ts` pins six real single-line ones,
+  and `error-lines.test.ts` the lists).
 
 - **Standard output has a writer and a gate, and the other two command lines are
   in them.** `@openpacker/canonical` holds the writers of the command lines.
   `report` is an error for standard error: the message made plain, its line
-  feeds kept (moved from `apps/opm` unchanged). `out` is text for standard
-  output: escape sequences and control, format and bidirectional characters
-  removed, a carriage return a line feed, and the line feeds and tabs a command
-  writes itself kept (a listing is columns separated by a tab), so text with
-  nothing to remove is written byte for byte. `outJson` is a JSON document: the
-  characters a terminal acts on inside a string are written as `\uXXXX`, which
-  parses to the same document, and a line feed follows. `outRaw` is what a child
-  wrote itself, as it wrote it. The 92 writes to standard output (86 in
-  `apps/opm`, 5 in `apps/openpacker-cli`, 1 in the daemon's start) are calls of
-  them; the one write left is the script's own stdout in `run-child.ts`, which
-  the run path may not import `canonical` for (ADR 0047, `run-load.test.ts`).
-  `openpacker` writes its errors through `report` (the human line, and the
-  one-line JSON document), and the daemon's start reports why it could not start
-  instead of leaving Node to print the stack.
-  `apps/opm/test/stdout-writers.test.ts` holds standard output to them with the
-  scanner that holds standard error (`stderr-scan.ts`, a function of the
-  stream), over the sources of the three apps: any mention of a stdout stream,
-  of `console`, of a file descriptor 1, an alias, a destructuring, a bound
-  write, a `Console` or a computed key is a use, and every use is named in the
-  test with the reason it may be there; 25 fixtures must be caught and 7 must
-  not, and every call of `outRaw` is named too. `stderr-writers.test.ts` scans
-  the same three apps.
+  feeds kept (moved from `apps/openpacker-cli` unchanged). `out` is text for
+  standard output: escape sequences and control, format and bidirectional
+  characters removed, a carriage return a line feed, and the line feeds and tabs
+  a command writes itself kept (a listing is columns separated by a tab), so
+  text with nothing to remove is written byte for byte. `outJson` is a JSON
+  document: the characters a terminal acts on inside a string are written as
+  `\uXXXX`, which parses to the same document, and a line feed follows. `outRaw`
+  is what a child wrote itself, as it wrote it. The 92 writes to standard output
+  (86 in `apps/openpacker-cli`, 5 in `apps/openpacker-cli`, 1 in the daemon's
+  start) are calls of them; the one write left is the script's own stdout in
+  `run-child.ts`, which the run path may not import `canonical` for (ADR 0047,
+  `run-load.test.ts`). `openpacker` writes its errors through `report` (the
+  human line, and the one-line JSON document), and the daemon's start reports
+  why it could not start instead of leaving Node to print the stack.
+  `apps/openpacker-cli/test/stdout-writers.test.ts` holds standard output to
+  them with the scanner that holds standard error (`stderr-scan.ts`, a function
+  of the stream), over the sources of the three apps: any mention of a stdout
+  stream, of `console`, of a file descriptor 1, an alias, a destructuring, a
+  bound write, a `Console` or a computed key is a use, and every use is named in
+  the test with the reason it may be there; 25 fixtures must be caught and 7
+  must not, and every call of `outRaw` is named too. `stderr-writers.test.ts`
+  scans the same three apps.
 
 - **A field of the wrong JSON type is a coded refusal, not an internal error.**
   `"schemaVersion": {}` in `opm.lock.json` gave
@@ -1143,14 +1144,14 @@ independent review got the same two figures.
   each of the 11 section headers by 20 names the reader does not know, removes
   and doubles every line, and draws 4,000 combinations: on the old sources 224
   of the 1,848 single edits fail, every one a `SyntaxError`, in all 55 distinct
-  key names. `apps/opm/test/type-confusion-commands.test.ts` runs `list`, `why`,
-  `install --offline`, `sync --offline`, `manifest`, `update --offline`,
-  `generations` and `gc` with each of the 22 fields of the lock replaced by
-  `null`, `5`, `"x"`, `[]` and `{}` (880 runs) and each of the 7 assignments of
-  the manifest by 7 values (392 runs), and requires that none writes
-  `opm: internal error`: on the dists before the two fixes the lock fails for
-  `schemaVersion` and `generatedBy` as `{}`, and the manifest for `"a" "b"` in
-  seven keys (35 runs).
+  key names. `apps/openpacker-cli/test/type-confusion-commands.test.ts` runs
+  `list`, `why`, `install --offline`, `sync --offline`, `manifest`,
+  `update --offline`, `generations` and `gc` with each of the 22 fields of the
+  lock replaced by `null`, `5`, `"x"`, `[]` and `{}` (880 runs) and each of the
+  7 assignments of the manifest by 7 values (392 runs), and requires that none
+  writes `opm: internal error`: on the dists before the two fixes the lock fails
+  for `schemaVersion` and `generatedBy` as `{}`, and the manifest for `"a" "b"`
+  in seven keys (35 runs).
 
 - **Packslip, its adapter, the SDK and `lock-import` word what they quote
   plainly at the source.** 153 interpolations in `packslip` and 47 in
@@ -1193,11 +1194,11 @@ independent review got the same two figures.
   a message needs it (ADR 0047). `runOpm` takes `adapters` beside `fetch`, so
   that a test speaks for a registry, an installer or a project format as a bound
   plugin does; the process entry passes none.
-  `apps/opm/test/plain-registry.test.ts` (8 tests), `plain-reports.test.ts` (14)
-  and `plain-run.test.ts` (8) run each message with `x` and with the hostile
-  text, and hold both streams to the same number of lines, none starting like
-  one of opm's and none holding a character a terminal acts on. On the old
-  sources 7 of 8, 5 of 14 and 8 of 8 fail; the other 9 of
+  `apps/openpacker-cli/test/plain-registry.test.ts` (8 tests),
+  `plain-reports.test.ts` (14) and `plain-run.test.ts` (8) run each message with
+  `x` and with the hostile text, and hold both streams to the same number of
+  lines, none starting like one of opm's and none holding a character a terminal
+  acts on. On the old sources 7 of 8, 5 of 14 and 8 of 8 fail; the other 9 of
   `plain-reports.test.ts` pin lines that were plain already (the meaning an
   installer could not keep, what a native projection left out and could not
   keep, the package `opm resolve` could not place and why: 8 of the 9 fail when
@@ -1849,8 +1850,8 @@ makes is far larger than the table the object is charged for.
   `--max-old-space-size=1024`. Each is refused at the limit, with
   `Provider metadata exceeds 536870912 bytes of parsed size` (abbreviated) or
   `754974720` (full), in 4.6 to 8.3 s; before the charge all six ended the
-  process with SIGABRT (`apps/opm/test/index-names.test.ts`, which requires
-  status 3 and no signal).
+  process with SIGABRT (`apps/openpacker-cli/test/index-names.test.ts`, which
+  requires status 3 and no signal).
 - **At 0.97 of the limit.** The same kinds, and a two-byte one, sized to 0.97 of
   each limit are accepted, and the least heap that reads them, bisected to 2
   percent with the real provider, is:
@@ -2044,8 +2045,9 @@ the compositions in `packument-survey.ts` and their member counts, checks that
 the arithmetic it uses is the parser's, and reads every packument kept in the
 repository under both limits. `adapter-npm/src/packument-hostile.test.ts` is the
 stop at the limit for `{},` and `1,` at exactly 64 MiB and for the object of
-members that used to be accepted. `apps/opm/test/hostile-packument.test.ts` runs
-that document and the heaviest accepted one in a child process started with
+members that used to be accepted.
+`apps/openpacker-cli/test/hostile-packument.test.ts` runs that document and the
+heaviest accepted one in a child process started with
 `--max-old-space-size=1024`, through the lock step: the first is a refusal
 (`opm: The packument of hostile is not usable: Provider metadata exceeds 536870912 bytes of parsed size`,
 exit 9, the code a registry's unusable document has always had) where the build

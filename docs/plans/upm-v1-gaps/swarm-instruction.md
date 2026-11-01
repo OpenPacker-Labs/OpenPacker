@@ -50,10 +50,10 @@ never touch Linear.
 
 OpenPacker is **two surfaces**, not a replacement for npm/pip/Cargo/Maven/Go:
 
-| Surface                 | Binary / package                                       | Role                                                             |
-| ----------------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
-| Project package manager | `opm` / `opmx` (`apps/opm`, `@openpacker/opm-project`) | Manifest `opm.toml`, lock `opm.lock.json`, project store `.opm/` |
-| PREX control plane      | `openpacker` / `openpackerd`                           | Normalize, solve, inspect, pack, publish, lifecycle, receipts    |
+| Surface                 | Binary / package                                                  | Role                                                             |
+| ----------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Project package manager | `opm` / `opmx` (`apps/openpacker-cli`, `@openpacker/opm-project`) | Manifest `opm.toml`, lock `opm.lock.json`, project store `.opm/` |
+| PREX control plane      | `openpacker` / `openpackerd`                                      | Normalize, solve, inspect, pack, publish, lifecycle, receipts    |
 
 Binding ADRs (read before editing the matching area):
 
@@ -203,8 +203,8 @@ native files via adapters; do not teach core what a `.csproj` is.
 
 A “minimal members list” that shares one lock is still a lock-format and
 install-graph change in the same files `update` and CAS must edit (`toml.ts`,
-`types.ts`, `lock.ts`, `project.ts`, `install.ts`, `apps/opm/src/opm.ts`).
-Parallel swarms cannot one-shot that.
+`types.ts`, `lock.ts`, `project.ts`, `install.ts`,
+`apps/openpacker-cli/src/opm.ts`). Parallel swarms cannot one-shot that.
 
 **Decision:** do **not** add opm workspaces. Document that multi-package repos
 are multiple `opm.toml` projects (optionally sharing `OPM_STORE_HOME`) and that
@@ -248,7 +248,7 @@ secret values). No OIDC, no device code, no token file with bearer material.
 
 ### 2.8 Package exclusivity vs six features
 
-`apps/opm/src/opm.ts` is a single switch.
+`apps/openpacker-cli/src/opm.ts` is a single switch.
 `packages/opm-project/src/{project,toml,types,install,registry,index}.ts` are
 the crossroads. A “six swarm” plan that lets every swarm edit those files is not
 parallel; it is a merge lottery. This document assigns **file-level exclusive
@@ -399,16 +399,16 @@ Two swarms must never edit the same path. Git merge is not a protocol.
 
 ### 5.1 Owned paths (implementers)
 
-| Swarm               | Exclusive paths (create or edit)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **M Maven inspect** | `packages/adapter-maven/src/index.ts` (inspect + helpers only; do not rewrite codec/lock/project), `packages/adapter-maven/src/index.test.ts`, `packages/adapter-maven/src/inspect.mutation.test.ts` (new), `packages/adapter-maven/src/__snapshots__/**` (new), `fixtures/catalogs/maven/**` (add POM/checksum fixtures; do not delete existing catalog sidecars), `tests/behavior/upm-maven-inspect.behavior.test.mjs` (new), `tests/fuzz/upm-maven-pom.mjs` (new)                                                                                                                                                                |
-| **P PyPI oracles**  | `packages/adapter-pypi/src/index.test.ts`, `packages/adapter-pypi/src/provider.e2e.test.ts` (new), `fixtures/catalogs/pypi/**` (add only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| **G Go oracles**    | `packages/adapter-golang/src/index.test.ts`, `packages/adapter-golang/src/provider.e2e.test.ts` (new), `fixtures/catalogs/golang/**` (add only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **U Update**        | `packages/opm-project/src/update.ts` (**new**), `packages/opm-project/test/update.test.ts` (**new**), `packages/opm-project/test/update.mutation.test.ts` (**new**), `packages/opm-project/test/__snapshots__/update-*` (new), `tests/behavior/upm-update.behavior.test.mjs` (new), **plus the three surgical shared hunks in §5.2**                                                                                                                                                                                                                                                                                                |
-| **C Shared CAS**    | `packages/opm-project/src/shared-store.ts` (**new**), `packages/opm-project/test/shared-store.test.ts` (**new**), `packages/opm-project/test/shared-store.chaos.test.ts` (**new**), `packages/opm-project/src/install.ts`, `packages/opm-project/src/paths.ts` (additive, see contract), **plus index export hunk in §5.2**                                                                                                                                                                                                                                                                                                         |
-| **R Publish/yank**  | `packages/opm-project/src/publish-client.ts` (**new**), `packages/opm-project/test/publish-client.test.ts` (**new**), `apps/openpackerd/src/publish-store.ts` (**new**), `apps/openpackerd/src/index.ts` and `apps/openpackerd/src/reference.ts` (wiring only, see contract), `apps/openpackerd/test/publish-store.test.ts` (**new**), `apps/openpackerd/test/publish.chaos.test.ts` (**new**), `apps/opm/src/commands/publish.ts` (**new**), `apps/opm/src/commands/yank.ts` (**new**), `apps/opm/test/publish-yank.test.ts` (**new**), `tests/behavior/upm-publish-yank.behavior.test.mjs` (new), **plus surgical hunks in §5.2** |
-| **A Auth**          | `packages/opm-project/src/auth-config.ts` (**new**), `packages/opm-project/test/auth-config.test.ts` (**new**), `apps/opm/src/commands/auth.ts` (**new**), `apps/opm/test/auth.test.ts` (**new**), `tests/behavior/upm-auth.behavior.test.mjs` (new), `tests/fuzz/upm-auth-config.mjs` (new), **plus surgical hunks in §5.2**                                                                                                                                                                                                                                                                                                       |
-| **W WIT honesty**   | `packages/adapter-host/src/bridge.ts` (comments/tests only if needed), `packages/adapter-host/src/wit-contract.test.ts` (**new**), `spec/wit/README.md`, `fixtures/protocol/wit-adapter/**` (new fixtures that `assertWitShapedModule` already accepts), **no production loader**                                                                                                                                                                                                                                                                                                                                                   |
+| Swarm               | Exclusive paths (create or edit)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **M Maven inspect** | `packages/adapter-maven/src/index.ts` (inspect + helpers only; do not rewrite codec/lock/project), `packages/adapter-maven/src/index.test.ts`, `packages/adapter-maven/src/inspect.mutation.test.ts` (new), `packages/adapter-maven/src/__snapshots__/**` (new), `fixtures/catalogs/maven/**` (add POM/checksum fixtures; do not delete existing catalog sidecars), `tests/behavior/upm-maven-inspect.behavior.test.mjs` (new), `tests/fuzz/upm-maven-pom.mjs` (new)                                                                                                                                                                                                 |
+| **P PyPI oracles**  | `packages/adapter-pypi/src/index.test.ts`, `packages/adapter-pypi/src/provider.e2e.test.ts` (new), `fixtures/catalogs/pypi/**` (add only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **G Go oracles**    | `packages/adapter-golang/src/index.test.ts`, `packages/adapter-golang/src/provider.e2e.test.ts` (new), `fixtures/catalogs/golang/**` (add only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **U Update**        | `packages/opm-project/src/update.ts` (**new**), `packages/opm-project/test/update.test.ts` (**new**), `packages/opm-project/test/update.mutation.test.ts` (**new**), `packages/opm-project/test/__snapshots__/update-*` (new), `tests/behavior/upm-update.behavior.test.mjs` (new), **plus the three surgical shared hunks in §5.2**                                                                                                                                                                                                                                                                                                                                 |
+| **C Shared CAS**    | `packages/opm-project/src/shared-store.ts` (**new**), `packages/opm-project/test/shared-store.test.ts` (**new**), `packages/opm-project/test/shared-store.chaos.test.ts` (**new**), `packages/opm-project/src/install.ts`, `packages/opm-project/src/paths.ts` (additive, see contract), **plus index export hunk in §5.2**                                                                                                                                                                                                                                                                                                                                          |
+| **R Publish/yank**  | `packages/opm-project/src/publish-client.ts` (**new**), `packages/opm-project/test/publish-client.test.ts` (**new**), `apps/openpackerd/src/publish-store.ts` (**new**), `apps/openpackerd/src/index.ts` and `apps/openpackerd/src/reference.ts` (wiring only, see contract), `apps/openpackerd/test/publish-store.test.ts` (**new**), `apps/openpackerd/test/publish.chaos.test.ts` (**new**), `apps/openpacker-cli/src/commands/publish.ts` (**new**), `apps/openpacker-cli/src/commands/yank.ts` (**new**), `apps/openpacker-cli/test/publish-yank.test.ts` (**new**), `tests/behavior/upm-publish-yank.behavior.test.mjs` (new), **plus surgical hunks in §5.2** |
+| **A Auth**          | `packages/opm-project/src/auth-config.ts` (**new**), `packages/opm-project/test/auth-config.test.ts` (**new**), `apps/openpacker-cli/src/commands/auth.ts` (**new**), `apps/openpacker-cli/test/auth.test.ts` (**new**), `tests/behavior/upm-auth.behavior.test.mjs` (new), `tests/fuzz/upm-auth-config.mjs` (new), **plus surgical hunks in §5.2**                                                                                                                                                                                                                                                                                                                  |
+| **W WIT honesty**   | `packages/adapter-host/src/bridge.ts` (comments/tests only if needed), `packages/adapter-host/src/wit-contract.test.ts` (**new**), `spec/wit/README.md`, `fixtures/protocol/wit-adapter/**` (new fixtures that `assertWitShapedModule` already accepts), **no production loader**                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ### 5.2 Surgical shared hunks (textually disjoint)
 
@@ -454,7 +454,7 @@ export {
 Parent stacks C→U is unnecessary; these hunks do not overlap if each swarm only
 adds its own block/name.
 
-**`apps/opm/src/opm.ts`**
+**`apps/openpacker-cli/src/opm.ts`**
 
 - **U only:** Replace the existing `case 'sync': case 'update':` so that `sync`
   stays as today and `update` calls `updateProject` (imported from
@@ -532,9 +532,9 @@ that **owns** it implements it; the other swarm must not stub it. CLI hunks that
 `dynamic-import('./commands/….js')` fail until those command files exist — that
 is why **R and A own their command files on the same branch as their library
 code**, and **U edits the existing update case** to call `updateProject` which U
-also owns. Parent should put R’s `apps/opm/src/opm.ts` hunk and U’s hunk on
-**different line ranges** as specified so `gh stack` can still merge; if a
-textual conflict appears, parent rebases — implementers do not.
+also owns. Parent should put R’s `apps/openpacker-cli/src/opm.ts` hunk and U’s
+hunk on **different line ranges** as specified so `gh stack` can still merge; if
+a textual conflict appears, parent rebases — implementers do not.
 
 Suggested branch names (parent creates before spawn):
 
@@ -818,14 +818,16 @@ export async function updateProject(input: {
 **Acceptance**
 
 - Workspace `@openpacker/opm-project` test+typecheck green including new files.
-- `apps/opm` typecheck: U’s `opm.ts` hunk imports `updateProject` which U also
-  adds to `index.ts`. Run `npm run test --workspace @openpacker/opm` if you
-  touch `opm.ts` — add a focused test **only if you can do it without editing
-  `apps/opm/test/opm.test.ts` in a colliding way**. Prefer asserting via
-  `update.test.ts` at the library. If you must edit `apps/opm/test/opm.test.ts`,
-  add a **new** `apps/opm/test/update.test.ts` instead (you own that new file;
-  add it to the exclusive table — parent: treat `apps/opm/test/update.test.ts`
-  as U-owned).
+- `apps/openpacker-cli` typecheck: U’s `opm.ts` hunk imports `updateProject`
+  which U also adds to `index.ts`. Run
+  `npm run test --workspace @openpacker/cli` if you touch `opm.ts` — add a
+  focused test **only if you can do it without editing
+  `apps/openpacker-cli/test/opm.test.ts` in a colliding way**. Prefer asserting
+  via `update.test.ts` at the library. If you must edit
+  `apps/openpacker-cli/test/opm.test.ts`, add a **new**
+  `apps/openpacker-cli/test/update.test.ts` instead (you own that new file; add
+  it to the exclusive table — parent: treat
+  `apps/openpacker-cli/test/update.test.ts` as U-owned).
 
 **Stop.** No workspaces. No `opm outdated` UI beyond `updated` list. No
 interactive prompts.
@@ -1003,10 +1005,10 @@ export interface AuthConfig {
    - `opm auth list` prints origin and env **name**
    - `opm auth unset --origin …`
    - `opm auth set --origin … --token …` **must not exist**.
-5. Integration: `apps/opm/src/commands/auth.ts` is the CLI. For **use** of the
-   mapping: when `runOpm` constructs registry/host-fetch options, if you can
-   pass token env names **without editing `registry.ts`** (e.g. CLI sets
-   `process.env` is forbidden), prefer: command module exports
+5. Integration: `apps/openpacker-cli/src/commands/auth.ts` is the CLI. For
+   **use** of the mapping: when `runOpm` constructs registry/host-fetch options,
+   if you can pass token env names **without editing `registry.ts`** (e.g. CLI
+   sets `process.env` is forbidden), prefer: command module exports
    `applyAuthConfigToEnvNames()` that returns lists the CLI already has a place
    to pass. **If there is no hook**, A may add a **new function**
    `registryOptionsWithAuthConfig` in `auth-config.ts` that **calls** existing
@@ -1015,16 +1017,17 @@ export interface AuthConfig {
    parallel list; `apply` may **return** extra names for the CLI to put into
    that list **for the process of this command only** via an options object, not
    by mutating `process.env`.
-6. Look at `apps/opm/src/opm.ts` for where registry options are built. A is
-   **not** allowed to edit `opm.ts` except the `case 'auth'` hunk in §5.2.
-   Therefore: `commands/auth.ts` handles `auth` subcommands. For add/sync to
-   honor the map, **U/R must not be required**. Add `applyAuthConfigToEnvNames`
-   and call it from `commands/auth.ts` is not enough for `opm add`. **Allowed
-   exception:** A may create `apps/opm/src/auth-hook.ts` and the parent will, in
-   the coordinator docs PR, **not** be the one to wire it — A’s `case 'auth'`
-   hunk is insufficient for add. **Wire `applyAuthConfigToEnvNames` inside
+6. Look at `apps/openpacker-cli/src/opm.ts` for where registry options are
+   built. A is **not** allowed to edit `opm.ts` except the `case 'auth'` hunk in
+   §5.2. Therefore: `commands/auth.ts` handles `auth` subcommands. For add/sync
+   to honor the map, **U/R must not be required**. Add
+   `applyAuthConfigToEnvNames` and call it from `commands/auth.ts` is not enough
+   for `opm add`. **Allowed exception:** A may create
+   `apps/openpacker-cli/src/auth-hook.ts` and the parent will, in the
+   coordinator docs PR, **not** be the one to wire it — A’s `case 'auth'` hunk
+   is insufficient for add. **Wire `applyAuthConfigToEnvNames` inside
    `commands/auth.ts` plus export it. Additionally A may edit
-   `apps/opm/src/opmx.ts` only if needed — avoid.**  
+   `apps/openpacker-cli/src/opmx.ts` only if needed — avoid.**  
    **Practical wire that stays exclusive:** implement `readAuthConfig` + a
    function `hostFetchTokenEnvNamesFromAuth(): string[]` that serializes as
    `origin1,env1,origin2,env2` matching `OPM_HOST_FETCH_TOKEN_ENVS` /

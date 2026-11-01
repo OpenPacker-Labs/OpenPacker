@@ -64,7 +64,7 @@ git clone https://github.com/${repo}.git
 cd OpenPacker
 npm ci
 npm run build
-npm link -w @openpacker/opm</code></pre>`;
+npm link -w @openpacker/cli</code></pre>`;
 }
 
 function releasesSection(releases) {
