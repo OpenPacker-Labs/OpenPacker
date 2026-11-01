@@ -87,6 +87,12 @@ const EXEMPT: ReadonlyArray<{
   },
   {
     file: 'commands/run-child.ts',
+    starts: 'chunk',
+    reason:
+      "the script's own stdout, passed through as it wrote it, which is the point of `opm run`",
+  },
+  {
+    file: 'commands/run-child.ts',
     starts: 'const handedNoTerminal',
     reason:
       "compares the stdio choices made on the lines above (a child handed none of the terminal's streams gets a group of its own); writes nothing",
@@ -167,7 +173,6 @@ describe('what the command lines write to stdout', () => {
   it('lists every call of outRaw', () => {
     const calls = places.filter((place) => place.how === 'outRaw');
     expect(calls.map((place) => place.file).sort()).toEqual([
-      'commands/run-child.ts',
       'commands/run-output.ts',
       'opm.ts',
       'opmx.ts',
