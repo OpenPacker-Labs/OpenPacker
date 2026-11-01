@@ -55,7 +55,10 @@ const esbuildCommon = {
   alias: {
     '@openpacker/embedded/wasm-node': join(root, 'scripts/wasm-node-stub.mjs'),
   },
-  external: [...Object.keys(dependencies), ...Object.keys(optionalDependencies)],
+  external: [
+    ...Object.keys(dependencies),
+    ...Object.keys(optionalDependencies),
+  ],
   loader: { '.node': 'copy' },
   logLevel: 'info',
   banner: { js: requireBanner },
