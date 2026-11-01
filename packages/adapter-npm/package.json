@@ -27,7 +27,7 @@
     "@openpacker/canonical": "0.0.1-alpha.1",
     "@openpacker/contracts": "0.0.1-alpha.1",
     "@openpacker/project-io": "0.0.1-alpha.1",
-    "yaml": "^2.8.3"
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@openpacker/materializer": "0.0.1-alpha.1",
