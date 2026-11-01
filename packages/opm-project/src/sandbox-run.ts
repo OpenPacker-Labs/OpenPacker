@@ -2,6 +2,7 @@ import {
   inheritedHandleCount,
   MAX_INHERITED_HANDLES,
   runInSandbox,
+  type OutputSink,
   type SandboxBackend,
   type SandboxOutcome,
   type SandboxPolicy,
@@ -30,6 +31,11 @@ export async function runSandboxedPackageProcess(input: {
   signal?: AbortSignal;
   /** Directories put first on the process's PATH (a layout's `.bin`). */
   pathPrefix?: readonly string[];
+  /**
+   * Hand the output on as the process writes it, rather than return it in the
+   * outcome (`@openpacker/sandbox`'s `RunInSandboxInput.output`).
+   */
+  output?: OutputSink;
   /** Test seam: inject a backend. Production callers omit this. */
   backend?: SandboxBackend;
 }): Promise<SandboxOutcome> {
@@ -75,6 +81,7 @@ export async function runSandboxedPackageProcess(input: {
       ...(!(input.pathPrefix === undefined) && {
         pathPrefix: input.pathPrefix,
       }),
+      ...(!(input.output === undefined) && { output: input.output }),
       ...(!(input.backend === undefined) && { backend: input.backend }),
     });
   } finally {

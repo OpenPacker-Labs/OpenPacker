@@ -367,3 +367,41 @@ cases; `opmx-run-signals.test.ts` stops an installed declared bin by SIGHUP and
 finds its layout removed; `tool-layout-readonly.test.ts` lays a tool out from a
 store bwrap binds read-only, and is refused a temporary directory that is not
 private.
+
+## Amendment (2026-10-24) — a tool's output reaches the terminal as it is written
+
+`opmx http-server` printed nothing while it served. The backends collected a
+process's output (`BoundedOutput`) and returned it in the outcome, and `opmx`
+wrote the outcome's `stdout` and `stderr` once the process had ended: a server
+says that it listens and then runs until it is stopped, and was seen saying it
+only after.
+
+Decision:
+
+- `runInSandbox` takes an `output` sink (`OutputSink`: `stdout(chunk)`,
+  `stderr(chunk)`), passed by `runSandboxedPackageProcess` to every backend,
+  bwrap, MXC and the mock alike. Each chunk is handed to it as it is read, and
+  none is kept: the outcome's `stdout` and `stderr` then hold only what the
+  sandbox itself says, an output limit reached or a run stopped. A caller with
+  no sink (an install's lifecycle scripts) keeps the output as before.
+- The policy's byte limits are unchanged and still count every byte: what passes
+  `maximumStdoutBytes`, `maximumStderrBytes` or `maximumOutputBytes` is not
+  handed on, and the process tree is ended, exit 125, as when the output is
+  kept.
+- MXC is not run a second time after a run that has handed output on: what a
+  person has been shown cannot be taken back.
+- `opmx` hands a tool's output to its own stdout and stderr as text, each stream
+  through its own UTF-8 decoder (`passedOn` in `opmx-spawn.ts`), so a character
+  split between two chunks is written whole; the outcome held text decoded the
+  same way before.
+
+Limits: output is handed on as the sandbox reads it, so how often it arrives is
+the tool's (a tool that buffers its own output when it is not writing to a
+terminal still does). The policy's `timeout_ms` (ten minutes unless a project
+sets it, and always for `opmx pkg:...`, which has no project) and the byte
+limits above still end a tool that runs or writes past them, a server included.
+
+`output-sink.test.ts` (sandbox) shows a process's first lines handed on while it
+runs, by the mock backend and by bwrap, and the limits ending a tree whose
+output is handed on; `opmx-stream.test.ts` (apps/opm) shows the same through
+`opmx`'s spawn, and a split character written whole.

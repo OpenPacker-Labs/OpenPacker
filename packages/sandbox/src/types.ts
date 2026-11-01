@@ -82,6 +82,16 @@ export interface SandboxPolicy {
   maximumOutputBytes?: number;
 }
 
+/**
+ * Where a process's output goes as it is written, instead of into the
+ * outcome: a caller that shows a tool to a person (opmx) passes its own
+ * streams. Each chunk is the bytes as read, within the policy's byte limits.
+ */
+export interface OutputSink {
+  stdout(chunk: Uint8Array): void;
+  stderr(chunk: Uint8Array): void;
+}
+
 export interface RunInSandboxInput {
   argv: readonly string[];
   cwd: string;
@@ -98,6 +108,14 @@ export interface RunInSandboxInput {
    * before handing them over — this is a transport, not a limit.
    */
   stdin?: Uint8Array;
+  /**
+   * Hand the process's output on as it is written. The outcome's `stdout` and
+   * `stderr` then hold only what the sandbox itself says (a limit reached, a
+   * run stopped), and nothing of the output is kept. The policy's byte limits
+   * still end the process tree when the output passes them. Absent, the output
+   * is kept, within those limits, and returned when the process ends.
+   */
+  output?: OutputSink;
   policy: SandboxPolicy;
   /** Optional package id for grant lookup. */
   packageId?: string;
@@ -165,6 +183,8 @@ export interface SandboxBackend {
     timeoutMs?: number;
     /** Bounded bytes for the child's stdin; absent means /dev/null. */
     stdin?: Uint8Array;
+    /** Hand output on as it is written (`RunInSandboxInput.output`). */
+    output?: OutputSink;
     maximumStdoutBytes: number;
     maximumStderrBytes: number;
     maximumOutputBytes: number;

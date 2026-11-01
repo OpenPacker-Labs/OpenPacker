@@ -202,6 +202,7 @@ export function createBwrapBackend(): SandboxBackend {
           maximumOutputBytes: input.maximumOutputBytes,
           treeContainment: 'pid-namespace',
           ...(!(input.stdin === undefined) && { stdin: input.stdin }),
+          ...(!(input.output === undefined) && { output: input.output }),
           inheritedFds: [
             ...(input.directoryAuthorities?.map(({ fd }) => fd) ?? []),
             ...(executableHandle === undefined ? [] : [executableHandle.fd]),

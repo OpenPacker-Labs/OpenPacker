@@ -1352,6 +1352,11 @@ opmx --package demo-tool --bin demo-tool -- --help
 Resolution order: explicit `--bin` → package primary bin → bin name in
 `.opm/bin`.
 
+A tool's stdout and stderr reach `opmx`'s as the tool writes them, so a server
+shows that it listens while it serves. The sandbox's byte limits and its
+`timeout_ms` (ten minutes unless the project sets one) still end a tool that
+passes them (ADR 0036).
+
 An installed npm bin runs from a `node_modules` of its package's closure,
 written for the run under `.opm/runs/` beside the project's store (or, where
 that cannot be written, under `$TMPDIR/openpacker-runs/`) and removed when it

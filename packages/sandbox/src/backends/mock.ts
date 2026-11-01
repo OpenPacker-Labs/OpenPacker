@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { readSync } from 'node:fs';
 import { MAX_INHERITED_HANDLES } from '../handles.js';
 import { executableAuthorityRefusal } from '../platform.js';
-import type { SandboxBackend } from '../types.js';
+import type { OutputSink, SandboxBackend } from '../types.js';
 
 /**
  * Test backend: runs the process with scrubbed env but no OS isolation.
@@ -45,6 +45,7 @@ export function createMockBackend(options?: {
         maximumOutputBytes: input.maximumOutputBytes,
         treeContainment: 'test-only',
         ...(!(input.stdin === undefined) && { stdin: input.stdin }),
+        ...(!(input.output === undefined) && { output: input.output }),
         inheritedFds: [
           ...directoryFds,
           ...(input.executableAuthority === undefined
@@ -117,6 +118,11 @@ export function assertSnapshot(fd?: number): void {
 
 export type OutputLimitKind = 'stdout' | 'stderr' | 'combined';
 
+/**
+ * A process's output within the policy's byte limits: kept, or handed to
+ * `sink` as it arrives and not kept. Past a limit nothing more is kept or
+ * handed on, and `push` says the process tree is to be ended.
+ */
 export class BoundedOutput {
   readonly #stdout: Buffer[] = [];
   readonly #stderr: Buffer[] = [];
@@ -131,6 +137,7 @@ export class BoundedOutput {
       maximumStderrBytes: number;
       maximumOutputBytes: number;
     },
+    readonly sink?: OutputSink,
   ) {}
 
   push(kind: 'stdout' | 'stderr', chunk: unknown): boolean {
@@ -150,10 +157,12 @@ export class BoundedOutput {
         this.limits.maximumOutputBytes - this.#totalBytes,
       ),
     );
-    if (retained > 0)
-      (kind === 'stdout' ? this.#stdout : this.#stderr).push(
-        bytes.subarray(0, retained),
-      );
+    if (retained > 0) {
+      const within = bytes.subarray(0, retained);
+      if (this.sink === undefined)
+        (kind === 'stdout' ? this.#stdout : this.#stderr).push(within);
+      else this.sink[kind](within);
+    }
     if (kind === 'stdout') this.#stdoutBytes += bytes.byteLength;
     else this.#stderrBytes += bytes.byteLength;
     this.#totalBytes += bytes.byteLength;
@@ -198,6 +207,8 @@ export async function spawnCapture(input: {
   maximumOutputBytes?: number;
   /** Bounded bytes for the child's stdin; absent means /dev/null. */
   stdin?: Uint8Array;
+  /** Hand output on as it is written instead of keeping it. */
+  output?: OutputSink;
   treeContainment?: 'pid-namespace' | 'test-only';
   inheritedFds?: readonly number[];
 }): Promise<{
@@ -270,11 +281,14 @@ export async function spawnCapture(input: {
         child.stdin.on('error', () => undefined);
         child.stdin.end(Buffer.from(input.stdin));
       }
-      const output = new BoundedOutput({
-        maximumStdoutBytes: input.maximumStdoutBytes ?? 1024 * 1024,
-        maximumStderrBytes: input.maximumStderrBytes ?? 1024 * 1024,
-        maximumOutputBytes: input.maximumOutputBytes ?? 2 * 1024 * 1024,
-      });
+      const output = new BoundedOutput(
+        {
+          maximumStdoutBytes: input.maximumStdoutBytes ?? 1024 * 1024,
+          maximumStderrBytes: input.maximumStderrBytes ?? 1024 * 1024,
+          maximumOutputBytes: input.maximumOutputBytes ?? 2 * 1024 * 1024,
+        },
+        input.output,
+      );
       let termination: Promise<void> | undefined;
       let aborted = false;
       let settled = false;

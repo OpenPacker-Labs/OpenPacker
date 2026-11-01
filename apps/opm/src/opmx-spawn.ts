@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import { outRaw } from '@openpacker/canonical';
 import type { PolicyInput } from '@openpacker/contracts';
 import {
@@ -205,6 +206,40 @@ export async function spawnTool(
   return spawnProcess(process.execPath, [target, ...args], io, cwd, sandbox);
 }
 
+/**
+ * The tool's own output, handed to opmx's streams as the tool writes it, as
+ * text: a character a chunk splits is written whole with the next chunk, and
+ * `end` writes what a last chunk left. `out` and `err` write text there too:
+ * what the sandbox itself says, after the tool.
+ */
+function passedOn(io: CliIo): {
+  sink: { stdout(chunk: Uint8Array): void; stderr(chunk: Uint8Array): void };
+  end(): void;
+  out(text: string): void;
+  err(text: string): void;
+} {
+  const out = new StringDecoder('utf8');
+  const err = new StringDecoder('utf8');
+  const toOut = (written: string) => {
+    if (written !== '') outRaw(io, written);
+  };
+  const toErr = (written: string) => {
+    if (written !== '') io.stderr.write(written);
+  };
+  return {
+    sink: {
+      stdout: (chunk) => toOut(out.write(chunk)),
+      stderr: (chunk) => toErr(err.write(chunk)),
+    },
+    end: () => {
+      toOut(out.end());
+      toErr(err.end());
+    },
+    out: toOut,
+    err: toErr,
+  };
+}
+
 async function spawnProcess(
   command: string,
   argv: readonly string[],
@@ -213,6 +248,7 @@ async function spawnProcess(
   sandbox?: SandboxContext,
   missingHint?: string,
 ): Promise<number> {
+  const passing = passedOn(io);
   try {
     const outcome = await runSandboxedPackageProcess({
       argv: [command, ...argv],
@@ -231,9 +267,13 @@ async function spawnProcess(
       ...(!(sandbox?.pathPrefix === undefined) && {
         pathPrefix: sandbox.pathPrefix,
       }),
-    });
-    if (outcome.stdout) outRaw(io, outcome.stdout);
-    if (outcome.stderr) io.stderr.write(outcome.stderr);
+      // The tool's output reaches the terminal as the tool writes it: a
+      // server prints that it listens and then serves until it is stopped.
+      output: passing.sink,
+    }).finally(passing.end);
+    // What the sandbox itself says: a limit reached, a run stopped.
+    passing.out(outcome.stdout);
+    passing.err(outcome.stderr);
     if (
       outcome.exitCode !== 0 &&
       outcome.backend === 'none' &&

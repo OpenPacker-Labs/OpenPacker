@@ -47,8 +47,8 @@ const RAW: readonly { file: string; argument: string; why: string }[] = [
   },
   {
     file: 'opmx-spawn.ts',
-    argument: 'outcome.stderr',
-    why: "a tool's own output, passed through",
+    argument: 'written',
+    why: "a tool's own output, passed through as the tool writes it, whole characters at a time",
   },
   {
     file: 'opmx.ts',
