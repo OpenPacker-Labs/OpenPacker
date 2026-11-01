@@ -47,6 +47,7 @@ import {
   resolveGraph,
   resolveRegistryArtifact,
   solveGraph,
+  searchRegistry,
   syncProject,
   uninstallProject,
   updateProject,
