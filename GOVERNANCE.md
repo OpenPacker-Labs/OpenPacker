@@ -15,8 +15,9 @@ Propose changes in issues and pull requests. Discussion there informs the
 maintainer. The BDFL decides what lands, including when a public contract
 changes and when a release ships.
 
-Review expectations are in [CONTRIBUTING.md](CONTRIBUTING.md). A decision that
-needs a durable record is written up as an ADR under
+Review expectations are in
+[CONTRIBUTING.md](https://github.com/OpenPacker-Labs/.github/blob/main/CONTRIBUTING.md).
+A decision that needs a durable record is written up as an ADR under
 [docs/adr/](docs/adr/README.md) or in the pull request that lands the change.
 
 ## Becoming a committer or maintainer
@@ -32,8 +33,9 @@ Raise a technical disagreement on the issue or pull request it concerns. If that
 discussion does not settle it, the BDFL decides and records the outcome on that
 thread or in an ADR.
 
-Conduct reports follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Send them
-through GitHub private reporting for `OpenPacker-Labs/OpenPacker`
+Conduct reports follow
+[CODE_OF_CONDUCT.md](https://github.com/OpenPacker-Labs/.github/blob/main/CODE_OF_CONDUCT.md).
+Send them through GitHub private reporting for `OpenPacker-Labs/OpenPacker`
 (<https://github.com/OpenPacker-Labs/OpenPacker/security/advisories/new>) and/or
 contact [@Tyler-R-Kendrick](https://github.com/Tyler-R-Kendrick) on GitHub.
 

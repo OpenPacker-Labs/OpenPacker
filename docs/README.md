@@ -75,15 +75,14 @@ API detail.
 
 ## Agent SDLC
 
-| Path                                                  | Role                                 |
-| ----------------------------------------------------- | ------------------------------------ |
-| [AGENTS.md](../AGENTS.md)                             | Skill install map + OpenPacker gates |
-| `.agents/skills/sdlc` / `.claude/skills/sdlc`         | Full-loop coordinator skill          |
-| `.agents/skills/gh-stack` / `.claude/skills/gh-stack` | Stacked PR CLI skill                 |
-| [docs/plans/](plans/README.md)                        | Durable sdlc state + dispatch log    |
+| Path                                                                    | Role                                                   |
+| ----------------------------------------------------------------------- | ------------------------------------------------------ |
+| [AGENTS.md](../AGENTS.md)                                               | OpenPacker quality gates and protocol boundaries       |
+| [OpenPacker-Labs/.github](https://github.com/OpenPacker-Labs/.github)   | Org-wide `sdlc` / `gh-stack` skills and agent backends |
+| [OpenPacker-Labs/dotfiles](https://github.com/OpenPacker-Labs/dotfiles) | Devcontainer/Codespaces install (`install.sh`)         |
+| [docs/plans/](plans/README.md)                                          | Durable sdlc state + dispatch log (OpenPacker repo)    |
 
-Invoke with `/sdlc` or `/sdlc --finish`. Mirrors must stay identical:
-`npm run skills:mirror-check`.
+Invoke with `/sdlc` or `/sdlc --finish` after running dotfiles `install.sh`.
 
 ## Documentation quality gate
 

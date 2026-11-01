@@ -19,8 +19,6 @@ async function markdownFiles(directory) {
 
 const files = [
   'README.md',
-  'CONTRIBUTING.md',
-  'SECURITY.md',
   'examples/README.md',
   'examples/cli/README.md',
   ...(await markdownFiles('docs')),

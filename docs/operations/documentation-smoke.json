@@ -1,7 +1,7 @@
 {
   "schemaVersion": "org.openpacker.documentation-smoke.v2",
   "command": "node docs/operations/documentation-smoke.mjs",
-  "formatCommand": "npm exec prettier -- --check README.md CONTRIBUTING.md SECURITY.md docs spec/prex/v1",
+  "formatCommand": "npm exec prettier -- --check README.md docs spec/prex/v1",
   "executedBySmoke": {
     "schemas": "node packages/contracts/scripts/check-schemas.mjs",
     "generated": "node packages/contracts/scripts/generate.mjs --check",

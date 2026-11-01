@@ -15,4 +15,4 @@ coverage/
 # PATH. It stays local — .envrc is a common home for secrets, and agent:check
 # refuses to stage anything matching .env*.
 .envrc
-actionlint
+.sdlc/

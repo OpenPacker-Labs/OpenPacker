@@ -88,7 +88,8 @@ above with their real storage and secret-recovery systems.
   [lifecycle and policy](../security/lifecycle-policy.md).
 - Receipt/signing-key compromise: stop signing, retain affected receipt digests,
   rotate trust configuration, and reissue evidence without rewriting old
-  receipts; see [incident procedure](../../SECURITY.md#incident-procedure).
+  receipts; see
+  [incident procedure](https://github.com/OpenPacker-Labs/.github/blob/main/SECURITY.md#incident-procedure).
 - TUF/Sigstore/provenance failure: keep the distinct evidence result, deny under
   policy as configured, and follow
   [trust-layer guidance](../security/tuf-sigstore-slsa-sbom.md).
