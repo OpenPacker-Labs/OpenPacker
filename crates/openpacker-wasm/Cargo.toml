@@ -17,5 +17,5 @@ wasm-bindgen.workspace = true
 getrandom.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-napi = { version = "=3.12.0", default-features = false, features = ["napi8", "dyn-symbols"] }
+napi = { version = "=3.15.0", default-features = false, features = ["napi8", "dyn-symbols"] }
 napi-derive = "=3.6.2"
