@@ -1961,7 +1961,7 @@ describe('native interpreter', () => {
       const tool = await fetchTool({
         purl: EXACT,
         cacheRoot,
-        fetch: fetchStub(tarRoute),
+        registryOptions: { fetch: fetchStub(tarRoute) },
       });
       const target = join(tool.storePath, 'bin', 'demo');
       const outcome = await runSandboxedPackageProcess({

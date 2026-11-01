@@ -115,6 +115,141 @@ test('Turbo cannot restore a stale Rust-backed embedded build', () => {
   assert.ok(turbo.globalDependencies.includes('tsconfig.base.json'));
 });
 
+// One shared config for every package and root run: the store isolation, and
+// no time bound. The bounds are the ones each config had before it existed,
+// and none may rise: a test that a loaded machine takes past one is fixed in the
+// test (count the work, wait for an event), not by a longer bound.
+const BOUNDS = {
+  'packages/opm-project': { testTimeout: '15_000', hookTimeout: '15_000' },
+  'scripts/vitest.gate.config.mjs': {
+    testTimeout: '15_000',
+    hookTimeout: '15_000',
+  },
+  'scripts/vitest.coverage.config.mjs': { testTimeout: '30_000' },
+  // #231: the vitest-worker RPC window under turbo, not a test's clock.
+  'apps/opm': { hookTimeout: '120_000' },
+};
+
+/** The time bounds a config states, as `{ testTimeout: '15_000' }`. */
+function statedBounds(text) {
+  return Object.fromEntries(
+    [...text.matchAll(/\b(testTimeout|hookTimeout):\s*([\d_]+)/gu)].map(
+      ([, name, value]) => [name, value],
+    ),
+  );
+}
+
+test('every package and root vitest run extends the one shared config, and no bound rises', () => {
+  const shared = readFileSync(join(root, 'vitest.shared.ts'), 'utf8');
+  assert.deepEqual(statedBounds(shared), {}, 'vitest.shared.ts');
+  assert.match(shared, /tests\/support\/stores\.setup\.ts/u);
+  const workspaces = JSON.parse(
+    readFileSync(join(root, 'package.json'), 'utf8'),
+  ).workspaces.flatMap((pattern) =>
+    pattern.endsWith('/*')
+      ? readdirSync(join(root, pattern.slice(0, -2))).map(
+          (name) => `${pattern.slice(0, -2)}/${name}`,
+        )
+      : [pattern],
+  );
+  const usingVitest = workspaces.filter((workspace) => {
+    const manifest = join(root, workspace, 'package.json');
+    if (!existsSync(manifest)) return false;
+    const { scripts = {} } = JSON.parse(readFileSync(manifest, 'utf8'));
+    return Object.values(scripts).some((script) => /\bvitest\b/u.test(script));
+  });
+  assert.ok(usingVitest.length > 40, `${usingVitest.length} workspaces`);
+  for (const workspace of usingVitest) {
+    const config = join(root, workspace, 'vitest.config.ts');
+    assert.ok(existsSync(config), `${workspace} has no vitest.config.ts`);
+    const text = readFileSync(config, 'utf8');
+    assert.match(text, /'\.\.\/\.\.\/vitest\.shared\.js'/u, workspace);
+    assert.deepEqual(statedBounds(text), BOUNDS[workspace] ?? {}, workspace);
+  }
+  for (const config of [
+    'scripts/vitest.coverage.config.mjs',
+    'scripts/vitest.gate.config.mjs',
+  ]) {
+    const text = readFileSync(join(root, config), 'utf8');
+    assert.match(text, /'\.\.\/vitest\.shared\.ts'/u, config);
+    assert.deepEqual(statedBounds(text), BOUNDS[config], config);
+    assert.match(text, /store-guard\.setup\.ts/u, config);
+  }
+});
+
+// A vitest started from the repository root finds no vitest.config there, so
+// it runs with vitest's own 5 s bound and none of the store isolation unless it
+// names one of the root configs, which both extend the shared config. Every
+// such start: the root package.json scripts, what the scripts spawn (an array
+// that holds 'vitest', or createVitest), and the workflows' run lines.
+test('every vitest run from the repository root names a root config', () => {
+  const rootConfig =
+    /--config[= ]scripts\/vitest\.(?:gate|coverage)\.config\.mjs/u;
+  const bare = [];
+  const { scripts } = JSON.parse(
+    readFileSync(join(root, 'package.json'), 'utf8'),
+  );
+  for (const [name, command] of Object.entries(scripts))
+    for (const part of command.split(/&&|\|\||;/u))
+      if (/\bvitest\b/u.test(part) && !rootConfig.test(part))
+        bare.push(`package.json scripts.${name}: ${part.trim()}`);
+  const scriptFiles = readdirSync(join(root, 'scripts'), { recursive: true })
+    .filter((file) => /\.[cm]?js$/u.test(file))
+    .map((file) => join('scripts', file));
+  for (const file of scriptFiles) {
+    const text = readFileSync(join(root, file), 'utf8');
+    for (const match of text.matchAll(/(['"])vitest\1(?=\s*[,\]])/gu)) {
+      const open = text.lastIndexOf('[', match.index);
+      const close = text.indexOf(']', match.index);
+      const args = text.slice(open, close + 1);
+      if (open === -1 || close === -1 || !/(['"])--config\1/u.test(args))
+        bare.push(`${file}: ${args.replace(/\s+/gu, ' ')}`);
+    }
+    for (const match of text.matchAll(/createVitest\(/gu)) {
+      const call = text.slice(match.index, text.indexOf(');', match.index));
+      if (!/\bconfig:\s*['"]scripts\/vitest\./u.test(call))
+        bare.push(`${file}: createVitest without a root config`);
+    }
+  }
+  // A step's `run:` value with the lines folded under it, as one command.
+  const workflows = join(root, '.github', 'workflows');
+  for (const file of readdirSync(workflows).filter((name) =>
+    /\.ya?ml$/u.test(name),
+  )) {
+    const lines = readFileSync(join(workflows, file), 'utf8').split('\n');
+    lines.forEach((line, at) => {
+      const step = /^(\s*)(?:-\s+)?run:\s*(.*)$/u.exec(line);
+      if (step === null) return;
+      const indent = step[1].length;
+      const parts = [step[2]];
+      for (const next of lines.slice(at + 1)) {
+        if (next.trim() !== '' && next.search(/\S/u) <= indent) break;
+        parts.push(next.trim());
+      }
+      const command = parts.join(' ').trim();
+      if (/\bvitest\b/u.test(command) && !rootConfig.test(command))
+        bare.push(`.github/workflows/${file}: ${command}`);
+    });
+  }
+  assert.ok(scriptFiles.length > 10, `${scriptFiles.length} script files`);
+  assert.deepEqual(bare, []);
+});
+
+// Strict env mode hands a task only what turbo.json names. Without these, cargo
+// under `turbo run build` ignores an exported CARGO_TARGET_DIR and builds into
+// the checkout's own target/, so every worktree grows a private copy.
+test('Turbo passes the cargo build settings through to its tasks', () => {
+  const turbo = JSON.parse(readFileSync(join(root, 'turbo.json'), 'utf8'));
+  for (const name of [
+    'CARGO_HOME',
+    'RUSTUP_HOME',
+    'CARGO_TARGET_DIR',
+    'CARGO_INCREMENTAL',
+    'CARGO_BUILD_JOBS',
+  ])
+    assert.ok(turbo.globalPassThroughEnv.includes(name), name);
+});
+
 test('Pact verification compares committed bytes without rewriting them', () => {
   const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   assert.doesNotMatch(manifest.scripts.test, /prettier\s+--write.*pacts/u);

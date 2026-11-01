@@ -84,7 +84,9 @@ jobs:
       - run:
           npm run build -- --filter='...@openpacker/cli'
           --filter='...@openpacker/materializer'
-      - run: npm exec vitest run apps/openpacker-cli packages/materializer
+      - run:
+          npm exec -- vitest run --config scripts/vitest.gate.config.mjs
+          apps/openpacker-cli packages/materializer
       - run: node --test integrations/mise/test/contract.test.mjs
       - run: mise --version
 

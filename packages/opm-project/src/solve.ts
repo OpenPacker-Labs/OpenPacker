@@ -168,6 +168,7 @@ export async function solveGraph(input: {
       // `@openpacker/embedded` throws every refusal as an EmbeddedRefusal,
       // whichever binding made it. Its code is read, not its class: with both
       // the ESM and the CommonJS build loaded, `instanceof` could miss it.
+      // SAFETY: only the `refusal` an EmbeddedRefusal carries is read.
       // A binding that still throws a string is read the same way.
       const refusal = (error as { refusal?: unknown } | null)?.refusal;
       if (

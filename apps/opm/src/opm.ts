@@ -58,13 +58,13 @@ import {
 } from '@openpacker/opm-project';
 import { asksForHelp } from './commands/run-args.js';
 import { cliStep, runRecoverCommand } from './commands/recover.js';
+import { runRollbackCommand } from './commands/generations.js';
 import { COMMANDS } from './commands/command-names.js';
 import { routeRun, unknownCommandHint } from './commands/run-route.js';
 import { RunError } from './commands/run-error.js';
 import { helpText } from './commands/help-text.js';
 import { formatFailure, parseFailure, report } from './error-report.js';
 import { isBooleanFlag, shortToLong } from './cli-flags.js';
-import { runRollbackCommand } from './commands/generations.js';
 import { importHeading, importLine, listLine } from './stdout-lines.js';
 
 export const EXIT_CODES = {
