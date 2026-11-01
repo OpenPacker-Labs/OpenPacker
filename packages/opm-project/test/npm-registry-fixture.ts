@@ -3,6 +3,7 @@ import { gzipSync } from 'node:zlib';
 import { packTarGzip } from '@openpacker/project-io';
 import {
   ProviderError,
+  ResponseTooLargeError,
   type HttpRequest,
   type HttpResponse,
   type HttpTransport,
@@ -151,6 +152,13 @@ export interface FixtureVersion {
   tarballFails?: boolean;
 }
 
+export interface PackumentPadding {
+  bytes: number;
+  values?: number;
+  /** When set, padding applies only to that packument shape. */
+  only?: 'full' | 'abbreviated';
+}
+
 export interface FixturePackage {
   name: string;
   versions: Record<string, FixtureVersion>;
@@ -163,6 +171,10 @@ export interface FixturePackage {
    * names it; a tag given as `undefined` is left out of the document.
    */
   distTags?: Record<string, string | undefined>;
+  /** Inflate the packument to an exact byte size (and optional value count). */
+  padding?: PackumentPadding;
+  /** Raw full-document body instead of the generated JSON packument. */
+  fullBody?: string;
 }
 
 export const OLD = '2026-01-01T00:00:00.000Z';
@@ -224,6 +236,70 @@ const json = (value: unknown): HttpResponse => ({
   headers: { 'content-type': 'application/json' },
   body: new TextEncoder().encode(JSON.stringify(value)),
   url: '',
+});
+
+const encoder = new TextEncoder();
+
+function paddingApplies(
+  padding: PackumentPadding,
+  abbreviated: boolean,
+): boolean {
+  if (padding.only === 'full') return !abbreviated;
+  if (padding.only === 'abbreviated') return abbreviated;
+  return true;
+}
+
+/** A packument of exactly `bytes` bytes, the rest a string no parser minds. */
+function packumentOfBytes(document: Record<string, unknown>, bytes: number) {
+  const bare = encoder.encode(JSON.stringify({ ...document, pad: '' }));
+  return encoder.encode(
+    JSON.stringify({
+      ...document,
+      pad: 'x'.repeat(bytes - bare.length),
+    }),
+  );
+}
+
+/** A packument of exactly `bytes` bytes holding at least `values` values. */
+function packumentHolding(
+  document: Record<string, unknown>,
+  bytes: number,
+  values: number,
+) {
+  const empties = Array.from({ length: values }, () => []);
+  const make = (fill: number) =>
+    encoder.encode(
+      JSON.stringify({ ...document, empties, pad: 'x'.repeat(fill) }),
+    );
+  return make(bytes - make(0).length);
+}
+
+function paddedPackumentBody(
+  document: Record<string, unknown>,
+  padding: PackumentPadding,
+): Uint8Array {
+  if (padding.values !== undefined)
+    return packumentHolding(document, padding.bytes, padding.values);
+  return packumentOfBytes(document, padding.bytes);
+}
+
+function enforceMaximumBytes(body: Uint8Array, request: HttpRequest): void {
+  if (
+    request.maximumBytes !== undefined &&
+    body.byteLength > request.maximumBytes
+  )
+    throw new ResponseTooLargeError(
+      request.maximumBytes,
+      body.byteLength,
+      'delivered',
+    );
+}
+
+const octetStream = (body: Uint8Array, url: string): HttpResponse => ({
+  status: 200,
+  headers: { 'content-type': 'application/json' },
+  body,
+  url,
 });
 
 export interface RecordedRequest {
@@ -343,6 +419,17 @@ export class NpmRegistryFixture implements HttpTransport {
         },
       }),
     };
+    if (!abbreviated && found.fullBody !== undefined) {
+      const body = encoder.encode(found.fullBody);
+      enforceMaximumBytes(body, request);
+      return withUrl(octetStream(body, request.url));
+    }
+    const padding = found.padding;
+    if (padding !== undefined && paddingApplies(padding, abbreviated)) {
+      const body = paddedPackumentBody(document, padding);
+      enforceMaximumBytes(body, request);
+      return withUrl(octetStream(body, request.url));
+    }
     return withUrl(json(document));
   }
 }
