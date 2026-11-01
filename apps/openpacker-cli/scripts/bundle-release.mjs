@@ -24,7 +24,6 @@ const built = spawnSync('npm run build', {
 if (built.status !== 0) process.exit(built.status ?? 1);
 
 const dependencies = {
-  '@microsoft/mxc-sdk': '1.0.1',
   '@sigstore/bundle': '4.0.0',
   '@sigstore/core': '3.2.1',
   '@sigstore/protobuf-specs': '0.5.2',
@@ -41,6 +40,10 @@ const dependencies = {
   yaml: '^2.8.3',
 };
 
+const optionalDependencies = {
+  '@microsoft/mxc-sdk': '1.0.1',
+};
+
 await esbuild.build({
   entryPoints: [join(root, 'dist/index.js')],
   outfile: join(releaseDir, 'dist/index.js'),
@@ -54,7 +57,10 @@ await esbuild.build({
   alias: {
     '@openpacker/embedded/wasm-node': join(root, 'scripts/wasm-node-stub.mjs'),
   },
-  external: Object.keys(dependencies),
+  external: [
+    ...Object.keys(dependencies),
+    ...Object.keys(optionalDependencies),
+  ],
   loader: { '.node': 'copy' },
   logLevel: 'info',
 });
@@ -80,6 +86,7 @@ writeFileSync(
         tag: 'alpha',
       },
       dependencies,
+      optionalDependencies,
       repository: {
         type: 'git',
         url: 'git+https://github.com/OpenPacker-Labs/OpenPacker.git',
