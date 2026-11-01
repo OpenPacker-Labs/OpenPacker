@@ -349,12 +349,10 @@ const instantFromNs = (ns: bigint): BigIntStats['atimeInstant'] => {
   }
   const Instant = (globalThis as { Temporal?: TemporalGlobal }).Temporal
     ?.Instant;
-  if (!Instant) {
-    throw new Error(
-      'Temporal is required to synthesize fs.BigIntStats timestamps',
-    );
+  if (Instant) {
+    return Instant.fromEpochNanoseconds(ns);
   }
-  return Instant.fromEpochNanoseconds(ns);
+  return undefined as BigIntStats['atimeInstant'];
 };
 
 /** `fs.BigIntStats` from a decoded `struct stat`. */
