@@ -43,8 +43,8 @@
   "devDependencies": {
     "@openpacker/packslip-testkit": "0.0.1-alpha.1",
     "@openpacker/project-io": "0.0.1-alpha.1",
-    "@types/semver": "7.7.1",
-    "fast-check": "4.9.0",
+    "@types/semver": "7.8.0",
+    "fast-check": "4.10.2",
     "semver": "7.8.5"
   },
   "repository": {
