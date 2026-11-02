@@ -71,7 +71,7 @@
     "@types/shell-quote": "^1.7.5",
     "canonicalize": "^3.0.0",
     "fast-check": "4.9.0",
-    "oxlint": "^1.79.0",
+    "oxlint": "^1.90.0",
     "packageurl-js": "^2.0.1",
     "prettier": "3.6.2",
     "testcontainers": "^12.2.1",
