@@ -36,7 +36,7 @@
     "@openpacker/canonical": "0.0.1-alpha.1",
     "@openpacker/contracts": "0.0.1-alpha.1",
     "@sigstore/bundle": "4.0.0",
-    "@sigstore/core": "3.2.1",
+    "@sigstore/core": "4.0.1",
     "@sigstore/protobuf-specs": "0.5.2",
     "@sigstore/verify": "3.1.1"
   },
