@@ -1,9 +1,7 @@
 // Generated from spec/prex/v1/schemas by scripts/generate.mjs. Do not edit.
 export type JsonPrimitive = null | boolean | number | string;
 export type JsonValue =
-  | JsonPrimitive
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+  JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
 export type AmendmentOperation =
   | {
@@ -86,11 +84,7 @@ export type BuildRecipe = {
   extensions?: Extensions;
 };
 export type BuildRecipeInput =
-  | JsonValue
-  | JsonValue
-  | JsonValue
-  | JsonValue
-  | JsonValue;
+  JsonValue | JsonValue | JsonValue | JsonValue | JsonValue;
 export type BuildRecipeOutput = {
   name: OutputName;
   hashMode: 'input-addressed' | 'content-addressed' | 'fixed-output';
@@ -136,12 +130,7 @@ export type Capabilities = {
   streaming: { supported: boolean; bindings: StringSet };
   authenticationSchemes: Array<{
     type:
-      | 'none'
-      | 'bearer'
-      | 'oauth2'
-      | 'mtls'
-      | 'api-key'
-      | 'provider-specific';
+      'none' | 'bearer' | 'oauth2' | 'mtls' | 'api-key' | 'provider-specific';
     description?: string;
   }>;
   extensionSchemaRefs: Array<string>;
@@ -642,11 +631,7 @@ export type InspectRequest = {
 };
 export type InspectResponse = { meta: ProtocolMeta; package: PackageInstance };
 export type InstallSideEffects =
-  | 'none'
-  | 'project-store'
-  | 'user-profile'
-  | 'system'
-  | 'unknown';
+  'none' | 'project-store' | 'user-profile' | 'system' | 'unknown';
 export type KeyRotation = {
   previousKeyId: string;
   nextKeyId: string;
@@ -689,11 +674,7 @@ export type LifecycleEvent = {
   issuedAt: string;
   actor: IdentityRef;
   authority:
-    | 'publisher'
-    | 'registry'
-    | 'organization'
-    | 'user'
-    | 'test-fixture';
+    'publisher' | 'registry' | 'organization' | 'user' | 'test-fixture';
   reasonCode: string;
   reason?: string;
   replacementRefs: Array<ExternalRef>;
@@ -759,9 +740,7 @@ export type LockImportResponse = {
     rootRequirements: Array<Requirement>;
     target: TargetContext;
     semanticsProfile:
-      | 'native-capture-v1'
-      | 'native-validated-v1'
-      | 'prex-calculus-subset-v1';
+      'native-capture-v1' | 'native-validated-v1' | 'prex-calculus-subset-v1';
     objectiveOrdering: Array<
       | 'satisfy-hard-constraints'
       | 'preserve-locks'
@@ -945,9 +924,7 @@ export type OpenPackerLockfile = {
   rootRequirements: Array<Requirement>;
   target: TargetContext;
   semanticsProfile:
-    | 'native-capture-v1'
-    | 'native-validated-v1'
-    | 'prex-calculus-subset-v1';
+    'native-capture-v1' | 'native-validated-v1' | 'prex-calculus-subset-v1';
   objectiveOrdering: Array<
     | 'satisfy-hard-constraints'
     | 'preserve-locks'
@@ -989,11 +966,7 @@ export type OpenPackerOverlay = {
   }>;
   sourceRefs: Array<SourceRef>;
   authority:
-    | 'publisher'
-    | 'registry'
-    | 'organization'
-    | 'user'
-    | 'test-fixture';
+    'publisher' | 'registry' | 'organization' | 'user' | 'test-fixture';
   evidenceRefs: Array<ExternalRef>;
   externalRefs: Array<ExternalRef>;
   extensions?: Extensions;
@@ -1013,11 +986,7 @@ export type PackProviderCommandTemplate = {
   arguments: Array<PackProviderArgument>;
 };
 export type PackProviderCondition =
-  | 'always'
-  | 'allow-build'
-  | 'deny-build'
-  | 'allow-network'
-  | 'offline';
+  'always' | 'allow-build' | 'deny-build' | 'allow-network' | 'offline';
 export type PackProviderDetection = { manifestNames: Array<string> };
 export type PackProviderEnvironmentName = string;
 export type PackProviderExecutable = string;
@@ -1379,9 +1348,7 @@ export type RequestContext = {
   timeoutMilliseconds?: number;
   providerIds?: StringSet;
   semanticsProfile?:
-    | 'native-capture-v1'
-    | 'native-validated-v1'
-    | 'prex-calculus-subset-v1';
+    'native-capture-v1' | 'native-validated-v1' | 'prex-calculus-subset-v1';
   evaluationTime?: string;
   extensions?: Extensions;
 };
@@ -1473,9 +1440,7 @@ export type ResolutionReceipt = {
   policyDigest: Digest;
   lifecycleRoot: Digest;
   semanticsProfile:
-    | 'native-capture-v1'
-    | 'native-validated-v1'
-    | 'prex-calculus-subset-v1';
+    'native-capture-v1' | 'native-validated-v1' | 'prex-calculus-subset-v1';
   objectiveOrdering: Array<
     | 'satisfy-hard-constraints'
     | 'preserve-locks'
@@ -1558,11 +1523,7 @@ export type ResourceLimits = {
 };
 export type ResourceTypeName = string;
 export type Reversibility =
-  | 'none'
-  | 'uninstall'
-  | 'project-generation'
-  | 'native-generation'
-  | 'unknown';
+  'none' | 'uninstall' | 'project-generation' | 'native-generation' | 'unknown';
 export type RevocationEntry = {
   keyId: string;
   revokedAt: string;
@@ -1607,9 +1568,7 @@ export type SemanticLoss = {
 };
 export type SemanticsInput = {
   profile:
-    | 'native-capture-v1'
-    | 'native-validated-v1'
-    | 'prex-calculus-subset-v1';
+    'native-capture-v1' | 'native-validated-v1' | 'prex-calculus-subset-v1';
   nativeCompatibility: Array<string>;
   extensions?: Extensions;
 };
@@ -1771,14 +1730,7 @@ export type TargetPredicate =
   | { type: 'allOf' | 'anyOf'; predicates: Array<TargetPredicate> }
   | { type: 'not'; predicate: TargetPredicate };
 export type Transport =
-  | 'https'
-  | 'http'
-  | 'file'
-  | 'exec'
-  | 'git'
-  | 'oci'
-  | 'nix'
-  | 'other';
+  'https' | 'http' | 'file' | 'exec' | 'git' | 'oci' | 'nix' | 'other';
 export type TreeManifest = {
   manifestVersion: '1';
   entries: Array<TreeManifestEntry>;
@@ -1798,11 +1750,7 @@ export type UniverseAmendment = {
   appliesToMetadataDigest: Digest;
   operations: Array<AmendmentOperation>;
   authority:
-    | 'publisher'
-    | 'registry'
-    | 'organization'
-    | 'user'
-    | 'test-fixture';
+    'publisher' | 'registry' | 'organization' | 'user' | 'test-fixture';
   justification?: string;
   sourceRefs: Array<SourceRef>;
   evidenceRefs: Array<ExternalRef>;

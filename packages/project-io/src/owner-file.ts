@@ -110,8 +110,7 @@ const OWNER_FILE_FLAGS =
 
 /** What an owner file says: an owner, or why not ({@link OwnerFileProblem}). */
 export type OwnerFileRead =
-  | { owner: ProcessOwner }
-  | { problem: OwnerFileProblem };
+  { owner: ProcessOwner } | { problem: OwnerFileProblem };
 
 /** What is in the owner file of `dir`: an owner, or why not ({@link OwnerFileProblem}). */
 async function readOwnerFileOf(dir: string): Promise<OwnerFileRead> {

@@ -60,11 +60,7 @@ export interface RegistryDefinition {
     offlineReplay?: boolean;
     signedMetadata?: boolean;
     installSideEffects?:
-      | 'none'
-      | 'project-store'
-      | 'user-profile'
-      | 'system'
-      | 'unknown';
+      'none' | 'project-store' | 'user-profile' | 'system' | 'unknown';
     reversibility?:
       | 'none'
       | 'uninstall'

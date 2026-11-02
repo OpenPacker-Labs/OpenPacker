@@ -72,12 +72,7 @@ export function immutablePlainData<T>(value: T, label: string): T {
 }
 
 type PlainData =
-  | null
-  | boolean
-  | number
-  | string
-  | PlainData[]
-  | { [key: string]: PlainData };
+  null | boolean | number | string | PlainData[] | { [key: string]: PlainData };
 
 function clonePlainData(
   value: unknown,

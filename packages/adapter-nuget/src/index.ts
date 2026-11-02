@@ -241,9 +241,10 @@ function nugetFloatingPrereleaseMatches(
   );
 }
 
-export class NugetCodec
-  implements EcosystemCodec<NugetCatalogEntry, NugetLockInput>
-{
+export class NugetCodec implements EcosystemCodec<
+  NugetCatalogEntry,
+  NugetLockInput
+> {
   readonly purlType = 'nuget' as const;
 
   parseNativeCoordinate(value: string): NativeCoordinate {
@@ -1085,8 +1086,7 @@ export class NugetV3Provider implements CatalogProvider {
     const key = formatPurl({ ...parsed, version: undefined });
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const existing = this.#records.get(key) as
-      | ProviderRecord<NugetRegistrationIndex>
-      | undefined;
+      ProviderRecord<NugetRegistrationIndex> | undefined;
     const service = (await this.serviceIndex(signal)).body;
     const typeMatches = (
       resource: NugetServiceIndex['resources'][number],
@@ -1258,8 +1258,7 @@ export class NugetV3Provider implements CatalogProvider {
     const key = `page:${packageKey}:${url}`;
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const existing = this.#records.get(key) as
-      | ProviderRecord<NugetRegistrationPage>
-      | undefined;
+      ProviderRecord<NugetRegistrationPage> | undefined;
     const response = await this.transport.request({
       url,
       signal,

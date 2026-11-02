@@ -255,11 +255,7 @@ function comparator(text: string): NpmComparator | undefined {
   const match = COMPARATOR.exec(text.trim().split(/\s+/u).join(' '));
   if (match === null) return undefined;
   const operator = (match[1] === '=' ? '' : (match[1] ?? '')) as
-    | ''
-    | '<'
-    | '<='
-    | '>'
-    | '>=';
+    '' | '<' | '<=' | '>' | '>=';
   if (match[2] === undefined || match[2] === '') return { operator: '' };
   const written = npmVersion(match[2]);
   return written === undefined ? undefined : { operator, version: written };
@@ -332,15 +328,14 @@ export function npmRangeAst(text: string): RangeAst | undefined {
   const sets = npmComparatorSets(text);
   if (sets === undefined) return undefined;
   const alternatives = sets.map((set): RangeAst => {
-    const items = set.map(
-      (each): RangeAst =>
-        each.version === undefined
-          ? { type: 'any' }
-          : {
-              type: 'comparison',
-              operator: each.operator === '' ? '=' : each.operator,
-              version: each.version,
-            },
+    const items = set.map((each): RangeAst =>
+      each.version === undefined
+        ? { type: 'any' }
+        : {
+            type: 'comparison',
+            operator: each.operator === '' ? '=' : each.operator,
+            version: each.version,
+          },
     );
     return items.length === 1 ? items[0]! : { type: 'and', items };
   });

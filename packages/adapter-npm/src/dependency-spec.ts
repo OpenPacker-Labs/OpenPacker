@@ -11,13 +11,7 @@ import { parseNpmRange } from './npm-range.js';
  */
 
 export type NpmDependencySpecKind =
-  | 'range'
-  | 'tag'
-  | 'alias'
-  | 'git'
-  | 'url'
-  | 'file'
-  | 'workspace';
+  'range' | 'tag' | 'alias' | 'git' | 'url' | 'file' | 'workspace';
 
 const GIT_SPEC =
   /^(?:git(?:\+[a-z]+)?:|github:|gitlab:|bitbucket:|gist:|git@)/iu;

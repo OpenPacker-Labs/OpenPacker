@@ -1075,8 +1075,7 @@ describe('openpackerd', () => {
       purlType: 'deb',
       canonicalizePurl: (purl: string) => purl,
     } as Parameters<typeof createReferenceOperations>[0]['codecs'] extends
-      | ReadonlyMap<string, infer Codec>
-      | undefined
+      ReadonlyMap<string, infer Codec> | undefined
       ? Codec
       : never;
     const operations = createReferenceOperations({

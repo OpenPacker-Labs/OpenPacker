@@ -535,9 +535,8 @@ describe('opmx --plugin', () => {
     const restore = withPluginHome(home);
     const previousCache = process.env.OPM_TOOL_CACHE;
     process.env.OPM_TOOL_CACHE = cache;
-    const { acmeToolFetch, seedPluginStore } = await import(
-      './plugin-fixture.js'
-    );
+    const { acmeToolFetch, seedPluginStore } =
+      await import('./plugin-fixture.js');
     let fetches = 0;
     const serve = acmeToolFetch();
     // The fixture registry is handed to the run as its network: a run that
@@ -602,9 +601,8 @@ describe('opmx --plugin', () => {
     const restore = withPluginHome(home);
     const previousCache = process.env.OPM_TOOL_CACHE;
     process.env.OPM_TOOL_CACHE = cache;
-    const { ACME_TOOL_TAR, acmeToolFetch, seedPluginStore } = await import(
-      './plugin-fixture.js'
-    );
+    const { ACME_TOOL_TAR, acmeToolFetch, seedPluginStore } =
+      await import('./plugin-fixture.js');
     // Same length as the published tar (so size checks pass), different bytes.
     const tampered = new Uint8Array(ACME_TOOL_TAR);
     tampered[512] = tampered[512]! ^ 0xff;
@@ -929,9 +927,8 @@ describe('project plugin bindings', () => {
     const home = await mkdtemp(join(tmpdir(), 'opm-bound-store-'));
     temps.push(home);
     const restore = withPluginHome(home);
-    const { acmeToolFetch, seedPluginStore } = await import(
-      './plugin-fixture.js'
-    );
+    const { acmeToolFetch, seedPluginStore } =
+      await import('./plugin-fixture.js');
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const network = acmeToolFetch() as typeof fetch;
     try {

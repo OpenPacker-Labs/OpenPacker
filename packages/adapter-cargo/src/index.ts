@@ -139,9 +139,10 @@ function targetExpression(
   };
 }
 
-export class CargoCodec
-  implements EcosystemCodec<CargoIndexRecord, CargoLockDocument | string>
-{
+export class CargoCodec implements EcosystemCodec<
+  CargoIndexRecord,
+  CargoLockDocument | string
+> {
   readonly purlType = 'cargo' as const;
 
   parseNativeCoordinate(value: string): NativeCoordinate {

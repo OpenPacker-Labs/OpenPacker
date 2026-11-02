@@ -16,10 +16,7 @@ export type ShellIsolatePrefer = 'auto' | 'mxc' | 'lxc';
  * - ambient: intentionally unsandboxed
  */
 export type SandboxProfile =
-  | 'package-exec'
-  | 'host-install'
-  | 'ambient'
-  | 'dev-shell';
+  'package-exec' | 'host-install' | 'ambient' | 'dev-shell';
 
 /** Backend that actually ran (or was selected). */
 export type SandboxBackendId =

@@ -12,9 +12,8 @@ import { join, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
 
-const { configureDefaultAdapters } = await import(
-  '@openpacker/adapters-default'
-);
+const { configureDefaultAdapters } =
+  await import('@openpacker/adapters-default');
 const { planLockCapture } = await import('@openpacker/lock-import');
 
 configureDefaultAdapters();

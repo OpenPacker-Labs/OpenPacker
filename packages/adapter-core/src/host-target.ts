@@ -20,8 +20,7 @@ export function detectLibc(): 'glibc' | 'musl' | undefined {
   // SAFETY: `excludeNetwork` is a documented writable property of
   // process.report that @types/node does not declare.
   const report = process.report as
-    | (typeof process.report & { excludeNetwork?: boolean })
-    | undefined;
+    (typeof process.report & { excludeNetwork?: boolean }) | undefined;
   if (report === undefined) return undefined;
   // The report enumerates network interfaces, which is slow and irrelevant.
   const previous = report.excludeNetwork;

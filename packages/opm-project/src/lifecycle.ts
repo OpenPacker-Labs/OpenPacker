@@ -69,8 +69,7 @@ export function lifecycleScriptsAllowed(
   // Global allow is insecure. Strict mode (default) requires an allowlist hit.
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const ext = policy as
-    | (PolicyInput & { strictLifecycleAllowlist?: boolean })
-    | undefined;
+    (PolicyInput & { strictLifecycleAllowlist?: boolean }) | undefined;
   const isStrict = ext?.strictLifecycleAllowlist !== false;
   if (policy?.allowLifecycleScripts === true && !isStrict) return true;
   return false;
@@ -92,8 +91,7 @@ export function sandboxPolicyFromProject(
 ): SandboxPolicy {
   // SAFETY: The surrounding boundary establishes the asserted domain contract.
   const packages = policy?.sandboxPackageGrants as
-    | Readonly<Record<string, PackageGrants>>
-    | undefined;
+    Readonly<Record<string, PackageGrants>> | undefined;
   // Extended knobs may live on PolicyInput once schema is regenerated, or on
   // a nested object written by toml.
   // SAFETY: The surrounding boundary establishes the asserted domain contract.

@@ -156,7 +156,7 @@ function wayRound(
       if (!inside.has(next)) continue;
       if (next === start) {
         const path = [at];
-        for (let step = at; step !== start; ) {
+        for (let step = at; step !== start;) {
           step = parent.get(step)!;
           path.push(step);
         }

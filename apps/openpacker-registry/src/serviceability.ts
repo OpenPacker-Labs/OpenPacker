@@ -30,10 +30,7 @@ import type { HttpTransport } from '@openpacker/adapter-core';
 import type { Digest } from '@openpacker/contracts';
 
 export type ServiceabilityState =
-  | 'verified'
-  | 'gated'
-  | 'unreachable'
-  | 'unchecked';
+  'verified' | 'gated' | 'unreachable' | 'unchecked';
 
 export interface ServiceabilityRecord {
   state: ServiceabilityState;

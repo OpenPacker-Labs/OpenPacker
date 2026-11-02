@@ -18,9 +18,7 @@ import { canonicalDigest, formatDigest } from '@openpacker/canonical';
 import type { Digest, JsonValue } from '@openpacker/contracts';
 
 export type ProofMethod =
-  | 'dns-txt'
-  | 'https-well-known'
-  | 'registry-configured';
+  'dns-txt' | 'https-well-known' | 'registry-configured';
 
 /**
  * Record the holder a proof verifier established.

@@ -7,9 +7,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-const { evaluatePolicy, policyDocumentFromPolicyInput } = await import(
-  '@openpacker/policy'
-);
+const { evaluatePolicy, policyDocumentFromPolicyInput } =
+  await import('@openpacker/policy');
 const { captureFactsFromSourceUri, defaultSupplyChainPolicyInput } =
   await import('@openpacker/opm-project');
 

@@ -815,9 +815,10 @@ function fileArtifact(
   };
 }
 
-export class PypiCodec
-  implements EcosystemCodec<PypiMetadata, UvLockDocument | string>
-{
+export class PypiCodec implements EcosystemCodec<
+  PypiMetadata,
+  UvLockDocument | string
+> {
   readonly purlType = 'pypi' as const;
 
   parseNativeCoordinate(value: string): NativeCoordinate {

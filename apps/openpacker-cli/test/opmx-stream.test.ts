@@ -51,7 +51,7 @@ describe.runIf(canSandbox)('opmx runs a tool that keeps running', () => {
       storePaths: [tool],
       signal: stop.signal,
     });
-    for (const until = Date.now() + 15_000; Date.now() < until; ) {
+    for (const until = Date.now() + 15_000; Date.now() < until;) {
       if (seen.out !== '' && seen.err !== '') break;
       await sleep(25);
     }

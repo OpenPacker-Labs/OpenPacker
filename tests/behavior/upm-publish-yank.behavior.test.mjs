@@ -9,9 +9,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-const { configureDefaultAdapters } = await import(
-  '@openpacker/adapters-default'
-);
+const { configureDefaultAdapters } =
+  await import('@openpacker/adapters-default');
 const { packProject, publishPackedArtifact, yankRegistryVersion } =
   await import('@openpacker/opm-project');
 const {

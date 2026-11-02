@@ -64,9 +64,8 @@ test('native artifact fixtures exactly match their deterministic generator', () 
 
 /** The projection every node identity must equal. */
 async function nodeIdProjection() {
-  const { canonicalProjectionDigest, formatDigest } = await import(
-    '@openpacker/canonical'
-  );
+  const { canonicalProjectionDigest, formatDigest } =
+    await import('@openpacker/canonical');
   const { DIGEST_PROJECTIONS } = await import('@openpacker/contracts');
   const projection = DIGEST_PROJECTIONS.projections.find(
     (item) => item.id === 'package-node-v1',
@@ -193,9 +192,8 @@ test('imported native lockfiles derive node identity through the projection', as
   // own derivation. It ships as `npm run demo:lock-import` across all six
   // ecosystems, so every one of them is checked here.
   const expectedFor = await nodeIdProjection();
-  const { configureDefaultAdapters } = await import(
-    '@openpacker/adapters-default'
-  );
+  const { configureDefaultAdapters } =
+    await import('@openpacker/adapters-default');
   configureDefaultAdapters();
   const { planNativeLockImport } = await import('@openpacker/lock-import');
   const fixtures = [
@@ -227,9 +225,8 @@ test('every golden node identity is the package-node-v1 projection', async () =>
   // Node identity is normative, not a convenient hash of whatever was handy.
   // Six codecs, the nix codec, and the demo each derived it differently once;
   // this pins them to the projection so they cannot drift apart again.
-  const { canonicalProjectionDigest, formatDigest } = await import(
-    '@openpacker/canonical'
-  );
+  const { canonicalProjectionDigest, formatDigest } =
+    await import('@openpacker/canonical');
   const { DIGEST_PROJECTIONS } = await import('@openpacker/contracts');
   const projection = DIGEST_PROJECTIONS.projections.find(
     (item) => item.id === 'package-node-v1',

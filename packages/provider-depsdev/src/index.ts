@@ -117,8 +117,7 @@ export class DepsDevProvider implements EnrichmentProvider {
       });
     let dependencies: DepsDevDependencies | undefined;
     let dependenciesDigest:
-      | Awaited<ReturnType<typeof canonicalDigest>>
-      | undefined;
+      Awaited<ReturnType<typeof canonicalDigest>> | undefined;
     try {
       const dependencyResponse = await this.transport.request({
         url: `${url}:dependencies`,

@@ -34,7 +34,7 @@ type Graph = Record<string, readonly string[]>;
 /** Everything `start` reaches through `edges`, to a fixed point. */
 function reached(names: readonly string[], edges: Graph): Graph {
   const out = Object.fromEntries(names.map((n) => [n, new Set(edges[n])]));
-  for (let again = true; again; ) {
+  for (let again = true; again;) {
     again = false;
     for (const n of names)
       for (const m of out[n]!)
@@ -85,7 +85,7 @@ export function cycleWorld(
   // The peers a dependent must provide for a package: its own, and those of
   // everything it peers or depends on.
   const clo = Object.fromEntries(names.map((n) => [n, new Set(peers[n])]));
-  for (let again = true; again; ) {
+  for (let again = true; again;) {
     again = false;
     for (const n of names)
       for (const m of [...peers[n]!, ...deps[n]!]) {
@@ -131,7 +131,7 @@ export function cycleWorld(
       names.map((n) => [n, pick(versions[n]!)]),
     );
     const wanted = new Set(names.filter(() => random() < 0.45));
-    for (let again = true; again; ) {
+    for (let again = true; again;) {
       again = false;
       for (const n of wanted)
         for (const m of closure[n]!)

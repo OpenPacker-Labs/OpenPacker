@@ -48,16 +48,14 @@ const lockOf = (...entries: LockPackage[]): OpmLockfile => ({
 function stateOf(lock: OpmLockfile, extra: InstalledPackageRecord[] = []) {
   const state: ProjectState = { schemaVersion: 1, packages: {} };
   for (const record of [
-    ...Object.values(lock.packages).map(
-      (pkg): InstalledPackageRecord => ({
-        alias: pkg.alias,
-        purl: pkg.purl,
-        digest: pkg.digest,
-        storePath: `/store/${pkg.alias}`,
-        bins: [],
-        installedAt: '2026-01-01T00:00:00.000Z',
-      }),
-    ),
+    ...Object.values(lock.packages).map((pkg): InstalledPackageRecord => ({
+      alias: pkg.alias,
+      purl: pkg.purl,
+      digest: pkg.digest,
+      storePath: `/store/${pkg.alias}`,
+      bins: [],
+      installedAt: '2026-01-01T00:00:00.000Z',
+    })),
     ...extra,
   ])
     state.packages[record.alias] = record;

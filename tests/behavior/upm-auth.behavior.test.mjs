@@ -10,9 +10,8 @@ import { join } from 'node:path';
 import { lstat } from 'node:fs/promises';
 
 const { runOpm } = await import('@openpacker/cli/opm');
-const { parseAuthConfig, readAuthConfig } = await import(
-  '@openpacker/opm-project'
-);
+const { parseAuthConfig, readAuthConfig } =
+  await import('@openpacker/opm-project');
 
 function capture() {
   let out = '';

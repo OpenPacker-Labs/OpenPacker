@@ -686,9 +686,8 @@ export async function runOpm(
         );
       }
       case 'gc': {
-        const { runGcCommand, runSharedGcCommand } = await import(
-          './commands/generations.js'
-        );
+        const { runGcCommand, runSharedGcCommand } =
+          await import('./commands/generations.js');
         // The shared store belongs to the user, not to a project, so this
         // needs no project and never runs as part of a project's own gc.
         if (args.options.has('shared'))

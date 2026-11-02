@@ -835,19 +835,17 @@ export class RegistryStore {
           detail: string | null;
           replaced_by: string | null;
         }[]
-      ).map(
-        (row): RevocationEntry => ({
-          keyId: row.key_id,
-          revokedAt: row.revoked_at,
-          // SAFETY: The surrounding boundary establishes the asserted domain contract.
-          effective: row.effective as RevocationEntry['effective'],
-          ...(!(row.reason === null) && {
-            reason: row.reason as RevocationEntry['reason'],
-          }),
-          ...(!(row.detail === null) && { detail: row.detail }),
-          ...(!(row.replaced_by === null) && { replacedBy: row.replaced_by }),
+      ).map((row): RevocationEntry => ({
+        keyId: row.key_id,
+        revokedAt: row.revoked_at,
+        // SAFETY: The surrounding boundary establishes the asserted domain contract.
+        effective: row.effective as RevocationEntry['effective'],
+        ...(!(row.reason === null) && {
+          reason: row.reason as RevocationEntry['reason'],
         }),
-      )
+        ...(!(row.detail === null) && { detail: row.detail }),
+        ...(!(row.replaced_by === null) && { replacedBy: row.replaced_by }),
+      }))
     );
   }
 
