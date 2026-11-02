@@ -62,7 +62,7 @@ jobs:
       version: ${{ steps.resolve.outputs.version }}
       run-id: ${{ steps.ci.outputs.run-id }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2 # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Resolve target sha and version
@@ -122,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2 # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # v7.0.1
         with:
           ref: ${{ needs.gate.outputs.sha }}
       - name: Download the CI build artifacts for the gated run
