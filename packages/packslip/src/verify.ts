@@ -170,6 +170,32 @@ function parseBundle(bytes: Uint8Array): Bundle {
   }
 }
 
+/** Drop Rekor entries whose integration time is not covered by a signed promise. */
+function withoutUnauthenticatedTlogEntries(bytes: Uint8Array): Uint8Array {
+  let json: unknown;
+  try {
+    json = JSON.parse(Buffer.from(bytes).toString('utf8'));
+  } catch {
+    return bytes;
+  }
+  if (typeof json !== 'object' || json === null) return bytes;
+  const material = (
+    json as { verificationMaterial?: { tlogEntries?: unknown[] } }
+  ).verificationMaterial;
+  if (material === undefined) return bytes;
+  const entries = material.tlogEntries;
+  if (!Array.isArray(entries) || entries.length <= 1) return bytes;
+  const trusted = entries.filter(
+    (entry) =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      (entry as { inclusionPromise?: unknown }).inclusionPromise !== undefined,
+  );
+  if (trusted.length === entries.length || trusted.length === 0) return bytes;
+  material.tlogEntries = trusted;
+  return Buffer.from(JSON.stringify(json));
+}
+
 function loadTrustedRoot(text: string): TrustedRoot {
   try {
     return TrustedRoot.fromJSON(JSON.parse(text));
@@ -372,7 +398,7 @@ export function verifyBundle(input: VerifyBundleInput): VerifiedBundle {
       'INVALID_INPUT',
       'A keyless expectation needs an identity, an identity prefix, a source repository, or a signer fingerprint; an issuer alone accepts anyone it signs for',
     );
-  const bundle = parseBundle(input.bundle);
+  const bundle = parseBundle(withoutUnauthenticatedTlogEntries(input.bundle));
   if (bundle.content.$case !== 'dsseEnvelope')
     throw fail(
       'INVALID_BUNDLE',
