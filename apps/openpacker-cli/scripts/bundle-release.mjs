@@ -24,10 +24,10 @@ const built = spawnSync('npm run build', {
 if (built.status !== 0) process.exit(built.status ?? 1);
 
 const dependencies = {
-  '@sigstore/bundle': '4.0.0',
-  '@sigstore/core': '3.2.1',
+  '@sigstore/bundle': '5.0.0',
+  '@sigstore/core': '4.0.1',
   '@sigstore/protobuf-specs': '0.5.2',
-  '@sigstore/verify': '3.1.1',
+  '@sigstore/verify': '4.1.2',
   ajv: '8.18.0',
   'ajv-formats': '3.0.1',
   'fast-xml-parser': '^5.10.1',
