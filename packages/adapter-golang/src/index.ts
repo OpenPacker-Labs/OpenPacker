@@ -443,9 +443,10 @@ export function parseGoMod(input: string): GolangModDocument {
   };
 }
 
-export class GolangCodec
-  implements EcosystemCodec<GolangModuleVersionMetadata, GolangLockInput>
-{
+export class GolangCodec implements EcosystemCodec<
+  GolangModuleVersionMetadata,
+  GolangLockInput
+> {
   readonly purlType = 'golang' as const;
 
   parseNativeCoordinate(value: string): NativeCoordinate {

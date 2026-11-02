@@ -12,11 +12,7 @@ import type {
 type Action = LifecycleEvent['action'];
 type Authority = LifecycleEvent['authority'];
 export type LifecycleScope =
-  | 'package'
-  | 'exact-version'
-  | 'release'
-  | 'channel'
-  | 'digest';
+  'package' | 'exact-version' | 'release' | 'channel' | 'digest';
 
 export interface LifecycleTarget {
   packagePurl: string;

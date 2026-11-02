@@ -326,7 +326,7 @@ export function selectToolBin(
       understood
         ? `${tool.exactPurl} declares no executable to run.`
         : `${tool.exactPurl} was fetched and verified, but opm does not yet ` +
-          `know how ${ecosystem} declares executables, so it cannot be run.`,
+            `know how ${ecosystem} declares executables, so it cannot be run.`,
     );
   }
   if (requested !== undefined) {

@@ -68,7 +68,7 @@ const isWord = (code: number): boolean =>
  * ends at the same place.
  */
 export function indexHashes(line: string): readonly [string, string] | null {
-  for (let start = 0; start < line.length; ) {
+  for (let start = 0; start < line.length;) {
     if (!isWord(line.charCodeAt(start))) {
       start += 1;
       continue;

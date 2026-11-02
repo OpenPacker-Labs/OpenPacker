@@ -43,8 +43,7 @@ export function opmxRunTimeout(
   if (flag !== undefined) return parseRunTimeout(String(flag), '--timeout');
   // SAFETY: the extended sandbox knobs live on PolicyInput untyped (toml.ts).
   const ext = policy as
-    | (PolicyInput & { opmxTimeoutMs?: number; timeoutMs?: number })
-    | undefined;
+    (PolicyInput & { opmxTimeoutMs?: number; timeoutMs?: number }) | undefined;
   if (ext?.opmxTimeoutMs !== undefined)
     return parseRunTimeout(
       String(ext.opmxTimeoutMs),

@@ -21,9 +21,7 @@ export type { SourceKind } from './source.js';
 
 /** The three lists an importer keeps its direct dependencies in. */
 export type ImporterField =
-  | 'dependencies'
-  | 'devDependencies'
-  | 'optionalDependencies';
+  'dependencies' | 'devDependencies' | 'optionalDependencies';
 
 /** What the lock records under `settings`; each is absent when pnpm omits its default. */
 export interface PnpmSettings {

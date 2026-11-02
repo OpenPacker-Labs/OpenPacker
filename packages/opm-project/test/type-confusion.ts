@@ -7,12 +7,7 @@
  */
 
 export type Json =
-  | null
-  | boolean
-  | number
-  | string
-  | Json[]
-  | { [key: string]: Json };
+  null | boolean | number | string | Json[] | { [key: string]: Json };
 
 /** What replaces a field: one of each type a reader might not expect. */
 export const CONFUSIONS: readonly Json[] = [

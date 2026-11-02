@@ -976,7 +976,6 @@ function hostPredicateOf(
   // SAFETY: nativeSemantics.data is adapter-written JSON; only the optional
   // `targetPredicate` the npm adapter stores is read.
   const data = instance.nativeSemantics?.data as
-    | { targetPredicate?: TargetPredicate }
-    | undefined;
+    { targetPredicate?: TargetPredicate } | undefined;
   return data?.targetPredicate;
 }

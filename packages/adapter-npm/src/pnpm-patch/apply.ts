@@ -59,10 +59,7 @@ export class PatchRefusal extends Error {
      * archive would refuse as one, `PATCH_FAILED` otherwise.
      */
     readonly code:
-      | 'UNSAFE_PATH'
-      | 'SIZE_LIMIT'
-      | 'CASE_COLLISION'
-      | 'PATCH_FAILED',
+      'UNSAFE_PATH' | 'SIZE_LIMIT' | 'CASE_COLLISION' | 'PATCH_FAILED',
     message: string,
   ) {
     super(message);

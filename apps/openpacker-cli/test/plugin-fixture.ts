@@ -329,9 +329,8 @@ export interface SeededPluginStore {
 export async function seedPluginStore(
   storeRoot: string,
 ): Promise<SeededPluginStore> {
-  const { stableStoreTreeDigest, writeStableFile } = await import(
-    '@openpacker/opm-project'
-  );
+  const { stableStoreTreeDigest, writeStableFile } =
+    await import('@openpacker/opm-project');
   const id = 'dev.example.acme-adapter';
   const manifest = {
     delegatedAdapterVersion: '1',

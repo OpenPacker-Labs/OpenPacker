@@ -28,9 +28,8 @@ function hasBwrap() {
 }
 
 test('sandbox env scrub drops credential-shaped keys', async () => {
-  const { scrubEnvironment, isDeniedCredential } = await import(
-    '@openpacker/sandbox'
-  );
+  const { scrubEnvironment, isDeniedCredential } =
+    await import('@openpacker/sandbox');
   assert.equal(isDeniedCredential('npm_config__authToken'), true);
   assert.equal(isDeniedCredential('AWS_SECRET_ACCESS_KEY'), true);
   assert.equal(isDeniedCredential('GITHUB_TOKEN'), true);
@@ -54,9 +53,8 @@ test('sandbox env scrub drops credential-shaped keys', async () => {
 });
 
 test('jail path grants reject traversal', async () => {
-  const { assertSafeJailPath, JailPathError } = await import(
-    '@openpacker/sandbox'
-  );
+  const { assertSafeJailPath, JailPathError } =
+    await import('@openpacker/sandbox');
   assert.throws(() => assertSafeJailPath('../secret'), JailPathError);
   assert.throws(() => assertSafeJailPath('a\0b'), JailPathError);
   assert.equal(assertSafeJailPath('/tmp/ok'), resolve('/tmp/ok'));

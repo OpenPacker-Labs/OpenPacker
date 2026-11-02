@@ -97,7 +97,7 @@ export function parseRunRequest(
   const selection = new SelectionParser('run');
   let ifPresent = false;
   let path: string | undefined;
-  for (let index = 0; index < options.length; ) {
+  for (let index = 0; index < options.length;) {
     const token = options[index] ?? '';
     const found = pathOption(options, index);
     const selected = found === undefined ? selection.accept(options, index) : 0;
@@ -154,7 +154,7 @@ export function parseExecRequest(
       ? { bin, path, args }
       : { bin, path, args, select };
   };
-  for (let index = 0; index < rest.length; ) {
+  for (let index = 0; index < rest.length;) {
     const token = rest[index] ?? '';
     const found = pathOption(rest, index);
     if (found !== undefined) {
@@ -233,7 +233,7 @@ export function asksForHelp(
     const separator = rest.indexOf('--');
     return (separator === -1 ? rest : rest.slice(0, separator)).some(isHelp);
   }
-  for (let index = 0; index < rest.length; ) {
+  for (let index = 0; index < rest.length;) {
     const token = rest[index] ?? '';
     if (isHelp(token)) return true;
     const width = optionWidth(token);

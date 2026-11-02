@@ -21,8 +21,7 @@ function installNameOf(requirement: {
 }): string {
   // SAFETY: the data this adapter wrote.
   const data = requirement.nativeSemantics?.data as
-    | { installName: string }
-    | undefined;
+    { installName: string } | undefined;
   return data?.installName ?? '';
 }
 

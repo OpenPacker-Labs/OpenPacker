@@ -101,7 +101,7 @@ export const LEXEMES_PER_NODE = 5;
 
 function lineOf(text: string, offset: number): number {
   let line = 1;
-  for (let at = text.indexOf('\n'); at !== -1 && at < offset; ) {
+  for (let at = text.indexOf('\n'); at !== -1 && at < offset;) {
     line += 1;
     at = text.indexOf('\n', at + 1);
   }

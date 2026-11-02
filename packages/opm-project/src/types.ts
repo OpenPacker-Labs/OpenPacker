@@ -100,11 +100,7 @@ export interface PluginBinding {
 }
 
 export type RequirementScope =
-  | 'runtime'
-  | 'development'
-  | 'optional'
-  | 'peer'
-  | 'build';
+  'runtime' | 'development' | 'optional' | 'peer' | 'build';
 
 /**
  * How far opm projects its decisions into the ecosystem's own project files.

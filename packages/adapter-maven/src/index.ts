@@ -109,8 +109,7 @@ export interface GradleLockDocument {
 }
 
 export type MavenLockInput =
-  | { format: 'gradle.lockfile'; data: string | GradleLockDocument }
-  | string;
+  { format: 'gradle.lockfile'; data: string | GradleLockDocument } | string;
 
 type MavenQualifierAliases = Record<string, string>;
 
@@ -593,9 +592,10 @@ export function parseMavenMetadataXml(xml: string): MavenMetadataDocument {
   };
 }
 
-export class MavenCodec
-  implements EcosystemCodec<MavenCatalogEntry, MavenLockInput>
-{
+export class MavenCodec implements EcosystemCodec<
+  MavenCatalogEntry,
+  MavenLockInput
+> {
   readonly purlType = 'maven' as const;
 
   parseNativeCoordinate(value: string): NativeCoordinate {
@@ -1689,8 +1689,7 @@ export class MavenRepositoryProvider implements CatalogProvider {
     const key = formatPurl({ ...parsed, version: undefined });
     // SAFETY: The surrounding boundary establishes the asserted domain contract.
     const existing = this.#records.get(key) as
-      | ProviderRecord<MavenMetadataDocument>
-      | undefined;
+      ProviderRecord<MavenMetadataDocument> | undefined;
     const url = `${this.repositoryUrl.replace(/\/$/, '')}/${mavenRepositoryPath(
       parsed.namespace,
       parsed.name,

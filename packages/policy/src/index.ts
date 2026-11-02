@@ -25,12 +25,7 @@ export type TrustTier =
   | 'unknown';
 
 export type SourceKind =
-  | 'registry'
-  | 'git'
-  | 'tarball'
-  | 'path'
-  | 'oci'
-  | 'exotic';
+  'registry' | 'git' | 'tarball' | 'path' | 'oci' | 'exotic';
 
 export interface PolicyDocument {
   allowYanked: boolean;

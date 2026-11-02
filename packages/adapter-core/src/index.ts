@@ -85,13 +85,7 @@ import type {
 
 /** Ecosystems with a codec in this repository. */
 export type KnownEcosystem =
-  | 'npm'
-  | 'cargo'
-  | 'nuget'
-  | 'pypi'
-  | 'golang'
-  | 'maven'
-  | 'nix';
+  'npm' | 'cargo' | 'nuget' | 'pypi' | 'golang' | 'maven' | 'nix';
 
 /**
  * A PURL type. The known set above keeps editor completion and catches typos
@@ -700,11 +694,7 @@ export interface DetectedProject {
 }
 
 export type RequirementScope =
-  | 'runtime'
-  | 'development'
-  | 'optional'
-  | 'peer'
-  | 'build';
+  'runtime' | 'development' | 'optional' | 'peer' | 'build';
 
 export interface NativeRequirement {
   /** Base PURL, no version. */
@@ -914,8 +904,7 @@ export class BoundedFetchTransport implements HttpTransport {
   readonly #pinnedOrigins: ReadonlySet<string>;
   readonly #pinnedTokenEnvNames: ReadonlyMap<string, string> | undefined;
   readonly #pinnedExtraHeaders:
-    | ReadonlyMap<string, { name: string; envName: string }>
-    | undefined;
+    ReadonlyMap<string, { name: string; envName: string }> | undefined;
   readonly #destinationPolicy: DestinationPolicy;
   readonly #lookup: HostLookup | undefined;
   readonly #pinProduction: boolean;

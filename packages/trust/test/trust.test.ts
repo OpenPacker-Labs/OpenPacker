@@ -33,10 +33,7 @@ async function signer(name: 'root' | 'leaf' | 'log') {
 }
 async function signed<
   T extends
-    | RootMetadata
-    | TimestampMetadata
-    | SnapshotMetadata
-    | TargetsMetadata,
+    RootMetadata | TimestampMetadata | SnapshotMetadata | TargetsMetadata,
 >(
   value: T,
   supplied?: Array<Awaited<ReturnType<typeof signer>>>,

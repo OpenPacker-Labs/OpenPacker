@@ -213,19 +213,18 @@ function parseKeptFile(value: unknown): KeptFile | undefined {
   const { before, mode, after, link, also } = value as Record<string, unknown>;
   if (!(before === null || (typeof before === 'string' && DIGEST.test(before))))
     return undefined;
-  if (
-    !(after === undefined || (typeof after === 'string' && DIGEST.test(after)))
-  )
+  if (!(
+    after === undefined ||
+    (typeof after === 'string' && DIGEST.test(after))
+  ))
     return undefined;
-  if (
-    !(
-      mode === undefined ||
-      (typeof mode === 'number' &&
-        Number.isInteger(mode) &&
-        mode >= 0 &&
-        mode <= 0o7777)
-    )
-  )
+  if (!(
+    mode === undefined ||
+    (typeof mode === 'number' &&
+      Number.isInteger(mode) &&
+      mode >= 0 &&
+      mode <= 0o7777)
+  ))
     return undefined;
   if (!(also === undefined || isDigests(also))) return undefined;
   const rest = {

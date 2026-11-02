@@ -332,9 +332,8 @@ describe('materialise image layout', () => {
   });
 
   it('selects the host platform from a multi-arch index', async () => {
-    const { selectPlatformManifest, hostPlatform } = await import(
-      './provider.js'
-    );
+    const { selectPlatformManifest, hostPlatform } =
+      await import('./provider.js');
     const host = hostPlatform();
     const otherOs = host.os === 'linux' ? 'windows' : 'linux';
     const chosen = selectPlatformManifest([

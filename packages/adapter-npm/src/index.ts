@@ -254,9 +254,10 @@ function npmRequirement(
   };
 }
 
-export class NpmCodec
-  implements EcosystemCodec<NpmVersionMetadata, NpmPackageLockV3>
-{
+export class NpmCodec implements EcosystemCodec<
+  NpmVersionMetadata,
+  NpmPackageLockV3
+> {
   readonly purlType = 'npm' as const;
 
   parseNativeCoordinate(value: string): NativeCoordinate {

@@ -122,7 +122,7 @@ export function withAncestors(
       ends.push(at);
     ends.push(path.length);
     let low = 0;
-    for (let high = ends.length; low < high; ) {
+    for (let high = ends.length; low < high;) {
       const middle = (low + high) >> 1;
       if (seen.has(path.slice(0, ends[middle]))) low = middle + 1;
       else high = middle;

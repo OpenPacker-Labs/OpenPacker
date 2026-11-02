@@ -9,7 +9,7 @@ import { contextWith, makeWorkspace } from './workspace-fixture.js';
 
 function select(...tokens: string[]) {
   const parser = new SelectionParser('run');
-  for (let at = 0; at < tokens.length; ) at += parser.accept(tokens, at);
+  for (let at = 0; at < tokens.length;) at += parser.accept(tokens, at);
   const result = parser.result();
   if (result === undefined) throw new Error('no selection');
   return result;

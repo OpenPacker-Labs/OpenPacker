@@ -190,8 +190,7 @@ export class SqliteStateStore implements OpenPackerStateStore {
         'SELECT bytes, request FROM idempotency WHERE method = ? AND path = ? AND key = ?',
       )
       .get(method, path, key) as
-      | { bytes: Uint8Array; request: string }
-      | undefined;
+      { bytes: Uint8Array; request: string } | undefined;
     if (!row || row.request === '') return undefined;
     return { bytes: Uint8Array.from(row.bytes), request: row.request };
   }

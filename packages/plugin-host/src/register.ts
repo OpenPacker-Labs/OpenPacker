@@ -23,8 +23,7 @@ import {
 import { loadPluginManifest } from './manifest.js';
 import { delegatedAdapterModule } from './module.js';
 
-export interface RegisterInstalledPluginsOptions
-  extends DelegatedPluginExecutorDependencies {
+export interface RegisterInstalledPluginsOptions extends DelegatedPluginExecutorDependencies {
   /** Plugin store root override; defaults to OPM_PLUGIN_HOME / XDG. */
   storeRoot?: string;
   /** Registry to register into; defaults to the process-wide host registry. */

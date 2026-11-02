@@ -91,13 +91,11 @@ describe.each(Object.keys(ORACLE))('selecting from %s', (name) => {
     ];
     const targets = values('os').flatMap((os) =>
       values('cpu').flatMap((architecture) =>
-        [...values('libc'), undefined].map(
-          (libc): NativeTarget => ({
-            os,
-            architecture,
-            ...(libc !== undefined && { libc }),
-          }),
-        ),
+        [...values('libc'), undefined].map((libc): NativeTarget => ({
+          os,
+          architecture,
+          ...(libc !== undefined && { libc }),
+        })),
       ),
     );
     const selection = run(targets);

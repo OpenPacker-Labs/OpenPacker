@@ -7,11 +7,7 @@
  * an exit status.
  */
 export type RunErrorCode =
-  | 'USAGE'
-  | 'NOT_FOUND'
-  | 'INVALID_MANIFEST'
-  | 'UNAVAILABLE'
-  | 'UNSAFE_PATH';
+  'USAGE' | 'NOT_FOUND' | 'INVALID_MANIFEST' | 'UNAVAILABLE' | 'UNSAFE_PATH';
 
 export class RunError extends Error {
   readonly code: RunErrorCode;

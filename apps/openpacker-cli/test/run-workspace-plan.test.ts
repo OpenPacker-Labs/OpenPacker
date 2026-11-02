@@ -29,9 +29,8 @@ posix('planning opm run over the HoBo workspace', () => {
   it('discovers once, builds one graph, and reads a fixed amount per member', async () => {
     const { root, fixture } = await buildRealWorkspace('hobo');
     const { planWorkspace } = await import('../src/commands/run-select.js');
-    const { SelectionParser } = await import(
-      '../src/commands/run-select-args.js'
-    );
+    const { SelectionParser } =
+      await import('../src/commands/run-select-args.js');
     const project = await import('@openpacker/opm-project');
     // The plan's own calls, through the module it loads them from: each
     // discovery's report, each graph built, and the reads of every graph's
@@ -58,7 +57,7 @@ posix('planning opm run over the HoBo workspace', () => {
       });
     const plan = async (...tokens: string[]) => {
       const parser = new SelectionParser('run');
-      for (let at = 0; at < tokens.length; ) at += parser.accept(tokens, at);
+      for (let at = 0; at < tokens.length;) at += parser.accept(tokens, at);
       discoveries = [];
       graphs = [];
       const planned = await planWorkspace(

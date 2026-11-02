@@ -36,10 +36,7 @@ async function node(bytes: Uint8Array): Promise<Outcome> {
  * as Node refuses it, with this code.
  */
 type Expected =
-  | 'accepted'
-  | 'stricter'
-  | 'GZIP_TRAILING_DATA'
-  | 'INVALID_COMPRESSION';
+  'accepted' | 'stricter' | 'GZIP_TRAILING_DATA' | 'INVALID_COMPRESSION';
 
 describe('the gzip decoder against Node', () => {
   it('accepts what Node accepts, unless a non-zero byte follows what Node read', async () => {
