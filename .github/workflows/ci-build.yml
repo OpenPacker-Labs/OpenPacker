@@ -1,7 +1,7 @@
 name: CI build
 
 # Post-merge artifact matrix on main. Automatic runs are Ubuntu 24.04 only
-# (Node 22.19.0 and 24). Windows and macOS legs are opt-in on workflow_dispatch
+# (Node 22.22.2 and 24). Windows and macOS legs are opt-in on workflow_dispatch
 # (they multiply Actions minutes and often queue behind billing limits). Pull
 # requests use ci-advisory.yml for fast, non-required feedback. The merge queue
 # uses trunk-gate.yml, which is the only required CI for merging. Scheduled
@@ -47,8 +47,8 @@ jobs:
           INCLUDE_EXTRA: ${{ inputs.include_windows_macos }}
         run: |
           set -euo pipefail
-          BASE='[{"os":"ubuntu-24.04","node":"22.19.0"},{"os":"ubuntu-24.04","node":"24"}]'
-          EXTRA='[{"os":"windows-latest","node":"22.19.0"},{"os":"windows-latest","node":"24"},{"os":"macos-latest","node":"22.19.0"},{"os":"macos-latest","node":"24"}]'
+          BASE='[{"os":"ubuntu-24.04","node":"22.22.2"},{"os":"ubuntu-24.04","node":"24"}]'
+          EXTRA='[{"os":"windows-latest","node":"22.22.2"},{"os":"windows-latest","node":"24"},{"os":"macos-latest","node":"22.22.2"},{"os":"macos-latest","node":"24"}]'
           if [ "$EVENT" = 'workflow_dispatch' ] && [ "$INCLUDE_EXTRA" = 'true' ]; then
             JSON="$(BASE="$BASE" EXTRA="$EXTRA" node -e 'const b=JSON.parse(process.env.BASE); const e=JSON.parse(process.env.EXTRA); console.log(JSON.stringify({include:[...b,...e]}))')"
           else

@@ -24,7 +24,6 @@ const built = spawnSync('npm run build', {
 if (built.status !== 0) process.exit(built.status ?? 1);
 
 const dependencies = {
-  '@microsoft/mxc-sdk': '0.7.0',
   '@sigstore/bundle': '4.0.0',
   '@sigstore/core': '3.2.1',
   '@sigstore/protobuf-specs': '0.5.2',
@@ -41,6 +40,10 @@ const dependencies = {
   yaml: '^2.8.3',
 };
 
+const optionalDependencies = {
+  '@microsoft/mxc-sdk': '1.0.1',
+};
+
 const requireBanner =
   "import{createRequire as __cr}from'module';const require=__cr(import.meta.url);";
 
@@ -52,7 +55,10 @@ const esbuildCommon = {
   alias: {
     '@openpacker/embedded/wasm-node': join(root, 'scripts/wasm-node-stub.mjs'),
   },
-  external: Object.keys(dependencies),
+  external: [
+    ...Object.keys(dependencies),
+    ...Object.keys(optionalDependencies),
+  ],
   loader: { '.node': 'copy' },
   logLevel: 'info',
   banner: { js: requireBanner },
@@ -96,6 +102,7 @@ writeFileSync(
       engines: sourcePackage.engines,
       publishConfig: sourcePackage.publishConfig,
       dependencies,
+      optionalDependencies,
       repository: sourcePackage.repository,
     },
     null,

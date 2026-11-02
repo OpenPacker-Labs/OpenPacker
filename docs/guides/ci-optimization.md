@@ -6,11 +6,17 @@ merge gate is **Trunk gate / Required merge queue gate**
 
 ## Workflow triggers and concurrency
 
-| Workflow          | Triggers                                           | Concurrency                                                                 |
-| ----------------- | -------------------------------------------------- | --------------------------------------------------------------------------- |
-| `trunk-gate.yml`  | `pull_request`, `merge_group`, `workflow_dispatch` | Cancels superseded PR runs; never cancels `merge_group` or `push` to `main` |
-| `ci-advisory.yml` | `pull_request`, `workflow_dispatch`                | Same cancel rules (advisory only)                                           |
-| `ci-build.yml`    | `push` to `main`, `workflow_dispatch`              | Does not cancel in-progress runs on `main`                                  |
+| Workflow               | Triggers                                                            | Concurrency / role                                                          |
+| ---------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `trunk-gate.yml`       | `pull_request`, `merge_group`, `workflow_dispatch`                  | Cancels superseded PR runs; never cancels `merge_group` or `push` to `main` |
+| `ci-advisory.yml`      | `pull_request`, `workflow_dispatch`                                 | Same cancel rules (advisory only)                                           |
+| `ci-build.yml`         | `push` to `main`, `workflow_dispatch`                               | Does not cancel in-progress runs on `main`                                  |
+| `codeql.yml`           | `pull_request`, `merge_group`, weekly schedule, `workflow_dispatch` | Advisory CodeQL (uploads SARIF)                                             |
+| `security.yml`         | `pull_request`, `merge_group`, weekly schedule, `workflow_dispatch` | npm/cargo audit + offline security gates                                    |
+| `ci.yml`               | `workflow_dispatch` only                                            | Full offline gauntlet (manual); not on every PR                             |
+| `cd.yml`               | `workflow_dispatch`, `v*` tags (legacy)                             | Deprecated; use `promote-*.yml`                                             |
+| `live-compat.yml`      | `workflow_dispatch` only                                            | Opt-in live registry compatibility                                          |
+| `release-evidence.yml` | `workflow_dispatch` only                                            | SBOM/provenance evidence (manual)                                           |
 
 ## Affected-only Turbo on pull requests
 
@@ -62,7 +68,7 @@ authoritative.
 
 ## Toolchain pins
 
-Node 22.19.0, Rust 1.88.0, `wasm-bindgen-cli` 0.2.126, and GitHub Actions use
+Node 22.22.2, Rust 1.88.0, `wasm-bindgen-cli` 0.2.126, and GitHub Actions use
 pinned versions in workflow files. Install dependencies with `npm ci`.
 
 ## Dev container

@@ -6,7 +6,10 @@
     "verbatimModuleSyntax": false,
     "rootDir": "src",
     "outDir": "dist/cjs",
-    "tsBuildInfoFile": "dist/cjs.tsbuildinfo"
+    "tsBuildInfoFile": "dist/cjs.tsbuildinfo",
+    "paths": {
+      "@microsoft/mxc-sdk/v1": ["./src/mxc-sdk.d.ts"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts"]

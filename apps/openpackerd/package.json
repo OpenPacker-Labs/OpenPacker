@@ -43,10 +43,10 @@
     "@openpacker/policy": "0.0.1-alpha.1",
     "@openpacker/receipts": "0.0.1-alpha.1",
     "@openpacker/trust": "0.0.1-alpha.1",
-    "fastify": "5.11.2"
+    "fastify": "5.12.7"
   },
   "devDependencies": {
-    "@types/node": "24.2.1"
+    "@types/node": "26.6.6"
   },
   "repository": {
     "type": "git",

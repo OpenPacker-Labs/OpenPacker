@@ -14,6 +14,7 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   test: {
+    exclude: ['**/node_modules/**', '**/dist/**'],
     setupFiles: [
       fileURLToPath(new URL('tests/support/stores.setup.ts', import.meta.url)),
     ],

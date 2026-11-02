@@ -85,13 +85,16 @@ describe('an MXC run whose sink is behind', () => {
     const child = new EventEmitter() as EventEmitter & {
       stdout: PassThrough;
       stderr: PassThrough;
-      kill: ReturnType<typeof vi.fn>;
+      kill: (signal?: NodeJS.Signals) => boolean;
     };
     child.stdout = new PassThrough();
     child.stderr = new PassThrough();
-    child.kill = vi.fn();
+    child.kill = vi.fn(() => true) as (signal?: NodeJS.Signals) => boolean;
     const { taken, next, sink } = slowSink();
-    const running = collectMxcChild(child, { ...LIMITS, output: sink });
+    const running = collectMxcChild(
+      child as Parameters<typeof collectMxcChild>[0],
+      { ...LIMITS, output: sink },
+    );
     child.stdout.write('first');
     child.stdout.write('second');
     await settled();
@@ -138,7 +141,7 @@ describe('a run whose sink never takes what it was handed', () => {
     const child = new EventEmitter() as EventEmitter & {
       stdout: PassThrough;
       stderr: PassThrough;
-      kill: ReturnType<typeof vi.fn>;
+      kill: (signal?: NodeJS.Signals) => boolean;
     };
     child.stdout = new PassThrough();
     child.stderr = new PassThrough();
@@ -151,10 +154,11 @@ describe('a run whose sink never takes what it was handed', () => {
       child.stdout.once('close', closed);
       child.stderr.once('close', closed);
       setImmediate(() => child.stderr.end());
-    });
+      return true;
+    }) as (signal?: NodeJS.Signals) => boolean;
     const stop = new AbortController();
     const running = collectMxcChild(
-      child,
+      child as Parameters<typeof collectMxcChild>[0],
       {
         ...LIMITS,
         output: {

@@ -3,7 +3,10 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist/esm",
-    "tsBuildInfoFile": "dist/esm.tsbuildinfo"
+    "tsBuildInfoFile": "dist/esm.tsbuildinfo",
+    "paths": {
+      "@microsoft/mxc-sdk/v1": ["./src/mxc-sdk.d.ts"]
+    }
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.d.ts"]
 }

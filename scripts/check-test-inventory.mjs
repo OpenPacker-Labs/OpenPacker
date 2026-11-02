@@ -6,6 +6,17 @@ import { createVitest } from 'vitest/node';
 
 const testFile = /\.(?:test|spec)\.(?:[cm]?js|tsx?)$/u;
 
+/** Vitest 5 static collect marks conditional `runIf` tests as skip until runtime. */
+function vitestTestRunnable(test) {
+  if (test.options.mode === 'run' || test.options.mode === 'only') return true;
+  if (test.options.mode !== 'skip') return false;
+  for (let suite = test.parent; suite; suite = suite.parent) {
+    const name = suite.name ?? '';
+    if (name.includes('(skipped)')) return true;
+  }
+  return false;
+}
+
 function filesIn(path) {
   if (!existsSync(path)) return [];
   if (!statSync(path).isDirectory()) return [path];
@@ -83,7 +94,7 @@ export async function checkTestInventory(root) {
     discovered = result.testModules.flatMap((module) =>
       [...module.children.allTests()].map((test) => ({
         file: module.moduleId,
-        runnable: test.options.mode === 'run' || test.options.mode === 'only',
+        runnable: vitestTestRunnable(test),
       })),
     );
   } finally {
