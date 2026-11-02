@@ -806,6 +806,20 @@ function boundedTagLimits(input: Partial<OciTagLimits> = {}): OciTagLimits {
   ) as unknown as OciTagLimits;
 }
 
+/**
+ * Loopback hosts a local distribution registry may use over plaintext.
+ *
+ * `localhost`, plus `RegistryClient`'s `isLoopback`: `::1` (brackets stripped,
+ * because `URL.hostname` keeps them) and `127.0.0.0/8`.
+ */
+function isLoopback(url: URL): boolean {
+  if (url.hostname === 'localhost') return true;
+  const host = url.hostname.replace(/^\[|\]$/gu, '');
+  if (host === '::1') return true;
+  const octets = /^(\d{1,3})\.\d{1,3}\.\d{1,3}\.\d{1,3}$/u.exec(host);
+  return octets !== null && Number(octets[1]) === 127;
+}
+
 export class OciRegistryClient {
   readonly registry: URL;
   readonly repository: string;
@@ -824,7 +838,12 @@ export class OciRegistryClient {
     responseIdleTimeoutMilliseconds?: number;
   }) {
     this.registry = parseUntrustedUrl(input.registry);
-    if (this.registry.protocol !== 'https:')
+    // Remote registries stay HTTPS. Plaintext is only a loopback distribution
+    // registry (the Testcontainers harness binds one on localhost).
+    if (
+      this.registry.protocol !== 'https:' &&
+      !(this.registry.protocol === 'http:' && isLoopback(this.registry))
+    )
       throw new TypeError('Registry URL must use HTTPS');
     if (
       this.registry.username ||

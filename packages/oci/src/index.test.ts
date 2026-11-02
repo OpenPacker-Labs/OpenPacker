@@ -94,13 +94,43 @@ describe('OCI image layout', () => {
 
 describe('OCI Distribution client', () => {
   it('rejects plaintext registry origins', () => {
-    expect(
-      () =>
-        new OciRegistryClient({
-          registry: 'http://registry.example',
-          repository: 'openpacker/demo',
-        }),
-    ).toThrow(/must use HTTPS/u);
+    for (const registry of [
+      'http://registry.example',
+      'http://127.0.0.1.example',
+      'http://localhost.example',
+      'ftp://127.0.0.1',
+      'http://[::ffff:127.0.0.1]',
+    ]) {
+      expect(
+        () =>
+          new OciRegistryClient({
+            registry,
+            repository: 'openpacker/demo',
+          }),
+        registry,
+      ).toThrow(/must use HTTPS/u);
+    }
+  });
+
+  it('allows plaintext only for loopback distribution registries', () => {
+    for (const registry of [
+      'http://127.0.0.1:5000',
+      'http://127.0.0.2',
+      'http://localhost:5000',
+      'http://[::1]:5000',
+    ]) {
+      const client = new OciRegistryClient({
+        registry,
+        repository: 'openpacker/demo',
+      });
+      expect(client.registry.protocol, registry).toBe('http:');
+      expect(client.registry.href, registry).toBe(new URL(registry).href);
+    }
+    const fromUrl = new OciRegistryClient({
+      registry: new URL('http://127.0.0.1:5000'),
+      repository: 'openpacker/demo',
+    });
+    expect(fromUrl.registry.origin).toBe('http://127.0.0.1:5000');
   });
 
   it('bounds registry error bodies before decoding diagnostics', async () => {
