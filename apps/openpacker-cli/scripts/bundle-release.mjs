@@ -31,12 +31,12 @@ const dependencies = {
   ajv: '8.18.0',
   'ajv-formats': '3.0.1',
   'fast-xml-parser': '^5.10.1',
-  fastify: '5.11.2',
+  fastify: '5.12.7',
   fflate: '^0.8.3',
   koffi: '^2.15.0',
-  minimatch: '^10.2.6',
+  minimatch: '11.0.3',
   'smol-toml': '^1.7.1',
-  undici: '8.10.0',
+  undici: '8.12.3',
   yaml: '^2.8.3',
 };
 
