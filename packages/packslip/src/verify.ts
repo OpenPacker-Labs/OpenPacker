@@ -179,9 +179,11 @@ function withoutUnauthenticatedTlogEntries(bytes: Uint8Array): Uint8Array {
     return bytes;
   }
   if (typeof json !== 'object' || json === null) return bytes;
-  const material = (json as { verificationMaterial?: { tlogEntries?: unknown[] } })
-    .verificationMaterial;
-  const entries = material?.tlogEntries;
+  const material = (
+    json as { verificationMaterial?: { tlogEntries?: unknown[] } }
+  ).verificationMaterial;
+  if (material === undefined) return bytes;
+  const entries = material.tlogEntries;
   if (!Array.isArray(entries) || entries.length <= 1) return bytes;
   const trusted = entries.filter(
     (entry) =>
