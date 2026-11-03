@@ -12,7 +12,7 @@ test(
   () => {
     const result = spawnSync(
       process.execPath,
-      [join(root, 'scripts/demo.mjs')],
+      [join(root, 'scripts/demo.mjs'), '--no-build'],
       { cwd: root, encoding: 'utf8' },
     );
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
