@@ -38,9 +38,9 @@ npm exec playwright install chromium
 
 A machine that already has a Chromium and may not download one (a CI image, an
 agent sandbox) can point the browser gates and the demo at it instead:
-`PLAYWRIGHT_CHROMIUM=/abs/path/to/chrome npm run test:browser` (also `test:e2e`
-and `demo`; `golden:check` launches no browser, it reads what `demo` wrote). The
-path must be absolute; unset, they launch the Chromium Playwright downloaded
+`PLAYWRIGHT_CHROMIUM=/abs/path/to/chrome npm run test:browser` (also `demo`;
+`golden:check` launches no browser, it reads what `demo` wrote). The path must
+be absolute; unset, they launch the Chromium Playwright downloaded
 (`scripts/chromium.mjs`). Chromium makes its singleton socket under `TMPDIR`
 (`$TMPDIR/.org.chromium.Chromium.XXXXXX/SingletonSocket`), and a socket path
 holds at most 107 bytes, so a `TMPDIR` longer than about 58 characters makes it
