@@ -53,6 +53,7 @@ test('mandatory aggregate commands are explicit and fail-closed', () => {
       `node scripts/run-gate.mjs ${gate.slice(5)}`,
     );
   }
+  const demoStep = 'node scripts/demo.mjs --no-build';
   for (const mandatory of [
     'test:docs',
     'check:rust',
@@ -60,17 +61,19 @@ test('mandatory aggregate commands are explicit and fail-closed', () => {
     'demo',
     'golden:check',
     'test:fuzz',
-  ])
+  ]) {
+    const step = mandatory === 'demo' ? demoStep : `npm run ${mandatory}`;
     assert.ok(
-      manifest.scripts.verify.includes(`npm run ${mandatory}`),
+      manifest.scripts.verify.includes(step),
       `verify omits ${mandatory}`,
     );
+  }
   assert.doesNotMatch(
     manifest.scripts.verify,
     /continue-on-error|\|\|\s*true|--if-present/u,
   );
   assert.ok(
-    manifest.scripts.verify.indexOf('npm run demo') <
+    manifest.scripts.verify.indexOf(demoStep) <
       manifest.scripts.verify.indexOf('npm run golden:check') &&
       manifest.scripts.verify.indexOf('npm run golden:check') <
         manifest.scripts.verify.indexOf('npm run test:fuzz'),
