@@ -169,5 +169,5 @@ CLI/API compliance obligations for third-party tools are listed in
 `.demo-output`. `npm run verify` runs all mandatory non-live gates. Individual
 CLI command shapes and exit behavior are exercised by
 [`apps/openpacker-cli/test/cli.test.ts`](../../apps/openpacker-cli/test/cli.test.ts);
-the production-path demo is exercised by
-[`tests/e2e/demo.test.mjs`](../../tests/e2e/demo.test.mjs).
+the production-path demo self-checks the written `index.json` in
+[`scripts/demo.mjs`](../../scripts/demo.mjs).

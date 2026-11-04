@@ -73,9 +73,10 @@ optional hints and are not needed for offline identity.
 
 `npm run demo` is the deterministic offline recovery rehearsal: it consumes
 fixtures without public registries and writes an indexed artifact set under
-`.demo-output`. `npm run test:e2e` reruns that production path and fails on a
-digest, proof, trust, materialization, mode-agreement, mise, event, or
-downstream contract mismatch. Operator-specific backup paths cannot be safely
+`.demo-output`. `npm run verify` reruns that production path with
+`node scripts/demo.mjs --no-build`. The script fails on a digest, proof, trust,
+materialization, mode-agreement, mise, event, downstream contract, or
+`index.json` invariant mismatch. Operator-specific backup paths cannot be safely
 exercised by the repository, so deployments must additionally rehearse the table
 above with their real storage and secret-recovery systems.
 

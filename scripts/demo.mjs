@@ -142,6 +142,28 @@ writeFileSync(
   join(output, 'index.json'),
   `${JSON.stringify(index, null, 2)}\n`,
 );
+const writtenIndex = JSON.parse(
+  readFileSync(join(output, 'index.json'), 'utf8'),
+);
+if (writtenIndex.schemaVersion !== 'org.openpacker.demo-index.v1')
+  throw new Error(
+    'index.json schemaVersion must be org.openpacker.demo-index.v1',
+  );
+if (!Array.isArray(writtenIndex.files) || writtenIndex.files.length < 8)
+  throw new Error('index.json must list at least 8 files');
+if (
+  new Set(writtenIndex.files.map((entry) => entry.path)).size !==
+  writtenIndex.files.length
+)
+  throw new Error('index.json paths must be unique');
+for (const entry of writtenIndex.files)
+  if (
+    typeof entry.digest !== 'string' ||
+    !/^sha256:[0-9a-f]{64}$/u.test(entry.digest)
+  )
+    throw new Error(
+      `index.json digest for ${entry.path} must be sha256:<64 lowercase hex>`,
+    );
 for (const file of index.files)
   console.log(`${file.digest}  ${file.path} (${file.size} bytes)`);
 console.log(`${digest(readFileSync(join(output, 'index.json')))}  index.json`);
