@@ -7,8 +7,9 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire, findPackageJSON } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { copyWithoutScripts } from './pack-installed.mjs';
@@ -18,21 +19,52 @@ const root = resolve(import.meta.dirname, '../..');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const libraries = dualExportPackages(root);
 const libraryNames = libraries.map(({ manifest }) => manifest.name).sort();
+
+/**
+ * Directory of `name` as the package at `from` resolves it.
+ *
+ * npm does not hoist every dependency to the repository root
+ * (`fast-xml-parser` is only under `packages/adapter-maven` and
+ * `packages/adapter-nuget`). One directory per name is enough. A package
+ * whose `exports` omit `./package.json` refuses `require.resolve`
+ * (`fast-xml-parser`, `smol-toml`, `koffi`); `findPackageJSON` is that
+ * lookup without the export check.
+ */
+function installedPackageDirectory(from, name) {
+  const require = createRequire(from);
+  try {
+    return dirname(require.resolve(`${name}/package.json`));
+  } catch (error) {
+    if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') throw error;
+    const manifestPath = findPackageJSON(name, from);
+    if (manifestPath === undefined) throw error;
+    return dirname(manifestPath);
+  }
+}
+
 const externalPackages = new Map();
-const pending = libraries.flatMap(({ manifest }) =>
-  Object.keys(manifest.dependencies ?? {}).filter(
-    (name) => !name.startsWith('@openpacker/'),
-  ),
+const pending = libraries.flatMap(({ directory, manifest }) =>
+  Object.keys(manifest.dependencies ?? {})
+    .filter((name) => !name.startsWith('@openpacker/'))
+    .map((name) => ({
+      name,
+      from: join(root, 'packages', directory, 'package.json'),
+    })),
 );
 while (pending.length > 0) {
-  const name = pending.pop();
+  const { name, from } = pending.pop();
   if (externalPackages.has(name)) continue;
-  const directory = join(root, 'node_modules', name);
+  const directory = installedPackageDirectory(from, name);
   const manifest = JSON.parse(
     readFileSync(join(directory, 'package.json'), 'utf8'),
   );
   externalPackages.set(name, directory);
-  pending.push(...Object.keys(manifest.dependencies ?? {}));
+  pending.push(
+    ...Object.keys(manifest.dependencies ?? {}).map((dependency) => ({
+      name: dependency,
+      from: join(directory, 'package.json'),
+    })),
+  );
 }
 
 function run(command, arguments_, cwd, environment = {}) {
