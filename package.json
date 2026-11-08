@@ -64,20 +64,20 @@
     "minimatch": "11.0.3"
   },
   "devDependencies": {
-    "@oxlint/plugins": "^1.90.0",
+    "@oxlint/plugins": "^1.91.0",
     "@playwright/test": "1.64.1",
     "@types/ahocorasick": "^1.0.0",
     "@types/node": "26.6.6",
     "@types/shell-quote": "^1.7.5",
     "canonicalize": "^5.1.0",
     "fast-check": "4.10.2",
-    "oxlint": "^1.90.0",
+    "oxlint": "^1.91.0",
     "packageurl-js": "^2.0.1",
     "prettier": "3.9.10",
     "testcontainers": "^12.2.1",
     "turbo": "2.11.10",
     "typescript": "5.9.3",
     "vite-node": "^6.0.0",
-    "vitest": "5.0.5"
+    "vitest": "5.1.0"
   }
 }
