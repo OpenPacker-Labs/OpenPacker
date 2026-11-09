@@ -1,6 +1,8 @@
 /**
  * PREX control-plane verbs handled by `runCli` (`index.ts`). They are routed
  * from the `opm` process entry before the project manager loads adapters.
+ * `routeRun` treats every name here as a command, so a package script cannot
+ * claim it (`opm run <name>` is how the script is spelled).
  * Verbs that overlap the opm surface (`resolve`, `pack`, `publish`) stay on the
  * project manager when invoked as `opm …`.
  */
