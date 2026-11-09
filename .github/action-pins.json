@@ -39,12 +39,12 @@
     "sha": "360a4e93673de6630fac2478bc9e35244b01a759",
     "comment": "1.88.0"
   },
-  "github/codeql-action/init@v3.29.0": {
-    "sha": "b1722c1245f90604c2c348f9d1624af97ea8fc6e",
-    "comment": "v3.29.0"
+  "github/codeql-action/init@v4.39.3": {
+    "sha": "33d7b85da1a04171e211befe2c739303b9a4c066",
+    "comment": "v4.39.3"
   },
-  "github/codeql-action/analyze@v3.29.0": {
-    "sha": "b1722c1245f90604c2c348f9d1624af97ea8fc6e",
-    "comment": "v3.29.0"
+  "github/codeql-action/analyze@v4.39.3": {
+    "sha": "33d7b85da1a04171e211befe2c739303b9a4c066",
+    "comment": "v4.39.3"
   }
 }
