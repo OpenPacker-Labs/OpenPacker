@@ -80,6 +80,17 @@ describe('the process entry', () => {
     }
   });
 
+  it('answers demo as the PREX command, not a package script of that name', async () => {
+    const root = await makeProject({
+      scripts: { demo: 'node -e "process.exit(42)"' },
+    });
+    const cap = capture();
+    const status = await main(['demo'], cap.io, root, never);
+    expect(status).toBe(2);
+    expect(cap.err).toContain('workflow-module');
+    expect(cap.err).not.toContain('exited with code');
+  });
+
   it('gives --help after the bin to the bin', async () => {
     const root = await makeProject({});
     const cap = capture();

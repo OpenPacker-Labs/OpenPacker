@@ -13,6 +13,7 @@
  * is no command could be a script, so the entry stays as cheap as it was.
  */
 import { resolve } from 'node:path';
+import { PREX_ROUTED_COMMANDS } from '../prex-commands.js';
 import { COMMANDS } from './command-names.js';
 import { asksForHelp } from './run-args.js';
 import { usageError } from './run-error.js';
@@ -127,7 +128,11 @@ export async function routeRun(
   const after = argv.slice(leading.at + 1);
   if (word === 'run' || word === 'exec')
     return named(word, leading.lead, after);
-  if (COMMANDS.has(word)) {
+  // PREX verbs are commands too. A package script must not take their place
+  // (ADR 0053): `opm demo` is the control-plane demo, and `opm run demo` is
+  // the script. Shadowing `demo` re-entered `scripts/demo.mjs` without
+  // `--no-build`, and each re-entry force-ran the uncached embedded build.
+  if (COMMANDS.has(word) || PREX_ROUTED_COMMANDS.has(word)) {
     if (leading.lead.length > 0) throw refuseBeforeCommand(leading.lead, word);
     return undefined;
   }

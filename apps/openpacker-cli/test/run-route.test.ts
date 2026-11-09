@@ -219,6 +219,37 @@ describe('routeRun: a word where a command goes', () => {
     });
   });
 
+  it('never takes the place of a PREX command, even for a script that has its name', async () => {
+    const root = await makeProject({
+      scripts: {
+        demo: 'node scripts/demo.mjs',
+        verify: 'npm run verify',
+      },
+    });
+    // `opm demo --offline …` is the control-plane demo. Routing it as the
+    // root `demo` script re-enters scripts/demo.mjs without --no-build.
+    expect(
+      await routeRun(
+        ['demo', '--offline', '--output', 'out', '--workflow-module', 'w.mjs'],
+        root,
+      ),
+    ).toBeUndefined();
+    expect(
+      await routeRun(['verify', '--input', 'in.json'], root),
+    ).toBeUndefined();
+    expect(await routeRun(['run', 'demo', '--', '--no-build'], root)).toEqual({
+      command: 'run',
+      rest: ['demo', '--', '--no-build'],
+      fallbackExec: false,
+    });
+    await expect(
+      routeRun(['--filter', 'a', 'demo'], root),
+    ).rejects.toMatchObject({
+      code: 'USAGE',
+      message: expect.stringContaining('opm demo'),
+    });
+  });
+
   it('finds an executable in the .bin of a parent directory', async () => {
     const root = await project();
     const nested = await makeDirectory(root, 'nested');
