@@ -54,6 +54,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@360a4e93673de6630fac2478bc9e35244b01a759 # 1.88.0 # 1.88.0
         with:
           targets: wasm32-unknown-unknown
+      # tests/rust-fuzz is a separate workspace. Full check:rust is too heavy
+      # for this gate; --locked metadata still fails closed on lockfile drift.
+      - name: Rust fuzz lockfile matches its manifest
+        run:
+          cargo metadata --locked --manifest-path tests/rust-fuzz/Cargo.toml
+          --format-version 1 >/dev/null
       - name: Cache the wasm toolchain output
         id: cache-wasm
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # v6.1.0

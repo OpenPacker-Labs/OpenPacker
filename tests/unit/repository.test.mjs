@@ -287,6 +287,50 @@ test('security orchestration retains every executable trust boundary', () => {
     assert.match(gate, new RegExp(`['"]${target}['"]`, 'u'));
 });
 
+// tests/rust-fuzz is its own workspace. Nightly verify used to be the first
+// --locked consumer, so a stale Cargo.lock reached promotion. check:rust runs
+// the same locked clippy and test as fuzz-smoke; the merge queue only needs
+// metadata --locked, which fails before the heavy trunk steps.
+test('a stale rust-fuzz lockfile fails closed in check:rust and the merge queue', () => {
+  const { scripts } = JSON.parse(
+    readFileSync(join(root, 'package.json'), 'utf8'),
+  );
+  const check = scripts['check:rust'];
+  assert.ok(
+    check.startsWith(
+      'cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-features && ',
+    ),
+    'check:rust dropped the workspace gate',
+  );
+  for (const step of [
+    'cargo fmt --manifest-path tests/rust-fuzz/Cargo.toml -- --check',
+    'cargo clippy --manifest-path tests/rust-fuzz/Cargo.toml --all-targets --locked -- -D warnings',
+    'cargo test --manifest-path tests/rust-fuzz/Cargo.toml --locked',
+  ])
+    assert.ok(check.includes(step), step);
+
+  const trunk = readFileSync(
+    join(root, '.github/workflows/trunk-gate.yml'),
+    'utf8',
+  );
+  assert.match(
+    trunk,
+    /cargo metadata --locked --manifest-path tests\/rust-fuzz\/Cargo\.toml\s+--format-version 1/u,
+  );
+  assert.ok(
+    trunk.indexOf('Rust fuzz lockfile matches its manifest') <
+      trunk.indexOf('npm ci --ignore-scripts'),
+    'lockfile drift must fail before the heavy trunk steps',
+  );
+
+  const agent = readFileSync(join(root, 'scripts/agent-check.mjs'), 'utf8');
+  assert.match(agent, /f\.startsWith\('tests\/rust-fuzz\/'\)/u);
+  assert.match(
+    agent,
+    /'test',\s*'--manifest-path',\s*'tests\/rust-fuzz\/Cargo\.toml',\s*'--locked'/u,
+  );
+});
+
 test('CI actions and installed Rust tools use exact versions', () => {
   const workflows = filesIn(join(root, '.github/workflows'))
     .map((path) => readFileSync(path, 'utf8'))

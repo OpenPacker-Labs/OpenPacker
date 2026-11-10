@@ -47,7 +47,7 @@
     "check:tsconfig-cjs": "node scripts/check-tsconfig-cjs.mjs",
     "golden:generate": "node scripts/generate-goldens.mjs",
     "golden:check": "node scripts/generate-goldens.mjs --check",
-    "check:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-features",
+    "check:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-features && cargo fmt --manifest-path tests/rust-fuzz/Cargo.toml -- --check && cargo clippy --manifest-path tests/rust-fuzz/Cargo.toml --all-targets --locked -- -D warnings && cargo test --manifest-path tests/rust-fuzz/Cargo.toml --locked --quiet",
     "release:sbom:rust": "node scripts/generate-rust-sbom.mjs",
     "ruleset:apply": "node scripts/github/apply-trunk-ruleset.mjs",
     "workflows:lint": "actionlint .github/workflows/*.yml",
