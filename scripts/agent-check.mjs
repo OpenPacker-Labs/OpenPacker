@@ -164,6 +164,7 @@ const touch = {
   rust: files.some(
     (f) =>
       f.startsWith('crates/') ||
+      f.startsWith('tests/rust-fuzz/') ||
       f === 'Cargo.toml' ||
       f === 'Cargo.lock' ||
       f === 'rustfmt.toml',
@@ -223,6 +224,18 @@ if (touch.rust && !skip.has('rust')) {
     cmd: 'cargo',
     args: ['test', '--workspace', '--all-features', '--locked'],
   });
+  if (files.some((f) => f.startsWith('tests/rust-fuzz/'))) {
+    checks.push({
+      label: 'cargo test (rust-fuzz)',
+      cmd: 'cargo',
+      args: [
+        'test',
+        '--manifest-path',
+        'tests/rust-fuzz/Cargo.toml',
+        '--locked',
+      ],
+    });
+  }
 }
 
 const maxPackages = Number(
