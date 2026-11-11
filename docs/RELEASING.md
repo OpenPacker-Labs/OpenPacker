@@ -111,8 +111,10 @@ prerelease removed. `0.0.1-alpha.1` on 2026-10-31 becomes
 
 Publish uses
 [publish-openpacker-cli](../.github/actions/publish-openpacker-cli/action.yml)
-from `apps/openpacker-cli/release`. The action installs npm 11.21.1 because Node
-22.19.0's bundled npm cannot move dist-tags with OIDC.
+from `apps/openpacker-cli/release`. The action installs npm 11.21.1 by unpacking
+the integrity-pinned registry tarball into the active Node prefix. It does not
+run `npm install -g`. Node 22.22.2's bundled npm 10 is missing `promise-retry`,
+so that self-upgrade aborts, and dist-tag OIDC needs npm 11.21.0 or newer.
 
 When `NPM_TOKEN` is set, that token is `NODE_AUTH_TOKEN` for the publish command
 only:
@@ -370,8 +372,9 @@ absent. Until the trusted publishers below exist, create that secret:
 `release-cli` and nightly pass `secrets.NPM_TOKEN` into that action and publish.
 Integration passes the same secret only so `npm dist-tag add` can authenticate.
 Production does not read `NPM_TOKEN`. Jobs that publish or move dist-tags set
-`id-token: write`. The action installs npm 11.21.1 so dist-tag commands can use
-OIDC (npm 11.21.0 or newer).
+`id-token: write`. The action installs npm 11.21.1 from the pinned registry
+tarball into the Node prefix so dist-tag commands can use OIDC (npm 11.21.0 or
+newer).
 
 ### Trusted publishing later
 
