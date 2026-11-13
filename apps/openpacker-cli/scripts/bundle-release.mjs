@@ -46,6 +46,28 @@ const optionalDependencies = {
 
 const requireBanner =
   "import{createRequire as __cr}from'module';const require=__cr(import.meta.url);";
+// opm and opmx bins. dist/index.js stays a library export and keeps requireBanner.
+const nodeBinBanner = `#!/usr/bin/env node\n${requireBanner}`;
+// esbuild prints an entry hashbang before the banner. Drop that copy so the
+// banner shebang is the first bytes, not a second line.
+const entryShebang = new Set([
+  join(root, 'src/main.ts'),
+  join(root, 'src/opmx-main.ts'),
+]);
+const stripEntryShebang = {
+  name: 'strip-entry-shebang',
+  setup(build) {
+    build.onLoad({ filter: /\.ts$/ }, (args) => {
+      if (!entryShebang.has(args.path)) return;
+      const text = readFileSync(args.path, 'utf8');
+      if (!text.startsWith('#!')) return;
+      return {
+        contents: text.replace(/^#![^\n]*\n?/u, ''),
+        loader: 'ts',
+      };
+    });
+  },
+};
 
 const esbuildCommon = {
   bundle: true,
@@ -66,12 +88,16 @@ const esbuildCommon = {
 
 await esbuild.build({
   ...esbuildCommon,
+  banner: { js: nodeBinBanner },
+  plugins: [stripEntryShebang],
   entryPoints: [join(root, 'src/main.ts')],
   outfile: join(releaseDir, 'dist/main.js'),
 });
 
 await esbuild.build({
   ...esbuildCommon,
+  banner: { js: nodeBinBanner },
+  plugins: [stripEntryShebang],
   entryPoints: [join(root, 'src/opmx-main.ts')],
   outfile: join(releaseDir, 'dist/opmx-main.js'),
 });
