@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, open, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,6 +48,15 @@ function expectExit(
   expect(result.code, `${result.stdout}\n${result.stderr}`).toBe(code);
 }
 
+let bundled: ReturnType<typeof run> | undefined;
+
+function ensureBundled() {
+  bundled ??= run('npm', ['run', 'bundle', '--workspace', '@openpacker/cli'], {
+    cwd: repoRoot,
+  });
+  return bundled;
+}
+
 describe('publishable CLI bundle', () => {
   const temps: string[] = [];
 
@@ -57,12 +66,24 @@ describe('publishable CLI bundle', () => {
     );
   });
 
+  it('starts bin bundles with a node shebang', async () => {
+    expectExit(await ensureBundled());
+    for (const name of ['dist/main.js', 'dist/opmx-main.js']) {
+      const handle = await open(join(releaseDir, name), 'r');
+      try {
+        const buf = Buffer.alloc(20);
+        const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+        expect(buf.subarray(0, bytesRead).toString('utf8')).toBe(
+          '#!/usr/bin/env node\n',
+        );
+      } finally {
+        await handle.close();
+      }
+    }
+  }, 300_000);
+
   it('packs the bundle, installs it, and prints usage', async () => {
-    expectExit(
-      await run('npm', ['run', 'bundle', '--workspace', '@openpacker/cli'], {
-        cwd: repoRoot,
-      }),
-    );
+    expectExit(await ensureBundled());
 
     const packDir = await mkdtemp(join(tmpdir(), 'openpacker-pack-'));
     temps.push(packDir);
