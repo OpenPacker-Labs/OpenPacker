@@ -299,9 +299,8 @@ describe.runIf(canSandbox && bwrap !== undefined && pidNamespace !== undefined)(
   },
 );
 
-describe.skipIf(canSandbox && bwrap !== undefined && pidNamespace !== undefined)(
-  'opmx in a project this user may not write',
-  () => {
-    it.skip('needs bwrap (/usr/bin/bwrap); not checked on this host', () => {});
-  },
-);
+describe.skipIf(
+  canSandbox && bwrap !== undefined && pidNamespace !== undefined,
+)('opmx in a project this user may not write', () => {
+  it.skip('needs bwrap (/usr/bin/bwrap); not checked on this host', () => {});
+});
