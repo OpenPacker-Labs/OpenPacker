@@ -34,6 +34,7 @@ import {
   installedProject,
 } from './installed-fixture.js';
 import { canSandbox } from './signal-fixture.js';
+import { pidNamespace } from '../../../packages/opm-project/test/namespaces.js';
 import type { FixturePackage } from '../../../packages/opm-project/test/npm-registry-fixture.js';
 
 const bwrap = ['/usr/bin/bwrap', '/bin/bwrap'].find((path) => existsSync(path));
@@ -186,7 +187,7 @@ async function startingAnother(
     await mkdir(join(file, '..'), { recursive: true });
     await mkdir(join(dir, 'bin'));
     await symlink(
-      '../lib/node_modules/@openpacker/cli/dist/opmx-main.js',
+      '../lib/node_modules/@openpacker/opm/dist/opmx-main.js',
       other,
     );
   }
@@ -201,7 +202,8 @@ async function startingAnother(
   return other;
 }
 
-describe.runIf(canSandbox && bwrap !== undefined)(
+// GHA has bwrap but refuses unshare, so nested opmx enforcement fails (backend=none).
+describe.runIf(canSandbox && bwrap !== undefined && pidNamespace !== undefined)(
   'opmx in a project this user may not write',
   { timeout: INSTALLED_TIMEOUT_MS },
   () => {
@@ -297,9 +299,8 @@ describe.runIf(canSandbox && bwrap !== undefined)(
   },
 );
 
-describe.skipIf(canSandbox && bwrap !== undefined)(
-  'opmx in a project this user may not write',
-  () => {
-    it.skip('needs bwrap (/usr/bin/bwrap); not checked on this host', () => {});
-  },
-);
+describe.skipIf(
+  canSandbox && bwrap !== undefined && pidNamespace !== undefined,
+)('opmx in a project this user may not write', () => {
+  it.skip('needs bwrap (/usr/bin/bwrap); not checked on this host', () => {});
+});
