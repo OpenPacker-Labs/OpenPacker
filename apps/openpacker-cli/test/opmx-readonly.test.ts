@@ -186,7 +186,7 @@ async function startingAnother(
     await mkdir(join(file, '..'), { recursive: true });
     await mkdir(join(dir, 'bin'));
     await symlink(
-      '../lib/node_modules/@openpacker/cli/dist/opmx-main.js',
+      '../lib/node_modules/@openpacker/opm/dist/opmx-main.js',
       other,
     );
   }
