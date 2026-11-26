@@ -44,7 +44,7 @@
     "@openpacker/packslip-testkit": "0.0.1-alpha.1",
     "@openpacker/project-io": "0.0.1-alpha.1",
     "@types/semver": "7.8.0",
-    "fast-check": "4.10.2",
+    "fast-check": "4.10.3",
     "semver": "7.8.6"
   },
   "repository": {

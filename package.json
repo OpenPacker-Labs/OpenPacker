@@ -61,23 +61,23 @@
   },
   "overrides": {
     "glob": "14.0.3",
-    "minimatch": "11.0.3"
+    "minimatch": "11.0.9"
   },
   "devDependencies": {
-    "@oxlint/plugins": "^1.93.0",
-    "@playwright/test": "1.65.0",
+    "@oxlint/plugins": "^1.94.0",
+    "@playwright/test": "1.65.1",
     "@types/ahocorasick": "^1.0.0",
     "@types/node": "26.6.6",
     "@types/shell-quote": "^1.7.5",
     "canonicalize": "^5.1.0",
-    "fast-check": "4.10.2",
-    "oxlint": "^1.93.0",
+    "fast-check": "4.10.3",
+    "oxlint": "^1.94.0",
     "packageurl-js": "^2.0.1",
-    "prettier": "3.10.0",
+    "prettier": "3.10.1",
     "testcontainers": "^12.2.1",
-    "turbo": "2.11.11",
+    "turbo": "2.11.13",
     "typescript": "5.9.3",
     "vite-node": "^6.0.0",
-    "vitest": "5.1.0"
+    "vitest": "5.1.1"
   }
 }

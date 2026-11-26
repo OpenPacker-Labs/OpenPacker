@@ -34,7 +34,7 @@ const dependencies = {
   fastify: '5.12.7',
   fflate: '^0.8.3',
   koffi: '^2.15.0',
-  minimatch: '11.0.3',
+  minimatch: '11.0.9',
   'smol-toml': '^1.7.1',
   undici: '8.12.3',
   yaml: '^2.8.3',
